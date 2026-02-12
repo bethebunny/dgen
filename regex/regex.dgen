@@ -1,0 +1,45 @@
+
+# Prior art: https://dl.acm.org/doi/epdf/10.1145/3696443.3708916
+# The Regex dialect in this paper is structured a bit differently.
+# - The "regex.root" op is implicitly a "match" op, with booleans for searching
+# - The regular expression itself is formed by "regex.concatenation",
+#   "regex.piece", "regex.sub_regex" ops. The "regex.root" and "regex.sub_regex" ops
+#   take a block of "regex.piece" or "regex.concatenation"s. In this way the structure
+#   of the IR encodes the whole regular expression without any data flow.
+# - This presents a nice opportunity for DGEN to by contrast model Regex as a dataflow
+#   graph and take advantage of jit compilation.
+
+# from builtin import None, Numeral, Optional, String
+
+# This is my IR, why can't I define constructors?
+
+trait Pattern
+
+type Dot(Pattern):
+    pass
+
+type Literal(Pattern):
+    pattern: String
+
+type Union(Pattern):
+    lhs: Pattern
+    rhs: Pattern
+
+type Concatenation(Pattern):
+    lhs: Pattern
+    rhs: Pattern
+
+type Repeated(Pattern):
+    pattern: Pattern
+    min: Numeral = 0
+    max: Optional[Numeral] = None
+
+type Match
+
+op literal(string: String) -> Pattern
+op concat(lhs: Pattern, rhs: Pattern) -> Pattern
+op union(lhs: Pattrn, rhs: Pattern) -> Pattern
+op quantify(pattern: Pattern, min: Numeral = 0, max: Optional[Numeral] = None) -> Pattern
+
+op match(pattern: Pattern, string: String) -> Optional[Match]
+op search(pattern: Pattern, string: String) -> Optional[Match]

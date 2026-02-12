@@ -1,11 +1,17 @@
-# Milestone 1: Regex JIT
+# Milestone: Regex JIT
+
+This was originally the first milestone, but it's waaay too broad. Better to scope back down to a TableGen replacement for now.
 
 ## Context
 
 Start with a demonstration dialect that has some meaningful use of JIT compilation.
 
-A good option is regex. [Performance report on PCRE (2014)](https://zherczeg.github.io/sljit/pcre.html)
-suggests that there's large performance gains for regex computation with a JIT, but the JIT compile cost is high enough to not use it by default in most cases. A great outcome would be
+A good option is regex.
+- [Performance report on PCRE (2014)](https://zherczeg.github.io/sljit/pcre.html)
+suggests that there's large performance gains for regex computation with a JIT, but the JIT compile cost is high enough to not use it by default in most cases.
+- [Combining MLIR Dialects with Domain-Specific Architecture for Efficient Regular Expression Matching](https://dl.acm.org/doi/epdf/10.1145/3696443.3708916) demonstrates an approach for compiling performant regexes from MLIR
+
+A great outcome would be
 - target some subset of PCRE
 - demonstrate regex performance pcre-jit <= dgen <= prce (no jit)
 - demonstrate regex compile speed pcre (no jit) <= dgen <= prce-jit
