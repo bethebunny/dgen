@@ -1,0 +1,18 @@
+Build the current directory into a self-contained implementation of the "Toy" tutorial for MLIR (https://mlir.llvm.org/docs/Tutorials/Toy/).
+  - Pretend there is some generator from DGEN dialect files to generated Mojo
+    types/functions for the dialect.
+  - Don't bother with Bazel or some nonsense, just use the existing Mojo install and
+    normal Mojo tests to verify behavior.
+  - Don't bother with any of the pattern-based rewrite parts of the tutorial
+
+  Sketch of a plan:
+
+  1. Represent the IR in Mojo. Test by creating IR manually in a test file.
+  2. Parsing/generating an MLIR ASM-like IR representation. Test by round-tripping IR from/to
+     the ASM. See @regex/regex.ir as inspiration.
+  3. Implement a parser for the Toy language from the tutorial to the IR. Test with
+     examples from the tutorial and comparing against the IR ASM they generate.
+
+  At this point we should roughly have implemented chapters 1 and 2 of the tutorial. Start
+  with that for now, and stop when the code feels good, tested, and clearly meets the
+  goals of those two chapters.
