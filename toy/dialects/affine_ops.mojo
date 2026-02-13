@@ -8,17 +8,13 @@ from collections import Optional
 # Types
 # ===----------------------------------------------------------------------=== #
 
+
 @fieldwise_init
 struct MemRefType(Copyable, Movable, Stringable):
     var shape: List[Int]
 
     fn __str__(self) -> String:
-        var s = String("memref<")
-        for i in range(len(self.shape)):
-            s += String(self.shape[i])
-            s += "x"
-        s += "f64>"
-        return s
+        return "memref<{}xf64>".format("x".join(self.shape))
 
 
 @fieldwise_init
@@ -39,6 +35,7 @@ comptime AnyAffineType = Variant[MemRefType, IndexType, F64Type]
 # ===----------------------------------------------------------------------=== #
 # Operations
 # ===----------------------------------------------------------------------=== #
+
 
 @fieldwise_init
 struct AllocOp(Copyable, Movable):
@@ -105,6 +102,7 @@ struct AffineReturnOp(Copyable, Movable):
 # AffineForOp contains List[AnyAffineOp] which heap-allocates,
 # breaking the recursive size issue.
 
+
 @fieldwise_init
 struct AffineForOp(Copyable, Movable):
     var var_name: String
@@ -114,15 +112,24 @@ struct AffineForOp(Copyable, Movable):
 
 
 comptime AnyAffineOp = Variant[
-    AllocOp, DeallocOp, AffineLoadOp, AffineStoreOp,
-    AffineForOp, ArithConstantOp, IndexConstantOp,
-    ArithMulFOp, ArithAddFOp, AffinePrintOp, AffineReturnOp,
+    AllocOp,
+    DeallocOp,
+    AffineLoadOp,
+    AffineStoreOp,
+    AffineForOp,
+    ArithConstantOp,
+    IndexConstantOp,
+    ArithMulFOp,
+    ArithAddFOp,
+    AffinePrintOp,
+    AffineReturnOp,
 ]
 
 
 # ===----------------------------------------------------------------------=== #
 # Structure
 # ===----------------------------------------------------------------------=== #
+
 
 @fieldwise_init
 struct AffineValue(Copyable, Movable):

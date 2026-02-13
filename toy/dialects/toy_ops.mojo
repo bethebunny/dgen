@@ -60,63 +60,125 @@ fn type_to_string(t: AnyToyType) -> String:
 
 
 # ===----------------------------------------------------------------------=== #
+# Formatting helpers
+# ===----------------------------------------------------------------------=== #
+
+fn format_shape(shape: List[Int]) -> String:
+    var s = String("<")
+    for i in range(len(shape)):
+        if i > 0:
+            s += "x"
+        s += String(shape[i])
+    s += ">"
+    return s
+
+
+fn format_float_list(values: List[Float64]) -> String:
+    var s = String("[")
+    for i in range(len(values)):
+        if i > 0:
+            s += ", "
+        # Format float: if it's a whole number, show as X.0
+        var v = values[i]
+        var iv = Int(v)
+        if Float64(iv) == v:
+            s += String(iv) + ".0"
+        else:
+            s += String(v)
+    s += "]"
+    return s
+
+
+# ===----------------------------------------------------------------------=== #
 # Operations
 # ===----------------------------------------------------------------------=== #
 
 @fieldwise_init
-struct ConstantOp(Copyable, Movable):
+struct ConstantOp(Copyable, Movable, Stringable):
     var result: String
     var value: List[Float64]
     var shape: List[Int]
     var type: AnyToyType
 
+    fn __str__(self) -> String:
+        return "%" + self.result + " = Constant(" + format_shape(self.shape) + " " + format_float_list(self.value) + ") : " + type_to_string(self.type)
+
 
 @fieldwise_init
-struct TransposeOp(Copyable, Movable):
+struct TransposeOp(Copyable, Movable, Stringable):
     var result: String
     var input: String
     var type: AnyToyType
 
+    fn __str__(self) -> String:
+        return "%" + self.result + " = Transpose(%" + self.input + ") : " + type_to_string(self.type)
+
 
 @fieldwise_init
-struct ReshapeOp(Copyable, Movable):
+struct ReshapeOp(Copyable, Movable, Stringable):
     var result: String
     var input: String
     var type: AnyToyType
 
+    fn __str__(self) -> String:
+        return "%" + self.result + " = Reshape(%" + self.input + ") : " + type_to_string(self.type)
+
 
 @fieldwise_init
-struct MulOp(Copyable, Movable):
+struct MulOp(Copyable, Movable, Stringable):
     var result: String
     var lhs: String
     var rhs: String
     var type: AnyToyType
 
+    fn __str__(self) -> String:
+        return "%" + self.result + " = Mul(%" + self.lhs + ", %" + self.rhs + ") : " + type_to_string(self.type)
+
 
 @fieldwise_init
-struct AddOp(Copyable, Movable):
+struct AddOp(Copyable, Movable, Stringable):
     var result: String
     var lhs: String
     var rhs: String
     var type: AnyToyType
 
+    fn __str__(self) -> String:
+        return "%" + self.result + " = Add(%" + self.lhs + ", %" + self.rhs + ") : " + type_to_string(self.type)
+
 
 @fieldwise_init
-struct GenericCallOp(Copyable, Movable):
+struct GenericCallOp(Copyable, Movable, Stringable):
     var result: String
     var callee: String
     var args: List[String]
     var type: AnyToyType
 
+    fn __str__(self) -> String:
+        var s = String("%" + self.result + " = GenericCall @" + self.callee + "(")
+        for i in range(len(self.args)):
+            if i > 0:
+                s += ", "
+            s += "%" + self.args[i]
+        s += ") : " + type_to_string(self.type)
+        return s
+
 
 @fieldwise_init
-struct PrintOp(Copyable, Movable):
+struct PrintOp(Copyable, Movable, Stringable):
     var input: String
 
+    fn __str__(self) -> String:
+        return "Print(%" + self.input + ")"
+
 
 @fieldwise_init
-struct ReturnOp(Copyable, Movable):
+struct ReturnOp(Copyable, Movable, Stringable):
     var value: Optional[String]
+
+    fn __str__(self) -> String:
+        if self.value:
+            return "return %" + self.value.value()
+        return "return"
 
 
 comptime AnyToyOp = Variant[
