@@ -2,9 +2,9 @@
 
 from testing import assert_equal, TestSuite
 
-from toy.toy_parser import parse_toy
-from toy.lowering import lower
-from toy.printer import print_module
+from toy.parser.toy_parser import parse_toy
+from toy.parser.lowering import lower
+from toy.dialects.toy_printer import print_module
 
 
 fn compile_toy(source: String) raises -> String:

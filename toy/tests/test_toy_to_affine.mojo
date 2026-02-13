@@ -3,8 +3,8 @@
 from testing import assert_equal, assert_true, TestSuite
 
 from toy.ir_parser import parse_module
-from toy.toy_to_affine import lower_to_affine
-from toy.affine_printer import print_affine_module
+from toy.passes.toy_to_affine import lower_to_affine
+from toy.dialects.affine_printer import print_affine_module
 
 
 def test_simple_constant():

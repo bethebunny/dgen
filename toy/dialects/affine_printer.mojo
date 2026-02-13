@@ -1,6 +1,6 @@
 """Ch5: Affine IR text serialization."""
 
-from toy.affine import (
+from toy.dialects.affine_ops import (
     AffineModule, AffineFuncOp, AffineBlock, AffineValue,
     AnyAffineOp, AnyAffineType,
     AllocOp, DeallocOp, AffineLoadOp, AffineStoreOp,

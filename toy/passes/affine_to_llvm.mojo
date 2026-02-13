@@ -2,13 +2,13 @@
 
 from collections import Optional, Dict
 
-from toy.affine import (
+from toy.dialects.affine_ops import (
     AffineModule, AffineFuncOp, AffineBlock, AnyAffineOp,
     AllocOp, DeallocOp, AffineLoadOp, AffineStoreOp,
     AffineForOp, ArithConstantOp, IndexConstantOp,
     ArithMulFOp, ArithAddFOp, AffinePrintOp, AffineReturnOp,
 )
-from toy.llvm_ir import (
+from toy.dialects.llvm_ops import (
     LLModule, LLFuncOp, LLBlock, AnyLLVMOp,
     LLAllocaOp, LLGepOp, LLLoadOp, LLStoreOp,
     LLFAddOp, LLFMulOp, LLConstantOp, LLIndexConstOp,

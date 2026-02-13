@@ -2,12 +2,12 @@
 
 from collections import Optional
 
-from toy.ast import (
+from toy.parser.ast import (
     AnyExpr, AnyStmt, NumberLiteral, TensorLiteral, VarRef,
     BinaryOp, CallExpr, PrintExpr, VarDecl, ReturnStmt, ExprStmt,
     Function, Prototype, ToyModule, ExprArena,
 )
-from toy.lexer import Lexer, Token
+from toy.parser.lexer import Lexer, Token
 
 
 struct ToyParser(Movable):

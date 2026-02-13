@@ -3,9 +3,9 @@
 from testing import assert_equal, assert_true, TestSuite
 
 from toy.ir_parser import parse_module
-from toy.toy_to_affine import lower_to_affine
-from toy.affine_to_llvm import lower_to_llvm
-from toy.llvm_printer import print_llvm_module
+from toy.passes.toy_to_affine import lower_to_affine
+from toy.passes.affine_to_llvm import lower_to_llvm
+from toy.dialects.llvm_printer import print_llvm_module
 
 
 fn compile_to_llvm(ir_text: String) raises -> String:

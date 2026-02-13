@@ -3,7 +3,7 @@
 from testing import assert_equal, TestSuite
 
 from toy.ir_parser import parse_module
-from toy.printer import print_module
+from toy.dialects.toy_printer import print_module
 
 
 def test_roundtrip_transpose():

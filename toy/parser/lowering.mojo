@@ -2,12 +2,12 @@
 
 from collections import Optional, Dict
 
-from toy.ast import (
+from toy.parser.ast import (
     AnyExpr, AnyStmt, NumberLiteral, TensorLiteral, VarRef,
     BinaryOp, CallExpr, PrintExpr, VarDecl, ReturnStmt, ExprStmt,
     Function, ToyModule, ExprArena,
 )
-from toy.toy import (
+from toy.dialects.toy_ops import (
     Module, FuncOp, Block, ToyValue, AnyToyOp, AnyToyType,
     ConstantOp, TransposeOp, ReshapeOp, MulOp, AddOp,
     GenericCallOp, PrintOp, ReturnOp,

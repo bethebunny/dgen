@@ -1,6 +1,6 @@
 """Ch6: LLVM-like IR text serialization."""
 
-from toy.llvm_ir import (
+from toy.dialects.llvm_ops import (
     LLModule, LLFuncOp, LLBlock, AnyLLVMOp,
     LLAllocaOp, LLGepOp, LLLoadOp, LLStoreOp,
     LLFAddOp, LLFMulOp, LLConstantOp, LLIndexConstOp,

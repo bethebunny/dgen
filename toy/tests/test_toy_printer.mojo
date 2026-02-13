@@ -3,13 +3,13 @@
 from testing import assert_equal, TestSuite
 from collections import Optional
 
-from toy.toy import (
+from toy.dialects.toy_ops import (
     Module, FuncOp, Block, ToyValue, AnyToyOp, AnyToyType,
     ConstantOp, TransposeOp, ReshapeOp, MulOp, AddOp,
     GenericCallOp, PrintOp, ReturnOp,
     UnrankedTensorType, RankedTensorType, FunctionType,
 )
-from toy.printer import print_module, print_op
+from toy.dialects.toy_printer import print_module, print_op
 
 
 fn unranked() -> AnyToyType:

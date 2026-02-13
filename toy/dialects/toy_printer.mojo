@@ -1,6 +1,6 @@
 """IR text serialization for the Toy dialect."""
 
-from toy.toy import (
+from toy.dialects.toy_ops import (
     Module, FuncOp, Block, ToyValue, AnyToyOp, AnyToyType,
     ConstantOp, TransposeOp, ReshapeOp, MulOp, AddOp,
     GenericCallOp, PrintOp, ReturnOp,

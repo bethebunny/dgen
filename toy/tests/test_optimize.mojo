@@ -2,14 +2,14 @@
 
 from testing import assert_equal, TestSuite
 
-from toy.toy import (
+from toy.dialects.toy_ops import (
     Module, FuncOp, Block, ToyValue, AnyToyOp, AnyToyType,
     ConstantOp, TransposeOp, ReshapeOp, MulOp, AddOp,
     PrintOp, ReturnOp,
     UnrankedTensorType, RankedTensorType, FunctionType,
 )
-from toy.printer import print_module
-from toy.optimize import optimize
+from toy.dialects.toy_printer import print_module
+from toy.passes.optimize import optimize
 from toy.ir_parser import parse_module
 from collections import Optional
 
