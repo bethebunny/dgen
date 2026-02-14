@@ -199,17 +199,16 @@ class AffineToLLVMLowering:
         self.ops.append(LLLabelOp(name=header_label))
         self.current_label = header_label
 
-        # Phi node for loop variable
+        # Phi node for loop variable (back-edge label patched after body)
         next_name = self.fresh()
-        self.ops.append(
-            LLPhiOp(
-                result=var_name,
-                pairs=[
-                    PhiPair(value=init_name, label=prev_label),
-                    PhiPair(value=next_name, label=body_label),
-                ],
-            )
+        phi_op = LLPhiOp(
+            result=var_name,
+            pairs=[
+                PhiPair(value=init_name, label=prev_label),
+                PhiPair(value=next_name, label=body_label),  # placeholder
+            ],
         )
+        self.ops.append(phi_op)
 
         # Compare and branch
         hi_name = self.fresh()
@@ -233,6 +232,10 @@ class AffineToLLVMLowering:
         # Lower body ops
         for child_op in op.body:
             self.lower_op(child_op)
+
+        # Patch phi back-edge to actual current block (may differ from
+        # body_label when the body contains nested loops)
+        phi_op.pairs[1] = PhiPair(value=next_name, label=self.current_label)
 
         # Increment and branch back
         one_name = self.fresh()
