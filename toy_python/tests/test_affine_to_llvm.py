@@ -1,0 +1,108 @@
+"""Ch6 tests: Affine IR to LLVM-like IR lowering."""
+
+from toy_python.ir_parser import parse_module
+from toy_python.passes.toy_to_affine import lower_to_affine
+from toy_python.passes.affine_to_llvm import lower_to_llvm
+from toy_python.dialects.llvm_printer import print_llvm_module
+
+
+def compile_to_llvm(ir_text: str) -> str:
+    m = parse_module(ir_text)
+    affine = lower_to_affine(m)
+    llvm = lower_to_llvm(affine)
+    return print_llvm_module(llvm)
+
+
+def test_simple_constant_store():
+    """Constant store lowers to alloca + fconst + gep + store."""
+    ir_text = (
+        "from toy use *\n"
+        "\n"
+        "%main = function ():\n"
+        "    %0 = Constant(<3> [1.0, 2.0, 3.0]) : tensor<3xf64>\n"
+        "    Print(%0)\n"
+        "    return\n"
+    )
+    result = compile_to_llvm(ir_text)
+    assert "alloca f64, 3" in result, "Should have alloca for 3 elements"
+    assert "fconst 1.0" in result, "Should have fconst 1.0"
+    assert "gep" in result, "Should have gep"
+    assert "store" in result, "Should have store"
+    assert "call @print_memref" in result, "Should have print_memref call"
+    assert "ret void" in result, "Should have ret void"
+
+
+def test_single_for_loop():
+    """For loop lowers to label/branch/phi pattern."""
+    ir_text = (
+        "from toy use *\n"
+        "\n"
+        "%main = function ():\n"
+        "    %0 = Constant(<3> [1.0, 2.0, 3.0]) : tensor<3xf64>\n"
+        "    Print(%0)\n"
+        "    return\n"
+    )
+    result = compile_to_llvm(ir_text)
+    assert "loop_header" in result, "Should have loop header label"
+    assert "phi" in result, "Should have phi node"
+    assert "icmp slt" in result, "Should have comparison"
+    assert "cond_br" in result, "Should have conditional branch"
+    assert "loop_body" in result, "Should have loop body label"
+    assert "loop_exit" in result, "Should have loop exit label"
+
+
+def test_nested_for_loops():
+    """Nested for loops produce nested label/branch patterns."""
+    ir_text = (
+        "from toy use *\n"
+        "\n"
+        "%main = function ():\n"
+        "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    Print(%0)\n"
+        "    return\n"
+    )
+    result = compile_to_llvm(ir_text)
+    assert "loop_header0" in result, "Should have loop_header0"
+    assert "loop_header1" in result, "Should have loop_header1"
+    assert "loop_body0" in result, "Should have loop_body0"
+    assert "loop_body1" in result, "Should have loop_body1"
+
+
+def test_load_store_linearization():
+    """Load/store with multi-dim indices are linearized."""
+    ir_text = (
+        "from toy use *\n"
+        "\n"
+        "%main = function ():\n"
+        "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %1 = Transpose(%0) : tensor<3x2xf64>\n"
+        "    Print(%1)\n"
+        "    return\n"
+    )
+    result = compile_to_llvm(ir_text)
+    assert "gep" in result, "Should have gep for pointer arithmetic"
+    assert "load" in result, "Should have load"
+    assert "mul" in result, "Should have mul for index linearization"
+
+
+def test_full_example():
+    """Full pipeline: constant + transpose + mul + print -> LLVM IR."""
+    ir_text = (
+        "from toy use *\n"
+        "\n"
+        "%main = function ():\n"
+        "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %1 = Transpose(%0) : tensor<3x2xf64>\n"
+        "    %2 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %3 = Transpose(%2) : tensor<3x2xf64>\n"
+        "    %4 = Mul(%1, %3) : tensor<3x2xf64>\n"
+        "    Print(%4)\n"
+        "    return\n"
+    )
+    result = compile_to_llvm(ir_text)
+    assert "define void @main" in result, "Should have function def"
+    assert "alloca" in result, "Should have alloca"
+    assert "fconst" in result, "Should have fconst"
+    assert "fmul" in result, "Should have fmul for Mul op"
+    assert "call @print_memref" in result, "Should have print_memref"
+    assert "ret void" in result, "Should have ret void"
