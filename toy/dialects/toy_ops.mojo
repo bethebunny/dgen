@@ -7,6 +7,7 @@ representing what a DGEN code generator would produce from toy.dgen.
 from utils import Variant
 from collections import Optional
 from memory import OwnedPointer
+from toy.dialects import AsmWritable
 
 
 # ===----------------------------------------------------------------------=== #
@@ -94,91 +95,93 @@ fn format_float_list(values: List[Float64]) -> String:
 # ===----------------------------------------------------------------------=== #
 
 @fieldwise_init
-struct ConstantOp(Copyable, Movable, Stringable):
+struct ConstantOp(AsmWritable, Copyable, Movable):
     var result: String
     var value: List[Float64]
     var shape: List[Int]
     var type: AnyToyType
 
-    fn __str__(self) -> String:
-        return "%" + self.result + " = Constant(" + format_shape(self.shape) + " " + format_float_list(self.value) + ") : " + type_to_string(self.type)
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("%{} = Constant({} {}) : {}".format(
+            self.result, format_shape(self.shape), format_float_list(self.value), type_to_string(self.type)
+        ))
 
 
 @fieldwise_init
-struct TransposeOp(Copyable, Movable, Stringable):
+struct TransposeOp(AsmWritable, Copyable, Movable):
     var result: String
     var input: String
     var type: AnyToyType
 
-    fn __str__(self) -> String:
-        return "%" + self.result + " = Transpose(%" + self.input + ") : " + type_to_string(self.type)
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("%{} = Transpose(%{}) : {}".format(self.result, self.input, type_to_string(self.type)))
 
 
 @fieldwise_init
-struct ReshapeOp(Copyable, Movable, Stringable):
+struct ReshapeOp(AsmWritable, Copyable, Movable):
     var result: String
     var input: String
     var type: AnyToyType
 
-    fn __str__(self) -> String:
-        return "%" + self.result + " = Reshape(%" + self.input + ") : " + type_to_string(self.type)
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("%{} = Reshape(%{}) : {}".format(self.result, self.input, type_to_string(self.type)))
 
 
 @fieldwise_init
-struct MulOp(Copyable, Movable, Stringable):
+struct MulOp(AsmWritable, Copyable, Movable):
     var result: String
     var lhs: String
     var rhs: String
     var type: AnyToyType
 
-    fn __str__(self) -> String:
-        return "%" + self.result + " = Mul(%" + self.lhs + ", %" + self.rhs + ") : " + type_to_string(self.type)
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("%{} = Mul(%{}, %{}) : {}".format(self.result, self.lhs, self.rhs, type_to_string(self.type)))
 
 
 @fieldwise_init
-struct AddOp(Copyable, Movable, Stringable):
+struct AddOp(AsmWritable, Copyable, Movable):
     var result: String
     var lhs: String
     var rhs: String
     var type: AnyToyType
 
-    fn __str__(self) -> String:
-        return "%" + self.result + " = Add(%" + self.lhs + ", %" + self.rhs + ") : " + type_to_string(self.type)
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("%{} = Add(%{}, %{}) : {}".format(self.result, self.lhs, self.rhs, type_to_string(self.type)))
 
 
 @fieldwise_init
-struct GenericCallOp(Copyable, Movable, Stringable):
+struct GenericCallOp(AsmWritable, Copyable, Movable):
     var result: String
     var callee: String
     var args: List[String]
     var type: AnyToyType
 
-    fn __str__(self) -> String:
-        var s = String("%" + self.result + " = GenericCall @" + self.callee + "(")
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("%{} = GenericCall @{}(".format(self.result, self.callee))
         for i in range(len(self.args)):
             if i > 0:
-                s += ", "
-            s += "%" + self.args[i]
-        s += ") : " + type_to_string(self.type)
-        return s
+                writer.write(", ")
+            writer.write("%{}".format(self.args[i]))
+        writer.write(") : {}".format(type_to_string(self.type)))
 
 
 @fieldwise_init
-struct PrintOp(Copyable, Movable, Stringable):
+struct PrintOp(AsmWritable, Copyable, Movable):
     var input: String
 
-    fn __str__(self) -> String:
-        return "Print(%" + self.input + ")"
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("Print(%{})".format(self.input))
 
 
 @fieldwise_init
-struct ReturnOp(Copyable, Movable, Stringable):
+struct ReturnOp(AsmWritable, Copyable, Movable):
     var value: Optional[String]
 
-    fn __str__(self) -> String:
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
         if self.value:
-            return "return %" + self.value.value()
-        return "return"
+            writer.write("return %{}".format(self.value.value()))
+        else:
+            writer.write("return")
 
 
 comptime AnyToyOp = Variant[

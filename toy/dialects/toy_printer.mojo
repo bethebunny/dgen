@@ -37,12 +37,29 @@ fn print_func(f: FuncOp) -> String:
 
 
 fn print_op(op: AnyToyOp) -> String:
-    if op.isa[ConstantOp](): return String(op[ConstantOp])
-    if op.isa[TransposeOp](): return String(op[TransposeOp])
-    if op.isa[ReshapeOp](): return String(op[ReshapeOp])
-    if op.isa[MulOp](): return String(op[MulOp])
-    if op.isa[AddOp](): return String(op[AddOp])
-    if op.isa[GenericCallOp](): return String(op[GenericCallOp])
-    if op.isa[PrintOp](): return String(op[PrintOp])
-    if op.isa[ReturnOp](): return String(op[ReturnOp])
+    var s = String("")
+    if op.isa[ConstantOp]():
+        op[ConstantOp].write_asm(s)
+        return s
+    if op.isa[TransposeOp]():
+        op[TransposeOp].write_asm(s)
+        return s
+    if op.isa[ReshapeOp]():
+        op[ReshapeOp].write_asm(s)
+        return s
+    if op.isa[MulOp]():
+        op[MulOp].write_asm(s)
+        return s
+    if op.isa[AddOp]():
+        op[AddOp].write_asm(s)
+        return s
+    if op.isa[GenericCallOp]():
+        op[GenericCallOp].write_asm(s)
+        return s
+    if op.isa[PrintOp]():
+        op[PrintOp].write_asm(s)
+        return s
+    if op.isa[ReturnOp]():
+        op[ReturnOp].write_asm(s)
+        return s
     return "<unknown op>"

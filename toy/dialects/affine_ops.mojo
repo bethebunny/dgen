@@ -2,6 +2,7 @@
 
 from utils import Variant
 from collections import Optional
+from toy.dialects import AsmWritable
 
 
 # ===----------------------------------------------------------------------=== #
@@ -10,26 +11,38 @@ from collections import Optional
 
 
 @fieldwise_init
-struct MemRefType(Copyable, Movable, Stringable):
+struct MemRefType(AsmWritable, Copyable, Movable):
     var shape: List[Int]
 
-    fn __str__(self) -> String:
-        return "memref<{}xf64>".format("x".join(self.shape))
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("memref<{}xf64>".format("x".join(self.shape)))
 
 
 @fieldwise_init
-struct IndexType(Copyable, Movable, Stringable):
-    fn __str__(self) -> String:
-        return "index"
+struct IndexType(AsmWritable, Copyable, Movable):
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("index")
 
 
 @fieldwise_init
-struct F64Type(Copyable, Movable, Stringable):
-    fn __str__(self) -> String:
-        return "f64"
+struct F64Type(AsmWritable, Copyable, Movable):
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("f64")
 
 
 comptime AnyAffineType = Variant[MemRefType, IndexType, F64Type]
+
+
+# ===----------------------------------------------------------------------=== #
+# Formatting helpers
+# ===----------------------------------------------------------------------=== #
+
+
+fn _format_float(v: Float64) -> String:
+    var iv = Int(v)
+    if Float64(iv) == v:
+        return String(iv) + ".0"
+    return String(v)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -38,64 +51,115 @@ comptime AnyAffineType = Variant[MemRefType, IndexType, F64Type]
 
 
 @fieldwise_init
-struct AllocOp(Copyable, Movable):
+struct AllocOp(AsmWritable, Copyable, Movable):
     var result: String
     var shape: List[Int]
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write(
+            "%{} = Alloc<{}>()".format(self.result, "x".join(self.shape))
+        )
+
 
 @fieldwise_init
-struct DeallocOp(Copyable, Movable):
+struct DeallocOp(AsmWritable, Copyable, Movable):
     var input: String
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("Dealloc(%{})".format(self.input))
+
 
 @fieldwise_init
-struct AffineLoadOp(Copyable, Movable):
+struct AffineLoadOp(AsmWritable, Copyable, Movable):
     var result: String
     var memref: String
     var indices: List[String]
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write(
+            "%{} = AffineLoad %{}[{}]".format(
+                self.result, self.memref, ", ".join(self.indices)
+            )
+        )
+
 
 @fieldwise_init
-struct AffineStoreOp(Copyable, Movable):
+struct AffineStoreOp(AsmWritable, Copyable, Movable):
     var value: String
     var memref: String
     var indices: List[String]
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write(
+            "AffineStore %{}, %{}[{}]".format(
+                self.value, self.memref, ", ".join(self.indices)
+            )
+        )
+
 
 @fieldwise_init
-struct ArithConstantOp(Copyable, Movable):
+struct ArithConstantOp(AsmWritable, Copyable, Movable):
     var result: String
     var value: Float64
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write(
+            "%{} = ArithConstant({})".format(
+                self.result, _format_float(self.value)
+            )
+        )
+
 
 @fieldwise_init
-struct IndexConstantOp(Copyable, Movable):
+struct IndexConstantOp(AsmWritable, Copyable, Movable):
     var result: String
     var value: Int
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("%{} = IndexConstant({})".format(self.result, self.value))
+
 
 @fieldwise_init
-struct ArithMulFOp(Copyable, Movable):
+struct ArithMulFOp(AsmWritable, Copyable, Movable):
     var result: String
     var lhs: String
     var rhs: String
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write(
+            "%{} = MulF(%{}, %{})".format(self.result, self.lhs, self.rhs)
+        )
+
 
 @fieldwise_init
-struct ArithAddFOp(Copyable, Movable):
+struct ArithAddFOp(AsmWritable, Copyable, Movable):
     var result: String
     var lhs: String
     var rhs: String
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write(
+            "%{} = AddF(%{}, %{})".format(self.result, self.lhs, self.rhs)
+        )
+
 
 @fieldwise_init
-struct AffinePrintOp(Copyable, Movable):
+struct AffinePrintOp(AsmWritable, Copyable, Movable):
     var input: String
 
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("PrintMemRef(%{}".format(self.input))
+
 
 @fieldwise_init
-struct AffineReturnOp(Copyable, Movable):
+struct AffineReturnOp(AsmWritable, Copyable, Movable):
     var value: Optional[String]
+
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write("return")
+        if self.value:
+            writer.write(" %")
+            writer.write(self.value.value())
 
 
 # Forward-declare the variant with AffineForOp.
@@ -104,11 +168,16 @@ struct AffineReturnOp(Copyable, Movable):
 
 
 @fieldwise_init
-struct AffineForOp(Copyable, Movable):
+struct AffineForOp(AsmWritable, Copyable, Movable):
     var var_name: String
     var lo: Int
     var hi: Int
     var body: List[AnyAffineOp]
+
+    fn write_asm(self, mut writer: Some[Writer]) -> None:
+        writer.write(
+            "AffineFor %{} = {} to {}:".format(self.var_name, self.lo, self.hi)
+        )
 
 
 comptime AnyAffineOp = Variant[
