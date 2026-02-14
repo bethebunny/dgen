@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from toy_python.dialects.affine_ops import (
+from toy_python.dialects.affine import (
     AffineModule,
     AffineFuncOp,
     AnyAffineOp,
@@ -18,7 +18,7 @@ from toy_python.dialects.affine_ops import (
     AffinePrintOp,
     AffineReturnOp,
 )
-from toy_python.dialects.llvm_ops import (
+from toy_python.dialects.llvm import (
     LLModule,
     LLFuncOp,
     LLBlock,

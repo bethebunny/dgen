@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Union
 
+from toy_python import asm
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -56,10 +58,18 @@ class AllocOp:
     result: str
     shape: list[int]
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = Alloc<{'x'.join(str(d) for d in self.shape)}>()"
+
 
 @dataclass
 class DeallocOp:
     input: str
+
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"Dealloc(%{self.input})"
 
 
 @dataclass
@@ -68,6 +78,10 @@ class AffineLoadOp:
     memref: str
     indices: list[str]
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = AffineLoad %{self.memref}[{', '.join(self.indices)}]"
+
 
 @dataclass
 class AffineStoreOp:
@@ -75,17 +89,29 @@ class AffineStoreOp:
     memref: str
     indices: list[str]
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"AffineStore %{self.value}, %{self.memref}[{', '.join(self.indices)}]"
+
 
 @dataclass
 class ArithConstantOp:
     result: str
     value: float
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = ArithConstant({format_float(self.value)})"
+
 
 @dataclass
 class IndexConstantOp:
     result: str
     value: int
+
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = IndexConstant({self.value})"
 
 
 @dataclass
@@ -94,6 +120,10 @@ class ArithMulFOp:
     lhs: str
     rhs: str
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = MulF(%{self.lhs}, %{self.rhs})"
+
 
 @dataclass
 class ArithAddFOp:
@@ -101,15 +131,30 @@ class ArithAddFOp:
     lhs: str
     rhs: str
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = AddF(%{self.lhs}, %{self.rhs})"
+
 
 @dataclass
 class AffinePrintOp:
     input: str
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"PrintMemRef(%{self.input})"
+
 
 @dataclass
 class AffineReturnOp:
     value: str | None
+
+    @property
+    def asm(self) -> Iterable[str]:
+        if self.value is not None:
+            yield f"return %{self.value}"
+        else:
+            yield "return"
 
 
 @dataclass
@@ -118,6 +163,12 @@ class AffineForOp:
     lo: int
     hi: int
     body: list[AnyAffineOp]
+
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"AffineFor %{self.var_name} = {self.lo} to {self.hi}:"
+        for child_op in self.body:
+            yield from asm.indent(child_op.asm)
 
 
 AnyAffineOp = Union[
@@ -151,13 +202,28 @@ class AffineBlock:
     args: list[AffineValue]
     ops: list[AnyAffineOp]
 
+    @property
+    def asm(self) -> Iterable[str]:
+        for op in self.ops:
+            yield from asm.indent(op.asm)
+
 
 @dataclass
 class AffineFuncOp:
     name: str
     body: AffineBlock
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.name} = function ():"
+        yield from self.body.asm
+
 
 @dataclass
 class AffineModule:
     functions: list[AffineFuncOp]
+
+    @property
+    def asm(self) -> Iterable[str]:
+        for function in self.functions:
+            yield from function.asm

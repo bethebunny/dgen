@@ -17,7 +17,7 @@ from toy_python.parser.ast import (
     Function,
     ToyModule,
 )
-from toy_python.dialects.toy_ops import (
+from toy_python.dialects.toy import (
     Module,
     FuncOp,
     Block,

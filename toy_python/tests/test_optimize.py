@@ -1,6 +1,6 @@
 """Ch3 tests: IR optimization passes."""
 
-from toy_python.dialects.toy_printer import print_module
+from toy_python import asm
 from toy_python.passes.optimize import optimize
 from toy_python.ir_parser import parse_module
 
@@ -19,14 +19,14 @@ def test_transpose_elimination():
     )
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = print_module(opt)
+    result = asm.format(opt)
     expected = (
         "from toy use *\n"
         "\n"
         "%main = function ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    Print(%0)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -44,14 +44,14 @@ def test_reshape_of_matching_constant():
     )
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = print_module(opt)
+    result = asm.format(opt)
     expected = (
         "from toy use *\n"
         "\n"
         "%main = function ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    Print(%0)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -69,14 +69,14 @@ def test_constant_folding_reshape():
     )
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = print_module(opt)
+    result = asm.format(opt)
     expected = (
         "from toy use *\n"
         "\n"
         "%main = function ():\n"
         "    %1 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    Print(%1)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -95,14 +95,14 @@ def test_dce():
     )
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = print_module(opt)
+    result = asm.format(opt)
     expected = (
         "from toy use *\n"
         "\n"
         "%main = function ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    Print(%0)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -128,7 +128,7 @@ def test_full_pipeline():
     )
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = print_module(opt)
+    result = asm.format(opt)
     expected = (
         "from toy use *\n"
         "\n"
@@ -139,6 +139,6 @@ def test_full_pipeline():
         "    %8 = Transpose(%0) : tensor<*xf64>\n"
         "    %9 = Mul(%7, %8) : tensor<*xf64>\n"
         "    Print(%9)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected

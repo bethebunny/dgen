@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from toy_python.dialects.toy_ops import (
+from toy_python.dialects.toy import (
     Module,
     FuncOp,
     AnyToyOp,

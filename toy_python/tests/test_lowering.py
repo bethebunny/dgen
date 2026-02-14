@@ -2,13 +2,13 @@
 
 from toy_python.parser.toy_parser import parse_toy
 from toy_python.parser.lowering import lower
-from toy_python.dialects.toy_printer import print_module
+from toy_python import asm
 
 
 def compile_toy(source: str) -> str:
     ast = parse_toy(source)
     ir = lower(ast)
-    return print_module(ir)
+    return asm.format(ir)
 
 
 def test_simple_constant():
@@ -26,7 +26,7 @@ def test_simple_constant():
         "%main = function ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    Print(%0)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -48,7 +48,7 @@ def test_explicit_shape_with_reshape():
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %1 = Reshape(%0) : tensor<2x3xf64>\n"
         "    Print(%1)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -72,7 +72,7 @@ def test_binary_operations():
         "    %1 = Constant(<2x2> [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>\n"
         "    %2 = Mul(%0, %1) : tensor<*xf64>\n"
         "    Print(%2)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -94,7 +94,7 @@ def test_transpose_builtin():
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %1 = Transpose(%0) : tensor<*xf64>\n"
         "    Print(%1)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -128,7 +128,7 @@ def test_generic_call():
         "    %1 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %2 = GenericCall @multiply_transpose(%0, %1) : tensor<*xf64>\n"
         "    Print(%2)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected
 
@@ -167,6 +167,6 @@ def test_full_tutorial_example():
         "    %4 = GenericCall @multiply_transpose(%1, %3) : tensor<*xf64>\n"
         "    %5 = GenericCall @multiply_transpose(%3, %1) : tensor<*xf64>\n"
         "    Print(%5)\n"
-        "    return\n"
+        "    return"
     )
     assert result == expected

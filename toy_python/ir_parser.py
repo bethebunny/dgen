@@ -4,7 +4,7 @@ Line-oriented recursive descent parser that reads IR text format back into
 Module data structures.
 """
 
-from toy_python.dialects.toy_ops import (
+from toy_python.dialects.toy import (
     Module,
     FuncOp,
     Block,

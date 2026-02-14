@@ -1,6 +1,6 @@
 """Phase 1 tests: construct IR manually, print, verify output."""
 
-from toy_python.dialects.toy_ops import (
+from toy_python.dialects.toy import (
     Module,
     FuncOp,
     Block,
@@ -18,7 +18,7 @@ from toy_python.dialects.toy_ops import (
     RankedTensorType,
     FunctionType,
 )
-from toy_python.dialects.toy_printer import print_module, print_op
+from toy_python import asm
 
 
 def unranked() -> AnyToyType:
@@ -37,29 +37,29 @@ def test_constant_op():
         type=ranked([2, 3]),
     )
     assert (
-        print_op(op)
+        asm.format(op)
         == "%0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
     )
 
 
 def test_transpose_op():
     op = TransposeOp(result="0", input="a", type=unranked())
-    assert print_op(op) == "%0 = Transpose(%a) : tensor<*xf64>"
+    assert asm.format(op) == "%0 = Transpose(%a) : tensor<*xf64>"
 
 
 def test_reshape_op():
     op = ReshapeOp(result="1", input="0", type=ranked([2, 3]))
-    assert print_op(op) == "%1 = Reshape(%0) : tensor<2x3xf64>"
+    assert asm.format(op) == "%1 = Reshape(%0) : tensor<2x3xf64>"
 
 
 def test_mul_op():
     op = MulOp(result="2", lhs="0", rhs="1", type=unranked())
-    assert print_op(op) == "%2 = Mul(%0, %1) : tensor<*xf64>"
+    assert asm.format(op) == "%2 = Mul(%0, %1) : tensor<*xf64>"
 
 
 def test_add_op():
     op = AddOp(result="2", lhs="0", rhs="1", type=unranked())
-    assert print_op(op) == "%2 = Add(%0, %1) : tensor<*xf64>"
+    assert asm.format(op) == "%2 = Add(%0, %1) : tensor<*xf64>"
 
 
 def test_generic_call_op():
@@ -70,24 +70,24 @@ def test_generic_call_op():
         type=unranked(),
     )
     assert (
-        print_op(op)
+        asm.format(op)
         == "%4 = GenericCall @multiply_transpose(%1, %3) : tensor<*xf64>"
     )
 
 
 def test_print_op():
     op = PrintOp(input="5")
-    assert print_op(op) == "Print(%5)"
+    assert asm.format(op) == "Print(%5)"
 
 
 def test_return_op_with_value():
     op = ReturnOp(value="2")
-    assert print_op(op) == "return %2"
+    assert asm.format(op) == "return %2"
 
 
 def test_return_op_void():
     op = ReturnOp(value=None)
-    assert print_op(op) == "return"
+    assert asm.format(op) == "return"
 
 
 def test_full_module():
@@ -171,6 +171,6 @@ def test_full_module():
         "    %4 = GenericCall @multiply_transpose(%1, %3) : tensor<*xf64>\n"
         "    %5 = GenericCall @multiply_transpose(%3, %1) : tensor<*xf64>\n"
         "    Print(%5)\n"
-        "    return\n"
+        "    return"
     )
-    assert print_module(module) == expected
+    assert asm.format(module) == expected

@@ -8,7 +8,7 @@ from io import StringIO
 
 import llvmlite.binding as llvm
 
-from toy_python.dialects.llvm_ops import (
+from toy_python.dialects.llvm import (
     LLModule,
     LLFuncOp,
     LLAllocaOp,

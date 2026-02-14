@@ -1,7 +1,7 @@
 """Phase 2 tests: parse IR text -> reprint -> compare (round-trip)."""
 
 from toy_python.ir_parser import parse_module
-from toy_python.dialects.toy_printer import print_module
+from toy_python import asm
 
 
 def test_roundtrip_transpose():
@@ -10,10 +10,10 @@ def test_roundtrip_transpose():
         "\n"
         "%f = function (%a: tensor<*xf64>) -> tensor<*xf64>:\n"
         "    %0 = Transpose(%a) : tensor<*xf64>\n"
-        "    return %0\n"
+        "    return %0"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir
 
 
 def test_roundtrip_reshape():
@@ -22,10 +22,10 @@ def test_roundtrip_reshape():
         "\n"
         "%f = function (%a: tensor<*xf64>) -> tensor<2x3xf64>:\n"
         "    %0 = Reshape(%a) : tensor<2x3xf64>\n"
-        "    return %0\n"
+        "    return %0"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir
 
 
 def test_roundtrip_constant():
@@ -34,10 +34,10 @@ def test_roundtrip_constant():
         "\n"
         "%f = function () -> tensor<2x3xf64>:\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    return %0\n"
+        "    return %0"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir
 
 
 def test_roundtrip_mul():
@@ -46,10 +46,10 @@ def test_roundtrip_mul():
         "\n"
         "%f = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
         "    %0 = Mul(%a, %b) : tensor<*xf64>\n"
-        "    return %0\n"
+        "    return %0"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir
 
 
 def test_roundtrip_add():
@@ -58,10 +58,10 @@ def test_roundtrip_add():
         "\n"
         "%f = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
         "    %0 = Add(%a, %b) : tensor<*xf64>\n"
-        "    return %0\n"
+        "    return %0"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir
 
 
 def test_roundtrip_generic_call():
@@ -70,10 +70,10 @@ def test_roundtrip_generic_call():
         "\n"
         "%f = function (%a: tensor<*xf64>) -> tensor<*xf64>:\n"
         "    %0 = GenericCall @helper(%a) : tensor<*xf64>\n"
-        "    return %0\n"
+        "    return %0"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir
 
 
 def test_roundtrip_print():
@@ -82,10 +82,10 @@ def test_roundtrip_print():
         "\n"
         "%f = function (%a: tensor<*xf64>):\n"
         "    Print(%a)\n"
-        "    return\n"
+        "    return"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir
 
 
 def test_roundtrip_void_return():
@@ -93,10 +93,10 @@ def test_roundtrip_void_return():
         "from toy use *\n"
         "\n"
         "%f = function ():\n"
-        "    return\n"
+        "    return"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir
 
 
 def test_roundtrip_full_program():
@@ -117,7 +117,7 @@ def test_roundtrip_full_program():
         "    %4 = GenericCall @multiply_transpose(%1, %3) : tensor<*xf64>\n"
         "    %5 = GenericCall @multiply_transpose(%3, %1) : tensor<*xf64>\n"
         "    Print(%5)\n"
-        "    return\n"
+        "    return"
     )
     module = parse_module(ir)
-    assert print_module(module) == ir
+    assert asm.format(module) == ir

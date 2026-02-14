@@ -2,7 +2,7 @@
 
 from toy_python.ir_parser import parse_module
 from toy_python.passes.toy_to_affine import lower_to_affine
-from toy_python.dialects.affine_printer import print_affine_module
+from toy_python import asm
 
 
 def test_simple_constant():
@@ -17,7 +17,7 @@ def test_simple_constant():
     )
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = print_affine_module(affine)
+    result = asm.format(affine)
     assert "Alloc<2x3>()" in result, "Should have alloc"
     assert "AffineFor" in result, "Should have for loop"
     assert "AffineStore" in result, "Should have stores"
@@ -40,7 +40,7 @@ def test_transpose():
     )
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = print_affine_module(affine)
+    result = asm.format(affine)
     alloc_count = result.count("Alloc<")
     assert alloc_count >= 2, "Should have at least 2 allocs"
     assert "AffineLoad" in result, "Should have loads for transpose"
@@ -61,7 +61,7 @@ def test_mul():
     )
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = print_affine_module(affine)
+    result = asm.format(affine)
     assert "MulF" in result, "Should have MulF op"
     alloc_count = result.count("Alloc<")
     assert alloc_count >= 3, "Should have 3 allocs (2 constants + 1 result)"
@@ -81,7 +81,7 @@ def test_add():
     )
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = print_affine_module(affine)
+    result = asm.format(affine)
     assert "AddF" in result, "Should have AddF op"
 
 
@@ -97,7 +97,7 @@ def test_print():
     )
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = print_affine_module(affine)
+    result = asm.format(affine)
     assert "PrintMemRef" in result, "Should have PrintMemRef"
 
 
@@ -117,7 +117,7 @@ def test_full_example():
     )
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = print_affine_module(affine)
+    result = asm.format(affine)
     alloc_count = result.count("Alloc<")
     assert alloc_count >= 5, "Should have at least 5 allocs"
     assert "MulF" in result, "Should have MulF"

@@ -3,14 +3,14 @@
 from toy_python.ir_parser import parse_module
 from toy_python.passes.toy_to_affine import lower_to_affine
 from toy_python.passes.affine_to_llvm import lower_to_llvm
-from toy_python.dialects.llvm_printer import print_llvm_module
+from toy_python import asm
 
 
 def compile_to_llvm(ir_text: str) -> str:
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     llvm = lower_to_llvm(affine)
-    return print_llvm_module(llvm)
+    return asm.format(llvm)
 
 
 def test_simple_constant_store():

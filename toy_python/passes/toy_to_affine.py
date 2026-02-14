@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from toy_python.dialects.toy_ops import (
+from toy_python.dialects.toy import (
     Module,
     FuncOp,
     AnyToyOp,
@@ -15,7 +15,7 @@ from toy_python.dialects.toy_ops import (
     ReturnOp,
     RankedTensorType,
 )
-from toy_python.dialects.affine_ops import (
+from toy_python.dialects.affine import (
     AffineModule,
     AffineFuncOp,
     AffineBlock,

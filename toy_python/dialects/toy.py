@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Union
+
+from toy_python import asm
 
 
 # ===----------------------------------------------------------------------=== #
@@ -76,6 +79,13 @@ class ConstantOp:
     shape: list[int]
     type: AnyToyType
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield (
+            f"%{self.result} = Constant({format_shape(self.shape)} "
+            f"{format_float_list(self.value)}) : {self.type}"
+        )
+
 
 @dataclass
 class TransposeOp:
@@ -83,12 +93,20 @@ class TransposeOp:
     input: str
     type: AnyToyType
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = Transpose(%{self.input}) : {self.type}"
+
 
 @dataclass
 class ReshapeOp:
     result: str
     input: str
     type: AnyToyType
+
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = Reshape(%{self.input}) : {self.type}"
 
 
 @dataclass
@@ -98,6 +116,10 @@ class MulOp:
     rhs: str
     type: AnyToyType
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = Mul(%{self.lhs}, %{self.rhs}) : {self.type}"
+
 
 @dataclass
 class AddOp:
@@ -105,6 +127,10 @@ class AddOp:
     lhs: str
     rhs: str
     type: AnyToyType
+
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"%{self.result} = Add(%{self.lhs}, %{self.rhs}) : {self.type}"
 
 
 @dataclass
@@ -114,15 +140,34 @@ class GenericCallOp:
     args: list[str]
     type: AnyToyType
 
+    @property
+    def asm(self) -> Iterable[str]:
+        args_str = ", ".join(f"%{a}" for a in self.args)
+        yield (
+            f"%{self.result} = GenericCall @{self.callee}({args_str}) : "
+            f"{self.type}"
+        )
+
 
 @dataclass
 class PrintOp:
     input: str
 
+    @property
+    def asm(self) -> Iterable[str]:
+        yield f"Print(%{self.input})"
+
 
 @dataclass
 class ReturnOp:
     value: str | None
+
+    @property
+    def asm(self) -> Iterable[str]:
+        if self.value is not None:
+            yield f"return %{self.value}"
+        else:
+            yield "return"
 
 
 AnyToyOp = Union[
@@ -155,6 +200,11 @@ class Block:
     args: list[ToyValue]
     ops: list[AnyToyOp]
 
+    @property
+    def asm(self) -> Iterable[str]:
+        for op in self.ops:
+            yield from asm.indent(op.asm)
+
 
 @dataclass
 class FuncOp:
@@ -162,7 +212,24 @@ class FuncOp:
     func_type: FunctionType
     body: Block
 
+    @property
+    def asm(self) -> Iterable[str]:
+        args = ", ".join(f"%{a.name}: {a.type}" for a in self.body.args)
+        header = f"%{self.name} = function ({args})"
+        if self.func_type.result is not None:
+            header += f" -> {self.func_type.result}"
+        header += ":"
+        yield header
+        yield from self.body.asm
+
 
 @dataclass
 class Module:
     functions: list[FuncOp]
+
+    @property
+    def asm(self) -> Iterable[str]:
+        yield "from toy use *"
+        for function in self.functions:
+            yield ""
+            yield from function.asm

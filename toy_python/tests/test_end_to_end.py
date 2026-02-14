@@ -5,7 +5,7 @@ from toy_python.parser.lowering import lower
 from toy_python.passes.optimize import optimize
 from toy_python.passes.toy_to_affine import lower_to_affine
 from toy_python.passes.affine_to_llvm import lower_to_llvm
-from toy_python.dialects.llvm_printer import print_llvm_module
+from toy_python import asm
 
 
 def compile(source: str) -> str:
@@ -14,7 +14,7 @@ def compile(source: str) -> str:
     opt = optimize(ir)
     affine = lower_to_affine(opt)
     llvm = lower_to_llvm(affine)
-    return print_llvm_module(llvm)
+    return asm.format(llvm)
 
 
 def test_constant_print():
