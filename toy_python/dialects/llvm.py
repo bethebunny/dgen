@@ -15,13 +15,13 @@ from toy_python import asm
 
 
 @dataclass
-class LLVMPtrType:
+class PtrType:
     def __str__(self) -> str:
         return "ptr"
 
 
 @dataclass
-class LLVMIntType:
+class IntType:
     bits: int
 
     def __str__(self) -> str:
@@ -29,18 +29,18 @@ class LLVMIntType:
 
 
 @dataclass
-class LLVMFloatType:
+class FloatType:
     def __str__(self) -> str:
         return "f64"
 
 
 @dataclass
-class LLVMVoidType:
+class VoidType:
     def __str__(self) -> str:
         return "void"
 
 
-AnyLLVMType = Union[LLVMPtrType, LLVMIntType, LLVMFloatType, LLVMVoidType]
+AnyType = Union[PtrType, IntType, FloatType, VoidType]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -61,7 +61,7 @@ def format_float(v: float) -> str:
 
 
 @dataclass
-class LLAllocaOp:
+class AllocaOp:
     result: str
     elem_count: int
 
@@ -71,7 +71,7 @@ class LLAllocaOp:
 
 
 @dataclass
-class LLGepOp:
+class GepOp:
     result: str
     base: str
     index: str
@@ -82,7 +82,7 @@ class LLGepOp:
 
 
 @dataclass
-class LLLoadOp:
+class LoadOp:
     result: str
     ptr: str
 
@@ -92,7 +92,7 @@ class LLLoadOp:
 
 
 @dataclass
-class LLStoreOp:
+class StoreOp:
     value: str
     ptr: str
 
@@ -102,7 +102,7 @@ class LLStoreOp:
 
 
 @dataclass
-class LLFAddOp:
+class FAddOp:
     result: str
     lhs: str
     rhs: str
@@ -113,7 +113,7 @@ class LLFAddOp:
 
 
 @dataclass
-class LLFMulOp:
+class FMulOp:
     result: str
     lhs: str
     rhs: str
@@ -124,7 +124,7 @@ class LLFMulOp:
 
 
 @dataclass
-class LLConstantOp:
+class ConstantOp:
     result: str
     value: float
 
@@ -134,7 +134,7 @@ class LLConstantOp:
 
 
 @dataclass
-class LLIndexConstOp:
+class IndexConstOp:
     result: str
     value: int
 
@@ -144,7 +144,7 @@ class LLIndexConstOp:
 
 
 @dataclass
-class LLAddOp:
+class AddOp:
     result: str
     lhs: str
     rhs: str
@@ -155,7 +155,7 @@ class LLAddOp:
 
 
 @dataclass
-class LLMulOp:
+class MulOp:
     result: str
     lhs: str
     rhs: str
@@ -166,7 +166,7 @@ class LLMulOp:
 
 
 @dataclass
-class LLIcmpOp:
+class IcmpOp:
     result: str
     pred: str
     lhs: str
@@ -178,7 +178,7 @@ class LLIcmpOp:
 
 
 @dataclass
-class LLBrOp:
+class BrOp:
     dest: str
 
     @property
@@ -187,7 +187,7 @@ class LLBrOp:
 
 
 @dataclass
-class LLCondBrOp:
+class CondBrOp:
     cond: str
     true_dest: str
     false_dest: str
@@ -198,7 +198,7 @@ class LLCondBrOp:
 
 
 @dataclass
-class LLLabelOp:
+class LabelOp:
     name: str
 
     @property
@@ -213,7 +213,7 @@ class PhiPair:
 
 
 @dataclass
-class LLPhiOp:
+class PhiOp:
     result: str
     pairs: list[PhiPair]
 
@@ -224,7 +224,7 @@ class LLPhiOp:
 
 
 @dataclass
-class LLCallOp:
+class CallOp:
     result: str | None
     callee: str
     args: list[str]
@@ -239,7 +239,7 @@ class LLCallOp:
 
 
 @dataclass
-class LLReturnOp:
+class ReturnOp:
     value: str | None
 
     @property
@@ -250,24 +250,24 @@ class LLReturnOp:
             yield "ret void"
 
 
-AnyLLVMOp = Union[
-    LLAllocaOp,
-    LLGepOp,
-    LLLoadOp,
-    LLStoreOp,
-    LLFAddOp,
-    LLFMulOp,
-    LLConstantOp,
-    LLIndexConstOp,
-    LLAddOp,
-    LLMulOp,
-    LLIcmpOp,
-    LLBrOp,
-    LLCondBrOp,
-    LLLabelOp,
-    LLPhiOp,
-    LLCallOp,
-    LLReturnOp,
+AnyOp = Union[
+    AllocaOp,
+    GepOp,
+    LoadOp,
+    StoreOp,
+    FAddOp,
+    FMulOp,
+    ConstantOp,
+    IndexConstOp,
+    AddOp,
+    MulOp,
+    IcmpOp,
+    BrOp,
+    CondBrOp,
+    LabelOp,
+    PhiOp,
+    CallOp,
+    ReturnOp,
 ]
 
 
@@ -277,22 +277,22 @@ AnyLLVMOp = Union[
 
 
 @dataclass
-class LLBlock:
-    ops: list[AnyLLVMOp]
+class Block:
+    ops: list[AnyOp]
 
     @property
     def asm(self) -> Iterable[str]:
         for op in self.ops:
-            if isinstance(op, LLLabelOp):
+            if isinstance(op, LabelOp):
                 yield from op.asm
             else:
                 yield from asm.indent(op.asm)
 
 
 @dataclass
-class LLFuncOp:
+class FuncOp:
     name: str
-    body: LLBlock
+    body: Block
 
     @property
     def asm(self) -> Iterable[str]:
@@ -301,8 +301,8 @@ class LLFuncOp:
 
 
 @dataclass
-class LLModule:
-    functions: list[LLFuncOp]
+class Module:
+    functions: list[FuncOp]
 
     @property
     def asm(self) -> Iterable[str]:

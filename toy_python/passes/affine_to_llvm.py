@@ -2,53 +2,15 @@
 
 from __future__ import annotations
 
-from toy_python.dialects.affine import (
-    AffineModule,
-    AffineFuncOp,
-    AnyAffineOp,
-    AllocOp,
-    DeallocOp,
-    AffineLoadOp,
-    AffineStoreOp,
-    AffineForOp,
-    ArithConstantOp,
-    IndexConstantOp,
-    ArithMulFOp,
-    ArithAddFOp,
-    AffinePrintOp,
-    AffineReturnOp,
-)
-from toy_python.dialects.llvm import (
-    LLModule,
-    LLFuncOp,
-    LLBlock,
-    AnyLLVMOp,
-    LLAllocaOp,
-    LLGepOp,
-    LLLoadOp,
-    LLStoreOp,
-    LLFAddOp,
-    LLFMulOp,
-    LLConstantOp,
-    LLIndexConstOp,
-    LLAddOp,
-    LLMulOp,
-    LLIcmpOp,
-    LLBrOp,
-    LLCondBrOp,
-    LLLabelOp,
-    LLPhiOp,
-    PhiPair,
-    LLCallOp,
-    LLReturnOp,
-)
+from toy_python.dialects import affine
+from toy_python.dialects import llvm
 
 
 class AffineToLLVMLowering:
     def __init__(self):
         self.counter = 0
         self.loop_counter = 0
-        self.ops: list[AnyLLVMOp] = []
+        self.ops: list[llvm.AnyOp] = []
         self.alloc_shapes: dict[str, list[int]] = {}
         self.alloc_sizes: dict[str, int] = {}
         self.current_label = "entry"
@@ -58,11 +20,11 @@ class AffineToLLVMLowering:
         self.counter += 1
         return name
 
-    def lower_module(self, m: AffineModule) -> LLModule:
+    def lower_module(self, m: affine.Module) -> llvm.Module:
         functions = [self.lower_function(f) for f in m.functions]
-        return LLModule(functions=functions)
+        return llvm.Module(functions=functions)
 
-    def lower_function(self, f: AffineFuncOp) -> LLFuncOp:
+    def lower_function(self, f: affine.FuncOp) -> llvm.FuncOp:
         self.counter = 0
         self.loop_counter = 0
         self.ops = []
@@ -75,59 +37,59 @@ class AffineToLLVMLowering:
 
         ops = self.ops
         self.ops = []
-        return LLFuncOp(name=f.name, body=LLBlock(ops=ops))
+        return llvm.FuncOp(name=f.name, body=llvm.Block(ops=ops))
 
-    def lower_op(self, op: AnyAffineOp):
-        if isinstance(op, AllocOp):
+    def lower_op(self, op: affine.AnyOp):
+        if isinstance(op, affine.AllocOp):
             self._lower_alloc(op)
-        elif isinstance(op, DeallocOp):
+        elif isinstance(op, affine.DeallocOp):
             pass  # Stack alloc, no free needed
-        elif isinstance(op, AffineLoadOp):
+        elif isinstance(op, affine.LoadOp):
             self._lower_load(op)
-        elif isinstance(op, AffineStoreOp):
+        elif isinstance(op, affine.StoreOp):
             self._lower_store(op)
-        elif isinstance(op, AffineForOp):
+        elif isinstance(op, affine.ForOp):
             self._lower_for(op)
-        elif isinstance(op, ArithConstantOp):
-            self.ops.append(LLConstantOp(result=op.result, value=op.value))
-        elif isinstance(op, IndexConstantOp):
-            self.ops.append(LLIndexConstOp(result=op.result, value=op.value))
-        elif isinstance(op, ArithMulFOp):
+        elif isinstance(op, affine.ArithConstantOp):
+            self.ops.append(llvm.ConstantOp(result=op.result, value=op.value))
+        elif isinstance(op, affine.IndexConstantOp):
+            self.ops.append(llvm.IndexConstOp(result=op.result, value=op.value))
+        elif isinstance(op, affine.ArithMulFOp):
             self.ops.append(
-                LLFMulOp(result=op.result, lhs=op.lhs, rhs=op.rhs)
+                llvm.FMulOp(result=op.result, lhs=op.lhs, rhs=op.rhs)
             )
-        elif isinstance(op, ArithAddFOp):
+        elif isinstance(op, affine.ArithAddFOp):
             self.ops.append(
-                LLFAddOp(result=op.result, lhs=op.lhs, rhs=op.rhs)
+                llvm.FAddOp(result=op.result, lhs=op.lhs, rhs=op.rhs)
             )
-        elif isinstance(op, AffinePrintOp):
+        elif isinstance(op, affine.PrintOp):
             self._lower_print(op)
-        elif isinstance(op, AffineReturnOp):
-            self.ops.append(LLReturnOp(value=op.value))
+        elif isinstance(op, affine.ReturnOp):
+            self.ops.append(llvm.ReturnOp(value=op.value))
 
-    def _lower_alloc(self, op: AllocOp):
+    def _lower_alloc(self, op: affine.AllocOp):
         total = 1
         for d in op.shape:
             total *= d
-        self.ops.append(LLAllocaOp(result=op.result, elem_count=total))
+        self.ops.append(llvm.AllocaOp(result=op.result, elem_count=total))
         self.alloc_shapes[op.result] = list(op.shape)
         self.alloc_sizes[op.result] = total
 
-    def _lower_load(self, op: AffineLoadOp):
+    def _lower_load(self, op: affine.LoadOp):
         linear = self._linearize_indices(op.memref, op.indices)
         ptr_name = self.fresh()
         self.ops.append(
-            LLGepOp(result=ptr_name, base=op.memref, index=linear)
+            llvm.GepOp(result=ptr_name, base=op.memref, index=linear)
         )
-        self.ops.append(LLLoadOp(result=op.result, ptr=ptr_name))
+        self.ops.append(llvm.LoadOp(result=op.result, ptr=ptr_name))
 
-    def _lower_store(self, op: AffineStoreOp):
+    def _lower_store(self, op: affine.StoreOp):
         linear = self._linearize_indices(op.memref, op.indices)
         ptr_name = self.fresh()
         self.ops.append(
-            LLGepOp(result=ptr_name, base=op.memref, index=linear)
+            llvm.GepOp(result=ptr_name, base=op.memref, index=linear)
         )
-        self.ops.append(LLStoreOp(value=op.value, ptr=ptr_name))
+        self.ops.append(llvm.StoreOp(value=op.value, ptr=ptr_name))
 
     def _linearize_indices(self, memref: str, indices: list[str]) -> str:
         """Linearize multi-dimensional indices into a flat index.
@@ -153,7 +115,7 @@ class AffineToLLVMLowering:
                 else:
                     add_name = self.fresh()
                     self.ops.append(
-                        LLAddOp(
+                        llvm.AddOp(
                             result=add_name, lhs=result_name, rhs=idx_name
                         )
                     )
@@ -161,18 +123,18 @@ class AffineToLLVMLowering:
             else:
                 stride_name = self.fresh()
                 self.ops.append(
-                    LLIndexConstOp(result=stride_name, value=stride)
+                    llvm.IndexConstOp(result=stride_name, value=stride)
                 )
                 mul_name = self.fresh()
                 self.ops.append(
-                    LLMulOp(result=mul_name, lhs=idx_name, rhs=stride_name)
+                    llvm.MulOp(result=mul_name, lhs=idx_name, rhs=stride_name)
                 )
                 if not result_name:
                     result_name = mul_name
                 else:
                     add_name = self.fresh()
                     self.ops.append(
-                        LLAddOp(
+                        llvm.AddOp(
                             result=add_name, lhs=result_name, rhs=mul_name
                         )
                     )
@@ -180,7 +142,7 @@ class AffineToLLVMLowering:
 
         return result_name
 
-    def _lower_for(self, op: AffineForOp):
+    def _lower_for(self, op: affine.ForOp):
         loop_id = self.loop_counter
         self.loop_counter += 1
 
@@ -191,42 +153,42 @@ class AffineToLLVMLowering:
 
         # Init: iconst lo, br header
         init_name = self.fresh()
-        self.ops.append(LLIndexConstOp(result=init_name, value=op.lo))
+        self.ops.append(llvm.IndexConstOp(result=init_name, value=op.lo))
         prev_label = self.current_label
-        self.ops.append(LLBrOp(dest=header_label))
+        self.ops.append(llvm.BrOp(dest=header_label))
 
         # Header label
-        self.ops.append(LLLabelOp(name=header_label))
+        self.ops.append(llvm.LabelOp(name=header_label))
         self.current_label = header_label
 
         # Phi node for loop variable (back-edge label patched after body)
         next_name = self.fresh()
-        phi_op = LLPhiOp(
+        phi_op = llvm.PhiOp(
             result=var_name,
             pairs=[
-                PhiPair(value=init_name, label=prev_label),
-                PhiPair(value=next_name, label=body_label),  # placeholder
+                llvm.PhiPair(value=init_name, label=prev_label),
+                llvm.PhiPair(value=next_name, label=body_label),  # placeholder
             ],
         )
         self.ops.append(phi_op)
 
         # Compare and branch
         hi_name = self.fresh()
-        self.ops.append(LLIndexConstOp(result=hi_name, value=op.hi))
+        self.ops.append(llvm.IndexConstOp(result=hi_name, value=op.hi))
         cmp_name = self.fresh()
         self.ops.append(
-            LLIcmpOp(
+            llvm.IcmpOp(
                 result=cmp_name, pred="slt", lhs=var_name, rhs=hi_name
             )
         )
         self.ops.append(
-            LLCondBrOp(
+            llvm.CondBrOp(
                 cond=cmp_name, true_dest=body_label, false_dest=exit_label
             )
         )
 
         # Body label
-        self.ops.append(LLLabelOp(name=body_label))
+        self.ops.append(llvm.LabelOp(name=body_label))
         self.current_label = body_label
 
         # Lower body ops
@@ -235,27 +197,27 @@ class AffineToLLVMLowering:
 
         # Patch phi back-edge to actual current block (may differ from
         # body_label when the body contains nested loops)
-        phi_op.pairs[1] = PhiPair(value=next_name, label=self.current_label)
+        phi_op.pairs[1] = llvm.PhiPair(value=next_name, label=self.current_label)
 
         # Increment and branch back
         one_name = self.fresh()
-        self.ops.append(LLIndexConstOp(result=one_name, value=1))
+        self.ops.append(llvm.IndexConstOp(result=one_name, value=1))
         self.ops.append(
-            LLAddOp(result=next_name, lhs=var_name, rhs=one_name)
+            llvm.AddOp(result=next_name, lhs=var_name, rhs=one_name)
         )
-        self.ops.append(LLBrOp(dest=header_label))
+        self.ops.append(llvm.BrOp(dest=header_label))
 
         # Exit label
-        self.ops.append(LLLabelOp(name=exit_label))
+        self.ops.append(llvm.LabelOp(name=exit_label))
         self.current_label = exit_label
 
-    def _lower_print(self, op: AffinePrintOp):
+    def _lower_print(self, op: affine.PrintOp):
         input_name = op.input
         size = self.alloc_sizes[input_name]
         size_name = self.fresh()
-        self.ops.append(LLIndexConstOp(result=size_name, value=size))
+        self.ops.append(llvm.IndexConstOp(result=size_name, value=size))
         self.ops.append(
-            LLCallOp(
+            llvm.CallOp(
                 result=None,
                 callee="print_memref",
                 args=[input_name, size_name],
@@ -263,6 +225,6 @@ class AffineToLLVMLowering:
         )
 
 
-def lower_to_llvm(m: AffineModule) -> LLModule:
+def lower_to_llvm(m: affine.Module) -> llvm.Module:
     lowering = AffineToLLVMLowering()
     return lowering.lower_module(m)

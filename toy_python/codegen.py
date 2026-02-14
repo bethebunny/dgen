@@ -6,30 +6,9 @@ import ctypes
 import sys
 from io import StringIO
 
-import llvmlite.binding as llvm
+import llvmlite.binding as llvmlite
 
-from toy_python.dialects.llvm import (
-    LLModule,
-    LLFuncOp,
-    LLAllocaOp,
-    LLGepOp,
-    LLLoadOp,
-    LLStoreOp,
-    LLFAddOp,
-    LLFMulOp,
-    LLConstantOp,
-    LLIndexConstOp,
-    LLAddOp,
-    LLMulOp,
-    LLIcmpOp,
-    LLBrOp,
-    LLCondBrOp,
-    LLLabelOp,
-    LLPhiOp,
-    LLCallOp,
-    LLReturnOp,
-    format_float,
-)
+from toy_python.dialects import llvm
 
 
 # ---------------------------------------------------------------------------
@@ -53,9 +32,9 @@ _initialized = False
 def _ensure_initialized():
     global _initialized
     if not _initialized:
-        llvm.initialize_native_target()
-        llvm.initialize_native_asmprinter()
-        llvm.add_symbol(
+        llvmlite.initialize_native_target()
+        llvmlite.initialize_native_asmprinter()
+        llvmlite.add_symbol(
             "print_memref", ctypes.cast(_print_memref, ctypes.c_void_p).value
         )
         _initialized = True
@@ -66,7 +45,7 @@ def _ensure_initialized():
 # ---------------------------------------------------------------------------
 
 
-def emit_llvm_ir(module: LLModule) -> str:
+def emit_llvm_ir(module: llvm.Module) -> str:
     """Emit valid LLVM IR text that llvmlite can parse."""
     lines: list[str] = ["declare void @print_memref(ptr, i64)", ""]
     for func in module.functions:
@@ -74,31 +53,31 @@ def emit_llvm_ir(module: LLModule) -> str:
     return "\n".join(lines)
 
 
-def _emit_func(f: LLFuncOp) -> list[str]:
+def _emit_func(f: llvm.FuncOp) -> list[str]:
     # Pre-scan: build constants and types maps
     constants: dict[str, str] = {}  # SSA name -> typed literal
     types: dict[str, str] = {}  # SSA name -> LLVM type
 
     for op in f.body.ops:
-        if isinstance(op, LLConstantOp):
-            constants[op.result] = f"double {format_float(op.value)}"
+        if isinstance(op, llvm.ConstantOp):
+            constants[op.result] = f"double {llvm.format_float(op.value)}"
             types[op.result] = "double"
-        elif isinstance(op, LLIndexConstOp):
+        elif isinstance(op, llvm.IndexConstOp):
             constants[op.result] = f"i64 {op.value}"
             types[op.result] = "i64"
-        elif isinstance(op, LLAllocaOp):
+        elif isinstance(op, llvm.AllocaOp):
             types[op.result] = "ptr"
-        elif isinstance(op, LLGepOp):
+        elif isinstance(op, llvm.GepOp):
             types[op.result] = "ptr"
-        elif isinstance(op, LLLoadOp):
+        elif isinstance(op, llvm.LoadOp):
             types[op.result] = "double"
-        elif isinstance(op, (LLFAddOp, LLFMulOp)):
+        elif isinstance(op, (llvm.FAddOp, llvm.FMulOp)):
             types[op.result] = "double"
-        elif isinstance(op, (LLAddOp, LLMulOp)):
+        elif isinstance(op, (llvm.AddOp, llvm.MulOp)):
             types[op.result] = "i64"
-        elif isinstance(op, LLIcmpOp):
+        elif isinstance(op, llvm.IcmpOp):
             types[op.result] = "i1"
-        elif isinstance(op, LLPhiOp):
+        elif isinstance(op, llvm.PhiOp):
             first_val = op.pairs[0].value
             types[op.result] = types.get(first_val, "i64")
 
@@ -117,67 +96,67 @@ def _emit_func(f: LLFuncOp) -> list[str]:
     lines = [f"define void @{f.name}() {{", "entry:"]
 
     for op in f.body.ops:
-        if isinstance(op, (LLConstantOp, LLIndexConstOp)):
+        if isinstance(op, (llvm.ConstantOp, llvm.IndexConstOp)):
             continue  # inlined at use sites
 
-        if isinstance(op, LLLabelOp):
+        if isinstance(op, llvm.LabelOp):
             lines.append(f"{op.name}:")
-        elif isinstance(op, LLAllocaOp):
+        elif isinstance(op, llvm.AllocaOp):
             lines.append(
                 f"  %{op.result} = alloca double, i64 {op.elem_count}"
             )
-        elif isinstance(op, LLGepOp):
+        elif isinstance(op, llvm.GepOp):
             lines.append(
                 f"  %{op.result} = getelementptr double, ptr %{op.base},"
                 f" {typed_ref(op.index)}"
             )
-        elif isinstance(op, LLLoadOp):
+        elif isinstance(op, llvm.LoadOp):
             lines.append(
                 f"  %{op.result} = load double, {typed_ref(op.ptr)}"
             )
-        elif isinstance(op, LLStoreOp):
+        elif isinstance(op, llvm.StoreOp):
             lines.append(
                 f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}"
             )
-        elif isinstance(op, LLFAddOp):
+        elif isinstance(op, llvm.FAddOp):
             lines.append(
                 f"  %{op.result} = fadd double {bare_ref(op.lhs)},"
                 f" {bare_ref(op.rhs)}"
             )
-        elif isinstance(op, LLFMulOp):
+        elif isinstance(op, llvm.FMulOp):
             lines.append(
                 f"  %{op.result} = fmul double {bare_ref(op.lhs)},"
                 f" {bare_ref(op.rhs)}"
             )
-        elif isinstance(op, LLAddOp):
+        elif isinstance(op, llvm.AddOp):
             lines.append(
                 f"  %{op.result} = add i64 {bare_ref(op.lhs)},"
                 f" {bare_ref(op.rhs)}"
             )
-        elif isinstance(op, LLMulOp):
+        elif isinstance(op, llvm.MulOp):
             lines.append(
                 f"  %{op.result} = mul i64 {bare_ref(op.lhs)},"
                 f" {bare_ref(op.rhs)}"
             )
-        elif isinstance(op, LLIcmpOp):
+        elif isinstance(op, llvm.IcmpOp):
             lines.append(
                 f"  %{op.result} = icmp {op.pred} i64 {bare_ref(op.lhs)},"
                 f" {bare_ref(op.rhs)}"
             )
-        elif isinstance(op, LLBrOp):
+        elif isinstance(op, llvm.BrOp):
             lines.append(f"  br label %{op.dest}")
-        elif isinstance(op, LLCondBrOp):
+        elif isinstance(op, llvm.CondBrOp):
             lines.append(
                 f"  br i1 %{op.cond}, label %{op.true_dest},"
                 f" label %{op.false_dest}"
             )
-        elif isinstance(op, LLPhiOp):
+        elif isinstance(op, llvm.PhiOp):
             ty = types.get(op.result, "i64")
             pairs = ", ".join(
                 f"[ {bare_ref(p.value)}, %{p.label} ]" for p in op.pairs
             )
             lines.append(f"  %{op.result} = phi {ty} {pairs}")
-        elif isinstance(op, LLCallOp):
+        elif isinstance(op, llvm.CallOp):
             if op.callee == "print_memref" and len(op.args) == 2:
                 a = f"{typed_ref(op.args[0])}, {typed_ref(op.args[1])}"
                 lines.append(f"  call void @print_memref({a})")
@@ -189,7 +168,7 @@ def _emit_func(f: LLFuncOp) -> list[str]:
                     )
                 else:
                     lines.append(f"  call void @{op.callee}({a})")
-        elif isinstance(op, LLReturnOp):
+        elif isinstance(op, llvm.ReturnOp):
             if op.value is not None:
                 lines.append(f"  ret {typed_ref(op.value)}")
             else:
@@ -205,18 +184,18 @@ def _emit_func(f: LLFuncOp) -> list[str]:
 
 
 def compile_and_run(
-    ll_module: LLModule, capture_output: bool = False
+    ll_module: llvm.Module, capture_output: bool = False
 ) -> str | None:
     """Emit LLVM IR, JIT-compile, and execute the module's main function."""
     _ensure_initialized()
     ir_text = emit_llvm_ir(ll_module)
 
-    mod = llvm.parse_assembly(ir_text)
+    mod = llvmlite.parse_assembly(ir_text)
     mod.verify()
 
-    target = llvm.Target.from_default_triple()
+    target = llvmlite.Target.from_default_triple()
     target_machine = target.create_target_machine()
-    engine = llvm.create_mcjit_compiler(mod, target_machine)
+    engine = llvmlite.create_mcjit_compiler(mod, target_machine)
 
     func_ptr = engine.get_function_address("main")
     cfunc = ctypes.CFUNCTYPE(None)(func_ptr)

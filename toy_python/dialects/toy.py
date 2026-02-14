@@ -32,18 +32,18 @@ class RankedTensorType:
         return "tensor<" + "x".join(str(d) for d in self.shape) + "xf64>"
 
 
-AnyToyType = Union[UnrankedTensorType, RankedTensorType]
+AnyType = Union[UnrankedTensorType, RankedTensorType]
 
 
 @dataclass
 class FunctionType:
     """(tensor<*xf64>, tensor<*xf64>) -> tensor<*xf64>"""
 
-    inputs: list[AnyToyType]
-    result: AnyToyType | None
+    inputs: list[AnyType]
+    result: AnyType | None
 
 
-def type_to_string(t: AnyToyType) -> str:
+def type_to_string(t: AnyType) -> str:
     return str(t)
 
 
@@ -77,7 +77,7 @@ class ConstantOp:
     result: str
     value: list[float]
     shape: list[int]
-    type: AnyToyType
+    type: AnyType
 
     @property
     def asm(self) -> Iterable[str]:
@@ -91,7 +91,7 @@ class ConstantOp:
 class TransposeOp:
     result: str
     input: str
-    type: AnyToyType
+    type: AnyType
 
     @property
     def asm(self) -> Iterable[str]:
@@ -102,7 +102,7 @@ class TransposeOp:
 class ReshapeOp:
     result: str
     input: str
-    type: AnyToyType
+    type: AnyType
 
     @property
     def asm(self) -> Iterable[str]:
@@ -114,7 +114,7 @@ class MulOp:
     result: str
     lhs: str
     rhs: str
-    type: AnyToyType
+    type: AnyType
 
     @property
     def asm(self) -> Iterable[str]:
@@ -126,7 +126,7 @@ class AddOp:
     result: str
     lhs: str
     rhs: str
-    type: AnyToyType
+    type: AnyType
 
     @property
     def asm(self) -> Iterable[str]:
@@ -138,7 +138,7 @@ class GenericCallOp:
     result: str
     callee: str
     args: list[str]
-    type: AnyToyType
+    type: AnyType
 
     @property
     def asm(self) -> Iterable[str]:
@@ -170,7 +170,7 @@ class ReturnOp:
             yield "return"
 
 
-AnyToyOp = Union[
+AnyOp = Union[
     ConstantOp,
     TransposeOp,
     ReshapeOp,
@@ -188,17 +188,17 @@ AnyToyOp = Union[
 
 
 @dataclass
-class ToyValue:
+class Value:
     """A block argument (function parameter)."""
 
     name: str
-    type: AnyToyType
+    type: AnyType
 
 
 @dataclass
 class Block:
-    args: list[ToyValue]
-    ops: list[AnyToyOp]
+    args: list[Value]
+    ops: list[AnyOp]
 
     @property
     def asm(self) -> Iterable[str]:

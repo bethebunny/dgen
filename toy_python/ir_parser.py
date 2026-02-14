@@ -4,25 +4,7 @@ Line-oriented recursive descent parser that reads IR text format back into
 Module data structures.
 """
 
-from toy_python.dialects.toy import (
-    Module,
-    FuncOp,
-    Block,
-    ToyValue,
-    AnyToyOp,
-    AnyToyType,
-    ConstantOp,
-    TransposeOp,
-    ReshapeOp,
-    MulOp,
-    AddOp,
-    GenericCallOp,
-    PrintOp,
-    ReturnOp,
-    UnrankedTensorType,
-    RankedTensorType,
-    FunctionType,
-)
+from toy_python.dialects import toy
 
 
 class IRParser:
@@ -118,12 +100,12 @@ class IRParser:
             raise RuntimeError(f"Expected integer at position {self.pos}")
         return int(self.text[start : self.pos])
 
-    def parse_type(self) -> AnyToyType:
+    def parse_type(self) -> toy.AnyType:
         """Parse tensor<*xf64> or tensor<NxMxf64>"""
         self.expect("tensor<")
         if self.peek() == "*":
             self.expect("*xf64>")
-            return UnrankedTensorType()
+            return toy.UnrankedTensorType()
         # Ranked: parse dimensions
         shape = [self.parse_int()]
         while self.peek() == "x":
@@ -132,7 +114,7 @@ class IRParser:
                 break
             shape.append(self.parse_int())
         self.expect("f64>")
-        return RankedTensorType(shape=shape)
+        return toy.RankedTensorType(shape=shape)
 
     def skip_line(self):
         """Skip to the next line."""
@@ -141,7 +123,7 @@ class IRParser:
         if not self.at_end():
             self.pos += 1  # skip \n
 
-    def parse_module(self) -> Module:
+    def parse_module(self) -> toy.Module:
         """Parse a complete module from IR text."""
         # Skip header line: "from toy use *"
         self.skip_whitespace_and_newlines()
@@ -149,16 +131,16 @@ class IRParser:
             self.expect("from toy use *")
             self.skip_line()
 
-        functions: list[FuncOp] = []
+        functions: list[toy.FuncOp] = []
         while not self.at_end():
             self.skip_whitespace_and_newlines()
             if self.at_end():
                 break
             functions.append(self.parse_func())
 
-        return Module(functions=functions)
+        return toy.Module(functions=functions)
 
-    def parse_func(self) -> FuncOp:
+    def parse_func(self) -> toy.FuncOp:
         """Parse a function definition."""
         # %name = function (...) [-> Type]:
         name = self.parse_ssa_name()
@@ -170,8 +152,8 @@ class IRParser:
         self.expect("(")
 
         # Parse parameters
-        args: list[ToyValue] = []
-        input_types: list[AnyToyType] = []
+        args: list[toy.Value] = []
+        input_types: list[toy.AnyType] = []
         self.skip_whitespace()
         if self.peek() != ")":
             arg = self._parse_param()
@@ -189,7 +171,7 @@ class IRParser:
 
         # Optional return type
         self.skip_whitespace()
-        result: AnyToyType | None = None
+        result: toy.AnyType | None = None
         if not self.at_end() and self.peek() == "-":
             self.expect("->")
             self.skip_whitespace()
@@ -199,7 +181,7 @@ class IRParser:
         self.skip_line()
 
         # Parse body (indented lines)
-        ops: list[AnyToyOp] = []
+        ops: list[toy.AnyOp] = []
         while not self.at_end():
             # Check if next line is indented (body) or not (next function)
             if self.peek() not in (" ", "\t"):
@@ -211,22 +193,22 @@ class IRParser:
             ops.append(self.parse_op())
             self.skip_line()
 
-        func_type = FunctionType(inputs=input_types, result=result)
-        return FuncOp(
+        func_type = toy.FunctionType(inputs=input_types, result=result)
+        return toy.FuncOp(
             name=name,
             func_type=func_type,
-            body=Block(args=args, ops=ops),
+            body=toy.Block(args=args, ops=ops),
         )
 
-    def _parse_param(self) -> ToyValue:
+    def _parse_param(self) -> toy.Value:
         """Parse %name: Type"""
         name = self.parse_ssa_name()
         self.expect(":")
         self.skip_whitespace()
         type_ = self.parse_type()
-        return ToyValue(name=name, type=type_)
+        return toy.Value(name=name, type=type_)
 
-    def parse_op(self) -> AnyToyOp:
+    def parse_op(self) -> toy.AnyOp:
         """Parse a single operation."""
         # Check for bare ops first: Print(...), return ...
         if self.peek() == "P":
@@ -256,21 +238,21 @@ class IRParser:
 
         raise RuntimeError(f"Unknown op: {op_name}")
 
-    def _parse_print_op(self) -> AnyToyOp:
+    def _parse_print_op(self) -> toy.AnyOp:
         self.expect("Print(")
         input_ = self.parse_ssa_name()
         self.expect(")")
-        return PrintOp(input=input_)
+        return toy.PrintOp(input=input_)
 
-    def _parse_return_op(self) -> AnyToyOp:
+    def _parse_return_op(self) -> toy.AnyOp:
         self.expect("return")
         self.skip_whitespace()
         if self.at_end() or self.peek() == "\n":
-            return ReturnOp(value=None)
+            return toy.ReturnOp(value=None)
         val = self.parse_ssa_name()
-        return ReturnOp(value=val)
+        return toy.ReturnOp(value=val)
 
-    def _parse_constant_body(self, result: str) -> AnyToyOp:
+    def _parse_constant_body(self, result: str) -> toy.AnyOp:
         """Parse (<shape> [values]) : Type"""
         self.expect("(")
         # Parse shape: <NxM> or <N>
@@ -298,9 +280,9 @@ class IRParser:
         self.skip_whitespace()
         type_ = self.parse_type()
 
-        return ConstantOp(result=result, value=values, shape=shape, type=type_)
+        return toy.ConstantOp(result=result, value=values, shape=shape, type=type_)
 
-    def _parse_transpose_body(self, result: str) -> AnyToyOp:
+    def _parse_transpose_body(self, result: str) -> toy.AnyOp:
         self.expect("(")
         input_ = self.parse_ssa_name()
         self.expect(")")
@@ -308,9 +290,9 @@ class IRParser:
         self.expect(":")
         self.skip_whitespace()
         type_ = self.parse_type()
-        return TransposeOp(result=result, input=input_, type=type_)
+        return toy.TransposeOp(result=result, input=input_, type=type_)
 
-    def _parse_reshape_body(self, result: str) -> AnyToyOp:
+    def _parse_reshape_body(self, result: str) -> toy.AnyOp:
         self.expect("(")
         input_ = self.parse_ssa_name()
         self.expect(")")
@@ -318,9 +300,9 @@ class IRParser:
         self.expect(":")
         self.skip_whitespace()
         type_ = self.parse_type()
-        return ReshapeOp(result=result, input=input_, type=type_)
+        return toy.ReshapeOp(result=result, input=input_, type=type_)
 
-    def _parse_mul_body(self, result: str) -> AnyToyOp:
+    def _parse_mul_body(self, result: str) -> toy.AnyOp:
         self.expect("(")
         lhs = self.parse_ssa_name()
         self.expect(",")
@@ -331,9 +313,9 @@ class IRParser:
         self.expect(":")
         self.skip_whitespace()
         type_ = self.parse_type()
-        return MulOp(result=result, lhs=lhs, rhs=rhs, type=type_)
+        return toy.MulOp(result=result, lhs=lhs, rhs=rhs, type=type_)
 
-    def _parse_add_body(self, result: str) -> AnyToyOp:
+    def _parse_add_body(self, result: str) -> toy.AnyOp:
         self.expect("(")
         lhs = self.parse_ssa_name()
         self.expect(",")
@@ -344,9 +326,9 @@ class IRParser:
         self.expect(":")
         self.skip_whitespace()
         type_ = self.parse_type()
-        return AddOp(result=result, lhs=lhs, rhs=rhs, type=type_)
+        return toy.AddOp(result=result, lhs=lhs, rhs=rhs, type=type_)
 
-    def _parse_generic_call_body(self, result: str) -> AnyToyOp:
+    def _parse_generic_call_body(self, result: str) -> toy.AnyOp:
         """Parse @callee(%a, %b) : Type"""
         self.skip_whitespace()
         self.expect("@")
@@ -366,11 +348,11 @@ class IRParser:
         self.skip_whitespace()
         type_ = self.parse_type()
 
-        return GenericCallOp(
+        return toy.GenericCallOp(
             result=result, callee=callee, args=args, type=type_
         )
 
 
-def parse_module(text: str) -> Module:
+def parse_module(text: str) -> toy.Module:
     parser = IRParser(text)
     return parser.parse_module()

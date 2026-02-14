@@ -33,7 +33,7 @@ class F64Type:
         return "f64"
 
 
-AnyAffineType = Union[MemRefType, IndexType, F64Type]
+AnyType = Union[MemRefType, IndexType, F64Type]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -73,7 +73,7 @@ class DeallocOp:
 
 
 @dataclass
-class AffineLoadOp:
+class LoadOp:
     result: str
     memref: str
     indices: list[str]
@@ -84,7 +84,7 @@ class AffineLoadOp:
 
 
 @dataclass
-class AffineStoreOp:
+class StoreOp:
     value: str
     memref: str
     indices: list[str]
@@ -137,7 +137,7 @@ class ArithAddFOp:
 
 
 @dataclass
-class AffinePrintOp:
+class PrintOp:
     input: str
 
     @property
@@ -146,7 +146,7 @@ class AffinePrintOp:
 
 
 @dataclass
-class AffineReturnOp:
+class ReturnOp:
     value: str | None
 
     @property
@@ -158,11 +158,11 @@ class AffineReturnOp:
 
 
 @dataclass
-class AffineForOp:
+class ForOp:
     var_name: str
     lo: int
     hi: int
-    body: list[AnyAffineOp]
+    body: list[AnyOp]
 
     @property
     def asm(self) -> Iterable[str]:
@@ -171,18 +171,18 @@ class AffineForOp:
             yield from asm.indent(child_op.asm)
 
 
-AnyAffineOp = Union[
+AnyOp = Union[
     AllocOp,
     DeallocOp,
-    AffineLoadOp,
-    AffineStoreOp,
-    AffineForOp,
+    LoadOp,
+    StoreOp,
+    ForOp,
     ArithConstantOp,
     IndexConstantOp,
     ArithMulFOp,
     ArithAddFOp,
-    AffinePrintOp,
-    AffineReturnOp,
+    PrintOp,
+    ReturnOp,
 ]
 
 
@@ -192,15 +192,15 @@ AnyAffineOp = Union[
 
 
 @dataclass
-class AffineValue:
+class Value:
     name: str
-    type: AnyAffineType
+    type: AnyType
 
 
 @dataclass
-class AffineBlock:
-    args: list[AffineValue]
-    ops: list[AnyAffineOp]
+class Block:
+    args: list[Value]
+    ops: list[AnyOp]
 
     @property
     def asm(self) -> Iterable[str]:
@@ -209,9 +209,9 @@ class AffineBlock:
 
 
 @dataclass
-class AffineFuncOp:
+class FuncOp:
     name: str
-    body: AffineBlock
+    body: Block
 
     @property
     def asm(self) -> Iterable[str]:
@@ -220,8 +220,8 @@ class AffineFuncOp:
 
 
 @dataclass
-class AffineModule:
-    functions: list[AffineFuncOp]
+class Module:
+    functions: list[FuncOp]
 
     @property
     def asm(self) -> Iterable[str]:
