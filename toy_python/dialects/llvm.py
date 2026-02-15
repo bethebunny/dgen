@@ -46,72 +46,72 @@ class VoidType:
 # ===----------------------------------------------------------------------=== #
 
 
-@op("Alloca")
+@op("alloca")
 class AllocaOp:
     result: Ssa
     elem_count: int
 
 
-@op("Gep")
+@op("gep")
 class GepOp:
     result: Ssa
     base: Ssa
     index: Ssa
 
 
-@op("Load")
+@op("load")
 class LoadOp:
     result: Ssa
     ptr: Ssa
 
 
-@op("Store")
+@op("store")
 class StoreOp:
     value: Ssa
     ptr: Ssa
 
 
-@op("FAdd")
+@op("fadd")
 class FAddOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("FMul")
+@op("fmul")
 class FMulOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("FConst")
+@op("fconst")
 class ConstantOp:
     result: Ssa
     value: float
 
 
-@op("IConst")
+@op("iconst")
 class IndexConstOp:
     result: Ssa
     value: int
 
 
-@op("Add")
+@op("add")
 class AddOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("Mul")
+@op("mul")
 class MulOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("Icmp")
+@op("icmp")
 class IcmpOp:
     result: Ssa
     pred: Bare
@@ -119,38 +119,38 @@ class IcmpOp:
     rhs: Ssa
 
 
-@op("Br")
+@op("br")
 class BrOp:
     dest: Bare
 
 
-@op("CondBr")
+@op("cond_br")
 class CondBrOp:
     cond: Ssa
     true_dest: Bare
     false_dest: Bare
 
 
-@op("Label")
+@op("label")
 class LabelOp:
     name: Bare
 
 
-@op("Phi")
+@op("phi")
 class PhiOp:
     result: Ssa
     values: SsaList
     labels: BareList
 
 
-@op("Call")
+@op("call")
 class CallOp:
     result: Ssa | None
     callee: Sym
     args: SsaList
 
 
-@op("Return")
+@op("return")
 class ReturnOp:
     value: Ssa | None
 

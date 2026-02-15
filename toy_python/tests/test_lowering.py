@@ -22,9 +22,9 @@ def test_simple_constant():
     result = compile_toy(source)
     expected = (
         "%main = function () -> ():\n"
-        "    %0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    Print(%0)\n"
-        "    Return()\n"
+        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    print(%0)\n"
+        "    return()\n"
     )
     assert result == expected
 
@@ -41,10 +41,10 @@ def test_explicit_shape_with_reshape():
     result = compile_toy(source)
     expected = (
         "%main = function () -> ():\n"
-        "    %0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = Reshape(%0) : tensor<2x3xf64>\n"
-        "    Print(%1)\n"
-        "    Return()\n"
+        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %1 = reshape(%0) : tensor<2x3xf64>\n"
+        "    print(%1)\n"
+        "    return()\n"
     )
     assert result == expected
 
@@ -62,11 +62,11 @@ def test_binary_operations():
     result = compile_toy(source)
     expected = (
         "%main = function () -> ():\n"
-        "    %0 = Constant(<2x2>, [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>\n"
-        "    %1 = Constant(<2x2>, [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>\n"
-        "    %2 = Mul(%0, %1) : tensor<*xf64>\n"
-        "    Print(%2)\n"
-        "    Return()\n"
+        "    %0 = constant(<2x2>, [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>\n"
+        "    %1 = constant(<2x2>, [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>\n"
+        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
+        "    print(%2)\n"
+        "    return()\n"
     )
     assert result == expected
 
@@ -83,10 +83,10 @@ def test_transpose_builtin():
     result = compile_toy(source)
     expected = (
         "%main = function () -> ():\n"
-        "    %0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = Transpose(%0) : tensor<*xf64>\n"
-        "    Print(%1)\n"
-        "    Return()\n"
+        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %1 = transpose(%0) : tensor<*xf64>\n"
+        "    print(%1)\n"
+        "    return()\n"
     )
     assert result == expected
 
@@ -108,17 +108,17 @@ def test_generic_call():
     result = compile_toy(source)
     expected = (
         "%multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = Transpose(%a) : tensor<*xf64>\n"
-        "    %1 = Transpose(%b) : tensor<*xf64>\n"
-        "    %2 = Mul(%0, %1) : tensor<*xf64>\n"
-        "    Return(%2)\n"
+        "    %0 = transpose(%a) : tensor<*xf64>\n"
+        "    %1 = transpose(%b) : tensor<*xf64>\n"
+        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
+        "    return(%2)\n"
         "\n"
         "%main = function () -> ():\n"
-        "    %0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %2 = GenericCall(@multiply_transpose, [%0, %1]) : tensor<*xf64>\n"
-        "    Print(%2)\n"
-        "    Return()\n"
+        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %1 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %2 = generic_call(@multiply_transpose, [%0, %1]) : tensor<*xf64>\n"
+        "    print(%2)\n"
+        "    return()\n"
     )
     assert result == expected
 
@@ -142,19 +142,19 @@ def test_full_tutorial_example():
     result = compile_toy(source)
     expected = (
         "%multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = Transpose(%a) : tensor<*xf64>\n"
-        "    %1 = Transpose(%b) : tensor<*xf64>\n"
-        "    %2 = Mul(%0, %1) : tensor<*xf64>\n"
-        "    Return(%2)\n"
+        "    %0 = transpose(%a) : tensor<*xf64>\n"
+        "    %1 = transpose(%b) : tensor<*xf64>\n"
+        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
+        "    return(%2)\n"
         "\n"
         "%main = function () -> ():\n"
-        "    %0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = Reshape(%0) : tensor<2x3xf64>\n"
-        "    %2 = Constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
-        "    %3 = Reshape(%2) : tensor<2x3xf64>\n"
-        "    %4 = GenericCall(@multiply_transpose, [%1, %3]) : tensor<*xf64>\n"
-        "    %5 = GenericCall(@multiply_transpose, [%3, %1]) : tensor<*xf64>\n"
-        "    Print(%5)\n"
-        "    Return()\n"
+        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %1 = reshape(%0) : tensor<2x3xf64>\n"
+        "    %2 = constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
+        "    %3 = reshape(%2) : tensor<2x3xf64>\n"
+        "    %4 = generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>\n"
+        "    %5 = generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>\n"
+        "    print(%5)\n"
+        "    return()\n"
     )
     assert result == expected

@@ -28,11 +28,11 @@ def test_constant_print():
     )
     result = compile(source)
     assert "%main = function () -> ():" in result, "Should have function def"
-    assert "Alloca(6)" in result, "Should alloca 6 elements for 2x3 tensor"
-    assert "FConst(1.0)" in result, "Should store 1.0"
-    assert "FConst(6.0)" in result, "Should store 6.0"
-    assert "Call(@print_memref" in result, "Should call print_memref"
-    assert "Return()" in result, "Should return void"
+    assert "alloca(6)" in result, "Should alloca 6 elements for 2x3 tensor"
+    assert "fconst(1.0)" in result, "Should store 1.0"
+    assert "fconst(6.0)" in result, "Should store 6.0"
+    assert "call(@print_memref" in result, "Should call print_memref"
+    assert "return()" in result, "Should return void"
 
 
 def test_transpose():
@@ -46,10 +46,10 @@ def test_transpose():
         "}\n"
     )
     result = compile(source)
-    assert "Alloca(6)" in result, "Should have alloca for tensor"
-    assert "Load(" in result, "Should have loads for transpose"
-    assert "Gep(" in result, "Should have gep for indexing"
-    assert "Call(@print_memref" in result, "Should call print_memref"
+    assert "alloca(6)" in result, "Should have alloca for tensor"
+    assert "load(" in result, "Should have loads for transpose"
+    assert "gep(" in result, "Should have gep for indexing"
+    assert "call(@print_memref" in result, "Should call print_memref"
 
 
 def test_element_wise_mul():
@@ -64,8 +64,8 @@ def test_element_wise_mul():
         "}\n"
     )
     result = compile(source)
-    assert "FMul(" in result, "Should have fmul for element-wise multiply"
-    assert "Call(@print_memref" in result, "Should call print_memref"
+    assert "fmul(" in result, "Should have fmul for element-wise multiply"
+    assert "call(@print_memref" in result, "Should call print_memref"
 
 
 def test_element_wise_add():
@@ -80,8 +80,8 @@ def test_element_wise_add():
         "}\n"
     )
     result = compile(source)
-    assert "FAdd(" in result, "Should have fadd for element-wise add"
-    assert "Call(@print_memref" in result, "Should call print_memref"
+    assert "fadd(" in result, "Should have fadd for element-wise add"
+    assert "call(@print_memref" in result, "Should call print_memref"
 
 
 def test_reshape_folds_away():
@@ -94,8 +94,8 @@ def test_reshape_folds_away():
         "}\n"
     )
     result = compile(source)
-    assert "Alloca(6)" in result, "Should have single alloc"
-    assert "Call(@print_memref" in result, "Should call print_memref"
+    assert "alloca(6)" in result, "Should have single alloc"
+    assert "call(@print_memref" in result, "Should call print_memref"
 
 
 def test_double_transpose_optimized():
@@ -109,9 +109,9 @@ def test_double_transpose_optimized():
         "}\n"
     )
     result = compile(source)
-    assert "Alloca(6)" in result, "Should have alloc for constant"
-    assert "Call(@print_memref" in result, "Should call print_memref"
-    assert "Return()" in result, "Should return void"
+    assert "alloca(6)" in result, "Should have alloc for constant"
+    assert "call(@print_memref" in result, "Should call print_memref"
+    assert "return()" in result, "Should return void"
 
 
 def test_multiply_transpose_inlined():
@@ -127,8 +127,8 @@ def test_multiply_transpose_inlined():
     )
     result = compile(source)
     assert "%main = function () -> ():" in result, "Should have main function"
-    assert "FMul(" in result, "Should have fmul for multiply"
+    assert "fmul(" in result, "Should have fmul for multiply"
     assert "loop_header" in result, "Should have loop headers"
-    assert "Phi(" in result, "Should have phi nodes"
-    assert "Call(@print_memref" in result, "Should call print_memref"
-    assert "Return()" in result, "Should return void"
+    assert "phi(" in result, "Should have phi nodes"
+    assert "call(@print_memref" in result, "Should call print_memref"
+    assert "return()" in result, "Should return void"

@@ -21,28 +21,28 @@ def test_constant_op():
     )
     assert (
         asm.format(op)
-        == "%0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
+        == "%0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
     )
 
 
 def test_transpose_op():
     op = toy.TransposeOp(result="0", input="a", type=unranked())
-    assert asm.format(op) == "%0 = Transpose(%a) : tensor<*xf64>"
+    assert asm.format(op) == "%0 = transpose(%a) : tensor<*xf64>"
 
 
 def test_reshape_op():
     op = toy.ReshapeOp(result="1", input="0", type=ranked([2, 3]))
-    assert asm.format(op) == "%1 = Reshape(%0) : tensor<2x3xf64>"
+    assert asm.format(op) == "%1 = reshape(%0) : tensor<2x3xf64>"
 
 
 def test_mul_op():
     op = toy.MulOp(result="2", lhs="0", rhs="1", type=unranked())
-    assert asm.format(op) == "%2 = Mul(%0, %1) : tensor<*xf64>"
+    assert asm.format(op) == "%2 = mul(%0, %1) : tensor<*xf64>"
 
 
 def test_add_op():
     op = toy.AddOp(result="2", lhs="0", rhs="1", type=unranked())
-    assert asm.format(op) == "%2 = Add(%0, %1) : tensor<*xf64>"
+    assert asm.format(op) == "%2 = add(%0, %1) : tensor<*xf64>"
 
 
 def test_generic_call_op():
@@ -54,23 +54,23 @@ def test_generic_call_op():
     )
     assert (
         asm.format(op)
-        == "%4 = GenericCall(@multiply_transpose, [%1, %3]) : tensor<*xf64>"
+        == "%4 = generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>"
     )
 
 
 def test_print_op():
     op = toy.PrintOp(input="5")
-    assert asm.format(op) == "Print(%5)"
+    assert asm.format(op) == "print(%5)"
 
 
 def test_return_op_with_value():
     op = toy.ReturnOp(value="2")
-    assert asm.format(op) == "Return(%2)"
+    assert asm.format(op) == "return(%2)"
 
 
 def test_return_op_void():
     op = toy.ReturnOp(value=None)
-    assert asm.format(op) == "Return()"
+    assert asm.format(op) == "return()"
 
 
 def test_full_module():
@@ -139,19 +139,19 @@ def test_full_module():
 
     expected = (
         "%multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = Transpose(%a) : tensor<*xf64>\n"
-        "    %1 = Transpose(%b) : tensor<*xf64>\n"
-        "    %2 = Mul(%0, %1) : tensor<*xf64>\n"
-        "    Return(%2)\n"
+        "    %0 = transpose(%a) : tensor<*xf64>\n"
+        "    %1 = transpose(%b) : tensor<*xf64>\n"
+        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
+        "    return(%2)\n"
         "\n"
         "%main = function () -> ():\n"
-        "    %0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = Reshape(%0) : tensor<2x3xf64>\n"
-        "    %2 = Constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
-        "    %3 = Reshape(%2) : tensor<2x3xf64>\n"
-        "    %4 = GenericCall(@multiply_transpose, [%1, %3]) : tensor<*xf64>\n"
-        "    %5 = GenericCall(@multiply_transpose, [%3, %1]) : tensor<*xf64>\n"
-        "    Print(%5)\n"
-        "    Return()\n"
+        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %1 = reshape(%0) : tensor<2x3xf64>\n"
+        "    %2 = constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
+        "    %3 = reshape(%2) : tensor<2x3xf64>\n"
+        "    %4 = generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>\n"
+        "    %5 = generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>\n"
+        "    print(%5)\n"
+        "    return()\n"
     )
     assert asm.format(module) == expected

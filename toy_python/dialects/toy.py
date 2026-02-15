@@ -48,7 +48,7 @@ class FunctionType(FuncType):
 # ===----------------------------------------------------------------------=== #
 
 
-@op("Constant")
+@op("constant")
 class ConstantOp:
     result: Ssa
     shape: Shape
@@ -56,21 +56,21 @@ class ConstantOp:
     type: Type
 
 
-@op("Transpose")
+@op("transpose")
 class TransposeOp:
     result: Ssa
     input: Ssa
     type: Type
 
 
-@op("Reshape")
+@op("reshape")
 class ReshapeOp:
     result: Ssa
     input: Ssa
     type: Type
 
 
-@op("Mul")
+@op("mul")
 class MulOp:
     result: Ssa
     lhs: Ssa
@@ -78,7 +78,7 @@ class MulOp:
     type: Type
 
 
-@op("Add")
+@op("add")
 class AddOp:
     result: Ssa
     lhs: Ssa
@@ -86,7 +86,7 @@ class AddOp:
     type: Type
 
 
-@op("GenericCall")
+@op("generic_call")
 class GenericCallOp:
     result: Ssa
     callee: Sym
@@ -94,12 +94,12 @@ class GenericCallOp:
     type: Type
 
 
-@op("Print")
+@op("print")
 class PrintOp:
     input: Ssa
 
 
-@op("Return")
+@op("return")
 class ReturnOp:
     value: Ssa | None
 

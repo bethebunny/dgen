@@ -7,8 +7,8 @@ from toy_python import asm
 def test_roundtrip_alloca():
     ir = (
         "%f = function () -> ():\n"
-        "    %0 = Alloca(3)\n"
-        "    Return()\n"
+        "    %0 = alloca(3)\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -17,13 +17,13 @@ def test_roundtrip_alloca():
 def test_roundtrip_gep_load_store():
     ir = (
         "%f = function () -> ():\n"
-        "    %0 = Alloca(6)\n"
-        "    %1 = IConst(0)\n"
-        "    %2 = Gep(%0, %1)\n"
-        "    %3 = FConst(1.0)\n"
-        "    Store(%3, %2)\n"
-        "    %4 = Load(%2)\n"
-        "    Return()\n"
+        "    %0 = alloca(6)\n"
+        "    %1 = iconst(0)\n"
+        "    %2 = gep(%0, %1)\n"
+        "    %3 = fconst(1.0)\n"
+        "    store(%3, %2)\n"
+        "    %4 = load(%2)\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -32,11 +32,11 @@ def test_roundtrip_gep_load_store():
 def test_roundtrip_fadd_fmul():
     ir = (
         "%f = function () -> ():\n"
-        "    %0 = FConst(1.0)\n"
-        "    %1 = FConst(2.0)\n"
-        "    %2 = FAdd(%0, %1)\n"
-        "    %3 = FMul(%0, %1)\n"
-        "    Return()\n"
+        "    %0 = fconst(1.0)\n"
+        "    %1 = fconst(2.0)\n"
+        "    %2 = fadd(%0, %1)\n"
+        "    %3 = fmul(%0, %1)\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -45,11 +45,11 @@ def test_roundtrip_fadd_fmul():
 def test_roundtrip_add_mul_int():
     ir = (
         "%f = function () -> ():\n"
-        "    %0 = IConst(3)\n"
-        "    %1 = IConst(4)\n"
-        "    %2 = Add(%0, %1)\n"
-        "    %3 = Mul(%0, %1)\n"
-        "    Return()\n"
+        "    %0 = iconst(3)\n"
+        "    %1 = iconst(4)\n"
+        "    %2 = add(%0, %1)\n"
+        "    %3 = mul(%0, %1)\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -58,11 +58,11 @@ def test_roundtrip_add_mul_int():
 def test_roundtrip_icmp_condbr():
     ir = (
         "%f = function () -> ():\n"
-        "    %0 = IConst(0)\n"
-        "    %1 = IConst(10)\n"
-        "    %cmp = Icmp(slt, %0, %1)\n"
-        "    CondBr(%cmp, loop_body, loop_exit)\n"
-        "    Return()\n"
+        "    %0 = iconst(0)\n"
+        "    %1 = iconst(10)\n"
+        "    %cmp = icmp(slt, %0, %1)\n"
+        "    cond_br(%cmp, loop_body, loop_exit)\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -71,9 +71,9 @@ def test_roundtrip_icmp_condbr():
 def test_roundtrip_label_br():
     ir = (
         "%f = function () -> ():\n"
-        "    Br(loop_header)\n"
-        "    Label(loop_header)\n"
-        "    Return()\n"
+        "    br(loop_header)\n"
+        "    label(loop_header)\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -82,8 +82,8 @@ def test_roundtrip_label_br():
 def test_roundtrip_phi():
     ir = (
         "%f = function () -> ():\n"
-        "    %i0 = Phi([%init, %next], [entry, loop_body])\n"
-        "    Return()\n"
+        "    %i0 = phi([%init, %next], [entry, loop_body])\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -92,8 +92,8 @@ def test_roundtrip_phi():
 def test_roundtrip_call_with_result():
     ir = (
         "%f = function () -> ():\n"
-        "    %0 = Call(@foo, [%a, %b])\n"
-        "    Return()\n"
+        "    %0 = call(@foo, [%a, %b])\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -102,8 +102,8 @@ def test_roundtrip_call_with_result():
 def test_roundtrip_call_void():
     ir = (
         "%f = function () -> ():\n"
-        "    Call(@print_memref, [%ptr, %size])\n"
-        "    Return()\n"
+        "    call(@print_memref, [%ptr, %size])\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -112,8 +112,8 @@ def test_roundtrip_call_void():
 def test_roundtrip_return_value():
     ir = (
         "%f = function () -> ():\n"
-        "    %0 = FConst(42.0)\n"
-        "    Return(%0)\n"
+        "    %0 = fconst(42.0)\n"
+        "    return(%0)\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir
@@ -123,23 +123,23 @@ def test_roundtrip_loop_pattern():
     """Full loop pattern: br, label, phi, icmp, condbr, body, increment."""
     ir = (
         "%f = function () -> ():\n"
-        "    %0 = Alloca(3)\n"
-        "    %init = IConst(0)\n"
-        "    Br(loop_header0)\n"
-        "    Label(loop_header0)\n"
-        "    %i0 = Phi([%init, %next0], [entry, loop_body0])\n"
-        "    %hi = IConst(3)\n"
-        "    %cmp = Icmp(slt, %i0, %hi)\n"
-        "    CondBr(%cmp, loop_body0, loop_exit0)\n"
-        "    Label(loop_body0)\n"
-        "    %val = FConst(1.0)\n"
-        "    %ptr = Gep(%0, %i0)\n"
-        "    Store(%val, %ptr)\n"
-        "    %one = IConst(1)\n"
-        "    %next0 = Add(%i0, %one)\n"
-        "    Br(loop_header0)\n"
-        "    Label(loop_exit0)\n"
-        "    Return()\n"
+        "    %0 = alloca(3)\n"
+        "    %init = iconst(0)\n"
+        "    br(loop_header0)\n"
+        "    label(loop_header0)\n"
+        "    %i0 = phi([%init, %next0], [entry, loop_body0])\n"
+        "    %hi = iconst(3)\n"
+        "    %cmp = icmp(slt, %i0, %hi)\n"
+        "    cond_br(%cmp, loop_body0, loop_exit0)\n"
+        "    label(loop_body0)\n"
+        "    %val = fconst(1.0)\n"
+        "    %ptr = gep(%0, %i0)\n"
+        "    store(%val, %ptr)\n"
+        "    %one = iconst(1)\n"
+        "    %next0 = add(%i0, %one)\n"
+        "    br(loop_header0)\n"
+        "    label(loop_exit0)\n"
+        "    return()\n"
     )
     module = llvm.parse_llvm_module(ir)
     assert asm.format(module) == ir

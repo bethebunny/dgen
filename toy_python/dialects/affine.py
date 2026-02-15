@@ -40,68 +40,68 @@ class F64Type:
 # ===----------------------------------------------------------------------=== #
 
 
-@op("Alloc")
+@op("alloc")
 class AllocOp:
     result: Ssa
     shape: Shape
 
 
-@op("Dealloc")
+@op("dealloc")
 class DeallocOp:
     input: Ssa
 
 
-@op("AffineLoad")
+@op("affine_load")
 class LoadOp:
     result: Ssa
     memref: Ssa
     indices: BareList
 
 
-@op("AffineStore")
+@op("affine_store")
 class StoreOp:
     value: Ssa
     memref: Ssa
     indices: BareList
 
 
-@op("ArithConstant")
+@op("arith_constant")
 class ArithConstantOp:
     result: Ssa
     value: float
 
 
-@op("IndexConstant")
+@op("index_constant")
 class IndexConstantOp:
     result: Ssa
     value: int
 
 
-@op("MulF")
+@op("mul_f")
 class ArithMulFOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("AddF")
+@op("add_f")
 class ArithAddFOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("PrintMemRef")
+@op("print_memref")
 class PrintOp:
     input: Ssa
 
 
-@op("Return")
+@op("return")
 class ReturnOp:
     value: Ssa | None
 
 
-@op("AffineFor")
+@op("affine_for")
 class ForOp:
     var_name: Ssa
     lo: int
