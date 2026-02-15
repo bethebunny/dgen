@@ -20,8 +20,8 @@ def test_simple_constant():
     affine = lower_to_affine(m)
     result = asm.format(affine)
     assert "affine.alloc(<2x3>)" in result, "Should have alloc"
-    assert "affine.affine_for" in result, "Should have for loop"
-    assert "affine.affine_store" in result, "Should have stores"
+    assert "affine.for" in result, "Should have for loop"
+    assert "affine.store" in result, "Should have stores"
     assert "affine.arith_constant" in result, "Should have constants"
     assert "affine.print_memref" in result, "Should have print"
     assert "affine.dealloc" in result, "Should have dealloc"
@@ -44,7 +44,7 @@ def test_transpose():
     result = asm.format(affine)
     alloc_count = result.count("affine.alloc(")
     assert alloc_count >= 2, "Should have at least 2 allocs"
-    assert "affine.affine_load" in result, "Should have loads for transpose"
+    assert "affine.load" in result, "Should have loads for transpose"
     assert "affine.alloc(<3x2>)" in result, "Should have 3x2 alloc for transposed result"
 
 
@@ -122,7 +122,7 @@ def test_full_example():
     alloc_count = result.count("affine.alloc(")
     assert alloc_count >= 5, "Should have at least 5 allocs"
     assert "affine.mul_f" in result, "Should have mul_f"
-    assert "affine.affine_load" in result, "Should have loads"
-    assert "affine.affine_store" in result, "Should have stores"
+    assert "affine.load" in result, "Should have loads"
+    assert "affine.store" in result, "Should have stores"
     assert "affine.print_memref" in result, "Should have print"
     assert "return" in result, "Should have return"

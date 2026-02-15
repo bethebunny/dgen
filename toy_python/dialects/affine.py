@@ -55,14 +55,14 @@ class DeallocOp:
     input: Ssa
 
 
-@affine.op("affine_load")
+@affine.op("load")
 class LoadOp:
     result: Ssa
     memref: Ssa
     indices: BareList
 
 
-@affine.op("affine_store")
+@affine.op("store")
 class StoreOp:
     result: Ssa
     value: Ssa
@@ -102,7 +102,7 @@ class PrintOp:
     input: Ssa
 
 
-@affine.op("affine_for")
+@affine.op("for")
 class ForOp:
     result: Ssa
     var_name: Ssa
