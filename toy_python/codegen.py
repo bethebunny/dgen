@@ -10,7 +10,6 @@ import llvmlite.binding as llvmlite
 
 from toy_python.dialects import builtin, llvm
 
-
 # ---------------------------------------------------------------------------
 # Runtime: print_memref callback
 # ---------------------------------------------------------------------------
@@ -93,7 +92,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
             return constants[name].split(" ", 1)[1]
         return f"%{name}"
 
-    lines = [f"define void @{f.name}() {{", "entry:"]
+    lines = [f"define void @{f.result}() {{", "entry:"]
 
     for op in f.body.ops:
         if isinstance(op, (llvm.ConstantOp, llvm.IndexConstOp)):
@@ -102,41 +101,31 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
         if isinstance(op, llvm.LabelOp):
             lines.append(f"{op.name}:")
         elif isinstance(op, llvm.AllocaOp):
-            lines.append(
-                f"  %{op.result} = alloca double, i64 {op.elem_count}"
-            )
+            lines.append(f"  %{op.result} = alloca double, i64 {op.elem_count}")
         elif isinstance(op, llvm.GepOp):
             lines.append(
                 f"  %{op.result} = getelementptr double, ptr %{op.base},"
                 f" {typed_ref(op.index)}"
             )
         elif isinstance(op, llvm.LoadOp):
-            lines.append(
-                f"  %{op.result} = load double, {typed_ref(op.ptr)}"
-            )
+            lines.append(f"  %{op.result} = load double, {typed_ref(op.ptr)}")
         elif isinstance(op, llvm.StoreOp):
-            lines.append(
-                f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}"
-            )
+            lines.append(f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}")
         elif isinstance(op, llvm.FAddOp):
             lines.append(
-                f"  %{op.result} = fadd double {bare_ref(op.lhs)},"
-                f" {bare_ref(op.rhs)}"
+                f"  %{op.result} = fadd double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.FMulOp):
             lines.append(
-                f"  %{op.result} = fmul double {bare_ref(op.lhs)},"
-                f" {bare_ref(op.rhs)}"
+                f"  %{op.result} = fmul double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.AddOp):
             lines.append(
-                f"  %{op.result} = add i64 {bare_ref(op.lhs)},"
-                f" {bare_ref(op.rhs)}"
+                f"  %{op.result} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.MulOp):
             lines.append(
-                f"  %{op.result} = mul i64 {bare_ref(op.lhs)},"
-                f" {bare_ref(op.rhs)}"
+                f"  %{op.result} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.IcmpOp):
             lines.append(
@@ -147,14 +136,12 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
             lines.append(f"  br label %{op.dest}")
         elif isinstance(op, llvm.CondBrOp):
             lines.append(
-                f"  br i1 %{op.cond}, label %{op.true_dest},"
-                f" label %{op.false_dest}"
+                f"  br i1 %{op.cond}, label %{op.true_dest}, label %{op.false_dest}"
             )
         elif isinstance(op, llvm.PhiOp):
             ty = types.get(op.result, "i64")
             pairs = ", ".join(
-                f"[ {bare_ref(v)}, %{l} ]"
-                for v, l in zip(op.values, op.labels)
+                f"[ {bare_ref(v)}, %{l} ]" for v, l in zip(op.values, op.labels)
             )
             lines.append(f"  %{op.result} = phi {ty} {pairs}")
         elif isinstance(op, llvm.CallOp):
@@ -164,9 +151,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
             else:
                 a = ", ".join(typed_ref(arg) for arg in op.args)
                 if op.result != "_":
-                    lines.append(
-                        f"  %{op.result} = call void @{op.callee}({a})"
-                    )
+                    lines.append(f"  %{op.result} = call void @{op.callee}({a})")
                 else:
                     lines.append(f"  call void @{op.callee}({a})")
         elif isinstance(op, builtin.ReturnOp):

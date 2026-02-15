@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import FuncType, Nil, Type
-from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym
+from toy_python.dialects.builtin import Function, Nil, Type, Ssa, String, StringList
+from toy_python.asm.formatting import Shape, SsaList, Sym
 
 if TYPE_CHECKING:
     from toy_python.asm.parser import IRParser
@@ -38,7 +38,7 @@ class RankedTensorType:
 
 
 @dataclass
-class FunctionType(FuncType):
+class FunctionType(Function):
     """(tensor<*xf64>, tensor<*xf64>) -> tensor<*xf64>"""
 
     inputs: list[Type]

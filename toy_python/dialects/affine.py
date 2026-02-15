@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Op
-from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym
+from toy_python.dialects.builtin import Op, Ssa, String, StringList
+from toy_python.asm.formatting import Shape, SsaList, Sym
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -59,7 +59,7 @@ class DeallocOp:
 class LoadOp:
     result: Ssa
     memref: Ssa
-    indices: BareList
+    indices: StringList
 
 
 @affine.op("store")
@@ -67,7 +67,7 @@ class StoreOp:
     result: Ssa
     value: Ssa
     memref: Ssa
-    indices: BareList
+    indices: StringList
 
 
 @affine.op("arith_constant")

@@ -16,12 +16,9 @@ from .asm import indent
 # Annotated field-type aliases
 # ===----------------------------------------------------------------------=== #
 
-Ssa = Annotated[str, "ssa"]  # %name
 Sym = Annotated[str, "sym"]  # @name
-Bare = Annotated[str, "bare"]  # name (as-is)
 Shape = Annotated[list[int], "shape"]  # <2x3>
 SsaList = Annotated[list[str], "ssa"]  # [%a, %b]
-BareList = Annotated[list[str], "bare"]  # [a, b]
 
 # ===----------------------------------------------------------------------=== #
 # Helpers
@@ -71,8 +68,8 @@ def _format_value(value, hint) -> str:
     # Annotated[str, "sym"] -> @name
     if base is str and tag == "sym":
         return f"@{value}"
-    # Annotated[str, "bare"] -> name
-    if base is str and tag == "bare":
+    # Annotated[str, "string"] -> name
+    if base is str and tag == "string":
         return value
     # Annotated[list[int], "shape"] -> <2x3>
     if tag == "shape" and get_origin(base) is list:
@@ -80,8 +77,8 @@ def _format_value(value, hint) -> str:
     # Annotated[list[str], "ssa"] -> [%a, %b]
     if tag == "ssa" and get_origin(base) is list:
         return "[" + ", ".join(f"%{v}" for v in value) + "]"
-    # Annotated[list[str], "bare"] -> [a, b]
-    if tag == "bare" and get_origin(base) is list:
+    # Annotated[list[str], "string"] -> [a, b]
+    if tag == "string" and get_origin(base) is list:
         return "[" + ", ".join(value) + "]"
     # Plain int
     if hint is int:
@@ -143,5 +140,3 @@ def op_asm(op) -> Iterable[str]:
     if has_body:
         for child_op in op.body:
             yield from indent(child_op.asm)
-
-

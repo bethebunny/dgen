@@ -82,8 +82,8 @@ def _parse_value(parser, hint):
     if base is str and tag == "sym":
         parser.expect("@")
         return parser.parse_identifier()
-    # Annotated[str, "bare"] -> identifier
-    if base is str and tag == "bare":
+    # Annotated[str, "string"] -> identifier
+    if base is str and tag == "string":
         return parser.parse_identifier()
     # Annotated[list[int], "shape"] -> <2x3>
     if tag == "shape" and get_origin(base) is list:
@@ -107,8 +107,8 @@ def _parse_value(parser, hint):
                 items.append(parser.parse_ssa_name())
         parser.expect("]")
         return items
-    # Annotated[list[str], "bare"] -> [a, b]
-    if tag == "bare" and get_origin(base) is list:
+    # Annotated[list[str], "string"] -> [a, b]
+    if tag == "string" and get_origin(base) is list:
         parser.expect("[")
         parser.skip_whitespace()
         items = []
@@ -360,9 +360,9 @@ class IRParser:
         # Parse body (indented lines)
         ops = self._parse_block(min_indent=1)
 
-        func_type = builtin.FuncType(result=result)
+        func_type = builtin.Function(result=result)
         return builtin.FuncOp(
-            name=name,
+            result=name,
             func_type=func_type,
             body=builtin.Block(ops=ops, args=args),
         )

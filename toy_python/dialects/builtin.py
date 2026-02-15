@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Annotated, Protocol
 
 from toy_python import asm
 from toy_python.dialect import Dialect
-from toy_python.asm.formatting import Ssa
+
+Ssa = Annotated[str, "ssa"]  # %name
+String = Annotated[str, "string"]  # name (as-is)
+StringList = Annotated[list[str], "string"]  # [a, b]
 
 
 class Type(Protocol):
@@ -16,21 +19,6 @@ class Type(Protocol):
 
     @property
     def asm(self) -> str: ...
-
-
-class Nil:
-    """Represents a void/empty return type."""
-
-    @property
-    def asm(self) -> str:
-        return "()"
-
-
-@dataclass
-class FuncType:
-    """A function signature."""
-
-    result: Type
 
 
 class Op(Protocol):
@@ -63,10 +51,27 @@ class Block:
 # Builtin ReturnOp
 # ===----------------------------------------------------------------------=== #
 
-_dialect = Dialect("builtin")
+builtin = Dialect("builtin")
 
 
-@_dialect.op("return")
+@builtin.type("Nil")
+class Nil:
+    """Represents a void/empty return type."""
+
+    @property
+    def asm(self) -> str:
+        return "()"
+
+
+@builtin.type("Function")
+@dataclass
+class Function:
+    """A function signature."""
+
+    result: Type
+
+
+@builtin.op("return")
 class ReturnOp:
     result: Ssa
     value: Ssa | None
@@ -77,16 +82,17 @@ class ReturnOp:
 # ===----------------------------------------------------------------------=== #
 
 
+@builtin.op("function")
 @dataclass
 class FuncOp:
-    name: str
+    result: Ssa
     body: Block
-    func_type: FuncType
+    func_type: Function
 
     @property
     def asm(self) -> Iterable[str]:
         args = ", ".join(f"%{a.name}: {a.type.asm}" for a in self.body.args)
-        yield f"%{self.name} = function ({args}) -> {self.func_type.result.asm}:"
+        yield f"%{self.result} = function ({args}) -> {self.func_type.result.asm}:"
         yield from asm.indent(self.body.asm)
 
 

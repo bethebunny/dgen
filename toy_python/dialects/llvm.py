@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from toy_python.dialect import Dialect
-from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym, format_float
+from toy_python.dialects.builtin import Ssa, String, StringList
+from toy_python.asm.formatting import Shape, SsaList, Sym, format_float
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -118,7 +119,7 @@ class MulOp:
 @llvm.op("icmp")
 class IcmpOp:
     result: Ssa
-    pred: Bare
+    pred: String
     lhs: Ssa
     rhs: Ssa
 
@@ -126,28 +127,28 @@ class IcmpOp:
 @llvm.op("br")
 class BrOp:
     result: Ssa
-    dest: Bare
+    dest: String
 
 
 @llvm.op("cond_br")
 class CondBrOp:
     result: Ssa
     cond: Ssa
-    true_dest: Bare
-    false_dest: Bare
+    true_dest: String
+    false_dest: String
 
 
 @llvm.op("label")
 class LabelOp:
     result: Ssa
-    name: Bare
+    name: String
 
 
 @llvm.op("phi")
 class PhiOp:
     result: Ssa
     values: SsaList
-    labels: BareList
+    labels: StringList
 
 
 @llvm.op("call")

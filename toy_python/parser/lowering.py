@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
+from toy_python.dialects import builtin, toy
 from toy_python.parser.ast import (
-    Expression,
-    Statement,
-    NumberLiteral,
-    TensorLiteral,
-    VarRef,
     BinaryOp,
     CallExpr,
-    PrintExpr,
-    VarDecl,
-    ReturnStmt,
+    Expression,
     ExprStmt,
     Function,
+    NumberLiteral,
+    PrintExpr,
+    ReturnStmt,
+    Statement,
+    TensorLiteral,
     ToyModule,
+    VarDecl,
+    VarRef,
 )
-from toy_python.dialects import builtin, toy
 
 
 def _unranked() -> builtin.Type:
@@ -72,7 +72,7 @@ class Lowering:
         self.ops = []
         func_type = toy.FunctionType(inputs=input_types, result=result)
         return builtin.FuncOp(
-            name=f.proto.name,
+            result=f.proto.name,
             func_type=func_type,
             body=builtin.Block(ops=ops, args=args),
         )
@@ -177,9 +177,7 @@ class Lowering:
                 raise RuntimeError("transpose takes exactly 1 argument")
             arg = self.lower_expr(call.args[0])
             result = self.fresh()
-            self.ops.append(
-                toy.TransposeOp(result=result, input=arg, type=_unranked())
-            )
+            self.ops.append(toy.TransposeOp(result=result, input=arg, type=_unranked()))
             return result
 
         # Generic call

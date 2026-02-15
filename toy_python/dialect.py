@@ -32,7 +32,8 @@ class Dialect:
             def _asm(self) -> Iterable[str]:
                 return op_asm(self)
 
-            cls.asm = _asm
+            if "asm" not in cls.__dict__:
+                cls.asm = _asm
             self.op_table[asm_name] = cls
             return cls
 

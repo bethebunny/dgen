@@ -92,7 +92,7 @@ def test_full_module():
         inputs=[unranked(), unranked()], result=unranked()
     )
     mt_func = builtin.FuncOp(
-        name="multiply_transpose",
+        result="multiply_transpose",
         func_type=mt_func_type,
         body=builtin.Block(ops=mt_ops, args=mt_args),
     )
@@ -131,7 +131,7 @@ def test_full_module():
 
     main_func_type = toy.FunctionType(inputs=[], result=builtin.Nil())
     main_func = builtin.FuncOp(
-        name="main",
+        result="main",
         func_type=main_func_type,
         body=builtin.Block(ops=main_ops),
     )

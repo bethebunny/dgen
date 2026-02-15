@@ -37,9 +37,9 @@ class AffineToLLVMLowering:
         ops = self.ops
         self.ops = []
         return builtin.FuncOp(
-            name=f.name,
+            result=f.result,
             body=builtin.Block(ops=ops),
-            func_type=builtin.FuncType(result=builtin.Nil()),
+            func_type=builtin.Function(result=builtin.Nil()),
         )
 
     def lower_op(self, op: builtin.Op):
@@ -58,13 +58,9 @@ class AffineToLLVMLowering:
         elif isinstance(op, affine.IndexConstantOp):
             self.ops.append(llvm.IndexConstOp(result=op.result, value=op.value))
         elif isinstance(op, affine.ArithMulFOp):
-            self.ops.append(
-                llvm.FMulOp(result=op.result, lhs=op.lhs, rhs=op.rhs)
-            )
+            self.ops.append(llvm.FMulOp(result=op.result, lhs=op.lhs, rhs=op.rhs))
         elif isinstance(op, affine.ArithAddFOp):
-            self.ops.append(
-                llvm.FAddOp(result=op.result, lhs=op.lhs, rhs=op.rhs)
-            )
+            self.ops.append(llvm.FAddOp(result=op.result, lhs=op.lhs, rhs=op.rhs))
         elif isinstance(op, affine.PrintOp):
             self._lower_print(op)
         elif isinstance(op, builtin.ReturnOp):
@@ -81,17 +77,13 @@ class AffineToLLVMLowering:
     def _lower_load(self, op: affine.LoadOp):
         linear = self._linearize_indices(op.memref, op.indices)
         ptr_name = self.fresh()
-        self.ops.append(
-            llvm.GepOp(result=ptr_name, base=op.memref, index=linear)
-        )
+        self.ops.append(llvm.GepOp(result=ptr_name, base=op.memref, index=linear))
         self.ops.append(llvm.LoadOp(result=op.result, ptr=ptr_name))
 
     def _lower_store(self, op: affine.StoreOp):
         linear = self._linearize_indices(op.memref, op.indices)
         ptr_name = self.fresh()
-        self.ops.append(
-            llvm.GepOp(result=ptr_name, base=op.memref, index=linear)
-        )
+        self.ops.append(llvm.GepOp(result=ptr_name, base=op.memref, index=linear))
         self.ops.append(llvm.StoreOp(result="_", value=op.value, ptr=ptr_name))
 
     def _linearize_indices(self, memref: str, indices: list[str]) -> str:
@@ -118,16 +110,12 @@ class AffineToLLVMLowering:
                 else:
                     add_name = self.fresh()
                     self.ops.append(
-                        llvm.AddOp(
-                            result=add_name, lhs=result_name, rhs=idx_name
-                        )
+                        llvm.AddOp(result=add_name, lhs=result_name, rhs=idx_name)
                     )
                     result_name = add_name
             else:
                 stride_name = self.fresh()
-                self.ops.append(
-                    llvm.IndexConstOp(result=stride_name, value=stride)
-                )
+                self.ops.append(llvm.IndexConstOp(result=stride_name, value=stride))
                 mul_name = self.fresh()
                 self.ops.append(
                     llvm.MulOp(result=mul_name, lhs=idx_name, rhs=stride_name)
@@ -137,9 +125,7 @@ class AffineToLLVMLowering:
                 else:
                     add_name = self.fresh()
                     self.ops.append(
-                        llvm.AddOp(
-                            result=add_name, lhs=result_name, rhs=mul_name
-                        )
+                        llvm.AddOp(result=add_name, lhs=result_name, rhs=mul_name)
                     )
                     result_name = add_name
 
@@ -178,9 +164,7 @@ class AffineToLLVMLowering:
         self.ops.append(llvm.IndexConstOp(result=hi_name, value=op.hi))
         cmp_name = self.fresh()
         self.ops.append(
-            llvm.IcmpOp(
-                result=cmp_name, pred="slt", lhs=var_name, rhs=hi_name
-            )
+            llvm.IcmpOp(result=cmp_name, pred="slt", lhs=var_name, rhs=hi_name)
         )
         self.ops.append(
             llvm.CondBrOp(
@@ -203,9 +187,7 @@ class AffineToLLVMLowering:
         # Increment and branch back
         one_name = self.fresh()
         self.ops.append(llvm.IndexConstOp(result=one_name, value=1))
-        self.ops.append(
-            llvm.AddOp(result=next_name, lhs=var_name, rhs=one_name)
-        )
+        self.ops.append(llvm.AddOp(result=next_name, lhs=var_name, rhs=one_name))
         self.ops.append(llvm.BrOp(result="_", dest=header_label))
 
         # Exit label
