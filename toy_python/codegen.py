@@ -78,7 +78,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
         elif isinstance(op, llvm.IcmpOp):
             types[op.result] = "i1"
         elif isinstance(op, llvm.PhiOp):
-            first_val = op.pairs[0].value
+            first_val = op.values[0]
             types[op.result] = types.get(first_val, "i64")
 
     def typed_ref(name: str) -> str:
@@ -153,7 +153,8 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
         elif isinstance(op, llvm.PhiOp):
             ty = types.get(op.result, "i64")
             pairs = ", ".join(
-                f"[ {bare_ref(p.value)}, %{p.label} ]" for p in op.pairs
+                f"[ {bare_ref(v)}, %{l} ]"
+                for v, l in zip(op.values, op.labels)
             )
             lines.append(f"  %{op.result} = phi {ty} {pairs}")
         elif isinstance(op, llvm.CallOp):

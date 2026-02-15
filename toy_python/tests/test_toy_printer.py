@@ -21,7 +21,7 @@ def test_constant_op():
     )
     assert (
         asm.format(op)
-        == "%0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
+        == "%0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
     )
 
 
@@ -54,7 +54,7 @@ def test_generic_call_op():
     )
     assert (
         asm.format(op)
-        == "%4 = GenericCall @multiply_transpose(%1, %3) : tensor<*xf64>"
+        == "%4 = GenericCall(@multiply_transpose, [%1, %3]) : tensor<*xf64>"
     )
 
 
@@ -65,12 +65,12 @@ def test_print_op():
 
 def test_return_op_with_value():
     op = toy.ReturnOp(value="2")
-    assert asm.format(op) == "return %2"
+    assert asm.format(op) == "Return(%2)"
 
 
 def test_return_op_void():
     op = toy.ReturnOp(value=None)
-    assert asm.format(op) == "return"
+    assert asm.format(op) == "Return()"
 
 
 def test_full_module():
@@ -142,16 +142,16 @@ def test_full_module():
         "    %0 = Transpose(%a) : tensor<*xf64>\n"
         "    %1 = Transpose(%b) : tensor<*xf64>\n"
         "    %2 = Mul(%0, %1) : tensor<*xf64>\n"
-        "    return %2\n"
+        "    Return(%2)\n"
         "\n"
         "%main = function () -> ():\n"
-        "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
+        "    %0 = Constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %1 = Reshape(%0) : tensor<2x3xf64>\n"
-        "    %2 = Constant(<6> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
+        "    %2 = Constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
         "    %3 = Reshape(%2) : tensor<2x3xf64>\n"
-        "    %4 = GenericCall @multiply_transpose(%1, %3) : tensor<*xf64>\n"
-        "    %5 = GenericCall @multiply_transpose(%3, %1) : tensor<*xf64>\n"
+        "    %4 = GenericCall(@multiply_transpose, [%1, %3]) : tensor<*xf64>\n"
+        "    %5 = GenericCall(@multiply_transpose, [%3, %1]) : tensor<*xf64>\n"
         "    Print(%5)\n"
-        "    return\n"
+        "    Return()\n"
     )
     assert asm.format(module) == expected

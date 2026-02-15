@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
+
+from toy_python.ir_format import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables, format_float
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -40,213 +41,134 @@ class VoidType:
         return "void"
 
 
-
-# ===----------------------------------------------------------------------=== #
-# Formatting helpers
-# ===----------------------------------------------------------------------=== #
-
-
-def format_float(v: float) -> str:
-    iv = int(v)
-    if float(iv) == v:
-        return f"{iv}.0"
-    return str(v)
-
-
 # ===----------------------------------------------------------------------=== #
 # Operations
 # ===----------------------------------------------------------------------=== #
 
 
-@dataclass
+@op("Alloca")
 class AllocaOp:
-    result: str
+    result: Ssa
     elem_count: int
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = alloca f64, {self.elem_count}"
 
-
-@dataclass
+@op("Gep")
 class GepOp:
-    result: str
-    base: str
-    index: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = gep %{self.base}, %{self.index}"
+    result: Ssa
+    base: Ssa
+    index: Ssa
 
 
-@dataclass
+@op("Load")
 class LoadOp:
-    result: str
-    ptr: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = load %{self.ptr}"
+    result: Ssa
+    ptr: Ssa
 
 
-@dataclass
+@op("Store")
 class StoreOp:
-    value: str
-    ptr: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"store %{self.value}, %{self.ptr}"
+    value: Ssa
+    ptr: Ssa
 
 
-@dataclass
+@op("FAdd")
 class FAddOp:
-    result: str
-    lhs: str
-    rhs: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = fadd %{self.lhs}, %{self.rhs}"
+    result: Ssa
+    lhs: Ssa
+    rhs: Ssa
 
 
-@dataclass
+@op("FMul")
 class FMulOp:
-    result: str
-    lhs: str
-    rhs: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = fmul %{self.lhs}, %{self.rhs}"
+    result: Ssa
+    lhs: Ssa
+    rhs: Ssa
 
 
-@dataclass
+@op("FConst")
 class ConstantOp:
-    result: str
+    result: Ssa
     value: float
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = fconst {format_float(self.value)}"
 
-
-@dataclass
+@op("IConst")
 class IndexConstOp:
-    result: str
+    result: Ssa
     value: int
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = iconst {self.value}"
 
-
-@dataclass
+@op("Add")
 class AddOp:
-    result: str
-    lhs: str
-    rhs: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = add %{self.lhs}, %{self.rhs}"
+    result: Ssa
+    lhs: Ssa
+    rhs: Ssa
 
 
-@dataclass
+@op("Mul")
 class MulOp:
-    result: str
-    lhs: str
-    rhs: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = mul %{self.lhs}, %{self.rhs}"
+    result: Ssa
+    lhs: Ssa
+    rhs: Ssa
 
 
-@dataclass
+@op("Icmp")
 class IcmpOp:
-    result: str
-    pred: str
-    lhs: str
-    rhs: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = icmp {self.pred} %{self.lhs}, %{self.rhs}"
+    result: Ssa
+    pred: Bare
+    lhs: Ssa
+    rhs: Ssa
 
 
-@dataclass
+@op("Br")
 class BrOp:
-    dest: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"br {self.dest}"
+    dest: Bare
 
 
-@dataclass
+@op("CondBr")
 class CondBrOp:
-    cond: str
-    true_dest: str
-    false_dest: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"cond_br %{self.cond}, {self.true_dest}, {self.false_dest}"
+    cond: Ssa
+    true_dest: Bare
+    false_dest: Bare
 
 
-@dataclass
+@op("Label")
 class LabelOp:
-    name: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"{self.name}:"
+    name: Bare
 
 
-@dataclass
-class PhiPair:
-    value: str
-    label: str
-
-
-@dataclass
+@op("Phi")
 class PhiOp:
-    result: str
-    pairs: list[PhiPair]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        pairs = " ".join(f"[%{p.value}, {p.label}]" for p in self.pairs)
-        yield f"%{self.result} = phi {pairs}"
+    result: Ssa
+    values: SsaList
+    labels: BareList
 
 
-@dataclass
+@op("Call")
 class CallOp:
-    result: str | None
-    callee: str
-    args: list[str]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        args_str = ", ".join(f"%{a}" for a in self.args)
-        if self.result is not None:
-            yield f"%{self.result} = call @{self.callee}({args_str})"
-        else:
-            yield f"call @{self.callee}({args_str})"
+    result: Ssa | None
+    callee: Sym
+    args: SsaList
 
 
-@dataclass
+@op("Return")
 class ReturnOp:
-    value: str | None
-
-    @property
-    def asm(self) -> Iterable[str]:
-        if self.value is not None:
-            yield f"ret %{self.value}"
-        else:
-            yield "ret void"
+    value: Ssa | None
 
 
+# ===----------------------------------------------------------------------=== #
+# Dialect tables & convenience parser
+# ===----------------------------------------------------------------------=== #
+
+_ALL_OPS = [
+    AllocaOp, GepOp, LoadOp, StoreOp, FAddOp, FMulOp, ConstantOp,
+    IndexConstOp, AddOp, MulOp, IcmpOp, BrOp, CondBrOp, LabelOp,
+    PhiOp, CallOp, ReturnOp,
+]
+OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS)
+TYPE_TABLE: dict = {}
 
 
+def parse_llvm_module(text: str):
+    from toy_python.ir_parser import parse_module
+
+    return parse_module(text, ops=OP_TABLE, keywords=KEYWORD_TABLE, types=TYPE_TABLE)

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 
-from toy_python import asm
 from toy_python.dialects.builtin import Op
+from toy_python.ir_format import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -37,132 +36,92 @@ class F64Type:
 
 
 # ===----------------------------------------------------------------------=== #
-# Formatting helpers
-# ===----------------------------------------------------------------------=== #
-
-
-def format_float(v: float) -> str:
-    iv = int(v)
-    if float(iv) == v:
-        return f"{iv}.0"
-    return str(v)
-
-
-# ===----------------------------------------------------------------------=== #
 # Operations
 # ===----------------------------------------------------------------------=== #
 
 
-@dataclass
+@op("Alloc")
 class AllocOp:
-    result: str
-    shape: list[int]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Alloc<{'x'.join(str(d) for d in self.shape)}>()"
+    result: Ssa
+    shape: Shape
 
 
-@dataclass
+@op("Dealloc")
 class DeallocOp:
-    input: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"Dealloc(%{self.input})"
+    input: Ssa
 
 
-@dataclass
+@op("AffineLoad")
 class LoadOp:
-    result: str
-    memref: str
-    indices: list[str]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = AffineLoad %{self.memref}[{', '.join(self.indices)}]"
+    result: Ssa
+    memref: Ssa
+    indices: BareList
 
 
-@dataclass
+@op("AffineStore")
 class StoreOp:
-    value: str
-    memref: str
-    indices: list[str]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"AffineStore %{self.value}, %{self.memref}[{', '.join(self.indices)}]"
+    value: Ssa
+    memref: Ssa
+    indices: BareList
 
 
-@dataclass
+@op("ArithConstant")
 class ArithConstantOp:
-    result: str
+    result: Ssa
     value: float
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = ArithConstant({format_float(self.value)})"
 
-
-@dataclass
+@op("IndexConstant")
 class IndexConstantOp:
-    result: str
+    result: Ssa
     value: int
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = IndexConstant({self.value})"
 
-
-@dataclass
+@op("MulF")
 class ArithMulFOp:
-    result: str
-    lhs: str
-    rhs: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = MulF(%{self.lhs}, %{self.rhs})"
+    result: Ssa
+    lhs: Ssa
+    rhs: Ssa
 
 
-@dataclass
+@op("AddF")
 class ArithAddFOp:
-    result: str
-    lhs: str
-    rhs: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = AddF(%{self.lhs}, %{self.rhs})"
+    result: Ssa
+    lhs: Ssa
+    rhs: Ssa
 
 
-@dataclass
+@op("PrintMemRef")
 class PrintOp:
-    input: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"PrintMemRef(%{self.input})"
+    input: Ssa
 
 
-@dataclass
+@op("Return")
 class ReturnOp:
-    value: str | None
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield "return" if self.value is None else f"return %{self.value}"
+    value: Ssa | None
 
 
-@dataclass
+@op("AffineFor")
 class ForOp:
-    var_name: str
+    var_name: Ssa
     lo: int
     hi: int
     body: list[Op]
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"AffineFor %{self.var_name} = {self.lo} to {self.hi}:"
-        for child_op in self.body:
-            yield from asm.indent(child_op.asm)
+
+# ===----------------------------------------------------------------------=== #
+# Dialect tables & convenience parser
+# ===----------------------------------------------------------------------=== #
+
+_ALL_OPS = [
+    AllocOp, DeallocOp, LoadOp, StoreOp, ArithConstantOp, IndexConstantOp,
+    ArithMulFOp, ArithAddFOp, PrintOp, ReturnOp, ForOp,
+]
+OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS)
+TYPE_TABLE: dict = {}
+
+
+def parse_affine_module(text: str):
+    from toy_python.ir_parser import parse_module
+
+    return parse_module(text, ops=OP_TABLE, keywords=KEYWORD_TABLE, types=TYPE_TABLE)

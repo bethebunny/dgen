@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from toy_python.dialects.builtin import FuncType, Nil, Type
+from toy_python.ir_format import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables
+
+if TYPE_CHECKING:
+    from toy_python.ir_parser import IRParser
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -40,127 +44,95 @@ class FunctionType(FuncType):
 
 
 # ===----------------------------------------------------------------------=== #
-# Formatting helpers
-# ===----------------------------------------------------------------------=== #
-
-
-def format_shape(shape: list[int]) -> str:
-    return "<" + "x".join(str(d) for d in shape) + ">"
-
-
-def format_float_list(values: list[float]) -> str:
-    parts = []
-    for v in values:
-        iv = int(v)
-        if float(iv) == v:
-            parts.append(f"{iv}.0")
-        else:
-            parts.append(str(v))
-    return "[" + ", ".join(parts) + "]"
-
-
-# ===----------------------------------------------------------------------=== #
 # Operations
 # ===----------------------------------------------------------------------=== #
 
 
-@dataclass
+@op("Constant")
 class ConstantOp:
-    result: str
+    result: Ssa
+    shape: Shape
     value: list[float]
-    shape: list[int]
     type: Type
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield (
-            f"%{self.result} = Constant({format_shape(self.shape)} "
-            f"{format_float_list(self.value)}) : {self.type.asm}"
-        )
 
-
-@dataclass
+@op("Transpose")
 class TransposeOp:
-    result: str
-    input: str
+    result: Ssa
+    input: Ssa
     type: Type
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Transpose(%{self.input}) : {self.type.asm}"
 
-
-@dataclass
+@op("Reshape")
 class ReshapeOp:
-    result: str
-    input: str
+    result: Ssa
+    input: Ssa
     type: Type
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Reshape(%{self.input}) : {self.type.asm}"
 
-
-@dataclass
+@op("Mul")
 class MulOp:
-    result: str
-    lhs: str
-    rhs: str
+    result: Ssa
+    lhs: Ssa
+    rhs: Ssa
     type: Type
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Mul(%{self.lhs}, %{self.rhs}) : {self.type.asm}"
 
-
-@dataclass
+@op("Add")
 class AddOp:
-    result: str
-    lhs: str
-    rhs: str
+    result: Ssa
+    lhs: Ssa
+    rhs: Ssa
     type: Type
 
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Add(%{self.lhs}, %{self.rhs}) : {self.type.asm}"
 
-
-@dataclass
+@op("GenericCall")
 class GenericCallOp:
-    result: str
-    callee: str
-    args: list[str]
+    result: Ssa
+    callee: Sym
+    args: SsaList
     type: Type
 
-    @property
-    def asm(self) -> Iterable[str]:
-        args_str = ", ".join(f"%{a}" for a in self.args)
-        yield (
-            f"%{self.result} = GenericCall @{self.callee}({args_str}) : "
-            f"{self.type.asm}"
-        )
 
-
-@dataclass
+@op("Print")
 class PrintOp:
-    input: str
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"Print(%{self.input})"
+    input: Ssa
 
 
-@dataclass
+@op("Return")
 class ReturnOp:
-    value: str | None
-
-    @property
-    def asm(self) -> Iterable[str]:
-        if self.value is not None:
-            yield f"return %{self.value}"
-        else:
-            yield "return"
+    value: Ssa | None
 
 
+# ===----------------------------------------------------------------------=== #
+# Dialect tables & convenience parser
+# ===----------------------------------------------------------------------=== #
 
 
+def _parse_tensor_type(parser: IRParser) -> UnrankedTensorType | RankedTensorType:
+    parser.expect("<")
+    if parser.peek() == "*":
+        parser.expect("*xf64>")
+        return UnrankedTensorType()
+    shape = [parser.parse_int()]
+    while parser.peek() == "x":
+        parser.expect("x")
+        if parser.peek() == "f":
+            break
+        shape.append(parser.parse_int())
+    parser.expect("f64>")
+    return RankedTensorType(shape=shape)
+
+
+_ALL_OPS = [
+    ConstantOp, TransposeOp, ReshapeOp, MulOp, AddOp,
+    GenericCallOp, PrintOp, ReturnOp,
+]
+OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS)
+TYPE_TABLE = {"tensor": _parse_tensor_type}
+
+
+def parse_toy_module(text: str):
+    from toy_python.ir_parser import parse_module
+
+    return parse_module(text, ops=OP_TABLE, keywords=KEYWORD_TABLE, types=TYPE_TABLE)

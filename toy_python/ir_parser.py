@@ -1,16 +1,21 @@
-"""IR text deserialization for the Toy dialect.
+"""Dialect-agnostic IR text deserialization.
 
 Line-oriented recursive descent parser that reads IR text format back into
-Module data structures.
+Module data structures.  Dialect knowledge (ops, keyword ops, types) is
+supplied via lookup tables passed by the caller.
 """
 
-from toy_python.dialects import builtin, toy
+from toy_python.dialects import builtin
+from toy_python.ir_format import parse_op_fields
 
 
 class IRParser:
-    def __init__(self, text: str):
+    def __init__(self, text: str, ops: dict, keywords: dict, types: dict):
         self.text = text
         self.pos = 0
+        self._ops = ops
+        self._keywords = keywords
+        self._types = types
 
     def at_end(self) -> bool:
         return self.pos >= len(self.text)
@@ -101,23 +106,14 @@ class IRParser:
         return int(self.text[start : self.pos])
 
     def parse_type(self) -> builtin.Type:
-        """Parse () or tensor<*xf64> or tensor<NxMxf64>"""
+        """Parse a type via the registered type table, or () for Nil."""
         if self.peek() == "(":
             self.expect("()")
             return builtin.Nil()
-        self.expect("tensor<")
-        if self.peek() == "*":
-            self.expect("*xf64>")
-            return toy.UnrankedTensorType()
-        # Ranked: parse dimensions
-        shape = [self.parse_int()]
-        while self.peek() == "x":
-            self.expect("x")
-            if self.peek() == "f":
-                break
-            shape.append(self.parse_int())
-        self.expect("f64>")
-        return toy.RankedTensorType(shape=shape)
+        name = self.parse_identifier()
+        if name not in self._types:
+            raise RuntimeError(f"Unknown type: {name}")
+        return self._types[name](self)
 
     def skip_line(self):
         """Skip to the next line."""
@@ -141,7 +137,6 @@ class IRParser:
 
     def parse_func(self) -> builtin.FuncOp:
         """Parse a function definition."""
-        # %name = function (...) [-> Type]:
         name = self.parse_ssa_name()
         self.skip_whitespace()
         self.expect("=")
@@ -152,18 +147,15 @@ class IRParser:
 
         # Parse parameters
         args: list[builtin.Value] = []
-        input_types: list[builtin.Type] = []
         self.skip_whitespace()
         if self.peek() != ")":
             arg = self._parse_param()
-            input_types.append(arg.type)
             args.append(arg)
             self.skip_whitespace()
             while self.peek() == ",":
                 self.expect(",")
                 self.skip_whitespace()
                 arg = self._parse_param()
-                input_types.append(arg.type)
                 args.append(arg)
                 self.skip_whitespace()
         self.expect(")")
@@ -178,19 +170,9 @@ class IRParser:
         self.skip_line()
 
         # Parse body (indented lines)
-        ops: list[builtin.Op] = []
-        while not self.at_end():
-            # Check if next line is indented (body) or not (next function)
-            if self.peek() not in (" ", "\t"):
-                break
-            self.skip_whitespace()
-            if self.at_end() or self.peek() == "\n":
-                self.skip_line()
-                continue
-            ops.append(self.parse_op())
-            self.skip_line()
+        ops = self._parse_block(min_indent=1)
 
-        func_type = toy.FunctionType(inputs=input_types, result=result)
+        func_type = builtin.FuncType(result=result)
         return builtin.FuncOp(
             name=name,
             func_type=func_type,
@@ -205,151 +187,81 @@ class IRParser:
         type_ = self.parse_type()
         return builtin.Value(name=name, type=type_)
 
-    def parse_op(self) -> builtin.Op:
-        """Parse a single operation."""
-        # Check for bare ops first: Print(...), return ...
-        if self.peek() == "P":
-            return self._parse_print_op()
-        if self.peek() == "r":
-            return self._parse_return_op()
+    def _parse_block(self, min_indent: int) -> list[builtin.Op]:
+        """Parse a block of indented ops."""
+        ops: list[builtin.Op] = []
+        while not self.at_end():
+            line_start = self.pos
+            indent = 0
+            while not self.at_end() and self.text[self.pos] in " \t":
+                if self.text[self.pos] == " ":
+                    indent += 1
+                else:
+                    indent += 4
+                self.pos += 1
 
-        # %result = OpName(...)
+            # Empty line
+            if self.at_end() or self.peek() == "\n":
+                if not self.at_end():
+                    self.pos += 1  # skip \n
+                continue
+
+            # Not enough indent -> end of block
+            if indent < min_indent:
+                self.pos = line_start
+                break
+
+            # Find the newline ending this line (before parsing) so we can
+            # detect whether parse_op consumed past it (body-bearing ops).
+            eol = self.text.find("\n", self.pos)
+            if eol == -1:
+                eol = len(self.text)
+
+            ops.append(self.parse_op())
+
+            # If parse_op consumed past the original newline (body-bearing op),
+            # the cursor is already at the next line's start — don't skip.
+            if self.pos <= eol:
+                self.skip_line()
+        return ops
+
+    def parse_indented_block(self) -> list[builtin.Op]:
+        """Parse an indented block after a ':' (for ops with body)."""
+        self.skip_line()
+        # Determine indent of first line
+        start = self.pos
+        indent = 0
+        while not self.at_end() and self.text[self.pos] in " \t":
+            if self.text[self.pos] == " ":
+                indent += 1
+            else:
+                indent += 4
+            self.pos += 1
+        self.pos = start
+        if indent == 0:
+            return []
+        return self._parse_block(min_indent=indent)
+
+    def parse_op(self) -> builtin.Op:
+        """Parse a single operation via registered tables."""
+        if self.peek() != "%":
+            name = self.parse_identifier()
+            if name not in self._keywords:
+                raise RuntimeError(f"Unknown keyword op: {name}")
+            cls = self._keywords[name]
+            return parse_op_fields(self, cls)
+
         result = self.parse_ssa_name()
         self.skip_whitespace()
         self.expect("=")
         self.skip_whitespace()
         op_name = self.parse_identifier()
-
-        if op_name == "Constant":
-            return self._parse_constant_body(result)
-        if op_name == "Transpose":
-            return self._parse_transpose_body(result)
-        if op_name == "Reshape":
-            return self._parse_reshape_body(result)
-        if op_name == "Mul":
-            return self._parse_mul_body(result)
-        if op_name == "Add":
-            return self._parse_add_body(result)
-        if op_name == "GenericCall":
-            return self._parse_generic_call_body(result)
-
-        raise RuntimeError(f"Unknown op: {op_name}")
-
-    def _parse_print_op(self) -> builtin.Op:
-        self.expect("Print(")
-        input_ = self.parse_ssa_name()
-        self.expect(")")
-        return toy.PrintOp(input=input_)
-
-    def _parse_return_op(self) -> builtin.Op:
-        self.expect("return")
-        self.skip_whitespace()
-        if self.at_end() or self.peek() == "\n":
-            return toy.ReturnOp(value=None)
-        val = self.parse_ssa_name()
-        return toy.ReturnOp(value=val)
-
-    def _parse_constant_body(self, result: str) -> builtin.Op:
-        """Parse (<shape> [values]) : Type"""
-        self.expect("(")
-        # Parse shape: <NxM> or <N>
-        self.expect("<")
-        shape = [self.parse_int()]
-        while self.peek() == "x":
-            self.expect("x")
-            shape.append(self.parse_int())
-        self.expect(">")
-        self.skip_whitespace()
-
-        # Parse values: [v1, v2, ...]
-        self.expect("[")
-        values: list[float] = []
-        self.skip_whitespace()
-        values.append(self.parse_number())
-        while self.peek() == ",":
-            self.expect(",")
-            self.skip_whitespace()
-            values.append(self.parse_number())
-        self.expect("]")
-        self.expect(")")
-        self.skip_whitespace()
-        self.expect(":")
-        self.skip_whitespace()
-        type_ = self.parse_type()
-
-        return toy.ConstantOp(result=result, value=values, shape=shape, type=type_)
-
-    def _parse_transpose_body(self, result: str) -> builtin.Op:
-        self.expect("(")
-        input_ = self.parse_ssa_name()
-        self.expect(")")
-        self.skip_whitespace()
-        self.expect(":")
-        self.skip_whitespace()
-        type_ = self.parse_type()
-        return toy.TransposeOp(result=result, input=input_, type=type_)
-
-    def _parse_reshape_body(self, result: str) -> builtin.Op:
-        self.expect("(")
-        input_ = self.parse_ssa_name()
-        self.expect(")")
-        self.skip_whitespace()
-        self.expect(":")
-        self.skip_whitespace()
-        type_ = self.parse_type()
-        return toy.ReshapeOp(result=result, input=input_, type=type_)
-
-    def _parse_mul_body(self, result: str) -> builtin.Op:
-        self.expect("(")
-        lhs = self.parse_ssa_name()
-        self.expect(",")
-        self.skip_whitespace()
-        rhs = self.parse_ssa_name()
-        self.expect(")")
-        self.skip_whitespace()
-        self.expect(":")
-        self.skip_whitespace()
-        type_ = self.parse_type()
-        return toy.MulOp(result=result, lhs=lhs, rhs=rhs, type=type_)
-
-    def _parse_add_body(self, result: str) -> builtin.Op:
-        self.expect("(")
-        lhs = self.parse_ssa_name()
-        self.expect(",")
-        self.skip_whitespace()
-        rhs = self.parse_ssa_name()
-        self.expect(")")
-        self.skip_whitespace()
-        self.expect(":")
-        self.skip_whitespace()
-        type_ = self.parse_type()
-        return toy.AddOp(result=result, lhs=lhs, rhs=rhs, type=type_)
-
-    def _parse_generic_call_body(self, result: str) -> builtin.Op:
-        """Parse @callee(%a, %b) : Type"""
-        self.skip_whitespace()
-        self.expect("@")
-        callee = self.parse_identifier()
-        self.expect("(")
-        args: list[str] = []
-        self.skip_whitespace()
-        if self.peek() != ")":
-            args.append(self.parse_ssa_name())
-            while self.peek() == ",":
-                self.expect(",")
-                self.skip_whitespace()
-                args.append(self.parse_ssa_name())
-        self.expect(")")
-        self.skip_whitespace()
-        self.expect(":")
-        self.skip_whitespace()
-        type_ = self.parse_type()
-
-        return toy.GenericCallOp(
-            result=result, callee=callee, args=args, type=type_
-        )
+        if op_name not in self._ops:
+            raise RuntimeError(f"Unknown op: {op_name}")
+        cls = self._ops[op_name]
+        return parse_op_fields(self, cls, result=result)
 
 
-def parse_module(text: str) -> builtin.Module:
-    parser = IRParser(text)
+def parse_module(text: str, ops: dict, keywords: dict, types: dict) -> builtin.Module:
+    parser = IRParser(text, ops, keywords, types)
     return parser.parse_module()

@@ -168,10 +168,8 @@ class AffineToLLVMLowering:
         next_name = self.fresh()
         phi_op = llvm.PhiOp(
             result=var_name,
-            pairs=[
-                llvm.PhiPair(value=init_name, label=prev_label),
-                llvm.PhiPair(value=next_name, label=body_label),  # placeholder
-            ],
+            values=[init_name, next_name],
+            labels=[prev_label, body_label],  # back-edge label patched after body
         )
         self.ops.append(phi_op)
 
@@ -200,7 +198,7 @@ class AffineToLLVMLowering:
 
         # Patch phi back-edge to actual current block (may differ from
         # body_label when the body contains nested loops)
-        phi_op.pairs[1] = llvm.PhiPair(value=next_name, label=self.current_label)
+        phi_op.labels[1] = self.current_label
 
         # Increment and branch back
         one_name = self.fresh()
