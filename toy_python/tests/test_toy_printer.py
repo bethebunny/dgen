@@ -65,12 +65,12 @@ def test_print_op():
 
 
 def test_return_op_with_value():
-    op = toy.ReturnOp(value="2")
+    op = builtin.ReturnOp(value="2")
     assert asm.format(op) == "return(%2)"
 
 
 def test_return_op_void():
-    op = toy.ReturnOp(value=None)
+    op = builtin.ReturnOp(value=None)
     assert asm.format(op) == "return()"
 
 
@@ -85,7 +85,7 @@ def test_full_module():
         toy.TransposeOp(result="0", input="a", type=unranked()),
         toy.TransposeOp(result="1", input="b", type=unranked()),
         toy.MulOp(result="2", lhs="0", rhs="1", type=unranked()),
-        toy.ReturnOp(value="2"),
+        builtin.ReturnOp(value="2"),
     ]
 
     mt_func_type = toy.FunctionType(
@@ -126,7 +126,7 @@ def test_full_module():
             type=unranked(),
         ),
         toy.PrintOp(input="5"),
-        toy.ReturnOp(value=None),
+        builtin.ReturnOp(value=None),
     ]
 
     main_func_type = toy.FunctionType(inputs=[], result=builtin.Nil())

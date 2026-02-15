@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from toy_python.dialect import Dialect
 from toy_python.dialects.builtin import FuncType, Nil, Type
-from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables
+from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym
 
 if TYPE_CHECKING:
     from toy_python.asm.parser import IRParser
@@ -47,8 +48,10 @@ class FunctionType(FuncType):
 # Operations
 # ===----------------------------------------------------------------------=== #
 
+toy = Dialect("toy")
 
-@op("constant")
+
+@toy.op("constant")
 class ConstantOp:
     result: Ssa
     shape: Shape
@@ -56,21 +59,21 @@ class ConstantOp:
     type: Type
 
 
-@op("transpose")
+@toy.op("transpose")
 class TransposeOp:
     result: Ssa
     input: Ssa
     type: Type
 
 
-@op("reshape")
+@toy.op("reshape")
 class ReshapeOp:
     result: Ssa
     input: Ssa
     type: Type
 
 
-@op("mul")
+@toy.op("mul")
 class MulOp:
     result: Ssa
     lhs: Ssa
@@ -78,7 +81,7 @@ class MulOp:
     type: Type
 
 
-@op("add")
+@toy.op("add")
 class AddOp:
     result: Ssa
     lhs: Ssa
@@ -86,7 +89,7 @@ class AddOp:
     type: Type
 
 
-@op("generic_call")
+@toy.op("generic_call")
 class GenericCallOp:
     result: Ssa
     callee: Sym
@@ -94,23 +97,17 @@ class GenericCallOp:
     type: Type
 
 
-@op("print")
+@toy.op("print")
 class PrintOp:
     input: Ssa
 
 
-@op("return", builtin=True)
-class ReturnOp:
-    value: Ssa | None
-
-
 # ===----------------------------------------------------------------------=== #
-# Dialect tables & convenience parser
+# Type parser
 # ===----------------------------------------------------------------------=== #
 
-DIALECT_NAME = "toy"
 
-
+@toy.type("tensor")
 def _parse_tensor_type(parser: IRParser) -> UnrankedTensorType | RankedTensorType:
     parser.expect("<")
     if parser.peek() == "*":
@@ -124,14 +121,6 @@ def _parse_tensor_type(parser: IRParser) -> UnrankedTensorType | RankedTensorTyp
         shape.append(parser.parse_int())
     parser.expect("f64>")
     return RankedTensorType(shape=shape)
-
-
-_ALL_OPS = [
-    ConstantOp, TransposeOp, ReshapeOp, MulOp, AddOp,
-    GenericCallOp, PrintOp, ReturnOp,
-]
-OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS, dialect=DIALECT_NAME)
-TYPE_TABLE = {"tensor": _parse_tensor_type}
 
 
 def parse_toy_module(text: str):

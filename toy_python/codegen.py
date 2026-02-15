@@ -169,7 +169,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
                     )
                 else:
                     lines.append(f"  call void @{op.callee}({a})")
-        elif isinstance(op, llvm.ReturnOp):
+        elif isinstance(op, builtin.ReturnOp):
             if op.value is not None:
                 lines.append(f"  ret {typed_ref(op.value)}")
             else:

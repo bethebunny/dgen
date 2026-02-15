@@ -67,8 +67,8 @@ class AffineToLLVMLowering:
             )
         elif isinstance(op, affine.PrintOp):
             self._lower_print(op)
-        elif isinstance(op, affine.ReturnOp):
-            self.ops.append(llvm.ReturnOp(value=op.value))
+        elif isinstance(op, builtin.ReturnOp):
+            self.ops.append(builtin.ReturnOp(value=op.value))
 
     def _lower_alloc(self, op: affine.AllocOp):
         total = 1

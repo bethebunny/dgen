@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables, format_float
+from toy_python.dialect import Dialect
+from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym, format_float
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -45,73 +46,75 @@ class VoidType:
 # Operations
 # ===----------------------------------------------------------------------=== #
 
+llvm = Dialect("llvm")
 
-@op("alloca")
+
+@llvm.op("alloca")
 class AllocaOp:
     result: Ssa
     elem_count: int
 
 
-@op("gep")
+@llvm.op("gep")
 class GepOp:
     result: Ssa
     base: Ssa
     index: Ssa
 
 
-@op("load")
+@llvm.op("load")
 class LoadOp:
     result: Ssa
     ptr: Ssa
 
 
-@op("store")
+@llvm.op("store")
 class StoreOp:
     value: Ssa
     ptr: Ssa
 
 
-@op("fadd")
+@llvm.op("fadd")
 class FAddOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("fmul")
+@llvm.op("fmul")
 class FMulOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("fconst")
+@llvm.op("fconst")
 class ConstantOp:
     result: Ssa
     value: float
 
 
-@op("iconst")
+@llvm.op("iconst")
 class IndexConstOp:
     result: Ssa
     value: int
 
 
-@op("add")
+@llvm.op("add")
 class AddOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("mul")
+@llvm.op("mul")
 class MulOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("icmp")
+@llvm.op("icmp")
 class IcmpOp:
     result: Ssa
     pred: Bare
@@ -119,55 +122,35 @@ class IcmpOp:
     rhs: Ssa
 
 
-@op("br")
+@llvm.op("br")
 class BrOp:
     dest: Bare
 
 
-@op("cond_br")
+@llvm.op("cond_br")
 class CondBrOp:
     cond: Ssa
     true_dest: Bare
     false_dest: Bare
 
 
-@op("label")
+@llvm.op("label")
 class LabelOp:
     name: Bare
 
 
-@op("phi")
+@llvm.op("phi")
 class PhiOp:
     result: Ssa
     values: SsaList
     labels: BareList
 
 
-@op("call")
+@llvm.op("call")
 class CallOp:
     result: Ssa | None
     callee: Sym
     args: SsaList
-
-
-@op("return", builtin=True)
-class ReturnOp:
-    value: Ssa | None
-
-
-# ===----------------------------------------------------------------------=== #
-# Dialect tables & convenience parser
-# ===----------------------------------------------------------------------=== #
-
-DIALECT_NAME = "llvm"
-
-_ALL_OPS = [
-    AllocaOp, GepOp, LoadOp, StoreOp, FAddOp, FMulOp, ConstantOp,
-    IndexConstOp, AddOp, MulOp, IcmpOp, BrOp, CondBrOp, LabelOp,
-    PhiOp, CallOp, ReturnOp,
-]
-OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS, dialect=DIALECT_NAME)
-TYPE_TABLE: dict = {}
 
 
 def parse_llvm_module(text: str):

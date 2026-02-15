@@ -9,6 +9,7 @@ import dataclasses
 import importlib
 from typing import get_args, get_origin, get_type_hints
 
+from toy_python.dialect import Dialect
 from toy_python.dialects import builtin
 
 from .formatting import _SPECIAL_FIELDS, _get_annotation, _is_optional
@@ -293,27 +294,22 @@ class IRParser:
                     names.append(self.parse_identifier())
                     self.skip_whitespace()
                 self.skip_line()
+                builtin_dialect = Dialect.get("builtin")
                 for name in names:
                     if name == "function":
                         continue  # handled by parse_func
-                    if name in builtin.KEYWORD_TABLE:
-                        self._unqualified_keywords[name] = builtin.KEYWORD_TABLE[name]
+                    if name in builtin_dialect.keyword_table:
+                        self._unqualified_keywords[name] = builtin_dialect.keyword_table[name]
 
             elif word == "import":
                 self.skip_whitespace()
                 dialect_name = self.parse_identifier()
                 self.skip_line()
-                mod = importlib.import_module(f"toy_python.dialects.{dialect_name}")
-                self._dialect_ops[dialect_name] = getattr(mod, "OP_TABLE", {})
-                self._dialect_keywords[dialect_name] = getattr(mod, "KEYWORD_TABLE", {})
-                self._types.update(getattr(mod, "TYPE_TABLE", {}))
-                # Register builtin ops from this dialect in unqualified tables
-                for name, cls in getattr(mod, "OP_TABLE", {}).items():
-                    if getattr(cls, "_builtin", False):
-                        self._unqualified_ops[name] = cls
-                for name, cls in getattr(mod, "KEYWORD_TABLE", {}).items():
-                    if getattr(cls, "_builtin", False):
-                        self._unqualified_keywords[name] = cls
+                importlib.import_module(f"toy_python.dialects.{dialect_name}")
+                d = Dialect.get(dialect_name)
+                self._dialect_ops[dialect_name] = d.op_table
+                self._dialect_keywords[dialect_name] = d.keyword_table
+                self._types.update(d.type_table)
             else:
                 # Not an import line — rewind
                 self.pos = saved

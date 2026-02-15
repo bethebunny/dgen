@@ -1,6 +1,6 @@
 """Generic format-driven IR serialization and parsing.
 
-Type aliases and the @op decorator drive both asm emission and parsing
+Type aliases and Dialect.op() drive both asm emission and parsing
 from dataclass field declarations alone — no per-op asm/parse code needed.
 """
 
@@ -152,58 +152,3 @@ def op_asm(op) -> Iterable[str]:
             yield from indent(child_op.asm)
 
 
-# ===----------------------------------------------------------------------=== #
-# @op decorator and table builder
-# ===----------------------------------------------------------------------=== #
-
-
-def op(asm_name: str, builtin: bool = False):
-    """Decorator: attaches _asm_name, _builtin, injects generic asm property."""
-
-    def decorator(cls):
-        cls = dataclasses.dataclass(cls)
-        cls._asm_name = asm_name
-        cls._builtin = builtin
-
-        @property
-        def _asm(self) -> Iterable[str]:
-            return op_asm(self)
-
-        cls.asm = _asm
-        return cls
-
-    return decorator
-
-
-def build_tables(
-    op_classes: list[type],
-    dialect: str,
-) -> tuple[dict[str, type], dict[str, type]]:
-    """Build (op_table, keyword_table) from a list of @op-decorated classes.
-
-    - Classes with a 'result' field go in op_table (result ops).
-    - Classes without 'result' go in keyword_table.
-    - Classes with 'result: Ssa | None' go in BOTH tables.
-    - Sets _dialect_name on each class ("builtin" if _builtin, else dialect).
-    """
-    op_table: dict[str, type] = {}
-    keyword_table: dict[str, type] = {}
-
-    for cls in op_classes:
-        cls._dialect_name = "builtin" if cls._builtin else dialect
-        name = cls._asm_name
-        hints = get_type_hints(cls, include_extras=True)
-        has_result = "result" in hints
-
-        if not has_result:
-            keyword_table[name] = cls
-        else:
-            result_hint = hints["result"]
-            if _is_optional(result_hint) is not None:
-                # Optional result -> both tables
-                op_table[name] = cls
-                keyword_table[name] = cls
-            else:
-                op_table[name] = cls
-
-    return op_table, keyword_table

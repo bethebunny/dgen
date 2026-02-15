@@ -54,7 +54,7 @@ class ToyToAffineLowering:
             self._lower_reshape(op)
         elif isinstance(op, toy.PrintOp):
             self._lower_print(op)
-        elif isinstance(op, toy.ReturnOp):
+        elif isinstance(op, builtin.ReturnOp):
             self._lower_return(op)
 
     def _lower_constant(self, op: toy.ConstantOp):
@@ -259,11 +259,11 @@ class ToyToAffineLowering:
         alloc = self.alloc_map.get(input_name, input_name)
         self.ops.append(affine.PrintOp(input=alloc))
 
-    def _lower_return(self, op: toy.ReturnOp):
+    def _lower_return(self, op: builtin.ReturnOp):
         # Dealloc all live allocs
         for alloc_name in self.live_allocs:
             self.ops.append(affine.DeallocOp(input=alloc_name))
-        self.ops.append(affine.ReturnOp(value=op.value))
+        self.ops.append(builtin.ReturnOp(value=op.value))
 
 
 def lower_to_affine(m: builtin.Module) -> builtin.Module:

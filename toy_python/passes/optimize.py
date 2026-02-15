@@ -41,7 +41,7 @@ def get_operands(op: builtin.Op) -> list[str]:
         return list(op.args)
     if isinstance(op, toy.PrintOp):
         return [op.input]
-    if isinstance(op, toy.ReturnOp):
+    if isinstance(op, builtin.ReturnOp):
         return [op.value] if op.value is not None else []
     return []
 
@@ -98,8 +98,8 @@ def rewrite_uses(ops: list[builtin.Op], old_name: str, new_name: str):
             )
         elif isinstance(op, toy.PrintOp) and op.input == old_name:
             ops[i] = toy.PrintOp(input=new_name)
-        elif isinstance(op, toy.ReturnOp) and op.value == old_name:
-            ops[i] = toy.ReturnOp(value=new_name)
+        elif isinstance(op, builtin.ReturnOp) and op.value == old_name:
+            ops[i] = builtin.ReturnOp(value=new_name)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -195,7 +195,7 @@ def eliminate_dead_code(func: toy.FuncOp):
         uses = collect_uses(func.body.ops)
         to_remove: list[int] = []
         for i, op in enumerate(func.body.ops):
-            if isinstance(op, (toy.PrintOp, toy.ReturnOp)):
+            if isinstance(op, (toy.PrintOp, builtin.ReturnOp)):
                 continue
             name = get_result_name(op)
             if name is None:

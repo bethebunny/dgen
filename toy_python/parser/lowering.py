@@ -65,7 +65,7 @@ class Lowering:
         result: builtin.Type = builtin.Nil()
         if self.ops:
             last_op = self.ops[-1]
-            if isinstance(last_op, toy.ReturnOp) and last_op.value is not None:
+            if isinstance(last_op, builtin.ReturnOp) and last_op.value is not None:
                 result = _unranked()
 
         ops = self.ops
@@ -105,9 +105,9 @@ class Lowering:
     def _lower_return(self, ret: ReturnStmt):
         if ret.value is not None:
             name = self.lower_expr(ret.value)
-            self.ops.append(toy.ReturnOp(value=name))
+            self.ops.append(builtin.ReturnOp(value=name))
         else:
-            self.ops.append(toy.ReturnOp(value=None))
+            self.ops.append(builtin.ReturnOp(value=None))
 
     def lower_expr(self, expr: Expression) -> str:
         """Lower an expression, return the SSA name of the result."""

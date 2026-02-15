@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Annotated, Protocol
+from typing import Protocol
 
 from toy_python import asm
+from toy_python.dialect import Dialect
+from toy_python.asm.formatting import Ssa
 
 
 class Type(Protocol):
@@ -61,26 +63,12 @@ class Block:
 # Builtin ReturnOp
 # ===----------------------------------------------------------------------=== #
 
-_Ssa = Annotated[str, "ssa"]
+_dialect = Dialect("builtin")
 
 
-@dataclass
+@_dialect.op("return")
 class ReturnOp:
-    value: _Ssa | None
-    _asm_name = "return"
-    _dialect_name = "builtin"
-    _builtin = True
-
-    @property
-    def asm(self):
-        from toy_python.asm.formatting import op_asm
-
-        return op_asm(self)
-
-
-KEYWORD_TABLE = {"return": ReturnOp}
-OP_TABLE: dict = {}
-TYPE_TABLE: dict = {}
+    value: Ssa | None
 
 
 # ===----------------------------------------------------------------------=== #

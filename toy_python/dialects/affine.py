@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from toy_python.dialect import Dialect
 from toy_python.dialects.builtin import Op
-from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables
+from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -39,88 +40,71 @@ class F64Type:
 # Operations
 # ===----------------------------------------------------------------------=== #
 
+affine = Dialect("affine")
 
-@op("alloc")
+
+@affine.op("alloc")
 class AllocOp:
     result: Ssa
     shape: Shape
 
 
-@op("dealloc")
+@affine.op("dealloc")
 class DeallocOp:
     input: Ssa
 
 
-@op("affine_load")
+@affine.op("affine_load")
 class LoadOp:
     result: Ssa
     memref: Ssa
     indices: BareList
 
 
-@op("affine_store")
+@affine.op("affine_store")
 class StoreOp:
     value: Ssa
     memref: Ssa
     indices: BareList
 
 
-@op("arith_constant")
+@affine.op("arith_constant")
 class ArithConstantOp:
     result: Ssa
     value: float
 
 
-@op("index_constant")
+@affine.op("index_constant")
 class IndexConstantOp:
     result: Ssa
     value: int
 
 
-@op("mul_f")
+@affine.op("mul_f")
 class ArithMulFOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("add_f")
+@affine.op("add_f")
 class ArithAddFOp:
     result: Ssa
     lhs: Ssa
     rhs: Ssa
 
 
-@op("print_memref")
+@affine.op("print_memref")
 class PrintOp:
     input: Ssa
 
 
-@op("return", builtin=True)
-class ReturnOp:
-    value: Ssa | None
-
-
-@op("affine_for")
+@affine.op("affine_for")
 class ForOp:
     var_name: Ssa
     lo: int
     hi: int
     body: list[Op]
-
-
-# ===----------------------------------------------------------------------=== #
-# Dialect tables & convenience parser
-# ===----------------------------------------------------------------------=== #
-
-DIALECT_NAME = "affine"
-
-_ALL_OPS = [
-    AllocOp, DeallocOp, LoadOp, StoreOp, ArithConstantOp, IndexConstantOp,
-    ArithMulFOp, ArithAddFOp, PrintOp, ReturnOp, ForOp,
-]
-OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS, dialect=DIALECT_NAME)
-TYPE_TABLE: dict = {}
 
 
 def parse_affine_module(text: str):
