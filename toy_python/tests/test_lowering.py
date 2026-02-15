@@ -3,6 +3,7 @@
 from toy_python.parser.toy_parser import parse_toy
 from toy_python.parser.lowering import lower
 from toy_python import asm
+from toy_python.tests.helpers import strip_prefix
 
 
 def compile_toy(source: str) -> str:
@@ -12,149 +13,167 @@ def compile_toy(source: str) -> str:
 
 
 def test_simple_constant():
-    source = (
-        "def main() {\n"
-        "  var x = [[1, 2, 3], [4, 5, 6]];\n"
-        "  print(x);\n"
-        "  return;\n"
-        "}\n"
-    )
+    source = strip_prefix("""
+        | def main() {
+        |   var x = [[1, 2, 3], [4, 5, 6]];
+        |   print(x);
+        |   return;
+        | }
+    """)
     result = compile_toy(source)
-    expected = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    print(%0)\n"
-        "    return()\n"
-    )
+    expected = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     toy.print(%0)
+        |     return()
+    """)
     assert result == expected
 
 
 def test_explicit_shape_with_reshape():
-    source = (
-        "def main() {\n"
-        "  var x = [[1, 2, 3], [4, 5, 6]];\n"
-        "  var y<2, 3> = x;\n"
-        "  print(y);\n"
-        "  return;\n"
-        "}\n"
-    )
+    source = strip_prefix("""
+        | def main() {
+        |   var x = [[1, 2, 3], [4, 5, 6]];
+        |   var y<2, 3> = x;
+        |   print(y);
+        |   return;
+        | }
+    """)
     result = compile_toy(source)
-    expected = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = reshape(%0) : tensor<2x3xf64>\n"
-        "    print(%1)\n"
-        "    return()\n"
-    )
+    expected = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %1 = toy.reshape(%0) : tensor<2x3xf64>
+        |     toy.print(%1)
+        |     return()
+    """)
     assert result == expected
 
 
 def test_binary_operations():
-    source = (
-        "def main() {\n"
-        "  var a = [[1, 2], [3, 4]];\n"
-        "  var b = [[5, 6], [7, 8]];\n"
-        "  var c = a * b;\n"
-        "  print(c);\n"
-        "  return;\n"
-        "}\n"
-    )
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[1, 2], [3, 4]];
+        |   var b = [[5, 6], [7, 8]];
+        |   var c = a * b;
+        |   print(c);
+        |   return;
+        | }
+    """)
     result = compile_toy(source)
-    expected = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x2>, [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>\n"
-        "    %1 = constant(<2x2>, [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>\n"
-        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
-        "    print(%2)\n"
-        "    return()\n"
-    )
+    expected = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x2>, [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>
+        |     %1 = toy.constant(<2x2>, [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>
+        |     %2 = toy.mul(%0, %1) : tensor<*xf64>
+        |     toy.print(%2)
+        |     return()
+    """)
     assert result == expected
 
 
 def test_transpose_builtin():
-    source = (
-        "def main() {\n"
-        "  var a = [[1, 2, 3], [4, 5, 6]];\n"
-        "  var b = transpose(a);\n"
-        "  print(b);\n"
-        "  return;\n"
-        "}\n"
-    )
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[1, 2, 3], [4, 5, 6]];
+        |   var b = transpose(a);
+        |   print(b);
+        |   return;
+        | }
+    """)
     result = compile_toy(source)
-    expected = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = transpose(%0) : tensor<*xf64>\n"
-        "    print(%1)\n"
-        "    return()\n"
-    )
+    expected = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %1 = toy.transpose(%0) : tensor<*xf64>
+        |     toy.print(%1)
+        |     return()
+    """)
     assert result == expected
 
 
 def test_generic_call():
-    source = (
-        "def multiply_transpose(a, b) {\n"
-        "  return transpose(a) * transpose(b);\n"
-        "}\n"
-        "\n"
-        "def main() {\n"
-        "  var a = [[1, 2, 3], [4, 5, 6]];\n"
-        "  var b = [[1, 2, 3], [4, 5, 6]];\n"
-        "  var c = multiply_transpose(a, b);\n"
-        "  print(c);\n"
-        "  return;\n"
-        "}\n"
-    )
+    source = strip_prefix("""
+        | def multiply_transpose(a, b) {
+        |   return transpose(a) * transpose(b);
+        | }
+        |
+        | def main() {
+        |   var a = [[1, 2, 3], [4, 5, 6]];
+        |   var b = [[1, 2, 3], [4, 5, 6]];
+        |   var c = multiply_transpose(a, b);
+        |   print(c);
+        |   return;
+        | }
+    """)
     result = compile_toy(source)
-    expected = (
-        "%multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = transpose(%a) : tensor<*xf64>\n"
-        "    %1 = transpose(%b) : tensor<*xf64>\n"
-        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
-        "    return(%2)\n"
-        "\n"
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %2 = generic_call(@multiply_transpose, [%0, %1]) : tensor<*xf64>\n"
-        "    print(%2)\n"
-        "    return()\n"
-    )
+    expected = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
+        |     %0 = toy.transpose(%a) : tensor<*xf64>
+        |     %1 = toy.transpose(%b) : tensor<*xf64>
+        |     %2 = toy.mul(%0, %1) : tensor<*xf64>
+        |     return(%2)
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %1 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %2 = toy.generic_call(@multiply_transpose, [%0, %1]) : tensor<*xf64>
+        |     toy.print(%2)
+        |     return()
+    """)
     assert result == expected
 
 
 def test_full_tutorial_example():
     """The complete multiply_transpose example from the MLIR Toy tutorial."""
-    source = (
-        "def multiply_transpose(a, b) {\n"
-        "  return transpose(a) * transpose(b);\n"
-        "}\n"
-        "\n"
-        "def main() {\n"
-        "  var a<2, 3> = [[1, 2, 3], [4, 5, 6]];\n"
-        "  var b<2, 3> = [1, 2, 3, 4, 5, 6];\n"
-        "  var c = multiply_transpose(a, b);\n"
-        "  var d = multiply_transpose(b, a);\n"
-        "  print(d);\n"
-        "  return;\n"
-        "}\n"
-    )
+    source = strip_prefix("""
+        | def multiply_transpose(a, b) {
+        |   return transpose(a) * transpose(b);
+        | }
+        |
+        | def main() {
+        |   var a<2, 3> = [[1, 2, 3], [4, 5, 6]];
+        |   var b<2, 3> = [1, 2, 3, 4, 5, 6];
+        |   var c = multiply_transpose(a, b);
+        |   var d = multiply_transpose(b, a);
+        |   print(d);
+        |   return;
+        | }
+    """)
     result = compile_toy(source)
-    expected = (
-        "%multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = transpose(%a) : tensor<*xf64>\n"
-        "    %1 = transpose(%b) : tensor<*xf64>\n"
-        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
-        "    return(%2)\n"
-        "\n"
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = reshape(%0) : tensor<2x3xf64>\n"
-        "    %2 = constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
-        "    %3 = reshape(%2) : tensor<2x3xf64>\n"
-        "    %4 = generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>\n"
-        "    %5 = generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>\n"
-        "    print(%5)\n"
-        "    return()\n"
-    )
+    expected = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
+        |     %0 = toy.transpose(%a) : tensor<*xf64>
+        |     %1 = toy.transpose(%b) : tensor<*xf64>
+        |     %2 = toy.mul(%0, %1) : tensor<*xf64>
+        |     return(%2)
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %1 = toy.reshape(%0) : tensor<2x3xf64>
+        |     %2 = toy.constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>
+        |     %3 = toy.reshape(%2) : tensor<2x3xf64>
+        |     %4 = toy.generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>
+        |     %5 = toy.generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>
+        |     toy.print(%5)
+        |     return()
+    """)
     assert result == expected

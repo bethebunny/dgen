@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Annotated, Protocol
 
 from toy_python import asm
 
@@ -57,6 +57,37 @@ class Block:
             yield from op.asm
 
 
+# ===----------------------------------------------------------------------=== #
+# Builtin ReturnOp
+# ===----------------------------------------------------------------------=== #
+
+_Ssa = Annotated[str, "ssa"]
+
+
+@dataclass
+class ReturnOp:
+    value: _Ssa | None
+    _asm_name = "return"
+    _dialect_name = "builtin"
+    _builtin = True
+
+    @property
+    def asm(self):
+        from toy_python.ir_format import op_asm
+
+        return op_asm(self)
+
+
+KEYWORD_TABLE = {"return": ReturnOp}
+OP_TABLE: dict = {}
+TYPE_TABLE: dict = {}
+
+
+# ===----------------------------------------------------------------------=== #
+# Function and Module
+# ===----------------------------------------------------------------------=== #
+
+
 @dataclass
 class FuncOp:
     name: str
@@ -70,12 +101,38 @@ class FuncOp:
         yield from asm.indent(self.body.asm)
 
 
+def _walk_all_ops(ops) -> Iterable:
+    """Recursively yield all ops, descending into op bodies."""
+    for op in ops:
+        yield op
+        body = getattr(op, "body", None)
+        if isinstance(body, list):
+            yield from _walk_all_ops(body)
+
+
 @dataclass
 class Module:
     functions: list[FuncOp]
 
     @property
     def asm(self) -> Iterable[str]:
-        for i, function in enumerate(self.functions):
+        # Collect dialect info from all ops
+        dialects: set[str] = set()
+        builtin_names: set[str] = {"function"}
+        for func in self.functions:
+            for op in _walk_all_ops(func.body.ops):
+                dialect_name = getattr(type(op), "_dialect_name", "builtin")
+                asm_name = getattr(type(op), "_asm_name", "")
+                if dialect_name == "builtin":
+                    builtin_names.add(asm_name)
+                else:
+                    dialects.add(dialect_name)
+
+        yield f"from builtin import {', '.join(sorted(builtin_names))}"
+        for d in sorted(dialects):
+            yield f"import {d}"
+        yield ""
+
+        for function in self.functions:
             yield from function.asm
             yield ""

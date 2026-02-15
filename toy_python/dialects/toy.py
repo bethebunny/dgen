@@ -99,7 +99,7 @@ class PrintOp:
     input: Ssa
 
 
-@op("return")
+@op("return", builtin=True)
 class ReturnOp:
     value: Ssa | None
 
@@ -107,6 +107,8 @@ class ReturnOp:
 # ===----------------------------------------------------------------------=== #
 # Dialect tables & convenience parser
 # ===----------------------------------------------------------------------=== #
+
+DIALECT_NAME = "toy"
 
 
 def _parse_tensor_type(parser: IRParser) -> UnrankedTensorType | RankedTensorType:
@@ -128,11 +130,11 @@ _ALL_OPS = [
     ConstantOp, TransposeOp, ReshapeOp, MulOp, AddOp,
     GenericCallOp, PrintOp, ReturnOp,
 ]
-OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS)
+OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS, dialect=DIALECT_NAME)
 TYPE_TABLE = {"tensor": _parse_tensor_type}
 
 
 def parse_toy_module(text: str):
     from toy_python.ir_parser import parse_module
 
-    return parse_module(text, ops=OP_TABLE, keywords=KEYWORD_TABLE, types=TYPE_TABLE)
+    return parse_module(text)

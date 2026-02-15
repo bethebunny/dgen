@@ -150,7 +150,7 @@ class CallOp:
     args: SsaList
 
 
-@op("return")
+@op("return", builtin=True)
 class ReturnOp:
     value: Ssa | None
 
@@ -159,16 +159,18 @@ class ReturnOp:
 # Dialect tables & convenience parser
 # ===----------------------------------------------------------------------=== #
 
+DIALECT_NAME = "llvm"
+
 _ALL_OPS = [
     AllocaOp, GepOp, LoadOp, StoreOp, FAddOp, FMulOp, ConstantOp,
     IndexConstOp, AddOp, MulOp, IcmpOp, BrOp, CondBrOp, LabelOp,
     PhiOp, CallOp, ReturnOp,
 ]
-OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS)
+OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS, dialect=DIALECT_NAME)
 TYPE_TABLE: dict = {}
 
 
 def parse_llvm_module(text: str):
     from toy_python.ir_parser import parse_module
 
-    return parse_module(text, ops=OP_TABLE, keywords=KEYWORD_TABLE, types=TYPE_TABLE)
+    return parse_module(text)

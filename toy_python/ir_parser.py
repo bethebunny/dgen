@@ -1,21 +1,25 @@
 """Dialect-agnostic IR text deserialization.
 
 Line-oriented recursive descent parser that reads IR text format back into
-Module data structures.  Dialect knowledge (ops, keyword ops, types) is
-supplied via lookup tables passed by the caller.
+Module data structures.  Dialect knowledge is discovered from import headers
+at the top of the IR text.
 """
+
+import importlib
 
 from toy_python.dialects import builtin
 from toy_python.ir_format import parse_op_fields
 
 
 class IRParser:
-    def __init__(self, text: str, ops: dict, keywords: dict, types: dict):
+    def __init__(self, text: str):
         self.text = text
         self.pos = 0
-        self._ops = ops
-        self._keywords = keywords
-        self._types = types
+        self._dialect_ops: dict[str, dict] = {}
+        self._dialect_keywords: dict[str, dict] = {}
+        self._unqualified_ops: dict[str, type] = {}
+        self._unqualified_keywords: dict[str, type] = {}
+        self._types: dict = {}
 
     def at_end(self) -> bool:
         return self.pos >= len(self.text)
@@ -122,8 +126,81 @@ class IRParser:
         if not self.at_end():
             self.pos += 1  # skip \n
 
+    # ===------------------------------------------------------------------=== #
+    # Import header parsing
+    # ===------------------------------------------------------------------=== #
+
+    def _parse_imports(self):
+        """Parse import headers at the top of the module."""
+        while not self.at_end():
+            self.skip_whitespace_and_newlines()
+            if self.at_end():
+                break
+            # Quick check: imports start with 'f' (from) or 'i' (import)
+            if self.peek() not in ("f", "i"):
+                break
+            saved = self.pos
+            word = self.parse_identifier()
+
+            if word == "from":
+                self.skip_whitespace()
+                mod_name = self.parse_identifier()
+                if mod_name != "builtin":
+                    raise RuntimeError(
+                        f"Expected 'builtin' after 'from', got '{mod_name}'"
+                    )
+                self.skip_whitespace()
+                import_kw = self.parse_identifier()
+                if import_kw != "import":
+                    raise RuntimeError(
+                        f"Expected 'import' after 'from builtin', got '{import_kw}'"
+                    )
+                self.skip_whitespace()
+                names = [self.parse_identifier()]
+                self.skip_whitespace()
+                while not self.at_end() and self.peek() == ",":
+                    self.advance()
+                    self.skip_whitespace()
+                    names.append(self.parse_identifier())
+                    self.skip_whitespace()
+                self.skip_line()
+                for name in names:
+                    if name == "function":
+                        continue  # handled by parse_func
+                    if name in builtin.KEYWORD_TABLE:
+                        self._unqualified_keywords[name] = builtin.KEYWORD_TABLE[name]
+
+            elif word == "import":
+                self.skip_whitespace()
+                dialect_name = self.parse_identifier()
+                self.skip_line()
+                mod = importlib.import_module(
+                    f"toy_python.dialects.{dialect_name}"
+                )
+                self._dialect_ops[dialect_name] = getattr(mod, "OP_TABLE", {})
+                self._dialect_keywords[dialect_name] = getattr(
+                    mod, "KEYWORD_TABLE", {}
+                )
+                self._types.update(getattr(mod, "TYPE_TABLE", {}))
+                # Register builtin ops from this dialect in unqualified tables
+                for name, cls in getattr(mod, "OP_TABLE", {}).items():
+                    if getattr(cls, "_builtin", False):
+                        self._unqualified_ops[name] = cls
+                for name, cls in getattr(mod, "KEYWORD_TABLE", {}).items():
+                    if getattr(cls, "_builtin", False):
+                        self._unqualified_keywords[name] = cls
+            else:
+                # Not an import line — rewind
+                self.pos = saved
+                break
+
+    # ===------------------------------------------------------------------=== #
+    # Module / function / block parsing
+    # ===------------------------------------------------------------------=== #
+
     def parse_module(self) -> builtin.Module:
         """Parse a complete module from IR text."""
+        self._parse_imports()
         self.skip_whitespace_and_newlines()
 
         functions: list[builtin.FuncOp] = []
@@ -243,25 +320,45 @@ class IRParser:
         return self._parse_block(min_indent=indent)
 
     def parse_op(self) -> builtin.Op:
-        """Parse a single operation via registered tables."""
+        """Parse a single operation, handling dialect-qualified names."""
         if self.peek() != "%":
+            # Keyword op (no result) — may be qualified: dialect.op(...)
             name = self.parse_identifier()
-            if name not in self._keywords:
+            if not self.at_end() and self.peek() == ".":
+                self.advance()  # skip '.'
+                op_name = self.parse_identifier()
+                cls = self._dialect_keywords.get(name, {}).get(op_name)
+                if cls is None:
+                    cls = self._dialect_ops.get(name, {}).get(op_name)
+                if cls is None:
+                    raise RuntimeError(f"Unknown op: {name}.{op_name}")
+                return parse_op_fields(self, cls)
+            if name not in self._unqualified_keywords:
                 raise RuntimeError(f"Unknown keyword op: {name}")
-            cls = self._keywords[name]
+            cls = self._unqualified_keywords[name]
             return parse_op_fields(self, cls)
 
+        # Result op: %result = [dialect.]op(...)
         result = self.parse_ssa_name()
         self.skip_whitespace()
         self.expect("=")
         self.skip_whitespace()
-        op_name = self.parse_identifier()
-        if op_name not in self._ops:
-            raise RuntimeError(f"Unknown op: {op_name}")
-        cls = self._ops[op_name]
+        name = self.parse_identifier()
+        if not self.at_end() and self.peek() == ".":
+            self.advance()  # skip '.'
+            op_name = self.parse_identifier()
+            cls = self._dialect_ops.get(name, {}).get(op_name)
+            if cls is None:
+                cls = self._dialect_keywords.get(name, {}).get(op_name)
+            if cls is None:
+                raise RuntimeError(f"Unknown op: {name}.{op_name}")
+            return parse_op_fields(self, cls, result=result)
+        if name not in self._unqualified_ops:
+            raise RuntimeError(f"Unknown op: {name}")
+        cls = self._unqualified_ops[name]
         return parse_op_fields(self, cls, result=result)
 
 
-def parse_module(text: str, ops: dict, keywords: dict, types: dict) -> builtin.Module:
-    parser = IRParser(text, ops, keywords, types)
+def parse_module(text: str) -> builtin.Module:
+    parser = IRParser(text)
     return parser.parse_module()

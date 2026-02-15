@@ -4,6 +4,7 @@ from toy_python.dialects.toy import parse_toy_module as parse_module
 from toy_python.passes.toy_to_affine import lower_to_affine
 from toy_python.passes.affine_to_llvm import lower_to_llvm
 from toy_python import asm
+from toy_python.tests.helpers import strip_prefix
 
 
 def compile_to_llvm(ir_text: str) -> str:
@@ -15,46 +16,55 @@ def compile_to_llvm(ir_text: str) -> str:
 
 def test_simple_constant_store():
     """Constant store lowers to alloca + fconst + gep + store."""
-    ir_text = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<3>, [1.0, 2.0, 3.0]) : tensor<3xf64>\n"
-        "    print(%0)\n"
-        "    return()\n"
-    )
+    ir_text = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<3>, [1.0, 2.0, 3.0]) : tensor<3xf64>
+        |     toy.print(%0)
+        |     return()
+    """)
     result = compile_to_llvm(ir_text)
-    assert "alloca(3)" in result, "Should have alloca for 3 elements"
-    assert "fconst(1.0)" in result, "Should have fconst 1.0"
-    assert "gep(" in result, "Should have gep"
-    assert "store(" in result, "Should have store"
-    assert "call(@print_memref" in result, "Should have print_memref call"
+    assert "llvm.alloca(3)" in result, "Should have alloca for 3 elements"
+    assert "llvm.fconst(1.0)" in result, "Should have fconst 1.0"
+    assert "llvm.gep(" in result, "Should have gep"
+    assert "llvm.store(" in result, "Should have store"
+    assert "llvm.call(@print_memref" in result, "Should have print_memref call"
     assert "return()" in result, "Should have return()"
 
 
 def test_single_for_loop():
     """For loop lowers to label/branch/phi pattern."""
-    ir_text = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<3>, [1.0, 2.0, 3.0]) : tensor<3xf64>\n"
-        "    print(%0)\n"
-        "    return()\n"
-    )
+    ir_text = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<3>, [1.0, 2.0, 3.0]) : tensor<3xf64>
+        |     toy.print(%0)
+        |     return()
+    """)
     result = compile_to_llvm(ir_text)
     assert "loop_header" in result, "Should have loop header label"
-    assert "phi(" in result, "Should have phi node"
-    assert "icmp(slt" in result, "Should have comparison"
-    assert "cond_br(" in result, "Should have conditional branch"
+    assert "llvm.phi(" in result, "Should have phi node"
+    assert "llvm.icmp(slt" in result, "Should have comparison"
+    assert "llvm.cond_br(" in result, "Should have conditional branch"
     assert "loop_body" in result, "Should have loop body label"
     assert "loop_exit" in result, "Should have loop exit label"
 
 
 def test_nested_for_loops():
     """Nested for loops produce nested label/branch patterns."""
-    ir_text = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    print(%0)\n"
-        "    return()\n"
-    )
+    ir_text = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     toy.print(%0)
+        |     return()
+    """)
     result = compile_to_llvm(ir_text)
     assert "loop_header0" in result, "Should have loop_header0"
     assert "loop_header1" in result, "Should have loop_header1"
@@ -64,35 +74,41 @@ def test_nested_for_loops():
 
 def test_load_store_linearization():
     """Load/store with multi-dim indices are linearized."""
-    ir_text = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = transpose(%0) : tensor<3x2xf64>\n"
-        "    print(%1)\n"
-        "    return()\n"
-    )
+    ir_text = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %1 = toy.transpose(%0) : tensor<3x2xf64>
+        |     toy.print(%1)
+        |     return()
+    """)
     result = compile_to_llvm(ir_text)
-    assert "gep(" in result, "Should have gep for pointer arithmetic"
-    assert "load(" in result, "Should have load"
-    assert "mul(" in result, "Should have mul for index linearization"
+    assert "llvm.gep(" in result, "Should have gep for pointer arithmetic"
+    assert "llvm.load(" in result, "Should have load"
+    assert "llvm.mul(" in result, "Should have mul for index linearization"
 
 
 def test_full_example():
     """Full pipeline: constant + transpose + mul + print -> LLVM IR."""
-    ir_text = (
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = transpose(%0) : tensor<3x2xf64>\n"
-        "    %2 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %3 = transpose(%2) : tensor<3x2xf64>\n"
-        "    %4 = mul(%1, %3) : tensor<3x2xf64>\n"
-        "    print(%4)\n"
-        "    return()\n"
-    )
+    ir_text = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %1 = toy.transpose(%0) : tensor<3x2xf64>
+        |     %2 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %3 = toy.transpose(%2) : tensor<3x2xf64>
+        |     %4 = toy.mul(%1, %3) : tensor<3x2xf64>
+        |     toy.print(%4)
+        |     return()
+    """)
     result = compile_to_llvm(ir_text)
     assert "%main = function () -> ():" in result, "Should have function def"
-    assert "alloca(" in result, "Should have alloca"
-    assert "fconst(" in result, "Should have fconst"
-    assert "fmul(" in result, "Should have fmul for Mul op"
-    assert "call(@print_memref" in result, "Should have print_memref"
+    assert "llvm.alloca(" in result, "Should have alloca"
+    assert "llvm.fconst(" in result, "Should have fconst"
+    assert "llvm.fmul(" in result, "Should have fmul for Mul op"
+    assert "llvm.call(@print_memref" in result, "Should have print_memref"
     assert "return()" in result, "Should have return()"

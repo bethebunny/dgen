@@ -1,54 +1,47 @@
-"""Round-trip tests for mixed-dialect parsing using merged tables."""
+"""Round-trip tests for mixed-dialect parsing using import headers."""
 
-from toy_python.dialects import affine, llvm
 from toy_python.ir_parser import parse_module
 from toy_python import asm
+from toy_python.tests.helpers import strip_prefix
 
 
-def _merge_tables(*dialects):
-    """Merge OP_TABLE, KEYWORD_TABLE, TYPE_TABLE from multiple dialects."""
-    ops, keywords, types = {}, {}, {}
-    for d in dialects:
-        ops.update(d.OP_TABLE)
-        keywords.update(d.KEYWORD_TABLE)
-        types.update(d.TYPE_TABLE)
-    return ops, keywords, types
-
-
-def test_affine_then_llvm():
-    """Parse a function using affine ops, another using llvm ops."""
-    ops, keywords, types = _merge_tables(affine, llvm)
-    # Note: return conflicts (both dialects) — last wins (llvm)
-    ir = (
-        "%f = function () -> ():\n"
-        "    %0 = alloca(6)\n"
-        "    %1 = fconst(1.0)\n"
-        "    store(%1, %0)\n"
-        "    return()\n"
-    )
-    module = parse_module(ir, ops=ops, keywords=keywords, types=types)
+def test_llvm_via_imports():
+    """Parse a function using llvm ops via import headers."""
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import llvm
+        |
+        | %f = function () -> ():
+        |     %0 = llvm.alloca(6)
+        |     %1 = llvm.fconst(1.0)
+        |     llvm.store(%1, %0)
+        |     return()
+    """)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
-def test_merged_llvm_full_loop():
-    """Full LLVM loop pattern parsed with merged tables."""
-    ops, keywords, types = _merge_tables(affine, llvm)
-    ir = (
-        "%f = function () -> ():\n"
-        "    %0 = alloca(3)\n"
-        "    %init = iconst(0)\n"
-        "    br(loop_header)\n"
-        "    label(loop_header)\n"
-        "    %i0 = phi([%init, %next], [entry, loop_body])\n"
-        "    %hi = iconst(3)\n"
-        "    %cmp = icmp(slt, %i0, %hi)\n"
-        "    cond_br(%cmp, loop_body, loop_exit)\n"
-        "    label(loop_body)\n"
-        "    %one = iconst(1)\n"
-        "    %next = add(%i0, %one)\n"
-        "    br(loop_header)\n"
-        "    label(loop_exit)\n"
-        "    return()\n"
-    )
-    module = parse_module(ir, ops=ops, keywords=keywords, types=types)
+def test_llvm_full_loop():
+    """Full LLVM loop pattern parsed with import headers."""
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import llvm
+        |
+        | %f = function () -> ():
+        |     %0 = llvm.alloca(3)
+        |     %init = llvm.iconst(0)
+        |     llvm.br(loop_header)
+        |     llvm.label(loop_header)
+        |     %i0 = llvm.phi([%init, %next], [entry, loop_body])
+        |     %hi = llvm.iconst(3)
+        |     %cmp = llvm.icmp(slt, %i0, %hi)
+        |     llvm.cond_br(%cmp, loop_body, loop_exit)
+        |     llvm.label(loop_body)
+        |     %one = llvm.iconst(1)
+        |     %next = llvm.add(%i0, %one)
+        |     llvm.br(loop_header)
+        |     llvm.label(loop_exit)
+        |     return()
+    """)
+    module = parse_module(ir)
     assert asm.format(module) == ir

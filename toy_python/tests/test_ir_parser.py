@@ -2,104 +2,131 @@
 
 from toy_python.dialects.toy import parse_toy_module as parse_module
 from toy_python import asm
+from toy_python.tests.helpers import strip_prefix
 
 
 def test_roundtrip_transpose():
-    ir = (
-        "%f = function (%a: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = transpose(%a) : tensor<*xf64>\n"
-        "    return(%0)\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %f = function (%a: tensor<*xf64>) -> tensor<*xf64>:
+        |     %0 = toy.transpose(%a) : tensor<*xf64>
+        |     return(%0)
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 
 
 def test_roundtrip_reshape():
-    ir = (
-        "%f = function (%a: tensor<*xf64>) -> tensor<2x3xf64>:\n"
-        "    %0 = reshape(%a) : tensor<2x3xf64>\n"
-        "    return(%0)\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %f = function (%a: tensor<*xf64>) -> tensor<2x3xf64>:
+        |     %0 = toy.reshape(%a) : tensor<2x3xf64>
+        |     return(%0)
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 
 
 def test_roundtrip_constant():
-    ir = (
-        "%f = function () -> tensor<2x3xf64>:\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    return(%0)\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %f = function () -> tensor<2x3xf64>:
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     return(%0)
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 
 
 def test_roundtrip_mul():
-    ir = (
-        "%f = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = mul(%a, %b) : tensor<*xf64>\n"
-        "    return(%0)\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %f = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
+        |     %0 = toy.mul(%a, %b) : tensor<*xf64>
+        |     return(%0)
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 
 
 def test_roundtrip_add():
-    ir = (
-        "%f = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = add(%a, %b) : tensor<*xf64>\n"
-        "    return(%0)\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %f = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
+        |     %0 = toy.add(%a, %b) : tensor<*xf64>
+        |     return(%0)
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 
 
 def test_roundtrip_generic_call():
-    ir = (
-        "%f = function (%a: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = generic_call(@helper, [%a]) : tensor<*xf64>\n"
-        "    return(%0)\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %f = function (%a: tensor<*xf64>) -> tensor<*xf64>:
+        |     %0 = toy.generic_call(@helper, [%a]) : tensor<*xf64>
+        |     return(%0)
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 
 
 def test_roundtrip_print():
-    ir = (
-        "%f = function (%a: tensor<*xf64>) -> ():\n"
-        "    print(%a)\n"
-        "    return()\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %f = function (%a: tensor<*xf64>) -> ():
+        |     toy.print(%a)
+        |     return()
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 
 
 def test_roundtrip_void_return():
-    ir = (
-        "%f = function () -> ():\n"
-        "    return()\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        |
+        | %f = function () -> ():
+        |     return()
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 
 
 def test_roundtrip_full_program():
-    ir = (
-        "%multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = transpose(%a) : tensor<*xf64>\n"
-        "    %1 = transpose(%b) : tensor<*xf64>\n"
-        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
-        "    return(%2)\n"
-        "\n"
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = reshape(%0) : tensor<2x3xf64>\n"
-        "    %2 = constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
-        "    %3 = reshape(%2) : tensor<2x3xf64>\n"
-        "    %4 = generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>\n"
-        "    %5 = generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>\n"
-        "    print(%5)\n"
-        "    return()\n"
-    )
+    ir = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
+        |     %0 = toy.transpose(%a) : tensor<*xf64>
+        |     %1 = toy.transpose(%b) : tensor<*xf64>
+        |     %2 = toy.mul(%0, %1) : tensor<*xf64>
+        |     return(%2)
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %1 = toy.reshape(%0) : tensor<2x3xf64>
+        |     %2 = toy.constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>
+        |     %3 = toy.reshape(%2) : tensor<2x3xf64>
+        |     %4 = toy.generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>
+        |     %5 = toy.generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>
+        |     toy.print(%5)
+        |     return()
+    """)
     module = parse_module(ir)
     assert asm.format(module) == ir

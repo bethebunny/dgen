@@ -106,6 +106,7 @@ def op_asm(op) -> Iterable[str]:
     """Generic asm emitter. Introspects _asm_name and field types."""
     cls = type(op)
     asm_name = cls._asm_name
+    dialect_name = getattr(cls, "_dialect_name", "builtin")
     hints = get_type_hints(cls, include_extras=True)
     fields = dataclasses.fields(cls)
 
@@ -137,7 +138,8 @@ def op_asm(op) -> Iterable[str]:
     parts = []
     if show_result:
         parts.append(f"%{result_val} = ")
-    parts.append(f"{asm_name}({args_str})")
+    prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
+    parts.append(f"{prefix}{asm_name}({args_str})")
     if has_type:
         parts.append(f" : {op.type.asm}")
     if has_body:
@@ -289,12 +291,13 @@ def _parse_value(parser, hint):
 # ===----------------------------------------------------------------------=== #
 
 
-def op(asm_name: str):
-    """Decorator: attaches _asm_name, injects generic asm property."""
+def op(asm_name: str, builtin: bool = False):
+    """Decorator: attaches _asm_name, _builtin, injects generic asm property."""
 
     def decorator(cls):
         cls = dataclasses.dataclass(cls)
         cls._asm_name = asm_name
+        cls._builtin = builtin
 
         @property
         def _asm(self) -> Iterable[str]:
@@ -308,17 +311,20 @@ def op(asm_name: str):
 
 def build_tables(
     op_classes: list[type],
+    dialect: str,
 ) -> tuple[dict[str, type], dict[str, type]]:
     """Build (op_table, keyword_table) from a list of @op-decorated classes.
 
     - Classes with a 'result' field go in op_table (result ops).
     - Classes without 'result' go in keyword_table.
     - Classes with 'result: Ssa | None' go in BOTH tables.
+    - Sets _dialect_name on each class ("builtin" if _builtin, else dialect).
     """
     op_table: dict[str, type] = {}
     keyword_table: dict[str, type] = {}
 
     for cls in op_classes:
+        cls._dialect_name = "builtin" if cls._builtin else dialect
         name = cls._asm_name
         hints = get_type_hints(cls, include_extras=True)
         has_result = "result" in hints

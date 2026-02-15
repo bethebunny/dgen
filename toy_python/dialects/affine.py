@@ -96,7 +96,7 @@ class PrintOp:
     input: Ssa
 
 
-@op("return")
+@op("return", builtin=True)
 class ReturnOp:
     value: Ssa | None
 
@@ -113,15 +113,17 @@ class ForOp:
 # Dialect tables & convenience parser
 # ===----------------------------------------------------------------------=== #
 
+DIALECT_NAME = "affine"
+
 _ALL_OPS = [
     AllocOp, DeallocOp, LoadOp, StoreOp, ArithConstantOp, IndexConstantOp,
     ArithMulFOp, ArithAddFOp, PrintOp, ReturnOp, ForOp,
 ]
-OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS)
+OP_TABLE, KEYWORD_TABLE = build_tables(_ALL_OPS, dialect=DIALECT_NAME)
 TYPE_TABLE: dict = {}
 
 
 def parse_affine_module(text: str):
     from toy_python.ir_parser import parse_module
 
-    return parse_module(text, ops=OP_TABLE, keywords=KEYWORD_TABLE, types=TYPE_TABLE)
+    return parse_module(text)

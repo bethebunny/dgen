@@ -2,6 +2,7 @@
 
 from toy_python.dialects import builtin, toy
 from toy_python import asm
+from toy_python.tests.helpers import strip_prefix
 
 
 def unranked() -> builtin.Type:
@@ -21,28 +22,28 @@ def test_constant_op():
     )
     assert (
         asm.format(op)
-        == "%0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
+        == "%0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
     )
 
 
 def test_transpose_op():
     op = toy.TransposeOp(result="0", input="a", type=unranked())
-    assert asm.format(op) == "%0 = transpose(%a) : tensor<*xf64>"
+    assert asm.format(op) == "%0 = toy.transpose(%a) : tensor<*xf64>"
 
 
 def test_reshape_op():
     op = toy.ReshapeOp(result="1", input="0", type=ranked([2, 3]))
-    assert asm.format(op) == "%1 = reshape(%0) : tensor<2x3xf64>"
+    assert asm.format(op) == "%1 = toy.reshape(%0) : tensor<2x3xf64>"
 
 
 def test_mul_op():
     op = toy.MulOp(result="2", lhs="0", rhs="1", type=unranked())
-    assert asm.format(op) == "%2 = mul(%0, %1) : tensor<*xf64>"
+    assert asm.format(op) == "%2 = toy.mul(%0, %1) : tensor<*xf64>"
 
 
 def test_add_op():
     op = toy.AddOp(result="2", lhs="0", rhs="1", type=unranked())
-    assert asm.format(op) == "%2 = add(%0, %1) : tensor<*xf64>"
+    assert asm.format(op) == "%2 = toy.add(%0, %1) : tensor<*xf64>"
 
 
 def test_generic_call_op():
@@ -54,13 +55,13 @@ def test_generic_call_op():
     )
     assert (
         asm.format(op)
-        == "%4 = generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>"
+        == "%4 = toy.generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>"
     )
 
 
 def test_print_op():
     op = toy.PrintOp(input="5")
-    assert asm.format(op) == "print(%5)"
+    assert asm.format(op) == "toy.print(%5)"
 
 
 def test_return_op_with_value():
@@ -137,21 +138,24 @@ def test_full_module():
 
     module = builtin.Module(functions=[mt_func, main_func])
 
-    expected = (
-        "%multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
-        "    %0 = transpose(%a) : tensor<*xf64>\n"
-        "    %1 = transpose(%b) : tensor<*xf64>\n"
-        "    %2 = mul(%0, %1) : tensor<*xf64>\n"
-        "    return(%2)\n"
-        "\n"
-        "%main = function () -> ():\n"
-        "    %0 = constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
-        "    %1 = reshape(%0) : tensor<2x3xf64>\n"
-        "    %2 = constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
-        "    %3 = reshape(%2) : tensor<2x3xf64>\n"
-        "    %4 = generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>\n"
-        "    %5 = generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>\n"
-        "    print(%5)\n"
-        "    return()\n"
-    )
+    expected = strip_prefix("""
+        | from builtin import function, return
+        | import toy
+        |
+        | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
+        |     %0 = toy.transpose(%a) : tensor<*xf64>
+        |     %1 = toy.transpose(%b) : tensor<*xf64>
+        |     %2 = toy.mul(%0, %1) : tensor<*xf64>
+        |     return(%2)
+        |
+        | %main = function () -> ():
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %1 = toy.reshape(%0) : tensor<2x3xf64>
+        |     %2 = toy.constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>
+        |     %3 = toy.reshape(%2) : tensor<2x3xf64>
+        |     %4 = toy.generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>
+        |     %5 = toy.generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>
+        |     toy.print(%5)
+        |     return()
+    """)
     assert asm.format(module) == expected
