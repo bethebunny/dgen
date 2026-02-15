@@ -5,10 +5,141 @@ Module data structures.  Dialect knowledge is discovered from import headers
 at the top of the IR text.
 """
 
+import dataclasses
 import importlib
+from typing import get_args, get_origin, get_type_hints
 
 from toy_python.dialects import builtin
-from toy_python.ir_format import parse_op_fields
+
+from .formatting import _SPECIAL_FIELDS, _get_annotation, _is_optional
+
+
+def parse_op_fields(parser, cls, result=None):
+    """Generic op field parser. Introspects field types to parse args."""
+    hints = get_type_hints(cls, include_extras=True)
+    fields = dataclasses.fields(cls)
+
+    kwargs = {}
+    if "result" in hints:
+        # result=None for keyword ops; for optional-result ops (Ssa | None)
+        # this correctly sets None; for required-result ops the caller provides it
+        kwargs["result"] = result
+
+    # Expect opening paren
+    parser.expect("(")
+    parser.skip_whitespace()
+
+    # Parse non-special fields
+    arg_fields = [f for f in fields if f.name not in _SPECIAL_FIELDS]
+    for i, f in enumerate(arg_fields):
+        hint = hints[f.name]
+        inner = _is_optional(hint)
+
+        # Check for optional field (at end of args) — if we see ')' it's None
+        if inner is not None:
+            parser.skip_whitespace()
+            if parser.peek() == ")":
+                kwargs[f.name] = None
+                continue
+            hint_to_parse = inner
+        else:
+            hint_to_parse = hint
+
+        if i > 0:
+            parser.expect(",")
+            parser.skip_whitespace()
+
+        kwargs[f.name] = _parse_value(parser, hint_to_parse)
+        parser.skip_whitespace()
+
+    parser.expect(")")
+
+    # Type annotation
+    if "type" in hints:
+        parser.skip_whitespace()
+        parser.expect(":")
+        parser.skip_whitespace()
+        kwargs["type"] = parser.parse_type()
+
+    # Body (indented block)
+    if "body" in hints:
+        parser.skip_whitespace()
+        parser.expect(":")
+        kwargs["body"] = parser.parse_indented_block()
+
+    return cls(**kwargs)
+
+
+def _parse_value(parser, hint):
+    """Parse a single value based on its type hint."""
+    base, tag = _get_annotation(hint)
+
+    # Annotated[str, "ssa"] -> %name
+    if base is str and tag == "ssa":
+        return parser.parse_ssa_name()
+    # Annotated[str, "sym"] -> @name
+    if base is str and tag == "sym":
+        parser.expect("@")
+        return parser.parse_identifier()
+    # Annotated[str, "bare"] -> identifier
+    if base is str and tag == "bare":
+        return parser.parse_identifier()
+    # Annotated[list[int], "shape"] -> <2x3>
+    if tag == "shape" and get_origin(base) is list:
+        parser.expect("<")
+        dims = [parser.parse_int()]
+        while parser.peek() == "x":
+            parser.expect("x")
+            dims.append(parser.parse_int())
+        parser.expect(">")
+        return dims
+    # Annotated[list[str], "ssa"] -> [%a, %b]
+    if tag == "ssa" and get_origin(base) is list:
+        parser.expect("[")
+        parser.skip_whitespace()
+        items = []
+        if parser.peek() != "]":
+            items.append(parser.parse_ssa_name())
+            while parser.peek() == ",":
+                parser.expect(",")
+                parser.skip_whitespace()
+                items.append(parser.parse_ssa_name())
+        parser.expect("]")
+        return items
+    # Annotated[list[str], "bare"] -> [a, b]
+    if tag == "bare" and get_origin(base) is list:
+        parser.expect("[")
+        parser.skip_whitespace()
+        items = []
+        if parser.peek() != "]":
+            items.append(parser.parse_identifier())
+            while parser.peek() == ",":
+                parser.expect(",")
+                parser.skip_whitespace()
+                items.append(parser.parse_identifier())
+        parser.expect("]")
+        return items
+    # Plain int
+    if hint is int:
+        return parser.parse_int()
+    # Plain float
+    if hint is float:
+        return parser.parse_number()
+    # list[float]
+    if get_origin(hint) is list and get_args(hint) == (float,):
+        parser.expect("[")
+        parser.skip_whitespace()
+        items = []
+        if parser.peek() != "]":
+            items.append(parser.parse_number())
+            while parser.peek() == ",":
+                parser.expect(",")
+                parser.skip_whitespace()
+                items.append(parser.parse_number())
+        parser.expect("]")
+        return items
+
+    raise RuntimeError(f"Don't know how to parse type hint: {hint}")
 
 
 class IRParser:
@@ -45,9 +176,7 @@ class IRParser:
     def expect(self, expected: str):
         for ch in expected:
             if self.at_end() or self.text[self.pos] != ch:
-                raise RuntimeError(
-                    f"Expected '{expected}' at position {self.pos}"
-                )
+                raise RuntimeError(f"Expected '{expected}' at position {self.pos}")
             self.pos += 1
 
     def parse_identifier(self) -> str:
@@ -174,13 +303,9 @@ class IRParser:
                 self.skip_whitespace()
                 dialect_name = self.parse_identifier()
                 self.skip_line()
-                mod = importlib.import_module(
-                    f"toy_python.dialects.{dialect_name}"
-                )
+                mod = importlib.import_module(f"toy_python.dialects.{dialect_name}")
                 self._dialect_ops[dialect_name] = getattr(mod, "OP_TABLE", {})
-                self._dialect_keywords[dialect_name] = getattr(
-                    mod, "KEYWORD_TABLE", {}
-                )
+                self._dialect_keywords[dialect_name] = getattr(mod, "KEYWORD_TABLE", {})
                 self._types.update(getattr(mod, "TYPE_TABLE", {}))
                 # Register builtin ops from this dialect in unqualified tables
                 for name, cls in getattr(mod, "OP_TABLE", {}).items():

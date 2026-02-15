@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from toy_python.dialects.builtin import Op
-from toy_python.ir_format import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables
+from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -124,6 +124,6 @@ TYPE_TABLE: dict = {}
 
 
 def parse_affine_module(text: str):
-    from toy_python.ir_parser import parse_module
+    from toy_python.asm.parser import parse_module
 
     return parse_module(text)

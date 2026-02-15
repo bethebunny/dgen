@@ -1,6 +1,6 @@
 """Round-trip tests for mixed-dialect parsing using import headers."""
 
-from toy_python.ir_parser import parse_module
+from toy_python.asm.parser import parse_module
 from toy_python import asm
 from toy_python.tests.helpers import strip_prefix
 

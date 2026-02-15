@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from toy_python.dialects.builtin import FuncType, Nil, Type
-from toy_python.ir_format import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables
+from toy_python.asm.formatting import Bare, BareList, Shape, Ssa, SsaList, Sym, op, build_tables
 
 if TYPE_CHECKING:
-    from toy_python.ir_parser import IRParser
+    from toy_python.asm.parser import IRParser
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -135,6 +135,6 @@ TYPE_TABLE = {"tensor": _parse_tensor_type}
 
 
 def parse_toy_module(text: str):
-    from toy_python.ir_parser import parse_module
+    from toy_python.asm.parser import parse_module
 
     return parse_module(text)

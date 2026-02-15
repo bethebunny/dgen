@@ -73,7 +73,7 @@ class ReturnOp:
 
     @property
     def asm(self):
-        from toy_python.ir_format import op_asm
+        from toy_python.asm.formatting import op_asm
 
         return op_asm(self)
 
