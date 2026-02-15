@@ -99,6 +99,7 @@ class GenericCallOp:
 
 @toy.op("print")
 class PrintOp:
+    result: Ssa
     input: Ssa
 
 

@@ -60,18 +60,18 @@ def test_generic_call_op():
 
 
 def test_print_op():
-    op = toy.PrintOp(input="5")
-    assert asm.format(op) == "toy.print(%5)"
+    op = toy.PrintOp(result="_", input="5")
+    assert asm.format(op) == "%_ = toy.print(%5)"
 
 
 def test_return_op_with_value():
-    op = builtin.ReturnOp(value="2")
-    assert asm.format(op) == "return(%2)"
+    op = builtin.ReturnOp(result="_", value="2")
+    assert asm.format(op) == "%_ = return(%2)"
 
 
 def test_return_op_void():
-    op = builtin.ReturnOp(value=None)
-    assert asm.format(op) == "return()"
+    op = builtin.ReturnOp(result="_", value=None)
+    assert asm.format(op) == "%_ = return()"
 
 
 def test_full_module():
@@ -85,7 +85,7 @@ def test_full_module():
         toy.TransposeOp(result="0", input="a", type=unranked()),
         toy.TransposeOp(result="1", input="b", type=unranked()),
         toy.MulOp(result="2", lhs="0", rhs="1", type=unranked()),
-        builtin.ReturnOp(value="2"),
+        builtin.ReturnOp(result="_", value="2"),
     ]
 
     mt_func_type = toy.FunctionType(
@@ -125,8 +125,8 @@ def test_full_module():
             args=["3", "1"],
             type=unranked(),
         ),
-        toy.PrintOp(input="5"),
-        builtin.ReturnOp(value=None),
+        toy.PrintOp(result="_", input="5"),
+        builtin.ReturnOp(result="_", value=None),
     ]
 
     main_func_type = toy.FunctionType(inputs=[], result=builtin.Nil())
@@ -146,7 +146,7 @@ def test_full_module():
         |     %0 = toy.transpose(%a) : tensor<*xf64>
         |     %1 = toy.transpose(%b) : tensor<*xf64>
         |     %2 = toy.mul(%0, %1) : tensor<*xf64>
-        |     return(%2)
+        |     %_ = return(%2)
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
@@ -155,7 +155,7 @@ def test_full_module():
         |     %3 = toy.reshape(%2) : tensor<2x3xf64>
         |     %4 = toy.generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>
         |     %5 = toy.generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>
-        |     toy.print(%5)
-        |     return()
+        |     %_ = toy.print(%5)
+        |     %_ = return()
     """)
     assert asm.format(module) == expected

@@ -22,8 +22,8 @@ def test_simple_constant_store():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<3>, [1.0, 2.0, 3.0]) : tensor<3xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
     assert "llvm.alloca(3)" in result, "Should have alloca for 3 elements"
@@ -42,8 +42,8 @@ def test_single_for_loop():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<3>, [1.0, 2.0, 3.0]) : tensor<3xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
     assert "loop_header" in result, "Should have loop header label"
@@ -62,8 +62,8 @@ def test_nested_for_loops():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
     assert "loop_header0" in result, "Should have loop_header0"
@@ -81,8 +81,8 @@ def test_load_store_linearization():
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.transpose(%0) : tensor<3x2xf64>
-        |     toy.print(%1)
-        |     return()
+        |     %_ = toy.print(%1)
+        |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
     assert "llvm.gep(" in result, "Should have gep for pointer arithmetic"
@@ -102,8 +102,8 @@ def test_full_example():
         |     %2 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %3 = toy.transpose(%2) : tensor<3x2xf64>
         |     %4 = toy.mul(%1, %3) : tensor<3x2xf64>
-        |     toy.print(%4)
-        |     return()
+        |     %_ = toy.print(%4)
+        |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
     assert "%main = function () -> ():" in result, "Should have function def"

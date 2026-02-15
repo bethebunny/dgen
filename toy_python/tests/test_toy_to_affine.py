@@ -14,8 +14,8 @@ def test_simple_constant():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -38,8 +38,8 @@ def test_transpose():
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.transpose(%0) : tensor<3x2xf64>
-        |     toy.print(%1)
-        |     return()
+        |     %_ = toy.print(%1)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -60,8 +60,8 @@ def test_mul():
         |     %0 = toy.constant(<2x2>, [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>
         |     %1 = toy.constant(<2x2>, [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>
         |     %2 = toy.mul(%0, %1) : tensor<2x2xf64>
-        |     toy.print(%2)
-        |     return()
+        |     %_ = toy.print(%2)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -81,8 +81,8 @@ def test_add():
         |     %0 = toy.constant(<2x2>, [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>
         |     %1 = toy.constant(<2x2>, [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>
         |     %2 = toy.add(%0, %1) : tensor<2x2xf64>
-        |     toy.print(%2)
-        |     return()
+        |     %_ = toy.print(%2)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -98,8 +98,8 @@ def test_print():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -119,8 +119,8 @@ def test_full_example():
         |     %2 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %3 = toy.transpose(%2) : tensor<3x2xf64>
         |     %4 = toy.mul(%1, %3) : tensor<3x2xf64>
-        |     toy.print(%4)
-        |     return()
+        |     %_ = toy.print(%4)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)

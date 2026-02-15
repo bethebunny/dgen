@@ -1,3 +1,4 @@
-- Get rid of "build_tables"
-- Require results
+- Update parser to do namespace lookup
 - Typed SSA values
+- Remove "bare" values
+- SSA types

@@ -70,6 +70,7 @@ class LoadOp:
 
 @llvm.op("store")
 class StoreOp:
+    result: Ssa
     value: Ssa
     ptr: Ssa
 
@@ -124,11 +125,13 @@ class IcmpOp:
 
 @llvm.op("br")
 class BrOp:
+    result: Ssa
     dest: Bare
 
 
 @llvm.op("cond_br")
 class CondBrOp:
+    result: Ssa
     cond: Ssa
     true_dest: Bare
     false_dest: Bare
@@ -136,6 +139,7 @@ class CondBrOp:
 
 @llvm.op("label")
 class LabelOp:
+    result: Ssa
     name: Bare
 
 
@@ -148,7 +152,7 @@ class PhiOp:
 
 @llvm.op("call")
 class CallOp:
-    result: Ssa | None
+    result: Ssa
     callee: Sym
     args: SsaList
 

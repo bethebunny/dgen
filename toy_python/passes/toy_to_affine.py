@@ -79,11 +79,11 @@ class ToyToAffineLowering:
                 body.append(affine.IndexConstantOp(result=idx_name, value=idx))
                 body.append(
                     affine.StoreOp(
-                        value=cst_name, memref=alloc_name, indices=[idx_name]
+                        result="_", value=cst_name, memref=alloc_name, indices=[idx_name]
                     )
                 )
             self.ops.append(
-                affine.ForOp(var_name=ivar, lo=0, hi=shape[0], body=body)
+                affine.ForOp(result="_", var_name=ivar, lo=0, hi=shape[0], body=body)
             )
         elif len(shape) == 2:
             # 2D: nested loops
@@ -108,16 +108,16 @@ class ToyToAffineLowering:
                     )
                     inner_body.append(
                         affine.StoreOp(
-                            value=cst_name,
+                            result="_", value=cst_name,
                             memref=alloc_name,
                             indices=[ri_name, ci_name],
                         )
                     )
             outer_body: list[builtin.Op] = [
-                affine.ForOp(var_name=jvar, lo=0, hi=cols, body=inner_body),
+                affine.ForOp(result="_", var_name=jvar, lo=0, hi=cols, body=inner_body),
             ]
             self.ops.append(
-                affine.ForOp(var_name=ivar, lo=0, hi=rows, body=outer_body)
+                affine.ForOp(result="_", var_name=ivar, lo=0, hi=rows, body=outer_body)
             )
 
         self.shape_map[result_name] = shape
@@ -152,15 +152,15 @@ class ToyToAffineLowering:
         )
         inner_body.append(
             affine.StoreOp(
-                value=load_name, memref=alloc_name, indices=[jvar, ivar]
+                result="_", value=load_name, memref=alloc_name, indices=[jvar, ivar]
             )
         )
 
         outer_body: list[builtin.Op] = [
-            affine.ForOp(var_name=jvar, lo=0, hi=cols, body=inner_body),
+            affine.ForOp(result="_", var_name=jvar, lo=0, hi=cols, body=inner_body),
         ]
         self.ops.append(
-            affine.ForOp(var_name=ivar, lo=0, hi=rows, body=outer_body)
+            affine.ForOp(result="_", var_name=ivar, lo=0, hi=rows, body=outer_body)
         )
 
         self.shape_map[result_name] = out_shape
@@ -198,10 +198,10 @@ class ToyToAffineLowering:
             else:
                 body.append(affine.ArithAddFOp(result=res, lhs=lv, rhs=rv))
             body.append(
-                affine.StoreOp(value=res, memref=alloc_name, indices=[ivar])
+                affine.StoreOp(result="_", value=res, memref=alloc_name, indices=[ivar])
             )
             self.ops.append(
-                affine.ForOp(var_name=ivar, lo=0, hi=shape[0], body=body)
+                affine.ForOp(result="_", var_name=ivar, lo=0, hi=shape[0], body=body)
             )
         elif len(shape) == 2:
             ivar = self.fresh()
@@ -226,16 +226,16 @@ class ToyToAffineLowering:
                 inner_body.append(affine.ArithAddFOp(result=res, lhs=lv, rhs=rv))
             inner_body.append(
                 affine.StoreOp(
-                    value=res, memref=alloc_name, indices=[ivar, jvar]
+                    result="_", value=res, memref=alloc_name, indices=[ivar, jvar]
                 )
             )
             outer_body: list[builtin.Op] = [
                 affine.ForOp(
-                    var_name=jvar, lo=0, hi=shape[1], body=inner_body
+                    result="_", var_name=jvar, lo=0, hi=shape[1], body=inner_body
                 ),
             ]
             self.ops.append(
-                affine.ForOp(var_name=ivar, lo=0, hi=shape[0], body=outer_body)
+                affine.ForOp(result="_", var_name=ivar, lo=0, hi=shape[0], body=outer_body)
             )
 
         self.shape_map[result_name] = shape
@@ -257,13 +257,13 @@ class ToyToAffineLowering:
     def _lower_print(self, op: toy.PrintOp):
         input_name = op.input
         alloc = self.alloc_map.get(input_name, input_name)
-        self.ops.append(affine.PrintOp(input=alloc))
+        self.ops.append(affine.PrintOp(result="_", input=alloc))
 
     def _lower_return(self, op: builtin.ReturnOp):
         # Dealloc all live allocs
         for alloc_name in self.live_allocs:
-            self.ops.append(affine.DeallocOp(input=alloc_name))
-        self.ops.append(builtin.ReturnOp(value=op.value))
+            self.ops.append(affine.DeallocOp(result="_", input=alloc_name))
+        self.ops.append(builtin.ReturnOp(result="_", value=op.value))
 
 
 def lower_to_affine(m: builtin.Module) -> builtin.Module:

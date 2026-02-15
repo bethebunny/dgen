@@ -148,9 +148,7 @@ class IRParser:
         self.text = text
         self.pos = 0
         self._dialect_ops: dict[str, dict] = {}
-        self._dialect_keywords: dict[str, dict] = {}
         self._unqualified_ops: dict[str, type] = {}
-        self._unqualified_keywords: dict[str, type] = {}
         self._types: dict = {}
 
     def at_end(self) -> bool:
@@ -298,8 +296,8 @@ class IRParser:
                 for name in names:
                     if name == "function":
                         continue  # handled by parse_func
-                    if name in builtin_dialect.keyword_table:
-                        self._unqualified_keywords[name] = builtin_dialect.keyword_table[name]
+                    if name in builtin_dialect.op_table:
+                        self._unqualified_ops[name] = builtin_dialect.op_table[name]
 
             elif word == "import":
                 self.skip_whitespace()
@@ -308,7 +306,6 @@ class IRParser:
                 importlib.import_module(f"toy_python.dialects.{dialect_name}")
                 d = Dialect.get(dialect_name)
                 self._dialect_ops[dialect_name] = d.op_table
-                self._dialect_keywords[dialect_name] = d.keyword_table
                 self._types.update(d.type_table)
             else:
                 # Not an import line — rewind
@@ -441,25 +438,7 @@ class IRParser:
         return self._parse_block(min_indent=indent)
 
     def parse_op(self) -> builtin.Op:
-        """Parse a single operation, handling dialect-qualified names."""
-        if self.peek() != "%":
-            # Keyword op (no result) — may be qualified: dialect.op(...)
-            name = self.parse_identifier()
-            if not self.at_end() and self.peek() == ".":
-                self.advance()  # skip '.'
-                op_name = self.parse_identifier()
-                cls = self._dialect_keywords.get(name, {}).get(op_name)
-                if cls is None:
-                    cls = self._dialect_ops.get(name, {}).get(op_name)
-                if cls is None:
-                    raise RuntimeError(f"Unknown op: {name}.{op_name}")
-                return parse_op_fields(self, cls)
-            if name not in self._unqualified_keywords:
-                raise RuntimeError(f"Unknown keyword op: {name}")
-            cls = self._unqualified_keywords[name]
-            return parse_op_fields(self, cls)
-
-        # Result op: %result = [dialect.]op(...)
+        """Parse a single operation: %result = [dialect.]op(...)"""
         result = self.parse_ssa_name()
         self.skip_whitespace()
         self.expect("=")
@@ -469,8 +448,6 @@ class IRParser:
             self.advance()  # skip '.'
             op_name = self.parse_identifier()
             cls = self._dialect_ops.get(name, {}).get(op_name)
-            if cls is None:
-                cls = self._dialect_keywords.get(name, {}).get(op_name)
             if cls is None:
                 raise RuntimeError(f"Unknown op: {name}.{op_name}")
             return parse_op_fields(self, cls, result=result)

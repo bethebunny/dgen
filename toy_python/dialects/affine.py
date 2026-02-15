@@ -51,6 +51,7 @@ class AllocOp:
 
 @affine.op("dealloc")
 class DeallocOp:
+    result: Ssa
     input: Ssa
 
 
@@ -63,6 +64,7 @@ class LoadOp:
 
 @affine.op("affine_store")
 class StoreOp:
+    result: Ssa
     value: Ssa
     memref: Ssa
     indices: BareList
@@ -96,11 +98,13 @@ class ArithAddFOp:
 
 @affine.op("print_memref")
 class PrintOp:
+    result: Ssa
     input: Ssa
 
 
 @affine.op("affine_for")
 class ForOp:
+    result: Ssa
     var_name: Ssa
     lo: int
     hi: int

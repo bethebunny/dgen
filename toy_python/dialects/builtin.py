@@ -68,6 +68,7 @@ _dialect = Dialect("builtin")
 
 @_dialect.op("return")
 class ReturnOp:
+    result: Ssa
     value: Ssa | None
 
 

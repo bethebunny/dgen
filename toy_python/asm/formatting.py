@@ -109,13 +109,8 @@ def op_asm(op) -> Iterable[str]:
     hints = get_type_hints(cls, include_extras=True)
     fields = dataclasses.fields(cls)
 
-    has_result = "result" in hints
     has_type = "type" in hints
     has_body = "body" in hints
-
-    # Handle optional result (Ssa | None)
-    result_val = getattr(op, "result", None) if has_result else None
-    show_result = has_result and result_val is not None
 
     # Build args
     arg_parts = []
@@ -134,9 +129,7 @@ def op_asm(op) -> Iterable[str]:
     args_str = ", ".join(arg_parts)
 
     # Build the line
-    parts = []
-    if show_result:
-        parts.append(f"%{result_val} = ")
+    parts = [f"%{op.result} = "]
     prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
     parts.append(f"{prefix}{asm_name}({args_str})")
     if has_type:

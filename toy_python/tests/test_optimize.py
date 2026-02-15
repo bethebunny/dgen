@@ -16,8 +16,8 @@ def test_transpose_elimination():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.transpose(%0) : tensor<*xf64>
         |     %2 = toy.transpose(%1) : tensor<*xf64>
-        |     toy.print(%2)
-        |     return()
+        |     %_ = toy.print(%2)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
@@ -28,8 +28,8 @@ def test_transpose_elimination():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     assert result == expected
 
@@ -43,8 +43,8 @@ def test_reshape_of_matching_constant():
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.reshape(%0) : tensor<2x3xf64>
-        |     toy.print(%1)
-        |     return()
+        |     %_ = toy.print(%1)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
@@ -55,8 +55,8 @@ def test_reshape_of_matching_constant():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     assert result == expected
 
@@ -70,8 +70,8 @@ def test_constant_folding_reshape():
         | %main = function () -> ():
         |     %0 = toy.constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>
         |     %1 = toy.reshape(%0) : tensor<2x3xf64>
-        |     toy.print(%1)
-        |     return()
+        |     %_ = toy.print(%1)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
@@ -82,8 +82,8 @@ def test_constant_folding_reshape():
         |
         | %main = function () -> ():
         |     %1 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     toy.print(%1)
-        |     return()
+        |     %_ = toy.print(%1)
+        |     %_ = return()
     """)
     assert result == expected
 
@@ -98,8 +98,8 @@ def test_dce():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.constant(<2x3>, [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]) : tensor<2x3xf64>
         |     %2 = toy.transpose(%1) : tensor<*xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
@@ -110,8 +110,8 @@ def test_dce():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     toy.print(%0)
-        |     return()
+        |     %_ = toy.print(%0)
+        |     %_ = return()
     """)
     assert result == expected
 
@@ -133,8 +133,8 @@ def test_full_pipeline():
         |     %7 = toy.transpose(%3) : tensor<*xf64>
         |     %8 = toy.transpose(%1) : tensor<*xf64>
         |     %9 = toy.mul(%7, %8) : tensor<*xf64>
-        |     toy.print(%9)
-        |     return()
+        |     %_ = toy.print(%9)
+        |     %_ = return()
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
@@ -149,7 +149,7 @@ def test_full_pipeline():
         |     %7 = toy.transpose(%3) : tensor<*xf64>
         |     %8 = toy.transpose(%0) : tensor<*xf64>
         |     %9 = toy.mul(%7, %8) : tensor<*xf64>
-        |     toy.print(%9)
-        |     return()
+        |     %_ = toy.print(%9)
+        |     %_ = return()
     """)
     assert result == expected

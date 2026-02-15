@@ -163,7 +163,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
                 lines.append(f"  call void @print_memref({a})")
             else:
                 a = ", ".join(typed_ref(arg) for arg in op.args)
-                if op.result is not None:
+                if op.result != "_":
                     lines.append(
                         f"  %{op.result} = call void @{op.callee}({a})"
                     )

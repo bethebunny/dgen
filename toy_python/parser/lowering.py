@@ -105,9 +105,9 @@ class Lowering:
     def _lower_return(self, ret: ReturnStmt):
         if ret.value is not None:
             name = self.lower_expr(ret.value)
-            self.ops.append(builtin.ReturnOp(value=name))
+            self.ops.append(builtin.ReturnOp(result="_", value=name))
         else:
-            self.ops.append(builtin.ReturnOp(value=None))
+            self.ops.append(builtin.ReturnOp(result="_", value=None))
 
     def lower_expr(self, expr: Expression) -> str:
         """Lower an expression, return the SSA name of the result."""
@@ -197,7 +197,7 @@ class Lowering:
 
     def _lower_print(self, p: PrintExpr) -> str:
         arg = self.lower_expr(p.arg)
-        self.ops.append(toy.PrintOp(input=arg))
+        self.ops.append(toy.PrintOp(result="_", input=arg))
         return arg
 
 

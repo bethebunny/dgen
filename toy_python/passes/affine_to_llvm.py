@@ -68,7 +68,7 @@ class AffineToLLVMLowering:
         elif isinstance(op, affine.PrintOp):
             self._lower_print(op)
         elif isinstance(op, builtin.ReturnOp):
-            self.ops.append(builtin.ReturnOp(value=op.value))
+            self.ops.append(builtin.ReturnOp(result="_", value=op.value))
 
     def _lower_alloc(self, op: affine.AllocOp):
         total = 1
@@ -92,7 +92,7 @@ class AffineToLLVMLowering:
         self.ops.append(
             llvm.GepOp(result=ptr_name, base=op.memref, index=linear)
         )
-        self.ops.append(llvm.StoreOp(value=op.value, ptr=ptr_name))
+        self.ops.append(llvm.StoreOp(result="_", value=op.value, ptr=ptr_name))
 
     def _linearize_indices(self, memref: str, indices: list[str]) -> str:
         """Linearize multi-dimensional indices into a flat index.
@@ -158,10 +158,10 @@ class AffineToLLVMLowering:
         init_name = self.fresh()
         self.ops.append(llvm.IndexConstOp(result=init_name, value=op.lo))
         prev_label = self.current_label
-        self.ops.append(llvm.BrOp(dest=header_label))
+        self.ops.append(llvm.BrOp(result="_", dest=header_label))
 
         # Header label
-        self.ops.append(llvm.LabelOp(name=header_label))
+        self.ops.append(llvm.LabelOp(result="_", name=header_label))
         self.current_label = header_label
 
         # Phi node for loop variable (back-edge label patched after body)
@@ -184,12 +184,12 @@ class AffineToLLVMLowering:
         )
         self.ops.append(
             llvm.CondBrOp(
-                cond=cmp_name, true_dest=body_label, false_dest=exit_label
+                result="_", cond=cmp_name, true_dest=body_label, false_dest=exit_label
             )
         )
 
         # Body label
-        self.ops.append(llvm.LabelOp(name=body_label))
+        self.ops.append(llvm.LabelOp(result="_", name=body_label))
         self.current_label = body_label
 
         # Lower body ops
@@ -206,10 +206,10 @@ class AffineToLLVMLowering:
         self.ops.append(
             llvm.AddOp(result=next_name, lhs=var_name, rhs=one_name)
         )
-        self.ops.append(llvm.BrOp(dest=header_label))
+        self.ops.append(llvm.BrOp(result="_", dest=header_label))
 
         # Exit label
-        self.ops.append(llvm.LabelOp(name=exit_label))
+        self.ops.append(llvm.LabelOp(result="_", name=exit_label))
         self.current_label = exit_label
 
     def _lower_print(self, op: affine.PrintOp):
@@ -219,7 +219,7 @@ class AffineToLLVMLowering:
         self.ops.append(llvm.IndexConstOp(result=size_name, value=size))
         self.ops.append(
             llvm.CallOp(
-                result=None,
+                result="_",
                 callee="print_memref",
                 args=[input_name, size_name],
             )

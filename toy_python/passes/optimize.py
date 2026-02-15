@@ -12,20 +12,8 @@ from toy_python.dialects import builtin, toy
 # ===----------------------------------------------------------------------=== #
 
 
-def get_result_name(op: builtin.Op) -> str | None:
-    if isinstance(
-        op,
-        (
-            toy.ConstantOp,
-            toy.TransposeOp,
-            toy.ReshapeOp,
-            toy.MulOp,
-            toy.AddOp,
-            toy.GenericCallOp,
-        ),
-    ):
-        return op.result
-    return None
+def get_result_name(op: builtin.Op) -> str:
+    return op.result
 
 
 def get_operands(op: builtin.Op) -> list[str]:
@@ -97,9 +85,9 @@ def rewrite_uses(ops: list[builtin.Op], old_name: str, new_name: str):
                 type=op.type,
             )
         elif isinstance(op, toy.PrintOp) and op.input == old_name:
-            ops[i] = toy.PrintOp(input=new_name)
+            ops[i] = toy.PrintOp(result="_", input=new_name)
         elif isinstance(op, builtin.ReturnOp) and op.value == old_name:
-            ops[i] = builtin.ReturnOp(value=new_name)
+            ops[i] = builtin.ReturnOp(result="_", value=new_name)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -198,8 +186,6 @@ def eliminate_dead_code(func: toy.FuncOp):
             if isinstance(op, (toy.PrintOp, builtin.ReturnOp)):
                 continue
             name = get_result_name(op)
-            if name is None:
-                continue
             if name not in uses:
                 to_remove.append(i)
                 changed = True
