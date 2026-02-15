@@ -16,9 +16,7 @@ def compile_to_llvm(ir_text: str) -> str:
 def test_simple_constant_store():
     """Constant store lowers to alloca + fconst + gep + store."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<3> [1.0, 2.0, 3.0]) : tensor<3xf64>\n"
         "    Print(%0)\n"
         "    return\n"
@@ -35,9 +33,7 @@ def test_simple_constant_store():
 def test_single_for_loop():
     """For loop lowers to label/branch/phi pattern."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<3> [1.0, 2.0, 3.0]) : tensor<3xf64>\n"
         "    Print(%0)\n"
         "    return\n"
@@ -54,9 +50,7 @@ def test_single_for_loop():
 def test_nested_for_loops():
     """Nested for loops produce nested label/branch patterns."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    Print(%0)\n"
         "    return\n"
@@ -71,9 +65,7 @@ def test_nested_for_loops():
 def test_load_store_linearization():
     """Load/store with multi-dim indices are linearized."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %1 = Transpose(%0) : tensor<3x2xf64>\n"
         "    Print(%1)\n"
@@ -88,9 +80,7 @@ def test_load_store_linearization():
 def test_full_example():
     """Full pipeline: constant + transpose + mul + print -> LLVM IR."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %1 = Transpose(%0) : tensor<3x2xf64>\n"
         "    %2 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
@@ -100,7 +90,7 @@ def test_full_example():
         "    return\n"
     )
     result = compile_to_llvm(ir_text)
-    assert "define void @main" in result, "Should have function def"
+    assert "%main = function () -> ():" in result, "Should have function def"
     assert "alloca" in result, "Should have alloca"
     assert "fconst" in result, "Should have fconst"
     assert "fmul" in result, "Should have fmul for Mul op"

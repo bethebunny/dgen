@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Union
 
 from toy_python import asm
+from toy_python.dialects.builtin import Op
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -17,23 +17,23 @@ from toy_python import asm
 class MemRefType:
     shape: list[int]
 
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return f"memref<{'x'.join(str(d) for d in self.shape)}xf64>"
 
 
 @dataclass
 class IndexType:
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return "index"
 
 
 @dataclass
 class F64Type:
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return "f64"
-
-
-AnyType = Union[MemRefType, IndexType, F64Type]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -151,10 +151,7 @@ class ReturnOp:
 
     @property
     def asm(self) -> Iterable[str]:
-        if self.value is not None:
-            yield f"return %{self.value}"
-        else:
-            yield "return"
+        yield "return" if self.value is None else f"return %{self.value}"
 
 
 @dataclass
@@ -162,68 +159,10 @@ class ForOp:
     var_name: str
     lo: int
     hi: int
-    body: list[AnyOp]
+    body: list[Op]
 
     @property
     def asm(self) -> Iterable[str]:
         yield f"AffineFor %{self.var_name} = {self.lo} to {self.hi}:"
         for child_op in self.body:
             yield from asm.indent(child_op.asm)
-
-
-AnyOp = Union[
-    AllocOp,
-    DeallocOp,
-    LoadOp,
-    StoreOp,
-    ForOp,
-    ArithConstantOp,
-    IndexConstantOp,
-    ArithMulFOp,
-    ArithAddFOp,
-    PrintOp,
-    ReturnOp,
-]
-
-
-# ===----------------------------------------------------------------------=== #
-# Structure
-# ===----------------------------------------------------------------------=== #
-
-
-@dataclass
-class Value:
-    name: str
-    type: AnyType
-
-
-@dataclass
-class Block:
-    args: list[Value]
-    ops: list[AnyOp]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        for op in self.ops:
-            yield from asm.indent(op.asm)
-
-
-@dataclass
-class FuncOp:
-    name: str
-    body: Block
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"%{self.name} = function ():"
-        yield from self.body.asm
-
-
-@dataclass
-class Module:
-    functions: list[FuncOp]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        for function in self.functions:
-            yield from function.asm

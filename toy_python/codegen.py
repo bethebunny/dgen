@@ -8,7 +8,7 @@ from io import StringIO
 
 import llvmlite.binding as llvmlite
 
-from toy_python.dialects import llvm
+from toy_python.dialects import builtin, llvm
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ def _ensure_initialized():
 # ---------------------------------------------------------------------------
 
 
-def emit_llvm_ir(module: llvm.Module) -> str:
+def emit_llvm_ir(module: builtin.Module) -> str:
     """Emit valid LLVM IR text that llvmlite can parse."""
     lines: list[str] = ["declare void @print_memref(ptr, i64)", ""]
     for func in module.functions:
@@ -53,7 +53,7 @@ def emit_llvm_ir(module: llvm.Module) -> str:
     return "\n".join(lines)
 
 
-def _emit_func(f: llvm.FuncOp) -> list[str]:
+def _emit_func(f: builtin.FuncOp) -> list[str]:
     # Pre-scan: build constants and types maps
     constants: dict[str, str] = {}  # SSA name -> typed literal
     types: dict[str, str] = {}  # SSA name -> LLVM type
@@ -184,7 +184,7 @@ def _emit_func(f: llvm.FuncOp) -> list[str]:
 
 
 def compile_and_run(
-    ll_module: llvm.Module, capture_output: bool = False
+    ll_module: builtin.Module, capture_output: bool = False
 ) -> str | None:
     """Emit LLVM IR, JIT-compile, and execute the module's main function."""
     _ensure_initialized()

@@ -4,10 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Union
-
-from toy_python import asm
-
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -16,7 +12,8 @@ from toy_python import asm
 
 @dataclass
 class PtrType:
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return "ptr"
 
 
@@ -24,23 +21,24 @@ class PtrType:
 class IntType:
     bits: int
 
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return f"i{self.bits}"
 
 
 @dataclass
 class FloatType:
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return "f64"
 
 
 @dataclass
 class VoidType:
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return "void"
 
-
-AnyType = Union[PtrType, IntType, FloatType, VoidType]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -250,63 +248,5 @@ class ReturnOp:
             yield "ret void"
 
 
-AnyOp = Union[
-    AllocaOp,
-    GepOp,
-    LoadOp,
-    StoreOp,
-    FAddOp,
-    FMulOp,
-    ConstantOp,
-    IndexConstOp,
-    AddOp,
-    MulOp,
-    IcmpOp,
-    BrOp,
-    CondBrOp,
-    LabelOp,
-    PhiOp,
-    CallOp,
-    ReturnOp,
-]
 
 
-# ===----------------------------------------------------------------------=== #
-# Structure
-# ===----------------------------------------------------------------------=== #
-
-
-@dataclass
-class Block:
-    ops: list[AnyOp]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        for op in self.ops:
-            if isinstance(op, LabelOp):
-                yield from op.asm
-            else:
-                yield from asm.indent(op.asm)
-
-
-@dataclass
-class FuncOp:
-    name: str
-    body: Block
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield f"define void @{self.name}():"
-        yield from self.body.asm
-
-
-@dataclass
-class Module:
-    functions: list[FuncOp]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        for i, function in enumerate(self.functions):
-            if i > 0:
-                yield ""
-            yield from function.asm

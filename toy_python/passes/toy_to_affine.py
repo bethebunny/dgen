@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from toy_python.dialects import toy
+from toy_python.dialects import builtin, toy
 from toy_python.dialects import affine
 
 
 class ToyToAffineLowering:
     def __init__(self):
         self.counter = 0
-        self.ops: list[affine.AnyOp] = []
+        self.ops: list[builtin.Op] = []
         self.shape_map: dict[str, list[int]] = {}
         self.alloc_map: dict[str, str] = {}
         self.live_allocs: list[str] = []
@@ -19,11 +19,11 @@ class ToyToAffineLowering:
         self.counter += 1
         return name
 
-    def lower_module(self, m: toy.Module) -> affine.Module:
+    def lower_module(self, m: builtin.Module) -> builtin.Module:
         functions = [self.lower_function(f) for f in m.functions]
-        return affine.Module(functions=functions)
+        return builtin.Module(functions=functions)
 
-    def lower_function(self, f: toy.FuncOp) -> affine.FuncOp:
+    def lower_function(self, f: builtin.FuncOp) -> builtin.FuncOp:
         self.counter = 0
         self.ops = []
         self.shape_map = {}
@@ -35,12 +35,13 @@ class ToyToAffineLowering:
 
         ops = self.ops
         self.ops = []
-        return affine.FuncOp(
+        return builtin.FuncOp(
             name=f.name,
-            body=affine.Block(args=[], ops=ops),
+            body=builtin.Block(ops=ops),
+            func_type=builtin.FuncType(result=builtin.Nil()),
         )
 
-    def lower_op(self, op: toy.AnyOp):
+    def lower_op(self, op: builtin.Op):
         if isinstance(op, toy.ConstantOp):
             self._lower_constant(op)
         elif isinstance(op, toy.TransposeOp):
@@ -70,7 +71,7 @@ class ToyToAffineLowering:
         if len(shape) == 1:
             # 1D: single loop
             ivar = self.fresh()
-            body: list[affine.AnyOp] = []
+            body: list[builtin.Op] = []
             for idx in range(shape[0]):
                 cst_name = self.fresh()
                 body.append(affine.ArithConstantOp(result=cst_name, value=values[idx]))
@@ -89,7 +90,7 @@ class ToyToAffineLowering:
             ivar = self.fresh()
             jvar = self.fresh()
             rows, cols = shape[0], shape[1]
-            inner_body: list[affine.AnyOp] = []
+            inner_body: list[builtin.Op] = []
             for r in range(rows):
                 for c in range(cols):
                     flat = r * cols + c
@@ -112,7 +113,7 @@ class ToyToAffineLowering:
                             indices=[ri_name, ci_name],
                         )
                     )
-            outer_body: list[affine.AnyOp] = [
+            outer_body: list[builtin.Op] = [
                 affine.ForOp(var_name=jvar, lo=0, hi=cols, body=inner_body),
             ]
             self.ops.append(
@@ -141,7 +142,7 @@ class ToyToAffineLowering:
         # Nested for: load [i,j] from input, store [j,i] to output
         ivar = self.fresh()
         jvar = self.fresh()
-        inner_body: list[affine.AnyOp] = []
+        inner_body: list[builtin.Op] = []
 
         load_name = self.fresh()
         inner_body.append(
@@ -155,7 +156,7 @@ class ToyToAffineLowering:
             )
         )
 
-        outer_body: list[affine.AnyOp] = [
+        outer_body: list[builtin.Op] = [
             affine.ForOp(var_name=jvar, lo=0, hi=cols, body=inner_body),
         ]
         self.ops.append(
@@ -182,7 +183,7 @@ class ToyToAffineLowering:
 
         if len(shape) == 1:
             ivar = self.fresh()
-            body: list[affine.AnyOp] = []
+            body: list[builtin.Op] = []
             lv = self.fresh()
             body.append(
                 affine.LoadOp(result=lv, memref=lhs_alloc, indices=[ivar])
@@ -205,7 +206,7 @@ class ToyToAffineLowering:
         elif len(shape) == 2:
             ivar = self.fresh()
             jvar = self.fresh()
-            inner_body: list[affine.AnyOp] = []
+            inner_body: list[builtin.Op] = []
             lv = self.fresh()
             inner_body.append(
                 affine.LoadOp(
@@ -228,7 +229,7 @@ class ToyToAffineLowering:
                     value=res, memref=alloc_name, indices=[ivar, jvar]
                 )
             )
-            outer_body: list[affine.AnyOp] = [
+            outer_body: list[builtin.Op] = [
                 affine.ForOp(
                     var_name=jvar, lo=0, hi=shape[1], body=inner_body
                 ),
@@ -265,6 +266,6 @@ class ToyToAffineLowering:
         self.ops.append(affine.ReturnOp(value=op.value))
 
 
-def lower_to_affine(m: toy.Module) -> affine.Module:
+def lower_to_affine(m: builtin.Module) -> builtin.Module:
     lowering = ToyToAffineLowering()
     return lowering.lower_module(m)

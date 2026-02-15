@@ -27,7 +27,7 @@ def test_constant_print():
         "}\n"
     )
     result = compile(source)
-    assert "define void @main" in result, "Should have function def"
+    assert "%main = function () -> ():" in result, "Should have function def"
     assert "alloca f64, 6" in result, "Should alloca 6 elements for 2x3 tensor"
     assert "fconst 1.0" in result, "Should store 1.0"
     assert "fconst 6.0" in result, "Should store 6.0"
@@ -126,7 +126,7 @@ def test_multiply_transpose_inlined():
         "}\n"
     )
     result = compile(source)
-    assert "define void @main" in result, "Should have main function"
+    assert "%main = function () -> ():" in result, "Should have main function"
     assert "fmul" in result, "Should have fmul for multiply"
     assert "loop_header" in result, "Should have loop headers"
     assert "phi" in result, "Should have phi nodes"

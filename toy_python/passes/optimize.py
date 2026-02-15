@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from toy_python.dialects import toy
+from toy_python.dialects import builtin, toy
 
 
 # ===----------------------------------------------------------------------=== #
@@ -12,7 +12,7 @@ from toy_python.dialects import toy
 # ===----------------------------------------------------------------------=== #
 
 
-def get_result_name(op: toy.AnyOp) -> str | None:
+def get_result_name(op: builtin.Op) -> str | None:
     if isinstance(
         op,
         (
@@ -28,7 +28,7 @@ def get_result_name(op: toy.AnyOp) -> str | None:
     return None
 
 
-def get_operands(op: toy.AnyOp) -> list[str]:
+def get_operands(op: builtin.Op) -> list[str]:
     if isinstance(op, toy.TransposeOp):
         return [op.input]
     if isinstance(op, toy.ReshapeOp):
@@ -46,7 +46,7 @@ def get_operands(op: toy.AnyOp) -> list[str]:
     return []
 
 
-def collect_uses(ops: list[toy.AnyOp]) -> dict[str, int]:
+def collect_uses(ops: list[builtin.Op]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for op in ops:
         for name in get_operands(op):
@@ -54,14 +54,14 @@ def collect_uses(ops: list[toy.AnyOp]) -> dict[str, int]:
     return counts
 
 
-def find_def(ops: list[toy.AnyOp], name: str) -> int | None:
+def find_def(ops: list[builtin.Op], name: str) -> int | None:
     for i, op in enumerate(ops):
         if get_result_name(op) == name:
             return i
     return None
 
 
-def rewrite_uses(ops: list[toy.AnyOp], old_name: str, new_name: str):
+def rewrite_uses(ops: list[builtin.Op], old_name: str, new_name: str):
     for i, op in enumerate(ops):
         if isinstance(op, toy.TransposeOp) and op.input == old_name:
             ops[i] = toy.TransposeOp(
@@ -216,7 +216,7 @@ def _remove_indices(ops: list, indices: list[int]):
 # ===----------------------------------------------------------------------=== #
 
 
-def optimize(m: toy.Module) -> toy.Module:
+def optimize(m: builtin.Module) -> builtin.Module:
     functions = []
     for func in m.functions:
         func = deepcopy(func)
@@ -225,4 +225,4 @@ def optimize(m: toy.Module) -> toy.Module:
         simplify_reshape(func)
         eliminate_dead_code(func)
         functions.append(func)
-    return toy.Module(functions=functions)
+    return builtin.Module(functions=functions)

@@ -1,14 +1,14 @@
 """Phase 1 tests: construct IR manually, print, verify output."""
 
-from toy_python.dialects import toy
+from toy_python.dialects import builtin, toy
 from toy_python import asm
 
 
-def unranked() -> toy.AnyType:
+def unranked() -> builtin.Type:
     return toy.UnrankedTensorType()
 
 
-def ranked(shape: list[int]) -> toy.AnyType:
+def ranked(shape: list[int]) -> builtin.Type:
     return toy.RankedTensorType(shape=shape)
 
 
@@ -76,8 +76,8 @@ def test_return_op_void():
 def test_full_module():
     # Build multiply_transpose function
     mt_args = [
-        toy.Value(name="a", type=unranked()),
-        toy.Value(name="b", type=unranked()),
+        builtin.Value(name="a", type=unranked()),
+        builtin.Value(name="b", type=unranked()),
     ]
 
     mt_ops = [
@@ -90,10 +90,10 @@ def test_full_module():
     mt_func_type = toy.FunctionType(
         inputs=[unranked(), unranked()], result=unranked()
     )
-    mt_func = toy.FuncOp(
+    mt_func = builtin.FuncOp(
         name="multiply_transpose",
         func_type=mt_func_type,
-        body=toy.Block(args=mt_args, ops=mt_ops),
+        body=builtin.Block(ops=mt_ops, args=mt_args),
     )
 
     # Build main function
@@ -128,25 +128,23 @@ def test_full_module():
         toy.ReturnOp(value=None),
     ]
 
-    main_func_type = toy.FunctionType(inputs=[], result=None)
-    main_func = toy.FuncOp(
+    main_func_type = toy.FunctionType(inputs=[], result=builtin.Nil())
+    main_func = builtin.FuncOp(
         name="main",
         func_type=main_func_type,
-        body=toy.Block(args=[], ops=main_ops),
+        body=builtin.Block(ops=main_ops),
     )
 
-    module = toy.Module(functions=[mt_func, main_func])
+    module = builtin.Module(functions=[mt_func, main_func])
 
     expected = (
-        "from toy use *\n"
-        "\n"
         "%multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:\n"
         "    %0 = Transpose(%a) : tensor<*xf64>\n"
         "    %1 = Transpose(%b) : tensor<*xf64>\n"
         "    %2 = Mul(%0, %1) : tensor<*xf64>\n"
         "    return %2\n"
         "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %1 = Reshape(%0) : tensor<2x3xf64>\n"
         "    %2 = Constant(<6> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>\n"
@@ -154,6 +152,6 @@ def test_full_module():
         "    %4 = GenericCall @multiply_transpose(%1, %3) : tensor<*xf64>\n"
         "    %5 = GenericCall @multiply_transpose(%3, %1) : tensor<*xf64>\n"
         "    Print(%5)\n"
-        "    return"
+        "    return\n"
     )
     assert asm.format(module) == expected

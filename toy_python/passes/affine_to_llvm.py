@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from toy_python.dialects import affine
-from toy_python.dialects import llvm
+from toy_python.dialects import affine, builtin, llvm
 
 
 class AffineToLLVMLowering:
     def __init__(self):
         self.counter = 0
         self.loop_counter = 0
-        self.ops: list[llvm.AnyOp] = []
+        self.ops: list[builtin.Op] = []
         self.alloc_shapes: dict[str, list[int]] = {}
         self.alloc_sizes: dict[str, int] = {}
         self.current_label = "entry"
@@ -20,11 +19,11 @@ class AffineToLLVMLowering:
         self.counter += 1
         return name
 
-    def lower_module(self, m: affine.Module) -> llvm.Module:
+    def lower_module(self, m: builtin.Module) -> builtin.Module:
         functions = [self.lower_function(f) for f in m.functions]
-        return llvm.Module(functions=functions)
+        return builtin.Module(functions=functions)
 
-    def lower_function(self, f: affine.FuncOp) -> llvm.FuncOp:
+    def lower_function(self, f: builtin.FuncOp) -> builtin.FuncOp:
         self.counter = 0
         self.loop_counter = 0
         self.ops = []
@@ -37,9 +36,13 @@ class AffineToLLVMLowering:
 
         ops = self.ops
         self.ops = []
-        return llvm.FuncOp(name=f.name, body=llvm.Block(ops=ops))
+        return builtin.FuncOp(
+            name=f.name,
+            body=builtin.Block(ops=ops),
+            func_type=builtin.FuncType(result=builtin.Nil()),
+        )
 
-    def lower_op(self, op: affine.AnyOp):
+    def lower_op(self, op: builtin.Op):
         if isinstance(op, affine.AllocOp):
             self._lower_alloc(op)
         elif isinstance(op, affine.DeallocOp):
@@ -225,6 +228,6 @@ class AffineToLLVMLowering:
         )
 
 
-def lower_to_llvm(m: affine.Module) -> llvm.Module:
+def lower_to_llvm(m: builtin.Module) -> builtin.Module:
     lowering = AffineToLLVMLowering()
     return lowering.lower_module(m)

@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Union
 
-from toy_python import asm
-
+from toy_python.dialects.builtin import FuncType, Nil, Type
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -18,7 +16,8 @@ from toy_python import asm
 class UnrankedTensorType:
     """tensor<*xf64>"""
 
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return "tensor<*xf64>"
 
 
@@ -28,23 +27,16 @@ class RankedTensorType:
 
     shape: list[int]
 
-    def __str__(self) -> str:
+    @property
+    def asm(self) -> str:
         return "tensor<" + "x".join(str(d) for d in self.shape) + "xf64>"
 
 
-AnyType = Union[UnrankedTensorType, RankedTensorType]
-
-
 @dataclass
-class FunctionType:
+class FunctionType(FuncType):
     """(tensor<*xf64>, tensor<*xf64>) -> tensor<*xf64>"""
 
-    inputs: list[AnyType]
-    result: AnyType | None
-
-
-def type_to_string(t: AnyType) -> str:
-    return str(t)
+    inputs: list[Type]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -77,13 +69,13 @@ class ConstantOp:
     result: str
     value: list[float]
     shape: list[int]
-    type: AnyType
+    type: Type
 
     @property
     def asm(self) -> Iterable[str]:
         yield (
             f"%{self.result} = Constant({format_shape(self.shape)} "
-            f"{format_float_list(self.value)}) : {self.type}"
+            f"{format_float_list(self.value)}) : {self.type.asm}"
         )
 
 
@@ -91,22 +83,22 @@ class ConstantOp:
 class TransposeOp:
     result: str
     input: str
-    type: AnyType
+    type: Type
 
     @property
     def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Transpose(%{self.input}) : {self.type}"
+        yield f"%{self.result} = Transpose(%{self.input}) : {self.type.asm}"
 
 
 @dataclass
 class ReshapeOp:
     result: str
     input: str
-    type: AnyType
+    type: Type
 
     @property
     def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Reshape(%{self.input}) : {self.type}"
+        yield f"%{self.result} = Reshape(%{self.input}) : {self.type.asm}"
 
 
 @dataclass
@@ -114,11 +106,11 @@ class MulOp:
     result: str
     lhs: str
     rhs: str
-    type: AnyType
+    type: Type
 
     @property
     def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Mul(%{self.lhs}, %{self.rhs}) : {self.type}"
+        yield f"%{self.result} = Mul(%{self.lhs}, %{self.rhs}) : {self.type.asm}"
 
 
 @dataclass
@@ -126,11 +118,11 @@ class AddOp:
     result: str
     lhs: str
     rhs: str
-    type: AnyType
+    type: Type
 
     @property
     def asm(self) -> Iterable[str]:
-        yield f"%{self.result} = Add(%{self.lhs}, %{self.rhs}) : {self.type}"
+        yield f"%{self.result} = Add(%{self.lhs}, %{self.rhs}) : {self.type.asm}"
 
 
 @dataclass
@@ -138,14 +130,14 @@ class GenericCallOp:
     result: str
     callee: str
     args: list[str]
-    type: AnyType
+    type: Type
 
     @property
     def asm(self) -> Iterable[str]:
         args_str = ", ".join(f"%{a}" for a in self.args)
         yield (
             f"%{self.result} = GenericCall @{self.callee}({args_str}) : "
-            f"{self.type}"
+            f"{self.type.asm}"
         )
 
 
@@ -170,66 +162,5 @@ class ReturnOp:
             yield "return"
 
 
-AnyOp = Union[
-    ConstantOp,
-    TransposeOp,
-    ReshapeOp,
-    MulOp,
-    AddOp,
-    GenericCallOp,
-    PrintOp,
-    ReturnOp,
-]
 
 
-# ===----------------------------------------------------------------------=== #
-# Structure
-# ===----------------------------------------------------------------------=== #
-
-
-@dataclass
-class Value:
-    """A block argument (function parameter)."""
-
-    name: str
-    type: AnyType
-
-
-@dataclass
-class Block:
-    args: list[Value]
-    ops: list[AnyOp]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        for op in self.ops:
-            yield from asm.indent(op.asm)
-
-
-@dataclass
-class FuncOp:
-    name: str
-    func_type: FunctionType
-    body: Block
-
-    @property
-    def asm(self) -> Iterable[str]:
-        args = ", ".join(f"%{a.name}: {a.type}" for a in self.body.args)
-        header = f"%{self.name} = function ({args})"
-        if self.func_type.result is not None:
-            header += f" -> {self.func_type.result}"
-        header += ":"
-        yield header
-        yield from self.body.asm
-
-
-@dataclass
-class Module:
-    functions: list[FuncOp]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        yield "from toy use *"
-        for function in self.functions:
-            yield ""
-            yield from function.asm

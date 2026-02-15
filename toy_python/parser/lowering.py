@@ -17,21 +17,21 @@ from toy_python.parser.ast import (
     Function,
     ToyModule,
 )
-from toy_python.dialects import toy
+from toy_python.dialects import builtin, toy
 
 
-def _unranked() -> toy.AnyType:
+def _unranked() -> builtin.Type:
     return toy.UnrankedTensorType()
 
 
-def _ranked(shape: list[int]) -> toy.AnyType:
+def _ranked(shape: list[int]) -> builtin.Type:
     return toy.RankedTensorType(shape=shape)
 
 
 class Lowering:
     def __init__(self):
         self.counter = 0
-        self.ops: list[toy.AnyOp] = []
+        self.ops: list[builtin.Op] = []
         self.scope: dict[str, str] = {}
 
     def fresh(self) -> str:
@@ -39,22 +39,22 @@ class Lowering:
         self.counter += 1
         return name
 
-    def lower_module(self, tm: ToyModule) -> toy.Module:
+    def lower_module(self, tm: ToyModule) -> builtin.Module:
         functions = [self.lower_function(f) for f in tm.functions]
-        return toy.Module(functions=functions)
+        return builtin.Module(functions=functions)
 
-    def lower_function(self, f: Function) -> toy.FuncOp:
+    def lower_function(self, f: Function) -> builtin.FuncOp:
         # Reset per-function state
         self.counter = 0
         self.ops = []
         self.scope = {}
 
         # Create block args for function params
-        args: list[toy.Value] = []
-        input_types: list[toy.AnyType] = []
+        args: list[builtin.Value] = []
+        input_types: list[builtin.Type] = []
         for param_name in f.proto.params:
             self.scope[param_name] = param_name
-            args.append(toy.Value(name=param_name, type=_unranked()))
+            args.append(builtin.Value(name=param_name, type=_unranked()))
             input_types.append(_unranked())
 
         # Lower body statements
@@ -62,7 +62,7 @@ class Lowering:
             self.lower_statement(stmt)
 
         # Determine return type from ops
-        result: toy.AnyType | None = None
+        result: builtin.Type = builtin.Nil()
         if self.ops:
             last_op = self.ops[-1]
             if isinstance(last_op, toy.ReturnOp) and last_op.value is not None:
@@ -71,10 +71,10 @@ class Lowering:
         ops = self.ops
         self.ops = []
         func_type = toy.FunctionType(inputs=input_types, result=result)
-        return toy.FuncOp(
+        return builtin.FuncOp(
             name=f.proto.name,
             func_type=func_type,
-            body=toy.Block(args=args, ops=ops),
+            body=builtin.Block(ops=ops, args=args),
         )
 
     def lower_statement(self, stmt: Statement):
@@ -201,6 +201,6 @@ class Lowering:
         return arg
 
 
-def lower(tm: ToyModule) -> toy.Module:
+def lower(tm: ToyModule) -> builtin.Module:
     lowering = Lowering()
     return lowering.lower_module(tm)

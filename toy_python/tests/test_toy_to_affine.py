@@ -8,9 +8,7 @@ from toy_python import asm
 def test_simple_constant():
     """Constant op lowers to alloc + stores."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    Print(%0)\n"
         "    return\n"
@@ -30,9 +28,7 @@ def test_simple_constant():
 def test_transpose():
     """Transpose lowers to alloc + transposed loop nest."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %1 = Transpose(%0) : tensor<3x2xf64>\n"
         "    Print(%1)\n"
@@ -50,9 +46,7 @@ def test_transpose():
 def test_mul():
     """Mul lowers to alloc + element-wise loop."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x2> [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>\n"
         "    %1 = Constant(<2x2> [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>\n"
         "    %2 = Mul(%0, %1) : tensor<2x2xf64>\n"
@@ -70,9 +64,7 @@ def test_mul():
 def test_add():
     """Add lowers to alloc + element-wise loop."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x2> [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>\n"
         "    %1 = Constant(<2x2> [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>\n"
         "    %2 = Add(%0, %1) : tensor<2x2xf64>\n"
@@ -88,9 +80,7 @@ def test_add():
 def test_print():
     """Print maps to PrintMemRef."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    Print(%0)\n"
         "    return\n"
@@ -104,9 +94,7 @@ def test_print():
 def test_full_example():
     """Full pipeline: constant + reshape + transpose + mul + print."""
     ir_text = (
-        "from toy use *\n"
-        "\n"
-        "%main = function ():\n"
+        "%main = function () -> ():\n"
         "    %0 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
         "    %1 = Transpose(%0) : tensor<3x2xf64>\n"
         "    %2 = Constant(<2x3> [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>\n"
