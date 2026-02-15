@@ -2,7 +2,7 @@
 
 from toy_python import asm
 from toy_python.passes.optimize import optimize
-from toy_python.dialects.toy import parse_toy_module as parse_module
+from toy_python.asm.parser import parse_module
 from toy_python.tests.helpers import strip_prefix
 
 

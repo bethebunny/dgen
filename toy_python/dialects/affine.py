@@ -107,7 +107,3 @@ class ForOp:
     body: list[Op]
 
 
-def parse_affine_module(text: str):
-    from toy_python.asm.parser import parse_module
-
-    return parse_module(text)

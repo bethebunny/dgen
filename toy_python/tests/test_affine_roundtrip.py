@@ -1,5 +1,6 @@
 """Round-trip tests for affine dialect: construct -> asm -> parse -> asm."""
 
+from toy_python.asm.parser import parse_module
 from toy_python.dialects import affine
 from toy_python import asm
 from toy_python.tests.helpers import strip_prefix
@@ -15,7 +16,7 @@ def test_roundtrip_alloc():
         |     affine.dealloc(%0)
         |     return()
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -31,7 +32,7 @@ def test_roundtrip_store_load():
         |     %2 = affine.affine_load(%0, [i0])
         |     return()
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -47,7 +48,7 @@ def test_roundtrip_arith():
         |     %3 = affine.add_f(%0, %1)
         |     return()
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -60,7 +61,7 @@ def test_roundtrip_index_constant():
         |     %0 = affine.index_constant(42)
         |     return()
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -74,7 +75,7 @@ def test_roundtrip_print_memref():
         |     affine.print_memref(%0)
         |     return()
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -91,7 +92,7 @@ def test_roundtrip_for_op():
         |     affine.print_memref(%0)
         |     return()
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -108,7 +109,7 @@ def test_roundtrip_nested_for():
         |             affine.affine_store(%1, %0, [i0, i1])
         |     return()
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -121,7 +122,7 @@ def test_roundtrip_return_value():
         |     %0 = affine.arith_constant(1.0)
         |     return(%0)
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -137,5 +138,5 @@ def test_roundtrip_multi_index_load_store():
         |     %2 = affine.affine_load(%0, [i0, i1])
         |     return()
     """)
-    module = affine.parse_affine_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir

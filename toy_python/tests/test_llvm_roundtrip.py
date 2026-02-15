@@ -1,5 +1,6 @@
 """Round-trip tests for LLVM dialect: construct -> asm -> parse -> asm."""
 
+from toy_python.asm.parser import parse_module
 from toy_python.dialects import llvm
 from toy_python import asm
 from toy_python.tests.helpers import strip_prefix
@@ -14,7 +15,7 @@ def test_roundtrip_alloca():
         |     %0 = llvm.alloca(3)
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -32,7 +33,7 @@ def test_roundtrip_gep_load_store():
         |     %4 = llvm.load(%2)
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -48,7 +49,7 @@ def test_roundtrip_fadd_fmul():
         |     %3 = llvm.fmul(%0, %1)
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -64,7 +65,7 @@ def test_roundtrip_add_mul_int():
         |     %3 = llvm.mul(%0, %1)
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -80,7 +81,7 @@ def test_roundtrip_icmp_condbr():
         |     llvm.cond_br(%cmp, loop_body, loop_exit)
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -94,7 +95,7 @@ def test_roundtrip_label_br():
         |     llvm.label(loop_header)
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -107,7 +108,7 @@ def test_roundtrip_phi():
         |     %i0 = llvm.phi([%init, %next], [entry, loop_body])
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -120,7 +121,7 @@ def test_roundtrip_call_with_result():
         |     %0 = llvm.call(@foo, [%a, %b])
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -133,7 +134,7 @@ def test_roundtrip_call_void():
         |     llvm.call(@print_memref, [%ptr, %size])
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -146,7 +147,7 @@ def test_roundtrip_return_value():
         |     %0 = llvm.fconst(42.0)
         |     return(%0)
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir
 
 
@@ -175,5 +176,5 @@ def test_roundtrip_loop_pattern():
         |     llvm.label(loop_exit0)
         |     return()
     """)
-    module = llvm.parse_llvm_module(ir)
+    module = parse_module(ir)
     assert asm.format(module) == ir

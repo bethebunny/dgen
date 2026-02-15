@@ -123,7 +123,3 @@ def _parse_tensor_type(parser: IRParser) -> UnrankedTensorType | RankedTensorTyp
     return RankedTensorType(shape=shape)
 
 
-def parse_toy_module(text: str):
-    from toy_python.asm.parser import parse_module
-
-    return parse_module(text)
