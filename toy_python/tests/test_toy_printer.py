@@ -139,7 +139,6 @@ def test_full_module():
     module = builtin.Module(functions=[mt_func, main_func])
 
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:

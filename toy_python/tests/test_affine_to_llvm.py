@@ -17,7 +17,6 @@ def compile_to_llvm(ir_text: str) -> str:
 def test_simple_constant_store():
     """Constant store lowers to alloca + fconst + gep + store."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -37,7 +36,6 @@ def test_simple_constant_store():
 def test_single_for_loop():
     """For loop lowers to label/branch/phi pattern."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -57,7 +55,6 @@ def test_single_for_loop():
 def test_nested_for_loops():
     """Nested for loops produce nested label/branch patterns."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -75,7 +72,6 @@ def test_nested_for_loops():
 def test_load_store_linearization():
     """Load/store with multi-dim indices are linearized."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -93,7 +89,6 @@ def test_load_store_linearization():
 def test_full_example():
     """Full pipeline: constant + transpose + mul + print -> LLVM IR."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():

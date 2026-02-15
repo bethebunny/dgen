@@ -8,7 +8,6 @@ from toy_python.tests.helpers import strip_prefix
 
 def test_roundtrip_alloca():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -21,7 +20,6 @@ def test_roundtrip_alloca():
 
 def test_roundtrip_gep_load_store():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -39,7 +37,6 @@ def test_roundtrip_gep_load_store():
 
 def test_roundtrip_fadd_fmul():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -55,7 +52,6 @@ def test_roundtrip_fadd_fmul():
 
 def test_roundtrip_add_mul_int():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -71,7 +67,6 @@ def test_roundtrip_add_mul_int():
 
 def test_roundtrip_icmp_condbr():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -87,7 +82,6 @@ def test_roundtrip_icmp_condbr():
 
 def test_roundtrip_label_br():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -101,7 +95,6 @@ def test_roundtrip_label_br():
 
 def test_roundtrip_phi():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -114,7 +107,6 @@ def test_roundtrip_phi():
 
 def test_roundtrip_call_with_result():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -127,7 +119,6 @@ def test_roundtrip_call_with_result():
 
 def test_roundtrip_call_void():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -140,7 +131,6 @@ def test_roundtrip_call_void():
 
 def test_roundtrip_return_value():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -154,7 +144,6 @@ def test_roundtrip_return_value():
 def test_roundtrip_loop_pattern():
     """Full loop pattern: br, label, phi, icmp, condbr, body, increment."""
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():

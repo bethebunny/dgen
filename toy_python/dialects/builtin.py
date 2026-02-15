@@ -105,22 +105,18 @@ class Module:
 
     @property
     def asm(self) -> Iterable[str]:
-        # Collect dialect info from all ops
+        # Collect non-builtin dialects used
         dialects: set[str] = set()
-        builtin_names: set[str] = {"function"}
         for func in self.functions:
             for op in _walk_all_ops(func.body.ops):
                 dialect_name = getattr(type(op), "_dialect_name", "builtin")
-                asm_name = getattr(type(op), "_asm_name", "")
-                if dialect_name == "builtin":
-                    builtin_names.add(asm_name)
-                else:
+                if dialect_name != "builtin":
                     dialects.add(dialect_name)
 
-        yield f"from builtin import {', '.join(sorted(builtin_names))}"
         for d in sorted(dialects):
             yield f"import {d}"
-        yield ""
+        if dialects:
+            yield ""
 
         for function in self.functions:
             yield from function.asm

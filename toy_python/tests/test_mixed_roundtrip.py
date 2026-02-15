@@ -8,7 +8,6 @@ from toy_python.tests.helpers import strip_prefix
 def test_llvm_via_imports():
     """Parse a function using llvm ops via import headers."""
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():
@@ -24,7 +23,6 @@ def test_llvm_via_imports():
 def test_llvm_full_loop():
     """Full LLVM loop pattern parsed with import headers."""
     ir = strip_prefix("""
-        | from builtin import function, return
         | import llvm
         |
         | %f = function () -> ():

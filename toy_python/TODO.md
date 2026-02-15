@@ -1,4 +1,3 @@
-- Update parser to do namespace lookup
 - Typed SSA values
 - Remove "bare" values
 - SSA types

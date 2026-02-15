@@ -9,7 +9,6 @@ from toy_python.tests.helpers import strip_prefix
 def test_transpose_elimination():
     """transpose(transpose(x)) -> x"""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -23,7 +22,6 @@ def test_transpose_elimination():
     opt = optimize(m)
     result = asm.format(opt)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -37,7 +35,6 @@ def test_transpose_elimination():
 def test_reshape_of_matching_constant():
     """Reshape to same shape as constant -> remove reshape."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -50,7 +47,6 @@ def test_reshape_of_matching_constant():
     opt = optimize(m)
     result = asm.format(opt)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -64,7 +60,6 @@ def test_reshape_of_matching_constant():
 def test_constant_folding_reshape():
     """Reshape of constant with different shape -> fold into new constant."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -77,7 +72,6 @@ def test_constant_folding_reshape():
     opt = optimize(m)
     result = asm.format(opt)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -91,7 +85,6 @@ def test_constant_folding_reshape():
 def test_dce():
     """Dead code elimination removes unused ops."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -105,7 +98,6 @@ def test_dce():
     opt = optimize(m)
     result = asm.format(opt)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -119,7 +111,6 @@ def test_dce():
 def test_full_pipeline():
     """Full optimization on multiply_transpose-like example."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -140,7 +131,6 @@ def test_full_pipeline():
     opt = optimize(m)
     result = asm.format(opt)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():

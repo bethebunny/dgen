@@ -7,7 +7,6 @@ from toy_python.tests.helpers import strip_prefix
 
 def test_roundtrip_transpose():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %f = function (%a: tensor<*xf64>) -> tensor<*xf64>:
@@ -20,7 +19,6 @@ def test_roundtrip_transpose():
 
 def test_roundtrip_reshape():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %f = function (%a: tensor<*xf64>) -> tensor<2x3xf64>:
@@ -33,7 +31,6 @@ def test_roundtrip_reshape():
 
 def test_roundtrip_constant():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %f = function () -> tensor<2x3xf64>:
@@ -46,7 +43,6 @@ def test_roundtrip_constant():
 
 def test_roundtrip_mul():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %f = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
@@ -59,7 +55,6 @@ def test_roundtrip_mul():
 
 def test_roundtrip_add():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %f = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
@@ -72,7 +67,6 @@ def test_roundtrip_add():
 
 def test_roundtrip_generic_call():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %f = function (%a: tensor<*xf64>) -> tensor<*xf64>:
@@ -85,7 +79,6 @@ def test_roundtrip_generic_call():
 
 def test_roundtrip_print():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %f = function (%a: tensor<*xf64>) -> ():
@@ -98,8 +91,6 @@ def test_roundtrip_print():
 
 def test_roundtrip_void_return():
     ir = strip_prefix("""
-        | from builtin import function, return
-        |
         | %f = function () -> ():
         |     %_ = return()
     """)
@@ -109,7 +100,6 @@ def test_roundtrip_void_return():
 
 def test_roundtrip_full_program():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:

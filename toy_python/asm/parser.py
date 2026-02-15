@@ -147,9 +147,13 @@ class IRParser:
     def __init__(self, text: str):
         self.text = text
         self.pos = 0
-        self._dialect_ops: dict[str, dict] = {}
-        self._unqualified_ops: dict[str, type] = {}
+        self._ops: dict[str, type] = {}
         self._types: dict = {}
+
+        # Implicit: from builtin import *
+        builtin_dialect = Dialect.get("builtin")
+        self._ops.update(builtin_dialect.op_table)
+        self._types.update(builtin_dialect.type_table)
 
     def at_end(self) -> bool:
         return self.pos >= len(self.text)
@@ -271,6 +275,7 @@ class IRParser:
             word = self.parse_identifier()
 
             if word == "from":
+                # from builtin import ... — no-op (builtin is implicit)
                 self.skip_whitespace()
                 mod_name = self.parse_identifier()
                 if mod_name != "builtin":
@@ -283,21 +288,8 @@ class IRParser:
                     raise RuntimeError(
                         f"Expected 'import' after 'from builtin', got '{import_kw}'"
                     )
-                self.skip_whitespace()
-                names = [self.parse_identifier()]
-                self.skip_whitespace()
-                while not self.at_end() and self.peek() == ",":
-                    self.advance()
-                    self.skip_whitespace()
-                    names.append(self.parse_identifier())
-                    self.skip_whitespace()
+                # Skip the rest of the line (name list)
                 self.skip_line()
-                builtin_dialect = Dialect.get("builtin")
-                for name in names:
-                    if name == "function":
-                        continue  # handled by parse_func
-                    if name in builtin_dialect.op_table:
-                        self._unqualified_ops[name] = builtin_dialect.op_table[name]
 
             elif word == "import":
                 self.skip_whitespace()
@@ -305,7 +297,8 @@ class IRParser:
                 self.skip_line()
                 importlib.import_module(f"toy_python.dialects.{dialect_name}")
                 d = Dialect.get(dialect_name)
-                self._dialect_ops[dialect_name] = d.op_table
+                for op_name, cls in d.op_table.items():
+                    self._ops[f"{dialect_name}.{op_name}"] = cls
                 self._types.update(d.type_table)
             else:
                 # Not an import line — rewind
@@ -447,13 +440,10 @@ class IRParser:
         if not self.at_end() and self.peek() == ".":
             self.advance()  # skip '.'
             op_name = self.parse_identifier()
-            cls = self._dialect_ops.get(name, {}).get(op_name)
-            if cls is None:
-                raise RuntimeError(f"Unknown op: {name}.{op_name}")
-            return parse_op_fields(self, cls, result=result)
-        if name not in self._unqualified_ops:
+            name = f"{name}.{op_name}"
+        cls = self._ops.get(name)
+        if cls is None:
             raise RuntimeError(f"Unknown op: {name}")
-        cls = self._unqualified_ops[name]
         return parse_op_fields(self, cls, result=result)
 
 

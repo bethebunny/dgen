@@ -8,7 +8,6 @@ from toy_python.tests.helpers import strip_prefix
 
 def test_roundtrip_alloc():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():
@@ -22,7 +21,6 @@ def test_roundtrip_alloc():
 
 def test_roundtrip_store_load():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():
@@ -38,7 +36,6 @@ def test_roundtrip_store_load():
 
 def test_roundtrip_arith():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():
@@ -54,7 +51,6 @@ def test_roundtrip_arith():
 
 def test_roundtrip_index_constant():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():
@@ -67,7 +63,6 @@ def test_roundtrip_index_constant():
 
 def test_roundtrip_print_memref():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():
@@ -81,7 +76,6 @@ def test_roundtrip_print_memref():
 
 def test_roundtrip_for_op():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():
@@ -98,7 +92,6 @@ def test_roundtrip_for_op():
 
 def test_roundtrip_nested_for():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():
@@ -115,7 +108,6 @@ def test_roundtrip_nested_for():
 
 def test_roundtrip_return_value():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():
@@ -128,7 +120,6 @@ def test_roundtrip_return_value():
 
 def test_roundtrip_multi_index_load_store():
     ir = strip_prefix("""
-        | from builtin import function, return
         | import affine
         |
         | %f = function () -> ():

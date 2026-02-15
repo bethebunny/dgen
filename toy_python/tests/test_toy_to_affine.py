@@ -9,7 +9,6 @@ from toy_python.tests.helpers import strip_prefix
 def test_simple_constant():
     """Constant op lowers to alloc + stores."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -32,7 +31,6 @@ def test_simple_constant():
 def test_transpose():
     """Transpose lowers to alloc + transposed loop nest."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -53,7 +51,6 @@ def test_transpose():
 def test_mul():
     """Mul lowers to alloc + element-wise loop."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -74,7 +71,6 @@ def test_mul():
 def test_add():
     """Add lowers to alloc + element-wise loop."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -93,7 +89,6 @@ def test_add():
 def test_print():
     """Print maps to print_memref."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -110,7 +105,6 @@ def test_print():
 def test_full_example():
     """Full pipeline: constant + reshape + transpose + mul + print."""
     ir_text = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():

@@ -22,7 +22,6 @@ def test_simple_constant():
     """)
     result = compile_toy(source)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -44,7 +43,6 @@ def test_explicit_shape_with_reshape():
     """)
     result = compile_toy(source)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -68,7 +66,6 @@ def test_binary_operations():
     """)
     result = compile_toy(source)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -92,7 +89,6 @@ def test_transpose_builtin():
     """)
     result = compile_toy(source)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %main = function () -> ():
@@ -120,7 +116,6 @@ def test_generic_call():
     """)
     result = compile_toy(source)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
@@ -157,7 +152,6 @@ def test_full_tutorial_example():
     """)
     result = compile_toy(source)
     expected = strip_prefix("""
-        | from builtin import function, return
         | import toy
         |
         | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
