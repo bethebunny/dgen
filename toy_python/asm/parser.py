@@ -152,8 +152,8 @@ class IRParser:
 
         # Implicit: from builtin import *
         builtin_dialect = Dialect.get("builtin")
-        self._ops.update(builtin_dialect.op_table)
-        self._types.update(builtin_dialect.type_table)
+        self._ops.update(builtin_dialect.ops)
+        self._types.update(builtin_dialect.types)
 
     def at_end(self) -> bool:
         return self.pos >= len(self.text)
@@ -297,9 +297,9 @@ class IRParser:
                 self.skip_line()
                 importlib.import_module(f"toy_python.dialects.{dialect_name}")
                 d = Dialect.get(dialect_name)
-                for op_name, cls in d.op_table.items():
+                for op_name, cls in d.ops.items():
                     self._ops[f"{dialect_name}.{op_name}"] = cls
-                self._types.update(d.type_table)
+                self._types.update(d.types)
             else:
                 # Not an import line — rewind
                 self.pos = saved

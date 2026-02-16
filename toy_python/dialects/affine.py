@@ -44,67 +44,57 @@ affine = Dialect("affine")
 
 
 @affine.op("alloc")
-class AllocOp:
-    result: Ssa
+class AllocOp(Op):
     shape: Shape
 
 
 @affine.op("dealloc")
-class DeallocOp:
-    result: Ssa
+class DeallocOp(Op):
     input: Ssa
 
 
 @affine.op("load")
-class LoadOp:
-    result: Ssa
+class LoadOp(Op):
     memref: Ssa
     indices: StringList
 
 
 @affine.op("store")
-class StoreOp:
-    result: Ssa
+class StoreOp(Op):
     value: Ssa
     memref: Ssa
     indices: StringList
 
 
 @affine.op("arith_constant")
-class ArithConstantOp:
-    result: Ssa
+class ArithConstantOp(Op):
     value: float
 
 
 @affine.op("index_constant")
-class IndexConstantOp:
-    result: Ssa
+class IndexConstantOp(Op):
     value: int
 
 
 @affine.op("mul_f")
-class ArithMulFOp:
-    result: Ssa
+class ArithMulFOp(Op):
     lhs: Ssa
     rhs: Ssa
 
 
 @affine.op("add_f")
-class ArithAddFOp:
-    result: Ssa
+class ArithAddFOp(Op):
     lhs: Ssa
     rhs: Ssa
 
 
 @affine.op("print_memref")
-class PrintOp:
-    result: Ssa
+class PrintOp(Op):
     input: Ssa
 
 
 @affine.op("for")
-class ForOp:
-    result: Ssa
+class ForOp(Op):
     var_name: Ssa
     lo: int
     hi: int

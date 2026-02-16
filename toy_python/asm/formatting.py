@@ -102,7 +102,7 @@ def op_asm(op) -> Iterable[str]:
     """Generic asm emitter. Introspects _asm_name and field types."""
     cls = type(op)
     asm_name = cls._asm_name
-    dialect_name = getattr(cls, "_dialect_name", "builtin")
+    dialect_name = op.dialect.name
     hints = get_type_hints(cls, include_extras=True)
     fields = dataclasses.fields(cls)
 

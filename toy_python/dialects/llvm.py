@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Ssa, String, StringList
+from toy_python.dialects.builtin import Op, Ssa, String, StringList
 from toy_python.asm.formatting import Shape, SsaList, Sym, format_float
 
 # ===----------------------------------------------------------------------=== #
@@ -51,109 +51,93 @@ llvm = Dialect("llvm")
 
 
 @llvm.op("alloca")
-class AllocaOp:
-    result: Ssa
+class AllocaOp(Op):
     elem_count: int
 
 
 @llvm.op("gep")
-class GepOp:
-    result: Ssa
+class GepOp(Op):
     base: Ssa
     index: Ssa
 
 
 @llvm.op("load")
-class LoadOp:
-    result: Ssa
+class LoadOp(Op):
     ptr: Ssa
 
 
 @llvm.op("store")
-class StoreOp:
-    result: Ssa
+class StoreOp(Op):
     value: Ssa
     ptr: Ssa
 
 
 @llvm.op("fadd")
-class FAddOp:
-    result: Ssa
+class FAddOp(Op):
     lhs: Ssa
     rhs: Ssa
 
 
 @llvm.op("fmul")
-class FMulOp:
-    result: Ssa
+class FMulOp(Op):
     lhs: Ssa
     rhs: Ssa
 
 
 @llvm.op("fconst")
-class ConstantOp:
-    result: Ssa
+class ConstantOp(Op):
     value: float
 
 
 @llvm.op("iconst")
-class IndexConstOp:
-    result: Ssa
+class IndexConstOp(Op):
     value: int
 
 
 @llvm.op("add")
-class AddOp:
-    result: Ssa
+class AddOp(Op):
     lhs: Ssa
     rhs: Ssa
 
 
 @llvm.op("mul")
-class MulOp:
-    result: Ssa
+class MulOp(Op):
     lhs: Ssa
     rhs: Ssa
 
 
 @llvm.op("icmp")
-class IcmpOp:
-    result: Ssa
+class IcmpOp(Op):
     pred: String
     lhs: Ssa
     rhs: Ssa
 
 
 @llvm.op("br")
-class BrOp:
-    result: Ssa
+class BrOp(Op):
     dest: String
 
 
 @llvm.op("cond_br")
-class CondBrOp:
-    result: Ssa
+class CondBrOp(Op):
     cond: Ssa
     true_dest: String
     false_dest: String
 
 
 @llvm.op("label")
-class LabelOp:
-    result: Ssa
+class LabelOp(Op):
     name: String
 
 
 @llvm.op("phi")
-class PhiOp:
-    result: Ssa
+class PhiOp(Op):
     values: SsaList
     labels: StringList
 
 
 @llvm.op("call")
-class CallOp:
-    result: Ssa
+class CallOp(Op):
     callee: Sym
     args: SsaList
 

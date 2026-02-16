@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Function, Nil, Type, Ssa, String, StringList
+from toy_python.dialects.builtin import Function, Nil, Op, Type, Ssa, String, StringList
 from toy_python.asm.formatting import Shape, SsaList, Sym
 
 if TYPE_CHECKING:
@@ -52,54 +52,47 @@ toy = Dialect("toy")
 
 
 @toy.op("constant")
-class ConstantOp:
-    result: Ssa
+class ConstantOp(Op):
     shape: Shape
     value: list[float]
     type: Type
 
 
 @toy.op("transpose")
-class TransposeOp:
-    result: Ssa
+class TransposeOp(Op):
     input: Ssa
     type: Type
 
 
 @toy.op("reshape")
-class ReshapeOp:
-    result: Ssa
+class ReshapeOp(Op):
     input: Ssa
     type: Type
 
 
 @toy.op("mul")
-class MulOp:
-    result: Ssa
+class MulOp(Op):
     lhs: Ssa
     rhs: Ssa
     type: Type
 
 
 @toy.op("add")
-class AddOp:
-    result: Ssa
+class AddOp(Op):
     lhs: Ssa
     rhs: Ssa
     type: Type
 
 
 @toy.op("generic_call")
-class GenericCallOp:
-    result: Ssa
+class GenericCallOp(Op):
     callee: Sym
     args: SsaList
     type: Type
 
 
 @toy.op("print")
-class PrintOp:
-    result: Ssa
+class PrintOp(Op):
     input: Ssa
 
 

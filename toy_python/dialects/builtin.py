@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Annotated, Protocol
+import types
+from typing import Annotated, ClassVar, Protocol, Union, get_type_hints, get_origin, get_args
 
 from toy_python import asm
 from toy_python.dialect import Dialect
@@ -21,11 +22,60 @@ class Type(Protocol):
     def asm(self) -> str: ...
 
 
-class Op(Protocol):
-    """Any dialect operation (has an asm property)."""
+def _unwrap_optional(hint):
+    """If hint is X | None, return X; otherwise return None."""
+    origin = get_origin(hint)
+    if origin is Union or isinstance(hint, types.UnionType):
+        args = get_args(hint)
+        if len(args) == 2 and type(None) in args:
+            return args[0] if args[1] is type(None) else args[1]
+    return None
+
+
+@dataclass
+class Op:
+    """Base class for all dialect operations."""
+
+    result: Ssa
+
+    _asm_name: ClassVar[str]
+    dialect: ClassVar[Dialect]
 
     @property
-    def asm(self) -> Iterable[str]: ...
+    def operands(self) -> list[str]:
+        """All Ssa-annotated fields except result (auto-introspected)."""
+        hints = get_type_hints(type(self), include_extras=True)
+        result: list[str] = []
+        for name, hint in hints.items():
+            if name == "result":
+                continue
+            inner = _unwrap_optional(hint)
+            effective = inner if inner is not None else hint
+            if get_origin(effective) is Annotated and get_args(effective)[1] == "ssa":
+                value = getattr(self, name)
+                if value is None:
+                    continue
+                if isinstance(value, list):
+                    result.extend(value)
+                else:
+                    result.append(value)
+        return result
+
+    @property
+    def blocks(self) -> dict[str, Block]:
+        """All Block-typed fields as a name->block dict (auto-introspected)."""
+        hints = get_type_hints(type(self), include_extras=True)
+        result: dict[str, Block] = {}
+        for name, hint in hints.items():
+            if hint is Block:
+                result[name] = getattr(self, name)
+        return result
+
+    @property
+    def asm(self) -> Iterable[str]:
+        from toy_python.asm.formatting import op_asm
+
+        return op_asm(self)
 
 
 @dataclass
@@ -72,8 +122,7 @@ class Function:
 
 
 @builtin.op("return")
-class ReturnOp:
-    result: Ssa
+class ReturnOp(Op):
     value: Ssa | None
 
 
@@ -83,9 +132,7 @@ class ReturnOp:
 
 
 @builtin.op("function")
-@dataclass
-class FuncOp:
-    result: Ssa
+class FuncOp(Op):
     body: Block
     func_type: Function
 
@@ -96,13 +143,12 @@ class FuncOp:
         yield from asm.indent(self.body.asm)
 
 
-def _walk_all_ops(ops) -> Iterable:
+def _walk_all_ops(op: Op) -> Iterable[Op]:
     """Recursively yield all ops, descending into op bodies."""
-    for op in ops:
-        yield op
-        body = getattr(op, "body", None)
-        if isinstance(body, list):
-            yield from _walk_all_ops(body)
+    yield op
+    for block in op.blocks.values():
+        for child in block.ops:
+            yield from _walk_all_ops(child)
 
 
 @dataclass
@@ -112,15 +158,14 @@ class Module:
     @property
     def asm(self) -> Iterable[str]:
         # Collect non-builtin dialects used
-        dialects: set[str] = set()
+        dialects: set[Dialect] = set()
         for func in self.functions:
-            for op in _walk_all_ops(func.body.ops):
-                dialect_name = getattr(type(op), "_dialect_name", "builtin")
-                if dialect_name != "builtin":
-                    dialects.add(dialect_name)
+            for op in _walk_all_ops(func):
+                if op.dialect.name != "builtin":
+                    dialects.add(op.dialect)
 
         for d in sorted(dialects):
-            yield f"import {d}"
+            yield f"import {d.name}"
         if dialects:
             yield ""
 
