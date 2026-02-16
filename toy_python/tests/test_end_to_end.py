@@ -129,7 +129,7 @@ def test_multiply_transpose_inlined():
     result = compile(source)
     assert "%main = function () -> ():" in result, "Should have main function"
     assert "llvm.fmul(" in result, "Should have fmul for multiply"
-    assert "loop_header" in result, "Should have loop headers"
+    assert '"loop_header' in result, "Should have loop headers"
     assert "llvm.phi(" in result, "Should have phi nodes"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
     assert "return()" in result, "Should return void"

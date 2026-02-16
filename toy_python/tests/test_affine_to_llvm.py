@@ -44,12 +44,12 @@ def test_single_for_loop():
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
-    assert "loop_header" in result, "Should have loop header label"
+    assert '"loop_header' in result, "Should have loop header label"
     assert "llvm.phi(" in result, "Should have phi node"
-    assert "llvm.icmp(slt" in result, "Should have comparison"
+    assert 'llvm.icmp("slt"' in result, "Should have comparison"
     assert "llvm.cond_br(" in result, "Should have conditional branch"
-    assert "loop_body" in result, "Should have loop body label"
-    assert "loop_exit" in result, "Should have loop exit label"
+    assert '"loop_body' in result, "Should have loop body label"
+    assert '"loop_exit' in result, "Should have loop exit label"
 
 
 def test_nested_for_loops():
@@ -63,10 +63,10 @@ def test_nested_for_loops():
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
-    assert "loop_header0" in result, "Should have loop_header0"
-    assert "loop_header1" in result, "Should have loop_header1"
-    assert "loop_body0" in result, "Should have loop_body0"
-    assert "loop_body1" in result, "Should have loop_body1"
+    assert '"loop_header0"' in result, "Should have loop_header0"
+    assert '"loop_header1"' in result, "Should have loop_header1"
+    assert '"loop_body0"' in result, "Should have loop_body0"
+    assert '"loop_body1"' in result, "Should have loop_body1"
 
 
 def test_load_store_linearization():

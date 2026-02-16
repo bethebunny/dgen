@@ -7,12 +7,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import (
     ClassVar,
+    NewType,
     Protocol,
     Union,
     get_args,
     get_origin,
     get_type_hints,
 )
+
+StaticString = NewType('StaticString', str)
 
 from toy_python import asm
 from toy_python.dialect import Dialect

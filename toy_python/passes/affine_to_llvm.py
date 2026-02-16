@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from toy_python.dialects import affine, builtin, llvm
+from toy_python.dialects.builtin import StaticString
 
 
 class AffineToLLVMLowering:
@@ -12,7 +13,7 @@ class AffineToLLVMLowering:
         self.value_map: dict[builtin.Value, builtin.Value] = {}  # affine -> llvm
         self.alloc_shapes: dict[builtin.Value, list[int]] = {}  # llvm alloca -> shape
         self.alloc_sizes: dict[builtin.Value, int] = {}  # llvm alloca -> total size
-        self.current_label = "entry"
+        self.current_label = StaticString("entry")
 
     def lower_module(self, m: builtin.Module) -> builtin.Module:
         functions = [self.lower_function(f) for f in m.functions]
@@ -24,7 +25,7 @@ class AffineToLLVMLowering:
         self.value_map = {}
         self.alloc_shapes = {}
         self.alloc_sizes = {}
-        self.current_label = "entry"
+        self.current_label = StaticString("entry")
 
         for op in f.body.ops:
             self.lower_op(op)
@@ -143,9 +144,9 @@ class AffineToLLVMLowering:
         loop_id = self.loop_counter
         self.loop_counter += 1
 
-        header_label = f"loop_header{loop_id}"
-        body_label = f"loop_body{loop_id}"
-        exit_label = f"loop_exit{loop_id}"
+        header_label = StaticString(f"loop_header{loop_id}")
+        body_label = StaticString(f"loop_body{loop_id}")
+        exit_label = StaticString(f"loop_exit{loop_id}")
 
         # Init: iconst lo, br header
         init_op = llvm.IndexConstOp(value=op.lo)
@@ -169,7 +170,7 @@ class AffineToLLVMLowering:
         # Compare and branch
         hi_op = llvm.IndexConstOp(value=op.hi)
         self.ops.append(hi_op)
-        cmp_op = llvm.IcmpOp(pred="slt", lhs=phi_op, rhs=hi_op)
+        cmp_op = llvm.IcmpOp(pred=StaticString("slt"), lhs=phi_op, rhs=hi_op)
         self.ops.append(cmp_op)
         self.ops.append(
             llvm.CondBrOp(

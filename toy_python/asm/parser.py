@@ -125,22 +125,22 @@ def _parse_value(parser, hint):
         parser.expect("]")
         return items
 
-    from toy_python.dialects.builtin import String, List
+    from toy_python.dialects.builtin import StaticString
 
-    # String -> identifier
-    if hint is String:
-        return parser.parse_identifier()
-    # List -> [a, b]
-    if hint is List:
+    # StaticString -> quoted string
+    if hint is StaticString:
+        return parser.parse_string_literal()
+    # list[StaticString] -> ["a", "b"]
+    if get_origin(hint) is list and get_args(hint) and get_args(hint)[0] is StaticString:
         parser.expect("[")
         parser.skip_whitespace()
         items = []
         if parser.peek() != "]":
-            items.append(parser.parse_identifier())
+            items.append(parser.parse_string_literal())
             while parser.peek() == ",":
                 parser.expect(",")
                 parser.skip_whitespace()
-                items.append(parser.parse_identifier())
+                items.append(parser.parse_string_literal())
         parser.expect("]")
         return items
 
@@ -238,6 +238,16 @@ class IRParser:
             else:
                 break
         return self.text[start : self.pos]
+
+    def parse_string_literal(self) -> str:
+        """Parse a double-quoted string literal, return the contents."""
+        self.expect('"')
+        start = self.pos
+        while not self.at_end() and self.peek() != '"':
+            self.pos += 1
+        result = self.text[start : self.pos]
+        self.expect('"')
+        return result
 
     def parse_ssa_name(self) -> str:
         """Parse %name, return the name part."""

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import List, Op, Value, String
+from toy_python.dialects.builtin import Op, StaticString, Value
 from toy_python.asm.formatting import Shape, Sym, format_float
 
 # ===----------------------------------------------------------------------=== #
@@ -119,7 +119,7 @@ class MulOp(Op):
 @llvm.op("icmp")
 @dataclass(eq=False, kw_only=True)
 class IcmpOp(Op):
-    pred: String
+    pred: StaticString
     lhs: Value
     rhs: Value
 
@@ -127,28 +127,28 @@ class IcmpOp(Op):
 @llvm.op("br")
 @dataclass(eq=False, kw_only=True)
 class BrOp(Op):
-    dest: String
+    dest: StaticString
 
 
 @llvm.op("cond_br")
 @dataclass(eq=False, kw_only=True)
 class CondBrOp(Op):
     cond: Value
-    true_dest: String
-    false_dest: String
+    true_dest: StaticString
+    false_dest: StaticString
 
 
 @llvm.op("label")
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
-    label_name: String
+    label_name: StaticString
 
 
 @llvm.op("phi")
 @dataclass(eq=False, kw_only=True)
 class PhiOp(Op):
     values: list[Value]
-    labels: List
+    labels: list[StaticString]
 
 
 @llvm.op("call")
