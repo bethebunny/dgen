@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Op, Value, String, StringList
+from toy_python.dialects.builtin import List, Op, Value, String
 from toy_python.asm.formatting import Shape, Sym, format_float
 
 # ===----------------------------------------------------------------------=== #
@@ -148,7 +148,7 @@ class LabelOp(Op):
 @dataclass(eq=False, kw_only=True)
 class PhiOp(Op):
     values: list[Value]
-    labels: StringList
+    labels: List
 
 
 @llvm.op("call")

@@ -6,7 +6,6 @@ import types
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import (
-    Annotated,
     ClassVar,
     Protocol,
     Union,
@@ -17,9 +16,6 @@ from typing import (
 
 from toy_python import asm
 from toy_python.dialect import Dialect
-
-String = Annotated[str, "string"]  # name (as-is)
-StringList = Annotated[list[str], "string"]  # [a, b]
 
 
 class Type(Protocol):
@@ -160,6 +156,24 @@ class Function:
     """A function signature."""
 
     result: Type
+
+
+@builtin.type("String")
+@dataclass
+class String:
+    @property
+    def asm(self) -> str:
+        return "String"
+
+
+@builtin.type("List")
+@dataclass
+class List:
+    element_type: Type
+
+    @property
+    def asm(self) -> str:
+        return f"List[{self.element_type.asm}]"
 
 
 @builtin.op("return")

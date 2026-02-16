@@ -103,20 +103,23 @@ def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
             return "[" + ", ".join(f"%{tracker.get_name(v)}" for v in value) + "]"
         return "[" + ", ".join(f"%{v.name or '?'}" for v in value) + "]"
 
+    from toy_python.dialects.builtin import String, List
+
+    # String -> plain identifier
+    if hint is String:
+        return value
+    # List -> [a, b]
+    if hint is List:
+        return "[" + ", ".join(value) + "]"
+
     base, tag = _get_annotation(hint)
 
     # Annotated[str, "sym"] -> @name
     if base is str and tag == "sym":
         return f"@{value}"
-    # Annotated[str, "string"] -> name
-    if base is str and tag == "string":
-        return value
     # Annotated[list[int], "shape"] -> <2x3>
     if tag == "shape" and get_origin(base) is list:
         return "<" + "x".join(str(d) for d in value) + ">"
-    # Annotated[list[str], "string"] -> [a, b]
-    if tag == "string" and get_origin(base) is list:
-        return "[" + ", ".join(value) + "]"
     # Plain int
     if hint is int:
         return str(value)

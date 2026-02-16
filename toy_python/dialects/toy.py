@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Function, Nil, Op, Type, Value, String, StringList
+from toy_python.dialects.builtin import Function, Nil, Op, Type, Value
 from toy_python.asm.formatting import Shape, Sym
 
 if TYPE_CHECKING:

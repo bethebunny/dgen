@@ -125,26 +125,13 @@ def _parse_value(parser, hint):
         parser.expect("]")
         return items
 
-    base, tag = _get_annotation(hint)
+    from toy_python.dialects.builtin import String, List
 
-    # Annotated[str, "sym"] -> @name
-    if base is str and tag == "sym":
-        parser.expect("@")
+    # String -> identifier
+    if hint is String:
         return parser.parse_identifier()
-    # Annotated[str, "string"] -> identifier
-    if base is str and tag == "string":
-        return parser.parse_identifier()
-    # Annotated[list[int], "shape"] -> <2x3>
-    if tag == "shape" and get_origin(base) is list:
-        parser.expect("<")
-        dims = [parser.parse_int()]
-        while parser.peek() == "x":
-            parser.expect("x")
-            dims.append(parser.parse_int())
-        parser.expect(">")
-        return dims
-    # Annotated[list[str], "string"] -> [a, b]
-    if tag == "string" and get_origin(base) is list:
+    # List -> [a, b]
+    if hint is List:
         parser.expect("[")
         parser.skip_whitespace()
         items = []
@@ -156,6 +143,22 @@ def _parse_value(parser, hint):
                 items.append(parser.parse_identifier())
         parser.expect("]")
         return items
+
+    base, tag = _get_annotation(hint)
+
+    # Annotated[str, "sym"] -> @name
+    if base is str and tag == "sym":
+        parser.expect("@")
+        return parser.parse_identifier()
+    # Annotated[list[int], "shape"] -> <2x3>
+    if tag == "shape" and get_origin(base) is list:
+        parser.expect("<")
+        dims = [parser.parse_int()]
+        while parser.peek() == "x":
+            parser.expect("x")
+            dims.append(parser.parse_int())
+        parser.expect(">")
+        return dims
     # Plain int
     if hint is int:
         return parser.parse_int()
