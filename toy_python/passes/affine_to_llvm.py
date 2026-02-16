@@ -159,7 +159,7 @@ class AffineToLLVMLowering:
 
         # Phi node for loop variable (back-edge value patched after body)
         phi_op = llvm.PhiOp(
-            values=[init_op, None],  # second value patched after body
+            values=[init_op, None],  # type: ignore[list-item]  # patched after body
             labels=[prev_label, body_label],
         )
         self.ops.append(phi_op)

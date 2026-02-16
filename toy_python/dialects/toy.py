@@ -52,6 +52,7 @@ toy = Dialect("toy")
 
 
 @toy.op("constant")
+@dataclass(eq=False, kw_only=True)
 class ConstantOp(Op):
     shape: Shape
     value: list[float]
@@ -59,18 +60,21 @@ class ConstantOp(Op):
 
 
 @toy.op("transpose")
+@dataclass(eq=False, kw_only=True)
 class TransposeOp(Op):
     input: Value
     type: Type
 
 
 @toy.op("reshape")
+@dataclass(eq=False, kw_only=True)
 class ReshapeOp(Op):
     input: Value
     type: Type
 
 
 @toy.op("mul")
+@dataclass(eq=False, kw_only=True)
 class MulOp(Op):
     lhs: Value
     rhs: Value
@@ -78,6 +82,7 @@ class MulOp(Op):
 
 
 @toy.op("add")
+@dataclass(eq=False, kw_only=True)
 class AddOp(Op):
     lhs: Value
     rhs: Value
@@ -85,6 +90,7 @@ class AddOp(Op):
 
 
 @toy.op("generic_call")
+@dataclass(eq=False, kw_only=True)
 class GenericCallOp(Op):
     callee: Sym
     args: list[Value]
@@ -92,6 +98,7 @@ class GenericCallOp(Op):
 
 
 @toy.op("print")
+@dataclass(eq=False, kw_only=True)
 class PrintOp(Op):
     input: Value
 

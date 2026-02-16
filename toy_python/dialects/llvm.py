@@ -51,62 +51,73 @@ llvm = Dialect("llvm")
 
 
 @llvm.op("alloca")
+@dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
     elem_count: int
 
 
 @llvm.op("gep")
+@dataclass(eq=False, kw_only=True)
 class GepOp(Op):
     base: Value
     index: Value
 
 
 @llvm.op("load")
+@dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
     ptr: Value
 
 
 @llvm.op("store")
+@dataclass(eq=False, kw_only=True)
 class StoreOp(Op):
     value: Value
     ptr: Value
 
 
 @llvm.op("fadd")
+@dataclass(eq=False, kw_only=True)
 class FAddOp(Op):
     lhs: Value
     rhs: Value
 
 
 @llvm.op("fmul")
+@dataclass(eq=False, kw_only=True)
 class FMulOp(Op):
     lhs: Value
     rhs: Value
 
 
 @llvm.op("fconst")
+@dataclass(eq=False, kw_only=True)
 class ConstantOp(Op):
     value: float
 
 
 @llvm.op("iconst")
+@dataclass(eq=False, kw_only=True)
 class IndexConstOp(Op):
     value: int
 
 
 @llvm.op("add")
+@dataclass(eq=False, kw_only=True)
 class AddOp(Op):
     lhs: Value
     rhs: Value
 
 
 @llvm.op("mul")
+@dataclass(eq=False, kw_only=True)
 class MulOp(Op):
     lhs: Value
     rhs: Value
 
 
 @llvm.op("icmp")
+@dataclass(eq=False, kw_only=True)
 class IcmpOp(Op):
     pred: String
     lhs: Value
@@ -114,11 +125,13 @@ class IcmpOp(Op):
 
 
 @llvm.op("br")
+@dataclass(eq=False, kw_only=True)
 class BrOp(Op):
     dest: String
 
 
 @llvm.op("cond_br")
+@dataclass(eq=False, kw_only=True)
 class CondBrOp(Op):
     cond: Value
     true_dest: String
@@ -126,17 +139,20 @@ class CondBrOp(Op):
 
 
 @llvm.op("label")
+@dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
     label_name: String
 
 
 @llvm.op("phi")
+@dataclass(eq=False, kw_only=True)
 class PhiOp(Op):
     values: list[Value]
     labels: StringList
 
 
 @llvm.op("call")
+@dataclass(eq=False, kw_only=True)
 class CallOp(Op):
     callee: Sym
     args: list[Value]

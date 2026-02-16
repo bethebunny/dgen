@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass, field, fields as dc_fields
 import types
-from typing import Annotated, ClassVar, Protocol, Union, get_type_hints, get_origin, get_args
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from typing import (
+    Annotated,
+    ClassVar,
+    Protocol,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from toy_python import asm
 from toy_python.dialect import Dialect
@@ -37,7 +45,12 @@ def _is_value_hint(hint) -> bool:
     effective = inner if inner is not None else hint
     if isinstance(effective, type) and issubclass(effective, Value):
         return True
-    if get_origin(effective) is list and get_args(effective) and isinstance(get_args(effective)[0], type) and issubclass(get_args(effective)[0], Value):
+    if (
+        get_origin(effective) is list
+        and get_args(effective)
+        and isinstance(get_args(effective)[0], type)
+        and issubclass(get_args(effective)[0], Value)
+    ):
         return True
     return False
 
@@ -86,7 +99,12 @@ class Op(Value):
                 if value is None:
                     continue
                 result.append(value)
-            elif get_origin(effective) is list and get_args(effective) and isinstance(get_args(effective)[0], type) and issubclass(get_args(effective)[0], Value):
+            elif (
+                get_origin(effective) is list
+                and get_args(effective)
+                and isinstance(get_args(effective)[0], type)
+                and issubclass(get_args(effective)[0], Value)
+            ):
                 value = getattr(self, fname)
                 if value is not None:
                     result.extend(value)
@@ -145,6 +163,7 @@ class Function:
 
 
 @builtin.op("return")
+@dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):
     value: Value | None = None
 
@@ -155,6 +174,7 @@ class ReturnOp(Op):
 
 
 @builtin.op("function")
+@dataclass(eq=False, kw_only=True)
 class FuncOp(Op):
     body: Block = None  # type: ignore[assignment]
     func_type: Function = None  # type: ignore[assignment]
@@ -162,6 +182,7 @@ class FuncOp(Op):
     @property
     def asm(self) -> Iterable[str]:
         from toy_python.asm.formatting import SlotTracker
+
         tracker = SlotTracker()
         # Pre-register block args and all ops in this function
         for arg in self.body.args:
@@ -169,7 +190,9 @@ class FuncOp(Op):
         _register_ops(tracker, self.body.ops)
 
         name = tracker.get_name(self)
-        args = ", ".join(f"%{tracker.get_name(a)}: {a.type.asm}" for a in self.body.args)
+        args = ", ".join(
+            f"%{tracker.get_name(a)}: {a.type.asm}" for a in self.body.args
+        )
         yield f"%{name} = function ({args}) -> {self.func_type.result.asm}:"
         yield from asm.indent(_emit_block_asm(tracker, self.body))
 
@@ -187,6 +210,7 @@ def _register_ops(tracker, ops: list[Op]):
 def _emit_block_asm(tracker, block: Block) -> Iterable[str]:
     """Emit asm for a block using the given slot tracker."""
     from toy_python.asm.formatting import op_asm
+
     for op in block.ops:
         yield from op_asm(op, tracker)
 
