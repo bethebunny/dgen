@@ -21,7 +21,7 @@ class Dialect:
 
     def op(self, asm_name: str):
         def decorator(cls):
-            cls = dataclasses.dataclass(cls)
+            cls = dataclasses.dataclass(eq=False, kw_only=True)(cls)
             cls._asm_name = asm_name
             cls.dialect = self
             self.ops[asm_name] = cls

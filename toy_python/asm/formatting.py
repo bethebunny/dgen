@@ -7,6 +7,7 @@ from dataclass field declarations alone — no per-op asm/parse code needed.
 from __future__ import annotations
 
 import dataclasses
+import types
 from collections.abc import Iterable
 from typing import Annotated, Union, get_args, get_origin, get_type_hints
 
@@ -18,14 +19,13 @@ from .asm import indent
 
 Sym = Annotated[str, "sym"]  # @name
 Shape = Annotated[list[int], "shape"]  # <2x3>
-SsaList = Annotated[list[str], "ssa"]  # [%a, %b]
 
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
 
 # Fields with special handling (not serialized as args)
-_SPECIAL_FIELDS = {"result", "type", "body"}
+_SPECIAL_FIELDS = {"name", "type", "body"}
 
 
 def format_float(v: float) -> str:
@@ -46,7 +46,7 @@ def _get_annotation(hint):
 def _is_optional(hint):
     """Check if hint is X | None, return X if so, else None."""
     origin = get_origin(hint)
-    if origin is Union:
+    if origin is Union or isinstance(hint, types.UnionType):
         args = get_args(hint)
         if len(args) == 2 and type(None) in args:
             return args[0] if args[1] is type(None) else args[1]
@@ -54,17 +54,57 @@ def _is_optional(hint):
 
 
 # ===----------------------------------------------------------------------=== #
+# SlotTracker
+# ===----------------------------------------------------------------------=== #
+
+
+class SlotTracker:
+    """Assigns sequential %0, %1, ... names to unnamed Values."""
+
+    def __init__(self):
+        self._slots: dict[int, str] = {}  # id(value) -> name
+        self._counter = 0
+
+    def get_name(self, value) -> str:
+        vid = id(value)
+        if vid in self._slots:
+            return self._slots[vid]
+        if value.name is not None:
+            name = value.name
+            # If it's a numeric name, advance counter past it
+            if name.isdigit():
+                self._counter = max(self._counter, int(name) + 1)
+        else:
+            name = str(self._counter)
+            self._counter += 1
+        self._slots[vid] = name
+        return name
+
+
+# ===----------------------------------------------------------------------=== #
 # Generic serializer
 # ===----------------------------------------------------------------------=== #
 
 
-def _format_value(value, hint) -> str:
+def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
     """Format a single value based on its type hint."""
+    from toy_python.dialects.builtin import Value
+
+    # Value reference — use tracker to get %name
+    if isinstance(value, Value):
+        if tracker is not None:
+            return f"%{tracker.get_name(value)}"
+        name = value.name if value.name is not None else "?"
+        return f"%{name}"
+
+    # list[Value] — format as [%a, %b]
+    if isinstance(value, list) and value and isinstance(value[0], Value):
+        if tracker is not None:
+            return "[" + ", ".join(f"%{tracker.get_name(v)}" for v in value) + "]"
+        return "[" + ", ".join(f"%{v.name or '?'}" for v in value) + "]"
+
     base, tag = _get_annotation(hint)
 
-    # Annotated[str, "ssa"] -> %name
-    if base is str and tag == "ssa":
-        return f"%{value}"
     # Annotated[str, "sym"] -> @name
     if base is str and tag == "sym":
         return f"@{value}"
@@ -74,9 +114,6 @@ def _format_value(value, hint) -> str:
     # Annotated[list[int], "shape"] -> <2x3>
     if tag == "shape" and get_origin(base) is list:
         return "<" + "x".join(str(d) for d in value) + ">"
-    # Annotated[list[str], "ssa"] -> [%a, %b]
-    if tag == "ssa" and get_origin(base) is list:
-        return "[" + ", ".join(f"%{v}" for v in value) + "]"
     # Annotated[list[str], "string"] -> [a, b]
     if tag == "string" and get_origin(base) is list:
         return "[" + ", ".join(value) + "]"
@@ -98,13 +135,21 @@ def _format_value(value, hint) -> str:
     return str(value)
 
 
-def op_asm(op) -> Iterable[str]:
+def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
     """Generic asm emitter. Introspects _asm_name and field types."""
+    from toy_python.dialects.builtin import Value, _register_ops
+
     cls = type(op)
     asm_name = cls._asm_name
     dialect_name = op.dialect.name
     hints = get_type_hints(cls, include_extras=True)
     fields = dataclasses.fields(cls)
+
+    # If no tracker provided, create one and register this op
+    if tracker is None:
+        tracker = SlotTracker()
+        tracker.get_name(op)
+        _register_ops(tracker, [op])
 
     has_type = "type" in hints
     has_body = "body" in hints
@@ -121,22 +166,33 @@ def op_asm(op) -> Iterable[str]:
         if inner is not None and value is None:
             continue
         effective_hint = inner if inner is not None else hint
-        arg_parts.append(_format_value(value, effective_hint))
+        arg_parts.append(_format_value(value, effective_hint, tracker))
 
     args_str = ", ".join(arg_parts)
 
     # Build the line
-    parts = [f"%{op.result} = "]
+    result_name = tracker.get_name(op)
+    parts = [f"%{result_name} = "]
     prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
     parts.append(f"{prefix}{asm_name}({args_str})")
     if has_type:
         parts.append(f" : {op.type.asm}")
     if has_body:
+        from toy_python.dialects.builtin import Block
+
+        if isinstance(op.body, Block) and op.body.args:
+            block_args = ", ".join(
+                f"%{tracker.get_name(a)}: {a.type.asm}" for a in op.body.args
+            )
+            parts.append(f" ({block_args})")
         parts.append(":")
 
     line = "".join(parts)
     yield line
 
     if has_body:
-        for child_op in op.body:
-            yield from indent(child_op.asm)
+        from toy_python.dialects.builtin import Block
+
+        body_ops = op.body.ops if isinstance(op.body, Block) else op.body
+        for child_op in body_ops:
+            yield from indent(op_asm(child_op, tracker))

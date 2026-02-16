@@ -7,26 +7,21 @@ from toy_python.dialects import affine, builtin, llvm
 
 class AffineToLLVMLowering:
     def __init__(self):
-        self.counter = 0
         self.loop_counter = 0
         self.ops: list[builtin.Op] = []
-        self.alloc_shapes: dict[str, list[int]] = {}
-        self.alloc_sizes: dict[str, int] = {}
+        self.value_map: dict[builtin.Value, builtin.Value] = {}  # affine -> llvm
+        self.alloc_shapes: dict[builtin.Value, list[int]] = {}  # llvm alloca -> shape
+        self.alloc_sizes: dict[builtin.Value, int] = {}  # llvm alloca -> total size
         self.current_label = "entry"
-
-    def fresh(self) -> str:
-        name = f"v{self.counter}"
-        self.counter += 1
-        return name
 
     def lower_module(self, m: builtin.Module) -> builtin.Module:
         functions = [self.lower_function(f) for f in m.functions]
         return builtin.Module(functions=functions)
 
     def lower_function(self, f: builtin.FuncOp) -> builtin.FuncOp:
-        self.counter = 0
         self.loop_counter = 0
         self.ops = []
+        self.value_map = {}
         self.alloc_shapes = {}
         self.alloc_sizes = {}
         self.current_label = "entry"
@@ -37,10 +32,14 @@ class AffineToLLVMLowering:
         ops = self.ops
         self.ops = []
         return builtin.FuncOp(
-            result=f.result,
+            name=f.name,
             body=builtin.Block(ops=ops),
             func_type=builtin.Function(result=builtin.Nil()),
         )
+
+    def _map(self, old: builtin.Value) -> builtin.Value:
+        """Resolve an affine Value to its LLVM counterpart."""
+        return self.value_map.get(old, old)
 
     def lower_op(self, op: builtin.Op):
         if isinstance(op, affine.AllocOp):
@@ -54,82 +53,91 @@ class AffineToLLVMLowering:
         elif isinstance(op, affine.ForOp):
             self._lower_for(op)
         elif isinstance(op, affine.ArithConstantOp):
-            self.ops.append(llvm.ConstantOp(result=op.result, value=op.value))
+            llvm_op = llvm.ConstantOp(value=op.value)
+            self.ops.append(llvm_op)
+            self.value_map[op] = llvm_op
         elif isinstance(op, affine.IndexConstantOp):
-            self.ops.append(llvm.IndexConstOp(result=op.result, value=op.value))
+            llvm_op = llvm.IndexConstOp(value=op.value)
+            self.ops.append(llvm_op)
+            self.value_map[op] = llvm_op
         elif isinstance(op, affine.ArithMulFOp):
-            self.ops.append(llvm.FMulOp(result=op.result, lhs=op.lhs, rhs=op.rhs))
+            llvm_op = llvm.FMulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
+            self.ops.append(llvm_op)
+            self.value_map[op] = llvm_op
         elif isinstance(op, affine.ArithAddFOp):
-            self.ops.append(llvm.FAddOp(result=op.result, lhs=op.lhs, rhs=op.rhs))
+            llvm_op = llvm.FAddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
+            self.ops.append(llvm_op)
+            self.value_map[op] = llvm_op
         elif isinstance(op, affine.PrintOp):
             self._lower_print(op)
         elif isinstance(op, builtin.ReturnOp):
-            self.ops.append(builtin.ReturnOp(result="_", value=op.value))
+            val = self._map(op.value) if op.value is not None else None
+            self.ops.append(builtin.ReturnOp(value=val))
 
     def _lower_alloc(self, op: affine.AllocOp):
         total = 1
         for d in op.shape:
             total *= d
-        self.ops.append(llvm.AllocaOp(result=op.result, elem_count=total))
-        self.alloc_shapes[op.result] = list(op.shape)
-        self.alloc_sizes[op.result] = total
+        alloca_op = llvm.AllocaOp(elem_count=total)
+        self.ops.append(alloca_op)
+        self.value_map[op] = alloca_op
+        self.alloc_shapes[alloca_op] = list(op.shape)
+        self.alloc_sizes[alloca_op] = total
 
     def _lower_load(self, op: affine.LoadOp):
-        linear = self._linearize_indices(op.memref, op.indices)
-        ptr_name = self.fresh()
-        self.ops.append(llvm.GepOp(result=ptr_name, base=op.memref, index=linear))
-        self.ops.append(llvm.LoadOp(result=op.result, ptr=ptr_name))
+        memref_val = self._map(op.memref)
+        index_vals = [self._map(v) for v in op.indices]
+        linear = self._linearize_indices(memref_val, index_vals)
+        ptr_op = llvm.GepOp(base=memref_val, index=linear)
+        self.ops.append(ptr_op)
+        load_op = llvm.LoadOp(ptr=ptr_op)
+        self.ops.append(load_op)
+        self.value_map[op] = load_op
 
     def _lower_store(self, op: affine.StoreOp):
-        linear = self._linearize_indices(op.memref, op.indices)
-        ptr_name = self.fresh()
-        self.ops.append(llvm.GepOp(result=ptr_name, base=op.memref, index=linear))
-        self.ops.append(llvm.StoreOp(result="_", value=op.value, ptr=ptr_name))
+        memref_val = self._map(op.memref)
+        index_vals = [self._map(v) for v in op.indices]
+        linear = self._linearize_indices(memref_val, index_vals)
+        ptr_op = llvm.GepOp(base=memref_val, index=linear)
+        self.ops.append(ptr_op)
+        self.ops.append(llvm.StoreOp(value=self._map(op.value), ptr=ptr_op))
 
-    def _linearize_indices(self, memref: str, indices: list[str]) -> str:
-        """Linearize multi-dimensional indices into a flat index.
-
-        For shape [d0, d1, ...] and indices [i0, i1, ...]:
-        linear = i0 * d1 * d2 * ... + i1 * d2 * ... + iN
-        """
+    def _linearize_indices(
+        self, memref: builtin.Value, indices: list[builtin.Value]
+    ) -> builtin.Value:
         if len(indices) == 1:
             return indices[0]
 
         shape = self.alloc_shapes[memref]
 
-        result_name = ""
-        for i, idx_name in enumerate(indices):
+        result_val: builtin.Value | None = None
+        for i, idx_val in enumerate(indices):
             # Compute stride: product of shape[i+1], shape[i+2], ...
             stride = 1
             for j in range(i + 1, len(shape)):
                 stride *= shape[j]
 
             if stride == 1:
-                if not result_name:
-                    result_name = idx_name
+                if result_val is None:
+                    result_val = idx_val
                 else:
-                    add_name = self.fresh()
-                    self.ops.append(
-                        llvm.AddOp(result=add_name, lhs=result_name, rhs=idx_name)
-                    )
-                    result_name = add_name
+                    add_op = llvm.AddOp(lhs=result_val, rhs=idx_val)
+                    self.ops.append(add_op)
+                    result_val = add_op
             else:
-                stride_name = self.fresh()
-                self.ops.append(llvm.IndexConstOp(result=stride_name, value=stride))
-                mul_name = self.fresh()
-                self.ops.append(
-                    llvm.MulOp(result=mul_name, lhs=idx_name, rhs=stride_name)
-                )
-                if not result_name:
-                    result_name = mul_name
+                stride_op = llvm.IndexConstOp(value=stride)
+                self.ops.append(stride_op)
+                mul_op = llvm.MulOp(lhs=idx_val, rhs=stride_op)
+                self.ops.append(mul_op)
+                if result_val is None:
+                    result_val = mul_op
                 else:
-                    add_name = self.fresh()
-                    self.ops.append(
-                        llvm.AddOp(result=add_name, lhs=result_name, rhs=mul_name)
-                    )
-                    result_name = add_name
+                    add_op = llvm.AddOp(lhs=result_val, rhs=mul_op)
+                    self.ops.append(add_op)
+                    result_val = add_op
 
-        return result_name
+        assert result_val is not None
+        return result_val
 
     def _lower_for(self, op: affine.ForOp):
         loop_id = self.loop_counter
@@ -138,72 +146,70 @@ class AffineToLLVMLowering:
         header_label = f"loop_header{loop_id}"
         body_label = f"loop_body{loop_id}"
         exit_label = f"loop_exit{loop_id}"
-        var_name = op.var_name
 
         # Init: iconst lo, br header
-        init_name = self.fresh()
-        self.ops.append(llvm.IndexConstOp(result=init_name, value=op.lo))
+        init_op = llvm.IndexConstOp(value=op.lo)
+        self.ops.append(init_op)
         prev_label = self.current_label
-        self.ops.append(llvm.BrOp(result="_", dest=header_label))
+        self.ops.append(llvm.BrOp(dest=header_label))
 
         # Header label
-        self.ops.append(llvm.LabelOp(result="_", name=header_label))
+        self.ops.append(llvm.LabelOp(label_name=header_label))
         self.current_label = header_label
 
-        # Phi node for loop variable (back-edge label patched after body)
-        next_name = self.fresh()
+        # Phi node for loop variable (back-edge value patched after body)
         phi_op = llvm.PhiOp(
-            result=var_name,
-            values=[init_name, next_name],
-            labels=[prev_label, body_label],  # back-edge label patched after body
+            values=[init_op, None],  # second value patched after body
+            labels=[prev_label, body_label],
         )
         self.ops.append(phi_op)
+        # Map the affine loop variable to the LLVM phi node
+        self.value_map[op.body.args[0]] = phi_op
 
         # Compare and branch
-        hi_name = self.fresh()
-        self.ops.append(llvm.IndexConstOp(result=hi_name, value=op.hi))
-        cmp_name = self.fresh()
-        self.ops.append(
-            llvm.IcmpOp(result=cmp_name, pred="slt", lhs=var_name, rhs=hi_name)
-        )
+        hi_op = llvm.IndexConstOp(value=op.hi)
+        self.ops.append(hi_op)
+        cmp_op = llvm.IcmpOp(pred="slt", lhs=phi_op, rhs=hi_op)
+        self.ops.append(cmp_op)
         self.ops.append(
             llvm.CondBrOp(
-                result="_", cond=cmp_name, true_dest=body_label, false_dest=exit_label
+                cond=cmp_op, true_dest=body_label, false_dest=exit_label
             )
         )
 
         # Body label
-        self.ops.append(llvm.LabelOp(result="_", name=body_label))
+        self.ops.append(llvm.LabelOp(label_name=body_label))
         self.current_label = body_label
 
         # Lower body ops
-        for child_op in op.body:
+        for child_op in op.body.ops:
             self.lower_op(child_op)
 
-        # Patch phi back-edge to actual current block (may differ from
-        # body_label when the body contains nested loops)
+        # Patch phi back-edge label to actual current block
         phi_op.labels[1] = self.current_label
 
         # Increment and branch back
-        one_name = self.fresh()
-        self.ops.append(llvm.IndexConstOp(result=one_name, value=1))
-        self.ops.append(llvm.AddOp(result=next_name, lhs=var_name, rhs=one_name))
-        self.ops.append(llvm.BrOp(result="_", dest=header_label))
+        one_op = llvm.IndexConstOp(value=1)
+        self.ops.append(one_op)
+        next_op = llvm.AddOp(lhs=phi_op, rhs=one_op)
+        self.ops.append(next_op)
+        # Patch phi back-edge value
+        phi_op.values[1] = next_op
+        self.ops.append(llvm.BrOp(dest=header_label))
 
         # Exit label
-        self.ops.append(llvm.LabelOp(result="_", name=exit_label))
+        self.ops.append(llvm.LabelOp(label_name=exit_label))
         self.current_label = exit_label
 
     def _lower_print(self, op: affine.PrintOp):
-        input_name = op.input
-        size = self.alloc_sizes[input_name]
-        size_name = self.fresh()
-        self.ops.append(llvm.IndexConstOp(result=size_name, value=size))
+        input_val = self._map(op.input)
+        size = self.alloc_sizes[input_val]
+        size_op = llvm.IndexConstOp(value=size)
+        self.ops.append(size_op)
         self.ops.append(
             llvm.CallOp(
-                result="_",
                 callee="print_memref",
-                args=[input_name, size_name],
+                args=[input_val, size_op],
             )
         )
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Op, Ssa, String, StringList
-from toy_python.asm.formatting import Shape, SsaList, Sym
+from toy_python.dialects.builtin import Block, Op, Value, String, StringList
+from toy_python.asm.formatting import Shape, Sym
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -43,6 +43,11 @@ class F64Type:
 affine = Dialect("affine")
 
 
+@affine.type("index")
+def _parse_index_type(_parser):
+    return IndexType()
+
+
 @affine.op("alloc")
 class AllocOp(Op):
     shape: Shape
@@ -50,20 +55,20 @@ class AllocOp(Op):
 
 @affine.op("dealloc")
 class DeallocOp(Op):
-    input: Ssa
+    input: Value
 
 
 @affine.op("load")
 class LoadOp(Op):
-    memref: Ssa
-    indices: StringList
+    memref: Value
+    indices: list[Value]
 
 
 @affine.op("store")
 class StoreOp(Op):
-    value: Ssa
-    memref: Ssa
-    indices: StringList
+    value: Value
+    memref: Value
+    indices: list[Value]
 
 
 @affine.op("arith_constant")
@@ -78,26 +83,23 @@ class IndexConstantOp(Op):
 
 @affine.op("mul_f")
 class ArithMulFOp(Op):
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
 
 
 @affine.op("add_f")
 class ArithAddFOp(Op):
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
 
 
 @affine.op("print_memref")
 class PrintOp(Op):
-    input: Ssa
+    input: Value
 
 
 @affine.op("for")
 class ForOp(Op):
-    var_name: Ssa
     lo: int
     hi: int
-    body: list[Op]
-
-
+    body: Block

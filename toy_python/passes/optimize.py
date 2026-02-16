@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from copy import deepcopy
 
 from toy_python.dialects import builtin, toy
@@ -12,82 +13,28 @@ from toy_python.dialects import builtin, toy
 # ===----------------------------------------------------------------------=== #
 
 
-def get_result_name(op: builtin.Op) -> str:
-    return op.result
-
-
-def get_operands(op: builtin.Op) -> list[str]:
-    if isinstance(op, toy.TransposeOp):
-        return [op.input]
-    if isinstance(op, toy.ReshapeOp):
-        return [op.input]
-    if isinstance(op, toy.MulOp):
-        return [op.lhs, op.rhs]
-    if isinstance(op, toy.AddOp):
-        return [op.lhs, op.rhs]
-    if isinstance(op, toy.GenericCallOp):
-        return list(op.args)
-    if isinstance(op, toy.PrintOp):
-        return [op.input]
-    if isinstance(op, builtin.ReturnOp):
-        return [op.value] if op.value is not None else []
-    return []
-
-
-def collect_uses(ops: list[builtin.Op]) -> dict[str, int]:
-    counts: dict[str, int] = {}
+def collect_uses(ops: list[builtin.Op]) -> set[int]:
+    """Return set of id()s of Values referenced as operands."""
+    used: set[int] = set()
     for op in ops:
-        for name in get_operands(op):
-            counts[name] = counts.get(name, 0) + 1
-    return counts
+        for v in op.operands:
+            used.add(id(v))
+    return used
 
 
-def find_def(ops: list[builtin.Op], name: str) -> int | None:
-    for i, op in enumerate(ops):
-        if get_result_name(op) == name:
-            return i
-    return None
-
-
-def rewrite_uses(ops: list[builtin.Op], old_name: str, new_name: str):
-    for i, op in enumerate(ops):
-        if isinstance(op, toy.TransposeOp) and op.input == old_name:
-            ops[i] = toy.TransposeOp(
-                result=op.result, input=new_name, type=op.type
-            )
-        elif isinstance(op, toy.ReshapeOp) and op.input == old_name:
-            ops[i] = toy.ReshapeOp(
-                result=op.result, input=new_name, type=op.type
-            )
-        elif isinstance(op, toy.MulOp) and (
-            op.lhs == old_name or op.rhs == old_name
-        ):
-            ops[i] = toy.MulOp(
-                result=op.result,
-                lhs=new_name if op.lhs == old_name else op.lhs,
-                rhs=new_name if op.rhs == old_name else op.rhs,
-                type=op.type,
-            )
-        elif isinstance(op, toy.AddOp) and (
-            op.lhs == old_name or op.rhs == old_name
-        ):
-            ops[i] = toy.AddOp(
-                result=op.result,
-                lhs=new_name if op.lhs == old_name else op.lhs,
-                rhs=new_name if op.rhs == old_name else op.rhs,
-                type=op.type,
-            )
-        elif isinstance(op, toy.GenericCallOp) and old_name in op.args:
-            ops[i] = toy.GenericCallOp(
-                result=op.result,
-                callee=op.callee,
-                args=[new_name if a == old_name else a for a in op.args],
-                type=op.type,
-            )
-        elif isinstance(op, toy.PrintOp) and op.input == old_name:
-            ops[i] = toy.PrintOp(result="_", input=new_name)
-        elif isinstance(op, builtin.ReturnOp) and op.value == old_name:
-            ops[i] = builtin.ReturnOp(result="_", value=new_name)
+def rewrite_uses(ops: list[builtin.Op], old_value: builtin.Value, new_value: builtin.Value):
+    """Replace all operand references to old_value with new_value."""
+    for op in ops:
+        for f in dataclasses.fields(op):
+            if f.name == "name":
+                continue
+            val = getattr(op, f.name)
+            if val is old_value:
+                object.__setattr__(op, f.name, new_value)
+            elif isinstance(val, list):
+                for i, item in enumerate(val):
+                    if item is old_value:
+                        val[i] = new_value
 
 
 # ===----------------------------------------------------------------------=== #
@@ -95,98 +42,87 @@ def rewrite_uses(ops: list[builtin.Op], old_name: str, new_name: str):
 # ===----------------------------------------------------------------------=== #
 
 
-def eliminate_transpose(func: toy.FuncOp):
+def eliminate_transpose(func: builtin.FuncOp):
     to_remove: list[int] = []
     ops = func.body.ops
     for i, op in enumerate(ops):
         if not isinstance(op, toy.TransposeOp):
             continue
-        outer_input = op.input
-        outer_result = op.result
-        def_idx = find_def(ops, outer_input)
-        if def_idx is None:
+        inner = op.input
+        if not isinstance(inner, toy.TransposeOp):
             continue
-        if not isinstance(ops[def_idx], toy.TransposeOp):
-            continue
-        inner_input = ops[def_idx].input
-        rewrite_uses(ops, outer_result, inner_input)
+        # Double transpose: replace uses of outer with inner's input
+        rewrite_uses(ops, op, inner.input)
         to_remove.append(i)
 
     _remove_indices(ops, to_remove)
 
 
-def fold_constants(func: toy.FuncOp):
+def fold_constants(func: builtin.FuncOp):
     ops = func.body.ops
     for i, op in enumerate(ops):
         if not isinstance(op, toy.ReshapeOp):
             continue
-        reshape_input = op.input
-        reshape_result = op.result
-        def_idx = find_def(ops, reshape_input)
-        if def_idx is None:
-            continue
-        if not isinstance(ops[def_idx], toy.ConstantOp):
+        defn = op.input
+        if not isinstance(defn, toy.ConstantOp):
             continue
         if not isinstance(op.type, toy.RankedTensorType):
             continue
         target_shape = op.type.shape
         # Skip same-shape folds (simplify_reshape handles those)
-        if isinstance(ops[def_idx].type, toy.RankedTensorType):
-            if ops[def_idx].type.shape == target_shape:
+        if isinstance(defn.type, toy.RankedTensorType):
+            if defn.type.shape == target_shape:
                 continue
-        ops[i] = toy.ConstantOp(
-            result=reshape_result,
-            value=list(ops[def_idx].value),
+        new_op = toy.ConstantOp(
+            value=list(defn.value),
             shape=list(target_shape),
             type=toy.RankedTensorType(shape=list(target_shape)),
         )
+        # Transfer identity: rewrite uses of old op to new op
+        rewrite_uses(ops, op, new_op)
+        ops[i] = new_op
 
 
-def simplify_reshape(func: toy.FuncOp):
+def simplify_reshape(func: builtin.FuncOp):
     to_remove: list[int] = []
     ops = func.body.ops
     for i, op in enumerate(ops):
         if not isinstance(op, toy.ReshapeOp):
             continue
-        reshape_input = op.input
-        reshape_result = op.result
-        def_idx = find_def(ops, reshape_input)
-        if def_idx is None:
-            continue
+        defn = op.input
 
         # Reshape of constant with matching shape -> remove
-        if isinstance(ops[def_idx], toy.ConstantOp):
+        if isinstance(defn, toy.ConstantOp):
             if isinstance(op.type, toy.RankedTensorType) and isinstance(
-                ops[def_idx].type, toy.RankedTensorType
+                defn.type, toy.RankedTensorType
             ):
-                if op.type.shape == ops[def_idx].type.shape:
-                    rewrite_uses(ops, reshape_result, reshape_input)
+                if op.type.shape == defn.type.shape:
+                    rewrite_uses(ops, op, defn)
                     to_remove.append(i)
                     continue
 
         # Reshape of reshape -> collapse
-        if isinstance(ops[def_idx], toy.ReshapeOp):
-            inner_input = ops[def_idx].input
-            ops[i] = toy.ReshapeOp(
-                result=reshape_result,
-                input=inner_input,
+        if isinstance(defn, toy.ReshapeOp):
+            new_op = toy.ReshapeOp(
+                input=defn.input,
                 type=op.type,
             )
+            rewrite_uses(ops, op, new_op)
+            ops[i] = new_op
 
     _remove_indices(ops, to_remove)
 
 
-def eliminate_dead_code(func: toy.FuncOp):
+def eliminate_dead_code(func: builtin.FuncOp):
     changed = True
     while changed:
         changed = False
-        uses = collect_uses(func.body.ops)
+        used = collect_uses(func.body.ops)
         to_remove: list[int] = []
         for i, op in enumerate(func.body.ops):
             if isinstance(op, (toy.PrintOp, builtin.ReturnOp)):
                 continue
-            name = get_result_name(op)
-            if name not in uses:
+            if id(op) not in used:
                 to_remove.append(i)
                 changed = True
         _remove_indices(func.body.ops, to_remove)

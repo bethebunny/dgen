@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dc_fields
 import types
 from typing import Annotated, ClassVar, Protocol, Union, get_type_hints, get_origin, get_args
 
 from toy_python import asm
 from toy_python.dialect import Dialect
 
-Ssa = Annotated[str, "ssa"]  # %name
 String = Annotated[str, "string"]  # name (as-is)
 StringList = Annotated[list[str], "string"]  # [a, b]
 
@@ -32,33 +31,65 @@ def _unwrap_optional(hint):
     return None
 
 
-@dataclass
-class Op:
-    """Base class for all dialect operations."""
+def _is_value_hint(hint) -> bool:
+    """Check if a type hint refers to Value (including Optional[Value], list[Value])."""
+    inner = _unwrap_optional(hint)
+    effective = inner if inner is not None else hint
+    if isinstance(effective, type) and issubclass(effective, Value):
+        return True
+    if get_origin(effective) is list and get_args(effective) and isinstance(get_args(effective)[0], type) and issubclass(get_args(effective)[0], Value):
+        return True
+    return False
 
-    result: Ssa
+
+@dataclass(eq=False, kw_only=True)
+class Value:
+    """Base class for SSA values. An op or block argument."""
+
+    name: str | None = None
+
+    @property
+    def operands(self) -> list[Value]:
+        return []
+
+    @property
+    def blocks(self) -> dict[str, Block]:
+        return {}
+
+
+@dataclass(eq=False, kw_only=True)
+class BlockArg(Value):
+    """A block argument (function parameter)."""
+
+    type: Type = None  # type: ignore[assignment]
+
+
+@dataclass(eq=False, kw_only=True)
+class Op(Value):
+    """Base class for all dialect operations."""
 
     _asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
 
     @property
-    def operands(self) -> list[str]:
-        """All Ssa-annotated fields except result (auto-introspected)."""
+    def operands(self) -> list[Value]:
+        """All Value-typed fields (auto-introspected)."""
         hints = get_type_hints(type(self), include_extras=True)
-        result: list[str] = []
-        for name, hint in hints.items():
-            if name == "result":
+        result: list[Value] = []
+        for fname, hint in hints.items():
+            if fname == "name":
                 continue
             inner = _unwrap_optional(hint)
             effective = inner if inner is not None else hint
-            if get_origin(effective) is Annotated and get_args(effective)[1] == "ssa":
-                value = getattr(self, name)
+            if isinstance(effective, type) and issubclass(effective, Value):
+                value = getattr(self, fname)
                 if value is None:
                     continue
-                if isinstance(value, list):
+                result.append(value)
+            elif get_origin(effective) is list and get_args(effective) and isinstance(get_args(effective)[0], type) and issubclass(get_args(effective)[0], Value):
+                value = getattr(self, fname)
+                if value is not None:
                     result.extend(value)
-                else:
-                    result.append(value)
         return result
 
     @property
@@ -66,9 +97,9 @@ class Op:
         """All Block-typed fields as a name->block dict (auto-introspected)."""
         hints = get_type_hints(type(self), include_extras=True)
         result: dict[str, Block] = {}
-        for name, hint in hints.items():
+        for fname, hint in hints.items():
             if hint is Block:
-                result[name] = getattr(self, name)
+                result[fname] = getattr(self, fname)
         return result
 
     @property
@@ -79,17 +110,9 @@ class Op:
 
 
 @dataclass
-class Value:
-    """A block argument (function parameter)."""
-
-    name: str
-    type: Type
-
-
-@dataclass
 class Block:
     ops: list[Op]
-    args: list[Value] = field(default_factory=list)
+    args: list[BlockArg] = field(default_factory=list)
 
     @property
     def asm(self) -> Iterable[str]:
@@ -123,7 +146,7 @@ class Function:
 
 @builtin.op("return")
 class ReturnOp(Op):
-    value: Ssa | None
+    value: Value | None = None
 
 
 # ===----------------------------------------------------------------------=== #
@@ -133,14 +156,39 @@ class ReturnOp(Op):
 
 @builtin.op("function")
 class FuncOp(Op):
-    body: Block
-    func_type: Function
+    body: Block = None  # type: ignore[assignment]
+    func_type: Function = None  # type: ignore[assignment]
 
     @property
     def asm(self) -> Iterable[str]:
-        args = ", ".join(f"%{a.name}: {a.type.asm}" for a in self.body.args)
-        yield f"%{self.result} = function ({args}) -> {self.func_type.result.asm}:"
-        yield from asm.indent(self.body.asm)
+        from toy_python.asm.formatting import SlotTracker
+        tracker = SlotTracker()
+        # Pre-register block args and all ops in this function
+        for arg in self.body.args:
+            tracker.get_name(arg)
+        _register_ops(tracker, self.body.ops)
+
+        name = tracker.get_name(self)
+        args = ", ".join(f"%{tracker.get_name(a)}: {a.type.asm}" for a in self.body.args)
+        yield f"%{name} = function ({args}) -> {self.func_type.result.asm}:"
+        yield from asm.indent(_emit_block_asm(tracker, self.body))
+
+
+def _register_ops(tracker, ops: list[Op]):
+    """Pre-register all ops in a tracker so slot numbers are stable."""
+    for op in ops:
+        tracker.get_name(op)
+        for block in op.blocks.values():
+            for arg in block.args:
+                tracker.get_name(arg)
+            _register_ops(tracker, block.ops)
+
+
+def _emit_block_asm(tracker, block: Block) -> Iterable[str]:
+    """Emit asm for a block using the given slot tracker."""
+    from toy_python.asm.formatting import op_asm
+    for op in block.ops:
+        yield from op_asm(op, tracker)
 
 
 def _walk_all_ops(op: Op) -> Iterable[Op]:

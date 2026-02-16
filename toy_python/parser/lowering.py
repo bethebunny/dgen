@@ -30,14 +30,8 @@ def _ranked(shape: list[int]) -> builtin.Type:
 
 class Lowering:
     def __init__(self):
-        self.counter = 0
         self.ops: list[builtin.Op] = []
-        self.scope: dict[str, str] = {}
-
-    def fresh(self) -> str:
-        name = str(self.counter)
-        self.counter += 1
-        return name
+        self.scope: dict[str, builtin.Value] = {}
 
     def lower_module(self, tm: ToyModule) -> builtin.Module:
         functions = [self.lower_function(f) for f in tm.functions]
@@ -45,16 +39,16 @@ class Lowering:
 
     def lower_function(self, f: Function) -> builtin.FuncOp:
         # Reset per-function state
-        self.counter = 0
         self.ops = []
         self.scope = {}
 
         # Create block args for function params
-        args: list[builtin.Value] = []
+        args: list[builtin.BlockArg] = []
         input_types: list[builtin.Type] = []
         for param_name in f.proto.params:
-            self.scope[param_name] = param_name
-            args.append(builtin.Value(name=param_name, type=_unranked()))
+            arg = builtin.BlockArg(name=param_name, type=_unranked())
+            self.scope[param_name] = arg
+            args.append(arg)
             input_types.append(_unranked())
 
         # Lower body statements
@@ -72,7 +66,7 @@ class Lowering:
         self.ops = []
         func_type = toy.FunctionType(inputs=input_types, result=result)
         return builtin.FuncOp(
-            result=f.proto.name,
+            name=f.proto.name,
             func_type=func_type,
             body=builtin.Block(ops=ops, args=args),
         )
@@ -86,31 +80,28 @@ class Lowering:
             self.lower_expr(stmt.expr)
 
     def _lower_var_decl(self, decl: VarDecl):
-        expr_name = self.lower_expr(decl.value)
+        expr_val = self.lower_expr(decl.value)
 
         # If explicit shape, add a Reshape
         if decl.shape is not None:
-            result = self.fresh()
-            self.ops.append(
-                toy.ReshapeOp(
-                    result=result,
-                    input=expr_name,
-                    type=_ranked(list(decl.shape)),
-                )
+            op = toy.ReshapeOp(
+                input=expr_val,
+                type=_ranked(list(decl.shape)),
             )
-            self.scope[decl.name] = result
+            self.ops.append(op)
+            self.scope[decl.name] = op
         else:
-            self.scope[decl.name] = expr_name
+            self.scope[decl.name] = expr_val
 
     def _lower_return(self, ret: ReturnStmt):
         if ret.value is not None:
-            name = self.lower_expr(ret.value)
-            self.ops.append(builtin.ReturnOp(result="_", value=name))
+            val = self.lower_expr(ret.value)
+            self.ops.append(builtin.ReturnOp(value=val))
         else:
-            self.ops.append(builtin.ReturnOp(result="_", value=None))
+            self.ops.append(builtin.ReturnOp())
 
-    def lower_expr(self, expr: Expression) -> str:
-        """Lower an expression, return the SSA name of the result."""
+    def lower_expr(self, expr: Expression) -> builtin.Value:
+        """Lower an expression, return the Value of the result."""
         if isinstance(expr, NumberLiteral):
             return self._lower_number(expr)
         if isinstance(expr, TensorLiteral):
@@ -125,77 +116,64 @@ class Lowering:
             return self._lower_print(expr)
         raise RuntimeError("Unknown expression type")
 
-    def _lower_number(self, num: NumberLiteral) -> str:
-        result = self.fresh()
-        self.ops.append(
-            toy.ConstantOp(
-                result=result,
-                value=[num.value],
-                shape=[1],
-                type=_ranked([1]),
-            )
+    def _lower_number(self, num: NumberLiteral) -> builtin.Value:
+        op = toy.ConstantOp(
+            value=[num.value],
+            shape=[1],
+            type=_ranked([1]),
         )
-        return result
+        self.ops.append(op)
+        return op
 
-    def _lower_tensor(self, tensor: TensorLiteral) -> str:
-        result = self.fresh()
-        self.ops.append(
-            toy.ConstantOp(
-                result=result,
-                value=list(tensor.values),
-                shape=list(tensor.shape),
-                type=_ranked(list(tensor.shape)),
-            )
+    def _lower_tensor(self, tensor: TensorLiteral) -> builtin.Value:
+        op = toy.ConstantOp(
+            value=list(tensor.values),
+            shape=list(tensor.shape),
+            type=_ranked(list(tensor.shape)),
         )
-        return result
+        self.ops.append(op)
+        return op
 
-    def _lower_varref(self, vr: VarRef) -> str:
+    def _lower_varref(self, vr: VarRef) -> builtin.Value:
         if vr.name not in self.scope:
             raise RuntimeError(f"Undefined variable: {vr.name}")
         return self.scope[vr.name]
 
-    def _lower_binop(self, op: BinaryOp) -> str:
+    def _lower_binop(self, op: BinaryOp) -> builtin.Value:
         lhs = self.lower_expr(op.lhs)
         rhs = self.lower_expr(op.rhs)
-        result = self.fresh()
         if op.op == "*":
-            self.ops.append(
-                toy.MulOp(result=result, lhs=lhs, rhs=rhs, type=_unranked())
-            )
+            result_op = toy.MulOp(lhs=lhs, rhs=rhs, type=_unranked())
         elif op.op == "+":
-            self.ops.append(
-                toy.AddOp(result=result, lhs=lhs, rhs=rhs, type=_unranked())
-            )
+            result_op = toy.AddOp(lhs=lhs, rhs=rhs, type=_unranked())
         else:
             raise RuntimeError(f"Unknown binary operator: {op.op}")
-        return result
+        self.ops.append(result_op)
+        return result_op
 
-    def _lower_call(self, call: CallExpr) -> str:
+    def _lower_call(self, call: CallExpr) -> builtin.Value:
         # Builtin: transpose
         if call.callee == "transpose":
             if len(call.args) != 1:
                 raise RuntimeError("transpose takes exactly 1 argument")
             arg = self.lower_expr(call.args[0])
-            result = self.fresh()
-            self.ops.append(toy.TransposeOp(result=result, input=arg, type=_unranked()))
-            return result
+            op = toy.TransposeOp(input=arg, type=_unranked())
+            self.ops.append(op)
+            return op
 
         # Generic call
         args = [self.lower_expr(a) for a in call.args]
-        result = self.fresh()
-        self.ops.append(
-            toy.GenericCallOp(
-                result=result,
-                callee=call.callee,
-                args=args,
-                type=_unranked(),
-            )
+        op = toy.GenericCallOp(
+            callee=call.callee,
+            args=args,
+            type=_unranked(),
         )
-        return result
+        self.ops.append(op)
+        return op
 
-    def _lower_print(self, p: PrintExpr) -> str:
+    def _lower_print(self, p: PrintExpr) -> builtin.Value:
         arg = self.lower_expr(p.arg)
-        self.ops.append(toy.PrintOp(result="_", input=arg))
+        self.ops.append(toy.PrintOp(input=arg))
         return arg
 
 

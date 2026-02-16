@@ -8,6 +8,7 @@ from io import StringIO
 
 import llvmlite.binding as llvmlite
 
+from toy_python.asm.formatting import SlotTracker
 from toy_python.dialects import builtin, llvm
 
 # ---------------------------------------------------------------------------
@@ -53,107 +54,114 @@ def emit_llvm_ir(module: builtin.Module) -> str:
 
 
 def _emit_func(f: builtin.FuncOp) -> list[str]:
-    # Pre-scan: build constants and types maps
-    constants: dict[str, str] = {}  # SSA name -> typed literal
-    types: dict[str, str] = {}  # SSA name -> LLVM type
+    # Build a SlotTracker so all ops get stable names
+    tracker = SlotTracker()
+    builtin._register_ops(tracker, f.body.ops)
+
+    # Pre-scan: build constants and types maps (keyed by id)
+    constants: dict[int, str] = {}  # id(op) -> typed literal
+    types: dict[int, str] = {}  # id(op) -> LLVM type
 
     for op in f.body.ops:
+        vid = id(op)
         if isinstance(op, llvm.ConstantOp):
-            constants[op.result] = f"double {llvm.format_float(op.value)}"
-            types[op.result] = "double"
+            constants[vid] = f"double {llvm.format_float(op.value)}"
+            types[vid] = "double"
         elif isinstance(op, llvm.IndexConstOp):
-            constants[op.result] = f"i64 {op.value}"
-            types[op.result] = "i64"
+            constants[vid] = f"i64 {op.value}"
+            types[vid] = "i64"
         elif isinstance(op, llvm.AllocaOp):
-            types[op.result] = "ptr"
+            types[vid] = "ptr"
         elif isinstance(op, llvm.GepOp):
-            types[op.result] = "ptr"
+            types[vid] = "ptr"
         elif isinstance(op, llvm.LoadOp):
-            types[op.result] = "double"
+            types[vid] = "double"
         elif isinstance(op, (llvm.FAddOp, llvm.FMulOp)):
-            types[op.result] = "double"
+            types[vid] = "double"
         elif isinstance(op, (llvm.AddOp, llvm.MulOp)):
-            types[op.result] = "i64"
+            types[vid] = "i64"
         elif isinstance(op, llvm.IcmpOp):
-            types[op.result] = "i1"
+            types[vid] = "i1"
         elif isinstance(op, llvm.PhiOp):
             first_val = op.values[0]
-            types[op.result] = types.get(first_val, "i64")
+            types[vid] = types.get(id(first_val), "i64")
 
-    def typed_ref(name: str) -> str:
+    def typed_ref(val: builtin.Value) -> str:
         """'type value' — e.g. 'double 1.0' or 'ptr %v3'."""
-        if name in constants:
-            return constants[name]
-        return f"{types.get(name, 'i64')} %{name}"
+        vid = id(val)
+        if vid in constants:
+            return constants[vid]
+        return f"{types.get(vid, 'i64')} %{tracker.get_name(val)}"
 
-    def bare_ref(name: str) -> str:
+    def bare_ref(val: builtin.Value) -> str:
         """Just the value — e.g. '1.0' or '%v3'."""
-        if name in constants:
-            return constants[name].split(" ", 1)[1]
-        return f"%{name}"
+        vid = id(val)
+        if vid in constants:
+            return constants[vid].split(" ", 1)[1]
+        return f"%{tracker.get_name(val)}"
 
-    lines = [f"define void @{f.result}() {{", "entry:"]
+    func_name = tracker.get_name(f) if f.name is not None else f.name
+    lines = [f"define void @{func_name}() {{", "entry:"]
 
     for op in f.body.ops:
         if isinstance(op, (llvm.ConstantOp, llvm.IndexConstOp)):
             continue  # inlined at use sites
 
+        name = tracker.get_name(op)
+
         if isinstance(op, llvm.LabelOp):
-            lines.append(f"{op.name}:")
+            lines.append(f"{op.label_name}:")
         elif isinstance(op, llvm.AllocaOp):
-            lines.append(f"  %{op.result} = alloca double, i64 {op.elem_count}")
+            lines.append(f"  %{name} = alloca double, i64 {op.elem_count}")
         elif isinstance(op, llvm.GepOp):
             lines.append(
-                f"  %{op.result} = getelementptr double, ptr %{op.base},"
+                f"  %{name} = getelementptr double, ptr %{tracker.get_name(op.base)},"
                 f" {typed_ref(op.index)}"
             )
         elif isinstance(op, llvm.LoadOp):
-            lines.append(f"  %{op.result} = load double, {typed_ref(op.ptr)}")
+            lines.append(f"  %{name} = load double, {typed_ref(op.ptr)}")
         elif isinstance(op, llvm.StoreOp):
             lines.append(f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}")
         elif isinstance(op, llvm.FAddOp):
             lines.append(
-                f"  %{op.result} = fadd double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                f"  %{name} = fadd double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.FMulOp):
             lines.append(
-                f"  %{op.result} = fmul double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                f"  %{name} = fmul double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.AddOp):
             lines.append(
-                f"  %{op.result} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                f"  %{name} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.MulOp):
             lines.append(
-                f"  %{op.result} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                f"  %{name} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.IcmpOp):
             lines.append(
-                f"  %{op.result} = icmp {op.pred} i64 {bare_ref(op.lhs)},"
+                f"  %{name} = icmp {op.pred} i64 {bare_ref(op.lhs)},"
                 f" {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.BrOp):
             lines.append(f"  br label %{op.dest}")
         elif isinstance(op, llvm.CondBrOp):
             lines.append(
-                f"  br i1 %{op.cond}, label %{op.true_dest}, label %{op.false_dest}"
+                f"  br i1 %{tracker.get_name(op.cond)}, label %{op.true_dest}, label %{op.false_dest}"
             )
         elif isinstance(op, llvm.PhiOp):
-            ty = types.get(op.result, "i64")
+            ty = types.get(id(op), "i64")
             pairs = ", ".join(
                 f"[ {bare_ref(v)}, %{l} ]" for v, l in zip(op.values, op.labels)
             )
-            lines.append(f"  %{op.result} = phi {ty} {pairs}")
+            lines.append(f"  %{name} = phi {ty} {pairs}")
         elif isinstance(op, llvm.CallOp):
             if op.callee == "print_memref" and len(op.args) == 2:
                 a = f"{typed_ref(op.args[0])}, {typed_ref(op.args[1])}"
                 lines.append(f"  call void @print_memref({a})")
             else:
                 a = ", ".join(typed_ref(arg) for arg in op.args)
-                if op.result != "_":
-                    lines.append(f"  %{op.result} = call void @{op.callee}({a})")
-                else:
-                    lines.append(f"  call void @{op.callee}({a})")
+                lines.append(f"  call void @{op.callee}({a})")
         elif isinstance(op, builtin.ReturnOp):
             if op.value is not None:
                 lines.append(f"  ret {typed_ref(op.value)}")

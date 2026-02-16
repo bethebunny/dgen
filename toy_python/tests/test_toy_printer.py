@@ -15,7 +15,7 @@ def ranked(shape: list[int]) -> builtin.Type:
 
 def test_constant_op():
     op = toy.ConstantOp(
-        result="0",
+        name="0",
         value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         shape=[2, 3],
         type=ranked([2, 3]),
@@ -27,30 +27,38 @@ def test_constant_op():
 
 
 def test_transpose_op():
-    op = toy.TransposeOp(result="0", input="a", type=unranked())
+    a = builtin.Value(name="a")
+    op = toy.TransposeOp(name="0", input=a, type=unranked())
     assert asm.format(op) == "%0 = toy.transpose(%a) : tensor<*xf64>"
 
 
 def test_reshape_op():
-    op = toy.ReshapeOp(result="1", input="0", type=ranked([2, 3]))
+    v0 = builtin.Value(name="0")
+    op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
     assert asm.format(op) == "%1 = toy.reshape(%0) : tensor<2x3xf64>"
 
 
 def test_mul_op():
-    op = toy.MulOp(result="2", lhs="0", rhs="1", type=unranked())
+    v0 = builtin.Value(name="0")
+    v1 = builtin.Value(name="1")
+    op = toy.MulOp(name="2", lhs=v0, rhs=v1, type=unranked())
     assert asm.format(op) == "%2 = toy.mul(%0, %1) : tensor<*xf64>"
 
 
 def test_add_op():
-    op = toy.AddOp(result="2", lhs="0", rhs="1", type=unranked())
+    v0 = builtin.Value(name="0")
+    v1 = builtin.Value(name="1")
+    op = toy.AddOp(name="2", lhs=v0, rhs=v1, type=unranked())
     assert asm.format(op) == "%2 = toy.add(%0, %1) : tensor<*xf64>"
 
 
 def test_generic_call_op():
+    v1 = builtin.Value(name="1")
+    v3 = builtin.Value(name="3")
     op = toy.GenericCallOp(
-        result="4",
+        name="4",
         callee="multiply_transpose",
-        args=["1", "3"],
+        args=[v1, v3],
         type=unranked(),
     )
     assert (
@@ -60,80 +68,73 @@ def test_generic_call_op():
 
 
 def test_print_op():
-    op = toy.PrintOp(result="_", input="5")
-    assert asm.format(op) == "%_ = toy.print(%5)"
+    v5 = builtin.Value(name="5")
+    op = toy.PrintOp(input=v5)
+    # PrintOp has no name -> auto-numbered as %0
+    assert asm.format(op) == "%0 = toy.print(%5)"
 
 
 def test_return_op_with_value():
-    op = builtin.ReturnOp(result="_", value="2")
-    assert asm.format(op) == "%_ = return(%2)"
+    v2 = builtin.Value(name="2")
+    op = builtin.ReturnOp(value=v2)
+    assert asm.format(op) == "%0 = return(%2)"
 
 
 def test_return_op_void():
-    op = builtin.ReturnOp(result="_", value=None)
-    assert asm.format(op) == "%_ = return()"
+    op = builtin.ReturnOp()
+    assert asm.format(op) == "%0 = return()"
 
 
 def test_full_module():
     # Build multiply_transpose function
-    mt_args = [
-        builtin.Value(name="a", type=unranked()),
-        builtin.Value(name="b", type=unranked()),
-    ]
+    mt_arg_a = builtin.BlockArg(name="a", type=unranked())
+    mt_arg_b = builtin.BlockArg(name="b", type=unranked())
 
-    mt_ops = [
-        toy.TransposeOp(result="0", input="a", type=unranked()),
-        toy.TransposeOp(result="1", input="b", type=unranked()),
-        toy.MulOp(result="2", lhs="0", rhs="1", type=unranked()),
-        builtin.ReturnOp(result="_", value="2"),
-    ]
+    t0 = toy.TransposeOp(input=mt_arg_a, type=unranked())
+    t1 = toy.TransposeOp(input=mt_arg_b, type=unranked())
+    m0 = toy.MulOp(lhs=t0, rhs=t1, type=unranked())
+    ret_mt = builtin.ReturnOp(value=m0)
 
     mt_func_type = toy.FunctionType(
         inputs=[unranked(), unranked()], result=unranked()
     )
     mt_func = builtin.FuncOp(
-        result="multiply_transpose",
+        name="multiply_transpose",
         func_type=mt_func_type,
-        body=builtin.Block(ops=mt_ops, args=mt_args),
+        body=builtin.Block(ops=[t0, t1, m0, ret_mt], args=[mt_arg_a, mt_arg_b]),
     )
 
     # Build main function
-    main_ops = [
-        toy.ConstantOp(
-            result="0",
-            value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            shape=[2, 3],
-            type=ranked([2, 3]),
-        ),
-        toy.ReshapeOp(result="1", input="0", type=ranked([2, 3])),
-        toy.ConstantOp(
-            result="2",
-            value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            shape=[6],
-            type=ranked([6]),
-        ),
-        toy.ReshapeOp(result="3", input="2", type=ranked([2, 3])),
-        toy.GenericCallOp(
-            result="4",
-            callee="multiply_transpose",
-            args=["1", "3"],
-            type=unranked(),
-        ),
-        toy.GenericCallOp(
-            result="5",
-            callee="multiply_transpose",
-            args=["3", "1"],
-            type=unranked(),
-        ),
-        toy.PrintOp(result="_", input="5"),
-        builtin.ReturnOp(result="_", value=None),
-    ]
+    c0 = toy.ConstantOp(
+        value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        shape=[2, 3],
+        type=ranked([2, 3]),
+    )
+    r1 = toy.ReshapeOp(input=c0, type=ranked([2, 3]))
+    c2 = toy.ConstantOp(
+        value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        shape=[6],
+        type=ranked([6]),
+    )
+    r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
+    call4 = toy.GenericCallOp(
+        callee="multiply_transpose",
+        args=[r1, r3],
+        type=unranked(),
+    )
+    call5 = toy.GenericCallOp(
+        callee="multiply_transpose",
+        args=[r3, r1],
+        type=unranked(),
+    )
+    print_op = toy.PrintOp(input=call5)
+    ret_main = builtin.ReturnOp()
 
     main_func_type = toy.FunctionType(inputs=[], result=builtin.Nil())
     main_func = builtin.FuncOp(
-        result="main",
+        name="main",
         func_type=main_func_type,
-        body=builtin.Block(ops=main_ops),
+        body=builtin.Block(ops=[c0, r1, c2, r3, call4, call5, print_op, ret_main]),
     )
 
     module = builtin.Module(functions=[mt_func, main_func])
@@ -145,7 +146,7 @@ def test_full_module():
         |     %0 = toy.transpose(%a) : tensor<*xf64>
         |     %1 = toy.transpose(%b) : tensor<*xf64>
         |     %2 = toy.mul(%0, %1) : tensor<*xf64>
-        |     %_ = return(%2)
+        |     %3 = return(%2)
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
@@ -154,7 +155,7 @@ def test_full_module():
         |     %3 = toy.reshape(%2) : tensor<2x3xf64>
         |     %4 = toy.generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>
         |     %5 = toy.generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>
-        |     %_ = toy.print(%5)
-        |     %_ = return()
+        |     %6 = toy.print(%5)
+        |     %7 = return()
     """)
     assert asm.format(module) == expected

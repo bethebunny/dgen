@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Op, Ssa, String, StringList
-from toy_python.asm.formatting import Shape, SsaList, Sym, format_float
+from toy_python.dialects.builtin import Op, Value, String, StringList
+from toy_python.asm.formatting import Shape, Sym, format_float
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -57,31 +57,31 @@ class AllocaOp(Op):
 
 @llvm.op("gep")
 class GepOp(Op):
-    base: Ssa
-    index: Ssa
+    base: Value
+    index: Value
 
 
 @llvm.op("load")
 class LoadOp(Op):
-    ptr: Ssa
+    ptr: Value
 
 
 @llvm.op("store")
 class StoreOp(Op):
-    value: Ssa
-    ptr: Ssa
+    value: Value
+    ptr: Value
 
 
 @llvm.op("fadd")
 class FAddOp(Op):
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
 
 
 @llvm.op("fmul")
 class FMulOp(Op):
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
 
 
 @llvm.op("fconst")
@@ -96,21 +96,21 @@ class IndexConstOp(Op):
 
 @llvm.op("add")
 class AddOp(Op):
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
 
 
 @llvm.op("mul")
 class MulOp(Op):
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
 
 
 @llvm.op("icmp")
 class IcmpOp(Op):
     pred: String
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
 
 
 @llvm.op("br")
@@ -120,25 +120,23 @@ class BrOp(Op):
 
 @llvm.op("cond_br")
 class CondBrOp(Op):
-    cond: Ssa
+    cond: Value
     true_dest: String
     false_dest: String
 
 
 @llvm.op("label")
 class LabelOp(Op):
-    name: String
+    label_name: String
 
 
 @llvm.op("phi")
 class PhiOp(Op):
-    values: SsaList
+    values: list[Value]
     labels: StringList
 
 
 @llvm.op("call")
 class CallOp(Op):
     callee: Sym
-    args: SsaList
-
-
+    args: list[Value]

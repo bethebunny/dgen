@@ -26,8 +26,8 @@ def test_simple_constant():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %_ = toy.print(%0)
-        |     %_ = return()
+        |     %1 = toy.print(%0)
+        |     %2 = return()
     """)
     assert result == expected
 
@@ -48,8 +48,8 @@ def test_explicit_shape_with_reshape():
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.reshape(%0) : tensor<2x3xf64>
-        |     %_ = toy.print(%1)
-        |     %_ = return()
+        |     %2 = toy.print(%1)
+        |     %3 = return()
     """)
     assert result == expected
 
@@ -72,8 +72,8 @@ def test_binary_operations():
         |     %0 = toy.constant(<2x2>, [1.0, 2.0, 3.0, 4.0]) : tensor<2x2xf64>
         |     %1 = toy.constant(<2x2>, [5.0, 6.0, 7.0, 8.0]) : tensor<2x2xf64>
         |     %2 = toy.mul(%0, %1) : tensor<*xf64>
-        |     %_ = toy.print(%2)
-        |     %_ = return()
+        |     %3 = toy.print(%2)
+        |     %4 = return()
     """)
     assert result == expected
 
@@ -94,8 +94,8 @@ def test_transpose_builtin():
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.transpose(%0) : tensor<*xf64>
-        |     %_ = toy.print(%1)
-        |     %_ = return()
+        |     %2 = toy.print(%1)
+        |     %3 = return()
     """)
     assert result == expected
 
@@ -122,14 +122,14 @@ def test_generic_call():
         |     %0 = toy.transpose(%a) : tensor<*xf64>
         |     %1 = toy.transpose(%b) : tensor<*xf64>
         |     %2 = toy.mul(%0, %1) : tensor<*xf64>
-        |     %_ = return(%2)
+        |     %3 = return(%2)
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %2 = toy.generic_call(@multiply_transpose, [%0, %1]) : tensor<*xf64>
-        |     %_ = toy.print(%2)
-        |     %_ = return()
+        |     %3 = toy.print(%2)
+        |     %4 = return()
     """)
     assert result == expected
 
@@ -158,7 +158,7 @@ def test_full_tutorial_example():
         |     %0 = toy.transpose(%a) : tensor<*xf64>
         |     %1 = toy.transpose(%b) : tensor<*xf64>
         |     %2 = toy.mul(%0, %1) : tensor<*xf64>
-        |     %_ = return(%2)
+        |     %3 = return(%2)
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
@@ -167,7 +167,7 @@ def test_full_tutorial_example():
         |     %3 = toy.reshape(%2) : tensor<2x3xf64>
         |     %4 = toy.generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>
         |     %5 = toy.generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>
-        |     %_ = toy.print(%5)
-        |     %_ = return()
+        |     %6 = toy.print(%5)
+        |     %7 = return()
     """)
     assert result == expected

@@ -15,16 +15,14 @@ from toy_python.dialects import builtin
 from .formatting import _SPECIAL_FIELDS, _get_annotation, _is_optional
 
 
-def parse_op_fields(parser, cls, result=None):
+def parse_op_fields(parser, cls, name=None):
     """Generic op field parser. Introspects field types to parse args."""
     hints = get_type_hints(cls, include_extras=True)
     fields = dataclasses.fields(cls)
 
     kwargs = {}
-    if "result" in hints:
-        # result=None for keyword ops; for optional-result ops (Ssa | None)
-        # this correctly sets None; for required-result ops the caller provides it
-        kwargs["result"] = result
+    if "name" in hints:
+        kwargs["name"] = name
 
     # Expect opening paren
     parser.expect("(")
@@ -64,20 +62,71 @@ def parse_op_fields(parser, cls, result=None):
 
     # Body (indented block)
     if "body" in hints:
+        body_hint = hints["body"]
         parser.skip_whitespace()
-        parser.expect(":")
-        kwargs["body"] = parser.parse_indented_block()
+        if body_hint is builtin.Block:
+            # Parse optional block args: (%name: type, ...)
+            args = []
+            if parser.peek() == "(":
+                parser.expect("(")
+                parser.skip_whitespace()
+                if parser.peek() != ")":
+                    args.append(parser._parse_param())
+                    parser.skip_whitespace()
+                    while parser.peek() == ",":
+                        parser.expect(",")
+                        parser.skip_whitespace()
+                        args.append(parser._parse_param())
+                        parser.skip_whitespace()
+                parser.expect(")")
+            parser.skip_whitespace()
+            parser.expect(":")
+            ops = parser.parse_indented_block()
+            kwargs["body"] = builtin.Block(ops=ops, args=args)
+        else:
+            parser.expect(":")
+            kwargs["body"] = parser.parse_indented_block()
 
-    return cls(**kwargs)
+    op = cls(**kwargs)
+
+    # Register op in name table if it has a name
+    if name is not None:
+        parser.name_table[name] = op
+
+    return op
+
+
+def _resolve_or_create(parser, ssa_name: str) -> builtin.Value:
+    """Resolve an SSA name to a Value, creating a forward reference if needed."""
+    if ssa_name not in parser.name_table:
+        val = builtin.Value(name=ssa_name)
+        parser.name_table[ssa_name] = val
+        return val
+    return parser.name_table[ssa_name]
 
 
 def _parse_value(parser, hint):
     """Parse a single value based on its type hint."""
+    # Value reference — resolve via name table (or create if forward definition)
+    if isinstance(hint, type) and issubclass(hint, builtin.Value):
+        return _resolve_or_create(parser, parser.parse_ssa_name())
+
+    # list[Value] — parse as [%a, %b]
+    if get_origin(hint) is list and get_args(hint) and isinstance(get_args(hint)[0], type) and issubclass(get_args(hint)[0], builtin.Value):
+        parser.expect("[")
+        parser.skip_whitespace()
+        items = []
+        if parser.peek() != "]":
+            items.append(_resolve_or_create(parser, parser.parse_ssa_name()))
+            while parser.peek() == ",":
+                parser.expect(",")
+                parser.skip_whitespace()
+                items.append(_resolve_or_create(parser, parser.parse_ssa_name()))
+        parser.expect("]")
+        return items
+
     base, tag = _get_annotation(hint)
 
-    # Annotated[str, "ssa"] -> %name
-    if base is str and tag == "ssa":
-        return parser.parse_ssa_name()
     # Annotated[str, "sym"] -> @name
     if base is str and tag == "sym":
         parser.expect("@")
@@ -94,19 +143,6 @@ def _parse_value(parser, hint):
             dims.append(parser.parse_int())
         parser.expect(">")
         return dims
-    # Annotated[list[str], "ssa"] -> [%a, %b]
-    if tag == "ssa" and get_origin(base) is list:
-        parser.expect("[")
-        parser.skip_whitespace()
-        items = []
-        if parser.peek() != "]":
-            items.append(parser.parse_ssa_name())
-            while parser.peek() == ",":
-                parser.expect(",")
-                parser.skip_whitespace()
-                items.append(parser.parse_ssa_name())
-        parser.expect("]")
-        return items
     # Annotated[list[str], "string"] -> [a, b]
     if tag == "string" and get_origin(base) is list:
         parser.expect("[")
@@ -149,6 +185,7 @@ class IRParser:
         self.pos = 0
         self._ops: dict[str, type] = {}
         self._types: dict = {}
+        self.name_table: dict[str, builtin.Value] = {}
 
         # Implicit: from builtin import *
         builtin_dialect = Dialect.get("builtin")
@@ -325,7 +362,7 @@ class IRParser:
 
     def parse_func(self) -> builtin.FuncOp:
         """Parse a function definition."""
-        name = self.parse_ssa_name()
+        func_name = self.parse_ssa_name()
         self.skip_whitespace()
         self.expect("=")
         self.skip_whitespace()
@@ -334,7 +371,7 @@ class IRParser:
         self.expect("(")
 
         # Parse parameters
-        args: list[builtin.Value] = []
+        args: list[builtin.BlockArg] = []
         self.skip_whitespace()
         if self.peek() != ")":
             arg = self._parse_param()
@@ -352,7 +389,7 @@ class IRParser:
         self.skip_whitespace()
         self.expect("->")
         self.skip_whitespace()
-        result: builtin.Type = self.parse_type()
+        result_type: builtin.Type = self.parse_type()
 
         self.expect(":")
         self.skip_line()
@@ -360,20 +397,24 @@ class IRParser:
         # Parse body (indented lines)
         ops = self._parse_block(min_indent=1)
 
-        func_type = builtin.Function(result=result)
-        return builtin.FuncOp(
-            result=name,
+        func_type = builtin.Function(result=result_type)
+        func_op = builtin.FuncOp(
+            name=func_name,
             func_type=func_type,
             body=builtin.Block(ops=ops, args=args),
         )
+        self.name_table[func_name] = func_op
+        return func_op
 
-    def _parse_param(self) -> builtin.Value:
+    def _parse_param(self) -> builtin.BlockArg:
         """Parse %name: Type"""
-        name = self.parse_ssa_name()
+        param_name = self.parse_ssa_name()
         self.expect(":")
         self.skip_whitespace()
         type_ = self.parse_type()
-        return builtin.Value(name=name, type=type_)
+        arg = builtin.BlockArg(name=param_name, type=type_)
+        self.name_table[param_name] = arg
+        return arg
 
     def _parse_block(self, min_indent: int) -> list[builtin.Op]:
         """Parse a block of indented ops."""
@@ -432,7 +473,7 @@ class IRParser:
 
     def parse_op(self) -> builtin.Op:
         """Parse a single operation: %result = [dialect.]op(...)"""
-        result = self.parse_ssa_name()
+        op_name_str = self.parse_ssa_name()
         self.skip_whitespace()
         self.expect("=")
         self.skip_whitespace()
@@ -444,7 +485,7 @@ class IRParser:
         cls = self._ops.get(name)
         if cls is None:
             raise RuntimeError(f"Unknown op: {name}")
-        return parse_op_fields(self, cls, result=result)
+        return parse_op_fields(self, cls, name=op_name_str)
 
 
 def parse_module(text: str) -> builtin.Module:

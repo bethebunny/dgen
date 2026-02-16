@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Function, Nil, Op, Type, Ssa, String, StringList
-from toy_python.asm.formatting import Shape, SsaList, Sym
+from toy_python.dialects.builtin import Function, Nil, Op, Type, Value, String, StringList
+from toy_python.asm.formatting import Shape, Sym
 
 if TYPE_CHECKING:
     from toy_python.asm.parser import IRParser
@@ -60,40 +60,40 @@ class ConstantOp(Op):
 
 @toy.op("transpose")
 class TransposeOp(Op):
-    input: Ssa
+    input: Value
     type: Type
 
 
 @toy.op("reshape")
 class ReshapeOp(Op):
-    input: Ssa
+    input: Value
     type: Type
 
 
 @toy.op("mul")
 class MulOp(Op):
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
     type: Type
 
 
 @toy.op("add")
 class AddOp(Op):
-    lhs: Ssa
-    rhs: Ssa
+    lhs: Value
+    rhs: Value
     type: Type
 
 
 @toy.op("generic_call")
 class GenericCallOp(Op):
     callee: Sym
-    args: SsaList
+    args: list[Value]
     type: Type
 
 
 @toy.op("print")
 class PrintOp(Op):
-    input: Ssa
+    input: Value
 
 
 # ===----------------------------------------------------------------------=== #
@@ -115,5 +115,3 @@ def _parse_tensor_type(parser: IRParser) -> UnrankedTensorType | RankedTensorTyp
         shape.append(parser.parse_int())
     parser.expect("f64>")
     return RankedTensorType(shape=shape)
-
-

@@ -75,8 +75,8 @@ def test_constant_folding_reshape():
         | import toy
         |
         | %main = function () -> ():
-        |     %1 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %_ = toy.print(%1)
+        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %_ = toy.print(%0)
         |     %_ = return()
     """)
     assert result == expected
@@ -135,8 +135,8 @@ def test_full_pipeline():
         |
         | %main = function () -> ():
         |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %3 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %7 = toy.transpose(%3) : tensor<*xf64>
+        |     %1 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %7 = toy.transpose(%1) : tensor<*xf64>
         |     %8 = toy.transpose(%0) : tensor<*xf64>
         |     %9 = toy.mul(%7, %8) : tensor<*xf64>
         |     %_ = toy.print(%9)
