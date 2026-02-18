@@ -33,8 +33,8 @@ def test_simple_constant_store():
     assert "return()" in result, "Should have return()"
 
 
-def test_single_for_loop():
-    """For loop lowers to label/branch/phi pattern."""
+def test_constant_flat_stores():
+    """Constants lower to flat stores (no loops)."""
     ir_text = strip_prefix("""
         | import toy
         |
@@ -44,16 +44,14 @@ def test_single_for_loop():
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
-    assert '"loop_header' in result, "Should have loop header label"
-    assert "llvm.phi(" in result, "Should have phi node"
-    assert 'llvm.icmp("slt"' in result, "Should have comparison"
-    assert "llvm.cond_br(" in result, "Should have conditional branch"
-    assert '"loop_body' in result, "Should have loop body label"
-    assert '"loop_exit' in result, "Should have loop exit label"
+    assert result.count("llvm.store(") == 3, "Should have 3 flat stores"
+    assert "llvm.fconst(1.0)" in result
+    assert "llvm.fconst(2.0)" in result
+    assert "llvm.fconst(3.0)" in result
 
 
-def test_nested_for_loops():
-    """Nested for loops produce nested label/branch patterns."""
+def test_2d_constant_flat_stores():
+    """2D constants lower to flat stores (no loops)."""
     ir_text = strip_prefix("""
         | import toy
         |
@@ -63,10 +61,7 @@ def test_nested_for_loops():
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
-    assert '"loop_header0"' in result, "Should have loop_header0"
-    assert '"loop_header1"' in result, "Should have loop_header1"
-    assert '"loop_body0"' in result, "Should have loop_body0"
-    assert '"loop_body1"' in result, "Should have loop_body1"
+    assert result.count("llvm.store(") == 6, "Should have 6 flat stores"
 
 
 def test_load_store_linearization():

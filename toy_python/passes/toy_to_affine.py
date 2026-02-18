@@ -52,60 +52,30 @@ class ToyToAffineLowering:
     def _lower_constant(self, op: toy.ConstantOp):
         shape = list(op.shape)
 
-        # Alloc
         alloc_op = affine.AllocOp(shape=list(shape))
         self.ops.append(alloc_op)
         self.live_allocs.append(alloc_op)
 
-        # Nested for loops to store each element
         values = op.value
         if len(shape) == 1:
-            # 1D: single loop
-            ivar = builtin.BlockArg(type=affine.IndexType())
-            body: list[builtin.Op] = []
-            for idx in range(shape[0]):
-                cst_op = affine.ArithConstantOp(value=values[idx])
-                body.append(cst_op)
-                idx_op = affine.IndexConstantOp(value=idx)
-                body.append(idx_op)
-                body.append(
-                    affine.StoreOp(
-                        value=cst_op,
-                        memref=alloc_op,
-                        indices=[idx_op],
-                    )
-                )
-            self.ops.append(
-                affine.ForOp(lo=0, hi=shape[0], body=builtin.Block(ops=body, args=[ivar]))
-            )
+            for i, v in enumerate(values):
+                cst = affine.ArithConstantOp(value=v)
+                self.ops.append(cst)
+                idx = affine.IndexConstantOp(value=i)
+                self.ops.append(idx)
+                self.ops.append(affine.StoreOp(value=cst, memref=alloc_op, indices=[idx]))
         elif len(shape) == 2:
-            # 2D: nested loops
-            ivar = builtin.BlockArg(type=affine.IndexType())
-            jvar = builtin.BlockArg(type=affine.IndexType())
             rows, cols = shape[0], shape[1]
-            inner_body: list[builtin.Op] = []
             for r in range(rows):
                 for c in range(cols):
                     flat = r * cols + c
-                    cst_op = affine.ArithConstantOp(value=values[flat])
-                    inner_body.append(cst_op)
-                    ri_op = affine.IndexConstantOp(value=r)
-                    inner_body.append(ri_op)
-                    ci_op = affine.IndexConstantOp(value=c)
-                    inner_body.append(ci_op)
-                    inner_body.append(
-                        affine.StoreOp(
-                            value=cst_op,
-                            memref=alloc_op,
-                            indices=[ri_op, ci_op],
-                        )
-                    )
-            outer_body: list[builtin.Op] = [
-                affine.ForOp(lo=0, hi=cols, body=builtin.Block(ops=inner_body, args=[jvar])),
-            ]
-            self.ops.append(
-                affine.ForOp(lo=0, hi=rows, body=builtin.Block(ops=outer_body, args=[ivar]))
-            )
+                    cst = affine.ArithConstantOp(value=values[flat])
+                    self.ops.append(cst)
+                    ri = affine.IndexConstantOp(value=r)
+                    self.ops.append(ri)
+                    ci = affine.IndexConstantOp(value=c)
+                    self.ops.append(ci)
+                    self.ops.append(affine.StoreOp(value=cst, memref=alloc_op, indices=[ri, ci]))
 
         self.shape_map[op] = shape
         self.alloc_map[op] = alloc_op

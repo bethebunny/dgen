@@ -8,7 +8,7 @@ from io import StringIO
 
 import llvmlite.binding as llvmlite
 
-from toy_python.asm.formatting import SlotTracker
+from toy_python.asm.formatting import SlotTracker, format_float
 from toy_python.dialects import builtin, llvm
 
 # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
     for op in f.body.ops:
         vid = id(op)
         if isinstance(op, llvm.ConstantOp):
-            constants[vid] = f"double {llvm.format_float(op.value)}"
+            constants[vid] = f"double {format_float(op.value)}"
             types[vid] = "double"
         elif isinstance(op, llvm.IndexConstOp):
             constants[vid] = f"i64 {op.value}"

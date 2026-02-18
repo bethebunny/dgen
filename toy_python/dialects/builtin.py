@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import types
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, fields, field
 from typing import (
     ClassVar,
     NewType,
     Protocol,
-    Union,
-    get_args,
-    get_origin,
     get_type_hints,
 )
 
@@ -26,32 +22,6 @@ class Type(Protocol):
 
     @property
     def asm(self) -> str: ...
-
-
-def _unwrap_optional(hint):
-    """If hint is X | None, return X; otherwise return None."""
-    origin = get_origin(hint)
-    if origin is Union or isinstance(hint, types.UnionType):
-        args = get_args(hint)
-        if len(args) == 2 and type(None) in args:
-            return args[0] if args[1] is type(None) else args[1]
-    return None
-
-
-def _is_value_hint(hint) -> bool:
-    """Check if a type hint refers to Value (including Optional[Value], list[Value])."""
-    inner = _unwrap_optional(hint)
-    effective = inner if inner is not None else hint
-    if isinstance(effective, type) and issubclass(effective, Value):
-        return True
-    if (
-        get_origin(effective) is list
-        and get_args(effective)
-        and isinstance(get_args(effective)[0], type)
-        and issubclass(get_args(effective)[0], Value)
-    ):
-        return True
-    return False
 
 
 @dataclass(eq=False, kw_only=True)
@@ -86,27 +56,15 @@ class Op(Value):
     @property
     def operands(self) -> list[Value]:
         """All Value-typed fields (auto-introspected)."""
-        hints = get_type_hints(type(self), include_extras=True)
         result: list[Value] = []
-        for fname, hint in hints.items():
-            if fname == "name":
+        for f in fields(self):
+            if f.name == "name":
                 continue
-            inner = _unwrap_optional(hint)
-            effective = inner if inner is not None else hint
-            if isinstance(effective, type) and issubclass(effective, Value):
-                value = getattr(self, fname)
-                if value is None:
-                    continue
-                result.append(value)
-            elif (
-                get_origin(effective) is list
-                and get_args(effective)
-                and isinstance(get_args(effective)[0], type)
-                and issubclass(get_args(effective)[0], Value)
-            ):
-                value = getattr(self, fname)
-                if value is not None:
-                    result.extend(value)
+            val = getattr(self, f.name)
+            if isinstance(val, Value):
+                result.append(val)
+            elif isinstance(val, list):
+                result.extend(v for v in val if isinstance(v, Value))
         return result
 
     @property
@@ -198,7 +156,7 @@ class FuncOp(Op):
 
     @property
     def asm(self) -> Iterable[str]:
-        from toy_python.asm.formatting import SlotTracker
+        from toy_python.asm.formatting import SlotTracker, op_asm
 
         tracker = SlotTracker()
         # Pre-register block args and all ops in this function
@@ -211,7 +169,8 @@ class FuncOp(Op):
             f"%{tracker.get_name(a)}: {a.type.asm}" for a in self.body.args
         )
         yield f"%{name} = function ({args}) -> {self.func_type.result.asm}:"
-        yield from asm.indent(_emit_block_asm(tracker, self.body))
+        for op in self.body.ops:
+            yield from asm.indent(op_asm(op, tracker))
 
 
 def _register_ops(tracker, ops: list[Op]):
@@ -222,14 +181,6 @@ def _register_ops(tracker, ops: list[Op]):
             for arg in block.args:
                 tracker.get_name(arg)
             _register_ops(tracker, block.ops)
-
-
-def _emit_block_asm(tracker, block: Block) -> Iterable[str]:
-    """Emit asm for a block using the given slot tracker."""
-    from toy_python.asm.formatting import op_asm
-
-    for op in block.ops:
-        yield from op_asm(op, tracker)
 
 
 def _walk_all_ops(op: Op) -> Iterable[Op]:

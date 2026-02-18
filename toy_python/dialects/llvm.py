@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from toy_python.dialect import Dialect
 from toy_python.dialects.builtin import Op, StaticString, Value
-from toy_python.asm.formatting import Shape, Sym, format_float
+from toy_python.asm.formatting import Sym
 
 # ===----------------------------------------------------------------------=== #
 # Types

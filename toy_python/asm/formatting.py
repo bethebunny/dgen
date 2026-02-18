@@ -130,9 +130,6 @@ def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
     if get_origin(hint) is list and get_args(hint) == (float,):
         return "[" + ", ".join(format_float(v) for v in value) + "]"
     # Type protocol (has .asm)
-    if hasattr(value, "asm") and callable(getattr(type(value), "asm", None)):
-        # It's a property
-        return value.asm
     if hasattr(value, "asm"):
         return value.asm
     return str(value)

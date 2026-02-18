@@ -20,7 +20,6 @@ def test_simple_constant():
     affine = lower_to_affine(m)
     result = asm.format(affine)
     assert "affine.alloc(<2x3>)" in result, "Should have alloc"
-    assert "affine.for" in result, "Should have for loop"
     assert "affine.store" in result, "Should have stores"
     assert "affine.arith_constant" in result, "Should have constants"
     assert "affine.print_memref" in result, "Should have print"
