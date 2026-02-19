@@ -102,6 +102,38 @@ class Block:
 builtin = Dialect("builtin")
 
 
+@dataclass
+class IndexType:
+    from toy_python.layout import INT
+
+    __layout__ = INT
+
+    @property
+    def asm(self) -> str:
+        return "index"
+
+
+@builtin.type("index")
+def _parse_index_type(_parser):
+    return IndexType()
+
+
+@dataclass
+class F64Type:
+    from toy_python.layout import FLOAT64
+
+    __layout__ = FLOAT64
+
+    @property
+    def asm(self) -> str:
+        return "f64"
+
+
+@builtin.type("f64")
+def _parse_f64_type(_parser):
+    return F64Type()
+
+
 @builtin.type("Nil")
 class Nil:
     """Represents a void/empty return type."""
@@ -122,6 +154,10 @@ class Function:
 @builtin.type("String")
 @dataclass
 class String:
+    from toy_python.layout import FatPointer, BYTE
+
+    __layout__ = FatPointer(BYTE)
+
     @property
     def asm(self) -> str:
         return "String"
@@ -135,6 +171,13 @@ class List:
     @property
     def asm(self) -> str:
         return f"List[{self.element_type.asm}]"
+
+
+@builtin.op("constant")
+@dataclass(eq=False, kw_only=True)
+class ConstantOp(Op):
+    value: float | int
+    type: Type
 
 
 @builtin.op("return")

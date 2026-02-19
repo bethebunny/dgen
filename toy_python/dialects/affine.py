@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from toy_python.asm.formatting import Shape
 from toy_python.dialect import Dialect
-from toy_python.dialects.builtin import Block, Op, Value
+from toy_python.dialects.builtin import Block, IndexType, F64Type, Op, Value
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -22,30 +22,11 @@ class MemRefType:
         return f"memref<{'x'.join(str(d) for d in self.shape)}xf64>"
 
 
-@dataclass
-class IndexType:
-    @property
-    def asm(self) -> str:
-        return "index"
-
-
-@dataclass
-class F64Type:
-    @property
-    def asm(self) -> str:
-        return "f64"
-
-
 # ===----------------------------------------------------------------------=== #
 # Operations
 # ===----------------------------------------------------------------------=== #
 
 affine = Dialect("affine")
-
-
-@affine.type("index")
-def _parse_index_type(_parser):
-    return IndexType()
 
 
 @affine.op("alloc")
@@ -73,18 +54,6 @@ class StoreOp(Op):
     value: Value
     memref: Value
     indices: list[Value]
-
-
-@affine.op("arith_constant")
-@dataclass(eq=False, kw_only=True)
-class ArithConstantOp(Op):
-    value: float
-
-
-@affine.op("index_constant")
-@dataclass(eq=False, kw_only=True)
-class IndexConstantOp(Op):
-    value: int
 
 
 @affine.op("mul_f")

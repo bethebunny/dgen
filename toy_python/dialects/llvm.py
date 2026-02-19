@@ -90,18 +90,6 @@ class FMulOp(Op):
     rhs: Value
 
 
-@llvm.op("fconst")
-@dataclass(eq=False, kw_only=True)
-class ConstantOp(Op):
-    value: float
-
-
-@llvm.op("iconst")
-@dataclass(eq=False, kw_only=True)
-class IndexConstOp(Op):
-    value: int
-
-
 @llvm.op("add")
 @dataclass(eq=False, kw_only=True)
 class AddOp(Op):

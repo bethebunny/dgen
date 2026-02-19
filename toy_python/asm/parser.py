@@ -7,6 +7,7 @@ at the top of the IR text.
 
 import dataclasses
 import importlib
+import types
 from typing import get_args, get_origin, get_type_hints
 
 from toy_python.dialect import Dialect
@@ -159,6 +160,17 @@ def _parse_value(parser, hint):
             dims.append(parser.parse_int())
         parser.expect(">")
         return dims
+    # float | int union
+    if isinstance(hint, types.UnionType) and set(get_args(hint)) == {float, int}:
+        # Peek ahead: '.' means float, otherwise int
+        p = parser.pos
+        if p < len(parser.text) and parser.text[p] == '-':
+            p += 1
+        while p < len(parser.text) and parser.text[p].isdigit():
+            p += 1
+        if p < len(parser.text) and parser.text[p] == '.':
+            return parser.parse_number()
+        return parser.parse_int()
     # Plain int
     if hint is int:
         return parser.parse_int()

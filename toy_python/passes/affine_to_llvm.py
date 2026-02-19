@@ -53,14 +53,10 @@ class AffineToLLVMLowering:
             self._lower_store(op)
         elif isinstance(op, affine.ForOp):
             self._lower_for(op)
-        elif isinstance(op, affine.ArithConstantOp):
-            llvm_op = llvm.ConstantOp(value=op.value)
-            self.ops.append(llvm_op)
-            self.value_map[op] = llvm_op
-        elif isinstance(op, affine.IndexConstantOp):
-            llvm_op = llvm.IndexConstOp(value=op.value)
-            self.ops.append(llvm_op)
-            self.value_map[op] = llvm_op
+        elif isinstance(op, builtin.ConstantOp):
+            new_op = builtin.ConstantOp(value=op.value, type=op.type)
+            self.ops.append(new_op)
+            self.value_map[op] = new_op
         elif isinstance(op, affine.ArithMulFOp):
             llvm_op = llvm.FMulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             self.ops.append(llvm_op)
@@ -126,7 +122,7 @@ class AffineToLLVMLowering:
                     self.ops.append(add_op)
                     result_val = add_op
             else:
-                stride_op = llvm.IndexConstOp(value=stride)
+                stride_op = builtin.ConstantOp(value=stride, type=builtin.IndexType())
                 self.ops.append(stride_op)
                 mul_op = llvm.MulOp(lhs=idx_val, rhs=stride_op)
                 self.ops.append(mul_op)
@@ -148,8 +144,8 @@ class AffineToLLVMLowering:
         body_label = StaticString(f"loop_body{loop_id}")
         exit_label = StaticString(f"loop_exit{loop_id}")
 
-        # Init: iconst lo, br header
-        init_op = llvm.IndexConstOp(value=op.lo)
+        # Init: constant lo, br header
+        init_op = builtin.ConstantOp(value=op.lo, type=builtin.IndexType())
         self.ops.append(init_op)
         prev_label = self.current_label
         self.ops.append(llvm.BrOp(dest=header_label))
@@ -168,7 +164,7 @@ class AffineToLLVMLowering:
         self.value_map[op.body.args[0]] = phi_op
 
         # Compare and branch
-        hi_op = llvm.IndexConstOp(value=op.hi)
+        hi_op = builtin.ConstantOp(value=op.hi, type=builtin.IndexType())
         self.ops.append(hi_op)
         cmp_op = llvm.IcmpOp(pred=StaticString("slt"), lhs=phi_op, rhs=hi_op)
         self.ops.append(cmp_op)
@@ -190,7 +186,7 @@ class AffineToLLVMLowering:
         phi_op.labels[1] = self.current_label
 
         # Increment and branch back
-        one_op = llvm.IndexConstOp(value=1)
+        one_op = builtin.ConstantOp(value=1, type=builtin.IndexType())
         self.ops.append(one_op)
         next_op = llvm.AddOp(lhs=phi_op, rhs=one_op)
         self.ops.append(next_op)
@@ -205,7 +201,7 @@ class AffineToLLVMLowering:
     def _lower_print(self, op: affine.PrintOp):
         input_val = self._map(op.input)
         size = self.alloc_sizes[input_val]
-        size_op = llvm.IndexConstOp(value=size)
+        size_op = builtin.ConstantOp(value=size, type=builtin.IndexType())
         self.ops.append(size_op)
         self.ops.append(
             llvm.CallOp(

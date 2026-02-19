@@ -59,9 +59,9 @@ class ToyToAffineLowering:
         values = op.value
         if len(shape) == 1:
             for i, v in enumerate(values):
-                cst = affine.ArithConstantOp(value=v)
+                cst = builtin.ConstantOp(value=v, type=builtin.F64Type())
                 self.ops.append(cst)
-                idx = affine.IndexConstantOp(value=i)
+                idx = builtin.ConstantOp(value=i, type=builtin.IndexType())
                 self.ops.append(idx)
                 self.ops.append(affine.StoreOp(value=cst, memref=alloc_op, indices=[idx]))
         elif len(shape) == 2:
@@ -69,11 +69,11 @@ class ToyToAffineLowering:
             for r in range(rows):
                 for c in range(cols):
                     flat = r * cols + c
-                    cst = affine.ArithConstantOp(value=values[flat])
+                    cst = builtin.ConstantOp(value=values[flat], type=builtin.F64Type())
                     self.ops.append(cst)
-                    ri = affine.IndexConstantOp(value=r)
+                    ri = builtin.ConstantOp(value=r, type=builtin.IndexType())
                     self.ops.append(ri)
-                    ci = affine.IndexConstantOp(value=c)
+                    ci = builtin.ConstantOp(value=c, type=builtin.IndexType())
                     self.ops.append(ci)
                     self.ops.append(affine.StoreOp(value=cst, memref=alloc_op, indices=[ri, ci]))
 

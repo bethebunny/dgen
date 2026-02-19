@@ -24,9 +24,9 @@ def test_roundtrip_gep_load_store():
         |
         | %f = function () -> ():
         |     %0 = llvm.alloca(6)
-        |     %1 = llvm.iconst(0)
+        |     %1 = constant(0) : index
         |     %2 = llvm.gep(%0, %1)
-        |     %3 = llvm.fconst(1.0)
+        |     %3 = constant(1.0) : f64
         |     %_ = llvm.store(%3, %2)
         |     %4 = llvm.load(%2)
         |     %_ = return()
@@ -40,8 +40,8 @@ def test_roundtrip_fadd_fmul():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 = llvm.fconst(1.0)
-        |     %1 = llvm.fconst(2.0)
+        |     %0 = constant(1.0) : f64
+        |     %1 = constant(2.0) : f64
         |     %2 = llvm.fadd(%0, %1)
         |     %3 = llvm.fmul(%0, %1)
         |     %_ = return()
@@ -55,8 +55,8 @@ def test_roundtrip_add_mul_int():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 = llvm.iconst(3)
-        |     %1 = llvm.iconst(4)
+        |     %0 = constant(3) : index
+        |     %1 = constant(4) : index
         |     %2 = llvm.add(%0, %1)
         |     %3 = llvm.mul(%0, %1)
         |     %_ = return()
@@ -70,8 +70,8 @@ def test_roundtrip_icmp_condbr():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 = llvm.iconst(0)
-        |     %1 = llvm.iconst(10)
+        |     %0 = constant(0) : index
+        |     %1 = constant(10) : index
         |     %cmp = llvm.icmp("slt", %0, %1)
         |     %_ = llvm.cond_br(%cmp, "loop_body", "loop_exit")
         |     %_ = return()
@@ -131,10 +131,8 @@ def test_roundtrip_call_void():
 
 def test_roundtrip_return_value():
     ir = strip_prefix("""
-        | import llvm
-        |
         | %f = function () -> ():
-        |     %0 = llvm.fconst(42.0)
+        |     %0 = constant(42.0) : f64
         |     %_ = return(%0)
     """)
     module = parse_module(ir)
@@ -148,18 +146,18 @@ def test_roundtrip_loop_pattern():
         |
         | %f = function () -> ():
         |     %0 = llvm.alloca(3)
-        |     %init = llvm.iconst(0)
+        |     %init = constant(0) : index
         |     %_ = llvm.br("loop_header0")
         |     %_ = llvm.label("loop_header0")
         |     %i0 = llvm.phi([%init, %next0], ["entry", "loop_body0"])
-        |     %hi = llvm.iconst(3)
+        |     %hi = constant(3) : index
         |     %cmp = llvm.icmp("slt", %i0, %hi)
         |     %_ = llvm.cond_br(%cmp, "loop_body0", "loop_exit0")
         |     %_ = llvm.label("loop_body0")
-        |     %val = llvm.fconst(1.0)
+        |     %val = constant(1.0) : f64
         |     %ptr = llvm.gep(%0, %i0)
         |     %_ = llvm.store(%val, %ptr)
-        |     %one = llvm.iconst(1)
+        |     %one = constant(1) : index
         |     %next0 = llvm.add(%i0, %one)
         |     %_ = llvm.br("loop_header0")
         |     %_ = llvm.label("loop_exit0")

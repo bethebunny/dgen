@@ -64,12 +64,13 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
 
     for op in f.body.ops:
         vid = id(op)
-        if isinstance(op, llvm.ConstantOp):
-            constants[vid] = f"double {format_float(op.value)}"
-            types[vid] = "double"
-        elif isinstance(op, llvm.IndexConstOp):
-            constants[vid] = f"i64 {op.value}"
-            types[vid] = "i64"
+        if isinstance(op, builtin.ConstantOp):
+            if isinstance(op.type, builtin.F64Type):
+                constants[vid] = f"double {format_float(op.value)}"
+                types[vid] = "double"
+            elif isinstance(op.type, builtin.IndexType):
+                constants[vid] = f"i64 {op.value}"
+                types[vid] = "i64"
         elif isinstance(op, llvm.AllocaOp):
             types[vid] = "ptr"
         elif isinstance(op, llvm.GepOp):
@@ -104,7 +105,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
     lines = [f"define void @{func_name}() {{", "entry:"]
 
     for op in f.body.ops:
-        if isinstance(op, (llvm.ConstantOp, llvm.IndexConstOp)):
+        if isinstance(op, builtin.ConstantOp):
             continue  # inlined at use sites
 
         name = tracker.get_name(op)

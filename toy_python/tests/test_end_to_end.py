@@ -30,8 +30,8 @@ def test_constant_print():
     result = compile(source)
     assert "%main = function () -> ():" in result, "Should have function def"
     assert "llvm.alloca(6)" in result, "Should alloca 6 elements for 2x3 tensor"
-    assert "llvm.fconst(1.0)" in result, "Should store 1.0"
-    assert "llvm.fconst(6.0)" in result, "Should store 6.0"
+    assert "constant(1.0)" in result, "Should store 1.0"
+    assert "constant(6.0)" in result, "Should store 6.0"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
     assert "return()" in result, "Should return void"
 

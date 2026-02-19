@@ -26,7 +26,7 @@ def test_simple_constant_store():
     """)
     result = compile_to_llvm(ir_text)
     assert "llvm.alloca(3)" in result, "Should have alloca for 3 elements"
-    assert "llvm.fconst(1.0)" in result, "Should have fconst 1.0"
+    assert "constant(1.0)" in result, "Should have fconst 1.0"
     assert "llvm.gep(" in result, "Should have gep"
     assert "llvm.store(" in result, "Should have store"
     assert "llvm.call(@print_memref" in result, "Should have print_memref call"
@@ -45,9 +45,9 @@ def test_constant_flat_stores():
     """)
     result = compile_to_llvm(ir_text)
     assert result.count("llvm.store(") == 3, "Should have 3 flat stores"
-    assert "llvm.fconst(1.0)" in result
-    assert "llvm.fconst(2.0)" in result
-    assert "llvm.fconst(3.0)" in result
+    assert "constant(1.0)" in result
+    assert "constant(2.0)" in result
+    assert "constant(3.0)" in result
 
 
 def test_2d_constant_flat_stores():
@@ -98,7 +98,7 @@ def test_full_example():
     result = compile_to_llvm(ir_text)
     assert "%main = function () -> ():" in result, "Should have function def"
     assert "llvm.alloca(" in result, "Should have alloca"
-    assert "llvm.fconst(" in result, "Should have fconst"
+    assert "constant(" in result, "Should have fconst"
     assert "llvm.fmul(" in result, "Should have fmul for Mul op"
     assert "llvm.call(@print_memref" in result, "Should have print_memref"
     assert "return()" in result, "Should have return()"

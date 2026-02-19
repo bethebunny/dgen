@@ -21,7 +21,7 @@ def test_simple_constant():
     result = asm.format(affine)
     assert "affine.alloc(<2x3>)" in result, "Should have alloc"
     assert "affine.store" in result, "Should have stores"
-    assert "affine.arith_constant" in result, "Should have constants"
+    assert "constant(" in result, "Should have constants"
     assert "affine.print_memref" in result, "Should have print"
     assert "affine.dealloc" in result, "Should have dealloc"
     assert "return" in result, "Should have return"
