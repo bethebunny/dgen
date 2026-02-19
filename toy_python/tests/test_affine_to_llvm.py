@@ -20,7 +20,7 @@ def test_simple_constant_store():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = toy.constant(<3>, [1.0, 2.0, 3.0]) : tensor<3xf64>
+        |     %0 = constant([1.0, 2.0, 3.0]) : tensor<3xf64>
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -39,7 +39,7 @@ def test_constant_flat_stores():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = toy.constant(<3>, [1.0, 2.0, 3.0]) : tensor<3xf64>
+        |     %0 = constant([1.0, 2.0, 3.0]) : tensor<3xf64>
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -56,7 +56,7 @@ def test_2d_constant_flat_stores():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -70,7 +70,7 @@ def test_load_store_linearization():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.transpose(%0) : tensor<3x2xf64>
         |     %_ = toy.print(%1)
         |     %_ = return()
@@ -87,9 +87,9 @@ def test_full_example():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.transpose(%0) : tensor<3x2xf64>
-        |     %2 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %2 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %3 = toy.transpose(%2) : tensor<3x2xf64>
         |     %4 = toy.mul(%1, %3) : tensor<3x2xf64>
         |     %_ = toy.print(%4)

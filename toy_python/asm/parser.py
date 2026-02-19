@@ -160,8 +160,12 @@ def _parse_value(parser, hint):
             dims.append(parser.parse_int())
         parser.expect(">")
         return dims
-    # float | int union
-    if isinstance(hint, types.UnionType) and set(get_args(hint)) == {float, int}:
+    # Union types (float | int | list[float], etc.)
+    if isinstance(hint, types.UnionType):
+        if parser.peek() == '[':
+            for arm in get_args(hint):
+                if get_origin(arm) is list:
+                    return _parse_value(parser, arm)
         # Peek ahead: '.' means float, otherwise int
         p = parser.pos
         if p < len(parser.text) and parser.text[p] == '-':

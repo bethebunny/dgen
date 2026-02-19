@@ -117,18 +117,16 @@ class Lowering:
         raise RuntimeError("Unknown expression type")
 
     def _lower_number(self, num: NumberLiteral) -> builtin.Value:
-        op = toy.ConstantOp(
+        op = builtin.ConstantOp(
             value=[num.value],
-            shape=[1],
             type=_ranked([1]),
         )
         self.ops.append(op)
         return op
 
     def _lower_tensor(self, tensor: TensorLiteral) -> builtin.Value:
-        op = toy.ConstantOp(
+        op = builtin.ConstantOp(
             value=list(tensor.values),
-            shape=list(tensor.shape),
             type=_ranked(list(tensor.shape)),
         )
         self.ops.append(op)

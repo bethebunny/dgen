@@ -34,7 +34,7 @@ class ToyToAffineLowering:
         )
 
     def lower_op(self, op: builtin.Op):
-        if isinstance(op, toy.ConstantOp):
+        if isinstance(op, builtin.ConstantOp) and isinstance(op.value, list):
             self._lower_constant(op)
         elif isinstance(op, toy.TransposeOp):
             self._lower_transpose(op)
@@ -49,8 +49,8 @@ class ToyToAffineLowering:
         elif isinstance(op, builtin.ReturnOp):
             self._lower_return(op)
 
-    def _lower_constant(self, op: toy.ConstantOp):
-        shape = list(op.shape)
+    def _lower_constant(self, op: builtin.ConstantOp):
+        shape = list(op.type.shape)
 
         alloc_op = affine.AllocOp(shape=list(shape))
         self.ops.append(alloc_op)

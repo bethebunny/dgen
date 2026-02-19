@@ -176,7 +176,7 @@ class List:
 @builtin.op("constant")
 @dataclass(eq=False, kw_only=True)
 class ConstantOp(Op):
-    value: float | int
+    value: float | int | list[float]
     type: Type
 
 
@@ -234,18 +234,33 @@ def _walk_all_ops(op: Op) -> Iterable[Op]:
             yield from _walk_all_ops(child)
 
 
+def _collect_type_dialects(func: FuncOp, dialects: set):
+    """Collect non-builtin dialects referenced by types in a function."""
+    def _check(t):
+        d = getattr(t, '_dialect', None)
+        if d is not None and d.name != "builtin":
+            dialects.add(d)
+
+    for op in _walk_all_ops(func):
+        _check(getattr(op, 'type', None))
+    for arg in func.body.args:
+        _check(arg.type)
+    _check(func.func_type.result)
+
+
 @dataclass
 class Module:
     functions: list[FuncOp]
 
     @property
     def asm(self) -> Iterable[str]:
-        # Collect non-builtin dialects used
+        # Collect non-builtin dialects used (from ops and types)
         dialects: set[Dialect] = set()
         for func in self.functions:
             for op in _walk_all_ops(func):
                 if op.dialect.name != "builtin":
                     dialects.add(op.dialect)
+            _collect_type_dialects(func, dialects)
 
         for d in sorted(dialects):
             yield f"import {d.name}"

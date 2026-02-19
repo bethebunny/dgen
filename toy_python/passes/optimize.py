@@ -64,7 +64,7 @@ def fold_constants(func: builtin.FuncOp):
         if not isinstance(op, toy.ReshapeOp):
             continue
         defn = op.input
-        if not isinstance(defn, toy.ConstantOp):
+        if not isinstance(defn, builtin.ConstantOp):
             continue
         if not isinstance(op.type, toy.RankedTensorType):
             continue
@@ -73,9 +73,8 @@ def fold_constants(func: builtin.FuncOp):
         if isinstance(defn.type, toy.RankedTensorType):
             if defn.type.shape == target_shape:
                 continue
-        new_op = toy.ConstantOp(
+        new_op = builtin.ConstantOp(
             value=list(defn.value),
-            shape=list(target_shape),
             type=toy.RankedTensorType(shape=list(target_shape)),
         )
         # Transfer identity: rewrite uses of old op to new op
@@ -92,7 +91,7 @@ def simplify_reshape(func: builtin.FuncOp):
         defn = op.input
 
         # Reshape of constant with matching shape -> remove
-        if isinstance(defn, toy.ConstantOp):
+        if isinstance(defn, builtin.ConstantOp):
             if isinstance(op.type, toy.RankedTensorType) and isinstance(
                 defn.type, toy.RankedTensorType
             ):

@@ -14,15 +14,14 @@ def ranked(shape: list[int]) -> builtin.Type:
 
 
 def test_constant_op():
-    op = toy.ConstantOp(
+    op = builtin.ConstantOp(
         name="0",
         value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        shape=[2, 3],
         type=ranked([2, 3]),
     )
     assert (
         asm.format(op)
-        == "%0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
+        == "%0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>"
     )
 
 
@@ -105,15 +104,13 @@ def test_full_module():
     )
 
     # Build main function
-    c0 = toy.ConstantOp(
+    c0 = builtin.ConstantOp(
         value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        shape=[2, 3],
         type=ranked([2, 3]),
     )
     r1 = toy.ReshapeOp(input=c0, type=ranked([2, 3]))
-    c2 = toy.ConstantOp(
+    c2 = builtin.ConstantOp(
         value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        shape=[6],
         type=ranked([6]),
     )
     r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
@@ -149,9 +146,9 @@ def test_full_module():
         |     %3 = return(%2)
         |
         | %main = function () -> ():
-        |     %0 = toy.constant(<2x3>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
         |     %1 = toy.reshape(%0) : tensor<2x3xf64>
-        |     %2 = toy.constant(<6>, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>
+        |     %2 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>
         |     %3 = toy.reshape(%2) : tensor<2x3xf64>
         |     %4 = toy.generic_call(@multiply_transpose, [%1, %3]) : tensor<*xf64>
         |     %5 = toy.generic_call(@multiply_transpose, [%3, %1]) : tensor<*xf64>

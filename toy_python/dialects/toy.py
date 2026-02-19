@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from toy_python.dialect import Dialect
 from toy_python.dialects.builtin import Function, Nil, Op, Type, Value
-from toy_python.asm.formatting import Shape, Sym
+from toy_python.asm.formatting import Sym
 
 if TYPE_CHECKING:
     from toy_python.asm.parser import IRParser
@@ -49,14 +49,8 @@ class FunctionType(Function):
 # ===----------------------------------------------------------------------=== #
 
 toy = Dialect("toy")
-
-
-@toy.op("constant")
-@dataclass(eq=False, kw_only=True)
-class ConstantOp(Op):
-    shape: Shape
-    value: list[float]
-    type: Type
+RankedTensorType._dialect = toy
+UnrankedTensorType._dialect = toy
 
 
 @toy.op("transpose")

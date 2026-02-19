@@ -120,9 +120,16 @@ def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
     # Annotated[list[int], "shape"] -> <2x3>
     if tag == "shape" and get_origin(base) is list:
         return "<" + "x".join(str(d) for d in value) + ">"
-    # float | int union
-    if isinstance(hint, types.UnionType) and set(get_args(hint)) == {float, int}:
-        return format_float(value) if isinstance(value, float) else str(value)
+    # Union types (float | int | list[float], etc.)
+    if isinstance(hint, types.UnionType):
+        if isinstance(value, list):
+            for arm in get_args(hint):
+                if get_origin(arm) is list:
+                    return _format_value(value, arm, tracker)
+        if isinstance(value, float):
+            return format_float(value)
+        if isinstance(value, int):
+            return str(value)
     # Plain int
     if hint is int:
         return str(value)
