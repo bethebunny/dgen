@@ -12,9 +12,9 @@ def test_transpose_elimination():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %1 = toy.transpose(%0) : tensor<*xf64>
-        |     %2 = toy.transpose(%1) : tensor<*xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : tensor<*xf64> = toy.transpose(%0)
+        |     %2 : tensor<*xf64> = toy.transpose(%1)
         |     %_ = toy.print(%2)
         |     %_ = return()
     """)
@@ -25,7 +25,7 @@ def test_transpose_elimination():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -38,8 +38,8 @@ def test_reshape_of_matching_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %1 = toy.reshape(%0) : tensor<2x3xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : tensor<2x3xf64> = toy.reshape(%0)
         |     %_ = toy.print(%1)
         |     %_ = return()
     """)
@@ -50,7 +50,7 @@ def test_reshape_of_matching_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -63,8 +63,8 @@ def test_constant_folding_reshape():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>
-        |     %1 = toy.reshape(%0) : tensor<2x3xf64>
+        |     %0 : tensor<6xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : tensor<2x3xf64> = toy.reshape(%0)
         |     %_ = toy.print(%1)
         |     %_ = return()
     """)
@@ -75,7 +75,7 @@ def test_constant_folding_reshape():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -88,9 +88,9 @@ def test_dce():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %1 = constant([7.0, 8.0, 9.0, 10.0, 11.0, 12.0]) : tensor<2x3xf64>
-        |     %2 = toy.transpose(%1) : tensor<*xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : tensor<2x3xf64> = constant([7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
+        |     %2 : tensor<*xf64> = toy.transpose(%1)
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -101,7 +101,7 @@ def test_dce():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -114,16 +114,16 @@ def test_full_pipeline():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %1 = toy.reshape(%0) : tensor<2x3xf64>
-        |     %2 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<6xf64>
-        |     %3 = toy.reshape(%2) : tensor<2x3xf64>
-        |     %4 = toy.transpose(%1) : tensor<*xf64>
-        |     %5 = toy.transpose(%3) : tensor<*xf64>
-        |     %6 = toy.mul(%4, %5) : tensor<*xf64>
-        |     %7 = toy.transpose(%3) : tensor<*xf64>
-        |     %8 = toy.transpose(%1) : tensor<*xf64>
-        |     %9 = toy.mul(%7, %8) : tensor<*xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : tensor<2x3xf64> = toy.reshape(%0)
+        |     %2 : tensor<6xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %3 : tensor<2x3xf64> = toy.reshape(%2)
+        |     %4 : tensor<*xf64> = toy.transpose(%1)
+        |     %5 : tensor<*xf64> = toy.transpose(%3)
+        |     %6 : tensor<*xf64> = toy.mul(%4, %5)
+        |     %7 : tensor<*xf64> = toy.transpose(%3)
+        |     %8 : tensor<*xf64> = toy.transpose(%1)
+        |     %9 : tensor<*xf64> = toy.mul(%7, %8)
         |     %_ = toy.print(%9)
         |     %_ = return()
     """)
@@ -134,11 +134,11 @@ def test_full_pipeline():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %1 = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) : tensor<2x3xf64>
-        |     %7 = toy.transpose(%1) : tensor<*xf64>
-        |     %8 = toy.transpose(%0) : tensor<*xf64>
-        |     %9 = toy.mul(%7, %8) : tensor<*xf64>
+        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %7 : tensor<*xf64> = toy.transpose(%1)
+        |     %8 : tensor<*xf64> = toy.transpose(%0)
+        |     %9 : tensor<*xf64> = toy.mul(%7, %8)
         |     %_ = toy.print(%9)
         |     %_ = return()
     """)

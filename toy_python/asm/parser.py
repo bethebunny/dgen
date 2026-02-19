@@ -16,7 +16,7 @@ from toy_python.dialects import builtin
 from .formatting import _SPECIAL_FIELDS, _get_annotation, _is_optional
 
 
-def parse_op_fields(parser, cls, name=None):
+def parse_op_fields(parser, cls, name=None, pre_type=None):
     """Generic op field parser. Introspects field types to parse args."""
     hints = get_type_hints(cls, include_extras=True)
     fields = dataclasses.fields(cls)
@@ -54,12 +54,9 @@ def parse_op_fields(parser, cls, name=None):
 
     parser.expect(")")
 
-    # Type annotation
+    # Type annotation (already parsed before '=' if present)
     if "type" in hints:
-        parser.skip_whitespace()
-        parser.expect(":")
-        parser.skip_whitespace()
-        kwargs["type"] = parser.parse_type()
+        kwargs["type"] = pre_type
 
     # Body (indented block)
     if "body" in hints:
@@ -501,9 +498,16 @@ class IRParser:
         return self._parse_block(min_indent=indent)
 
     def parse_op(self) -> builtin.Op:
-        """Parse a single operation: %result = [dialect.]op(...)"""
+        """Parse a single operation: %result [: type] = [dialect.]op(...)"""
         op_name_str = self.parse_ssa_name()
         self.skip_whitespace()
+        # Optional type annotation before '='
+        pre_type = None
+        if self.peek() == ":":
+            self.expect(":")
+            self.skip_whitespace()
+            pre_type = self.parse_type()
+            self.skip_whitespace()
         self.expect("=")
         self.skip_whitespace()
         name = self.parse_identifier()
@@ -514,7 +518,7 @@ class IRParser:
         cls = self._ops.get(name)
         if cls is None:
             raise RuntimeError(f"Unknown op: {name}")
-        return parse_op_fields(self, cls, name=op_name_str)
+        return parse_op_fields(self, cls, name=op_name_str, pre_type=pre_type)
 
 
 def parse_module(text: str) -> builtin.Module:

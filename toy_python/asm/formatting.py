@@ -182,11 +182,12 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
 
     # Build the line
     result_name = tracker.get_name(op)
-    parts = [f"%{result_name} = "]
-    prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
-    parts.append(f"{prefix}{asm_name}({args_str})")
+    parts = [f"%{result_name}"]
     if has_type:
         parts.append(f" : {op.type.asm}")
+    parts.append(" = ")
+    prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
+    parts.append(f"{prefix}{asm_name}({args_str})")
     if has_body:
         from toy_python.dialects.builtin import Block
 
