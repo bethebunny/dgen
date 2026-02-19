@@ -20,7 +20,7 @@ def test_simple_constant_store():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : tensor<3xf64> = constant([1.0, 2.0, 3.0])
+        |     %0 : toy.Tensor[(3), f64] = constant([1.0, 2.0, 3.0])
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -39,7 +39,7 @@ def test_constant_flat_stores():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : tensor<3xf64> = constant([1.0, 2.0, 3.0])
+        |     %0 : toy.Tensor[(3), f64] = constant([1.0, 2.0, 3.0])
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -56,7 +56,7 @@ def test_2d_constant_flat_stores():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -70,8 +70,8 @@ def test_load_store_linearization():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        |     %1 : tensor<3x2xf64> = toy.transpose(%0)
+        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : toy.Tensor[(3, 2), f64] = toy.transpose(%0)
         |     %_ = toy.print(%1)
         |     %_ = return()
     """)
@@ -87,11 +87,11 @@ def test_full_example():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        |     %1 : tensor<3x2xf64> = toy.transpose(%0)
-        |     %2 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        |     %3 : tensor<3x2xf64> = toy.transpose(%2)
-        |     %4 : tensor<3x2xf64> = toy.mul(%1, %3)
+        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : toy.Tensor[(3, 2), f64] = toy.transpose(%0)
+        |     %2 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %3 : toy.Tensor[(3, 2), f64] = toy.transpose(%2)
+        |     %4 : toy.Tensor[(3, 2), f64] = toy.mul(%1, %3)
         |     %_ = toy.print(%4)
         |     %_ = return()
     """)

@@ -18,28 +18,31 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class UnrankedTensorType:
-    """tensor<*xf64>"""
-
-    @property
-    def asm(self) -> str:
-        return "tensor<*xf64>"
-
-
-@dataclass
-class RankedTensorType:
-    """tensor<2x3xf64>"""
+class TensorType:
+    """toy.Tensor[(2, 3), f64]."""
 
     shape: list[int]
 
     @property
     def asm(self) -> str:
-        return "tensor<" + "x".join(str(d) for d in self.shape) + "xf64>"
+        dims = ", ".join(str(d) for d in self.shape)
+        return f"toy.Tensor[({dims}), f64]"
+
+
+@dataclass
+class InferredShapeTensor:
+    """toy.InferredShapeTensor[f64] — shape to be filled in by inference."""
+
+    dtype: str = "f64"
+
+    @property
+    def asm(self) -> str:
+        return f"toy.InferredShapeTensor[{self.dtype}]"
 
 
 @dataclass
 class FunctionType(Function):
-    """(tensor<*xf64>, tensor<*xf64>) -> tensor<*xf64>"""
+    """(toy.Tensor[(2, 3), f64]) -> ()"""
 
     inputs: list[Type]
 
@@ -49,8 +52,8 @@ class FunctionType(Function):
 # ===----------------------------------------------------------------------=== #
 
 toy = Dialect("toy")
-RankedTensorType._dialect = toy
-UnrankedTensorType._dialect = toy
+TensorType._dialect = toy
+InferredShapeTensor._dialect = toy
 
 
 @toy.op("transpose")
@@ -102,17 +105,24 @@ class PrintOp(Op):
 # ===----------------------------------------------------------------------=== #
 
 
-@toy.type("tensor")
-def _parse_tensor_type(parser: IRParser) -> UnrankedTensorType | RankedTensorType:
-    parser.expect("<")
-    if parser.peek() == "*":
-        parser.expect("*xf64>")
-        return UnrankedTensorType()
+@toy.type("Tensor")
+def _parse_tensor_type(parser: IRParser) -> TensorType:
+    parser.expect("[(")
     shape = [parser.parse_int()]
-    while parser.peek() == "x":
-        parser.expect("x")
-        if parser.peek() == "f":
-            break
+    while parser.peek() == ",":
+        parser.expect(",")
+        parser.skip_whitespace()
         shape.append(parser.parse_int())
-    parser.expect("f64>")
-    return RankedTensorType(shape=shape)
+    parser.expect(")")
+    parser.expect(",")
+    parser.skip_whitespace()
+    parser.expect("f64]")
+    return TensorType(shape=shape)
+
+
+@toy.type("InferredShapeTensor")
+def _parse_inferred_type(parser: IRParser) -> InferredShapeTensor:
+    parser.expect("[")
+    dtype = parser.parse_identifier()
+    parser.expect("]")
+    return InferredShapeTensor(dtype=dtype)

@@ -5,12 +5,12 @@ from toy_python import asm
 from toy_python.tests.helpers import strip_prefix
 
 
-def unranked() -> builtin.Type:
-    return toy.UnrankedTensorType()
+def inferred() -> builtin.Type:
+    return toy.InferredShapeTensor()
 
 
 def ranked(shape: list[int]) -> builtin.Type:
-    return toy.RankedTensorType(shape=shape)
+    return toy.TensorType(shape=shape)
 
 
 def test_constant_op():
@@ -21,34 +21,34 @@ def test_constant_op():
     )
     assert (
         asm.format(op)
-        == "%0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])"
+        == "%0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])"
     )
 
 
 def test_transpose_op():
     a = builtin.Value(name="a")
-    op = toy.TransposeOp(name="0", input=a, type=unranked())
-    assert asm.format(op) == "%0 : tensor<*xf64> = toy.transpose(%a)"
+    op = toy.TransposeOp(name="0", input=a, type=inferred())
+    assert asm.format(op) == "%0 : toy.InferredShapeTensor[f64] = toy.transpose(%a)"
 
 
 def test_reshape_op():
     v0 = builtin.Value(name="0")
     op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
-    assert asm.format(op) == "%1 : tensor<2x3xf64> = toy.reshape(%0)"
+    assert asm.format(op) == "%1 : toy.Tensor[(2, 3), f64] = toy.reshape(%0)"
 
 
 def test_mul_op():
     v0 = builtin.Value(name="0")
     v1 = builtin.Value(name="1")
-    op = toy.MulOp(name="2", lhs=v0, rhs=v1, type=unranked())
-    assert asm.format(op) == "%2 : tensor<*xf64> = toy.mul(%0, %1)"
+    op = toy.MulOp(name="2", lhs=v0, rhs=v1, type=inferred())
+    assert asm.format(op) == "%2 : toy.InferredShapeTensor[f64] = toy.mul(%0, %1)"
 
 
 def test_add_op():
     v0 = builtin.Value(name="0")
     v1 = builtin.Value(name="1")
-    op = toy.AddOp(name="2", lhs=v0, rhs=v1, type=unranked())
-    assert asm.format(op) == "%2 : tensor<*xf64> = toy.add(%0, %1)"
+    op = toy.AddOp(name="2", lhs=v0, rhs=v1, type=inferred())
+    assert asm.format(op) == "%2 : toy.InferredShapeTensor[f64] = toy.add(%0, %1)"
 
 
 def test_generic_call_op():
@@ -58,11 +58,11 @@ def test_generic_call_op():
         name="4",
         callee="multiply_transpose",
         args=[v1, v3],
-        type=unranked(),
+        type=inferred(),
     )
     assert (
         asm.format(op)
-        == "%4 : tensor<*xf64> = toy.generic_call(@multiply_transpose, [%1, %3])"
+        == "%4 : toy.InferredShapeTensor[f64] = toy.generic_call(@multiply_transpose, [%1, %3])"
     )
 
 
@@ -70,32 +70,32 @@ def test_print_op():
     v5 = builtin.Value(name="5")
     op = toy.PrintOp(input=v5)
     # PrintOp has no name -> auto-numbered as %0
-    assert asm.format(op) == "%0 = toy.print(%5)"
+    assert asm.format(op) == "%0 : () = toy.print(%5)"
 
 
 def test_return_op_with_value():
     v2 = builtin.Value(name="2")
     op = builtin.ReturnOp(value=v2)
-    assert asm.format(op) == "%0 = return(%2)"
+    assert asm.format(op) == "%0 : () = return(%2)"
 
 
 def test_return_op_void():
     op = builtin.ReturnOp()
-    assert asm.format(op) == "%0 = return()"
+    assert asm.format(op) == "%0 : () = return()"
 
 
 def test_full_module():
     # Build multiply_transpose function
-    mt_arg_a = builtin.BlockArg(name="a", type=unranked())
-    mt_arg_b = builtin.BlockArg(name="b", type=unranked())
+    mt_arg_a = builtin.BlockArg(name="a", type=inferred())
+    mt_arg_b = builtin.BlockArg(name="b", type=inferred())
 
-    t0 = toy.TransposeOp(input=mt_arg_a, type=unranked())
-    t1 = toy.TransposeOp(input=mt_arg_b, type=unranked())
-    m0 = toy.MulOp(lhs=t0, rhs=t1, type=unranked())
+    t0 = toy.TransposeOp(input=mt_arg_a, type=inferred())
+    t1 = toy.TransposeOp(input=mt_arg_b, type=inferred())
+    m0 = toy.MulOp(lhs=t0, rhs=t1, type=inferred())
     ret_mt = builtin.ReturnOp(value=m0)
 
     mt_func_type = toy.FunctionType(
-        inputs=[unranked(), unranked()], result=unranked()
+        inputs=[inferred(), inferred()], result=inferred()
     )
     mt_func = builtin.FuncOp(
         name="multiply_transpose",
@@ -117,12 +117,12 @@ def test_full_module():
     call4 = toy.GenericCallOp(
         callee="multiply_transpose",
         args=[r1, r3],
-        type=unranked(),
+        type=inferred(),
     )
     call5 = toy.GenericCallOp(
         callee="multiply_transpose",
         args=[r3, r1],
-        type=unranked(),
+        type=inferred(),
     )
     print_op = toy.PrintOp(input=call5)
     ret_main = builtin.ReturnOp()
@@ -139,20 +139,20 @@ def test_full_module():
     expected = strip_prefix("""
         | import toy
         |
-        | %multiply_transpose = function (%a: tensor<*xf64>, %b: tensor<*xf64>) -> tensor<*xf64>:
-        |     %0 : tensor<*xf64> = toy.transpose(%a)
-        |     %1 : tensor<*xf64> = toy.transpose(%b)
-        |     %2 : tensor<*xf64> = toy.mul(%0, %1)
-        |     %3 = return(%2)
+        | %multiply_transpose = function (%a: toy.InferredShapeTensor[f64], %b: toy.InferredShapeTensor[f64]) -> toy.InferredShapeTensor[f64]:
+        |     %0 : toy.InferredShapeTensor[f64] = toy.transpose(%a)
+        |     %1 : toy.InferredShapeTensor[f64] = toy.transpose(%b)
+        |     %2 : toy.InferredShapeTensor[f64] = toy.mul(%0, %1)
+        |     %3 : () = return(%2)
         |
         | %main = function () -> ():
-        |     %0 : tensor<2x3xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        |     %1 : tensor<2x3xf64> = toy.reshape(%0)
-        |     %2 : tensor<6xf64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        |     %3 : tensor<2x3xf64> = toy.reshape(%2)
-        |     %4 : tensor<*xf64> = toy.generic_call(@multiply_transpose, [%1, %3])
-        |     %5 : tensor<*xf64> = toy.generic_call(@multiply_transpose, [%3, %1])
-        |     %6 = toy.print(%5)
-        |     %7 = return()
+        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %1 : toy.Tensor[(2, 3), f64] = toy.reshape(%0)
+        |     %2 : toy.Tensor[(6), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %3 : toy.Tensor[(2, 3), f64] = toy.reshape(%2)
+        |     %4 : toy.InferredShapeTensor[f64] = toy.generic_call(@multiply_transpose, [%1, %3])
+        |     %5 : toy.InferredShapeTensor[f64] = toy.generic_call(@multiply_transpose, [%3, %1])
+        |     %6 : () = toy.print(%5)
+        |     %7 : () = return()
     """)
     assert asm.format(module) == expected

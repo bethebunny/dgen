@@ -20,12 +20,12 @@ from toy_python.parser.ast import (
 )
 
 
-def _unranked() -> builtin.Type:
-    return toy.UnrankedTensorType()
+def _inferred() -> builtin.Type:
+    return toy.InferredShapeTensor()
 
 
 def _ranked(shape: list[int]) -> builtin.Type:
-    return toy.RankedTensorType(shape=shape)
+    return toy.TensorType(shape=shape)
 
 
 class Lowering:
@@ -46,10 +46,10 @@ class Lowering:
         args: list[builtin.BlockArg] = []
         input_types: list[builtin.Type] = []
         for param_name in f.proto.params:
-            arg = builtin.BlockArg(name=param_name, type=_unranked())
+            arg = builtin.BlockArg(name=param_name, type=_inferred())
             self.scope[param_name] = arg
             args.append(arg)
-            input_types.append(_unranked())
+            input_types.append(_inferred())
 
         # Lower body statements
         for stmt in f.body:
@@ -60,7 +60,7 @@ class Lowering:
         if self.ops:
             last_op = self.ops[-1]
             if isinstance(last_op, builtin.ReturnOp) and last_op.value is not None:
-                result = _unranked()
+                result = _inferred()
 
         ops = self.ops
         self.ops = []
@@ -141,9 +141,9 @@ class Lowering:
         lhs = self.lower_expr(op.lhs)
         rhs = self.lower_expr(op.rhs)
         if op.op == "*":
-            result_op = toy.MulOp(lhs=lhs, rhs=rhs, type=_unranked())
+            result_op = toy.MulOp(lhs=lhs, rhs=rhs, type=_inferred())
         elif op.op == "+":
-            result_op = toy.AddOp(lhs=lhs, rhs=rhs, type=_unranked())
+            result_op = toy.AddOp(lhs=lhs, rhs=rhs, type=_inferred())
         else:
             raise RuntimeError(f"Unknown binary operator: {op.op}")
         self.ops.append(result_op)
@@ -155,7 +155,7 @@ class Lowering:
             if len(call.args) != 1:
                 raise RuntimeError("transpose takes exactly 1 argument")
             arg = self.lower_expr(call.args[0])
-            op = toy.TransposeOp(input=arg, type=_unranked())
+            op = toy.TransposeOp(input=arg, type=_inferred())
             self.ops.append(op)
             return op
 
@@ -164,7 +164,7 @@ class Lowering:
         op = toy.GenericCallOp(
             callee=call.callee,
             args=args,
-            type=_unranked(),
+            type=_inferred(),
         )
         self.ops.append(op)
         return op

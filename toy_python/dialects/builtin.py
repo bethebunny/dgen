@@ -52,6 +52,7 @@ class Op(Value):
 
     _asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
+    type: Type = field(default_factory=lambda: Nil())
 
     @property
     def operands(self) -> list[Value]:
@@ -208,9 +209,14 @@ class FuncOp(Op):
         _register_ops(tracker, self.body.ops)
 
         name = tracker.get_name(self)
-        args = ", ".join(
-            f"%{tracker.get_name(a)}: {a.type.asm}" for a in self.body.args
-        )
+        arg_parts = []
+        for a in self.body.args:
+            n = tracker.get_name(a)
+            if a.type is not None:
+                arg_parts.append(f"%{n}: {a.type.asm}")
+            else:
+                arg_parts.append(f"%{n}")
+        args = ", ".join(arg_parts)
         yield f"%{name} = function ({args}) -> {self.func_type.result.asm}:"
         for op in self.body.ops:
             yield from asm.indent(op_asm(op, tracker))

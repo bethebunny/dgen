@@ -161,7 +161,6 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
         tracker.get_name(op)
         _register_ops(tracker, [op])
 
-    has_type = "type" in hints
     has_body = "body" in hints
 
     # Build args
@@ -182,10 +181,7 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
 
     # Build the line
     result_name = tracker.get_name(op)
-    parts = [f"%{result_name}"]
-    if has_type:
-        parts.append(f" : {op.type.asm}")
-    parts.append(" = ")
+    parts = [f"%{result_name} : {op.type.asm} = "]
     prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
     parts.append(f"{prefix}{asm_name}({args_str})")
     if has_body:

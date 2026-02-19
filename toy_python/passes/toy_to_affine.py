@@ -190,7 +190,7 @@ class ToyToAffineLowering:
     def _lower_reshape(self, op: toy.ReshapeOp):
         input_val = op.input
         # Reshape is a no-op: just update the shape map
-        if isinstance(op.type, toy.RankedTensorType):
+        if isinstance(op.type, toy.TensorType):
             self.shape_map[op] = list(op.type.shape)
         else:
             self.shape_map[op] = list(self.shape_map[input_val])

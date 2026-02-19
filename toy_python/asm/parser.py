@@ -55,7 +55,7 @@ def parse_op_fields(parser, cls, name=None, pre_type=None):
     parser.expect(")")
 
     # Type annotation (already parsed before '=' if present)
-    if "type" in hints:
+    if "type" in hints and pre_type is not None:
         kwargs["type"] = pre_type
 
     # Body (indented block)
@@ -310,6 +310,10 @@ class IRParser:
             self.expect("()")
             return builtin.Nil()
         name = self.parse_identifier()
+        if not self.at_end() and self.peek() == ".":
+            self.advance()
+            type_name = self.parse_identifier()
+            name = f"{name}.{type_name}"
         if name not in self._types:
             raise RuntimeError(f"Unknown type: {name}")
         return self._types[name](self)
@@ -362,7 +366,8 @@ class IRParser:
                 d = Dialect.get(dialect_name)
                 for op_name, cls in d.ops.items():
                     self._ops[f"{dialect_name}.{op_name}"] = cls
-                self._types.update(d.types)
+                for tname, fn in d.types.items():
+                    self._types[f"{dialect_name}.{tname}"] = fn
             else:
                 # Not an import line — rewind
                 self.pos = saved
@@ -433,11 +438,14 @@ class IRParser:
         return func_op
 
     def _parse_param(self) -> builtin.BlockArg:
-        """Parse %name: Type"""
+        """Parse %name or %name: Type"""
         param_name = self.parse_ssa_name()
-        self.expect(":")
         self.skip_whitespace()
-        type_ = self.parse_type()
+        type_ = None
+        if not self.at_end() and self.peek() == ":":
+            self.expect(":")
+            self.skip_whitespace()
+            type_ = self.parse_type()
         arg = builtin.BlockArg(name=param_name, type=type_)
         self.name_table[param_name] = arg
         return arg
