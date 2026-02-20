@@ -1,3 +1,0 @@
-trait AsmWritable:
-    fn write_asm(self, mut writer: Some[Writer]) -> None:
-        ...
