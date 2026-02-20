@@ -1,3 +1,17 @@
-- Typed SSA values
-- Remove "bare" values
-- SSA types
+- Figure out why some ASM still doesn't have types, these should fail to parse
+- Remove anything that's thinking about "origin"s and generic python types or annotations
+- SSA types via JIT
+- Analyze performance
+- Go through and rename file
+- Generalize parsing
+- Make `constant` op implicit on literals
+- General literals
+- Struct literals
+- JIT test
+- Generalize asm formatting
+- DTypes
+- Remove "Sym"
+- Read, understand, clean passes
+- Create dialect files
+- Generate dialects from dialect files
+- Pass input/output types, pre/post validation
