@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterable
-from dataclasses import dataclass, fields, field
-from typing import (
-    ClassVar,
-    NewType,
-    Protocol,
-    get_type_hints,
-)
-
-StaticString = NewType('StaticString', str)
+from dataclasses import dataclass, field
+from typing import ClassVar, NewType, Protocol, get_type_hints
 
 from toy_python import asm
 from toy_python.dialect import Dialect
+from toy_python.layout import BYTE, FatPointer
+
+StaticString = NewType("StaticString", str)
 
 
 class Type(Protocol):
@@ -55,17 +52,12 @@ class Op(Value):
     type: Type = field(default_factory=lambda: Nil())
 
     @property
-    def operands(self) -> list[Value]:
+    def operands(self) -> Iterable[Tuple[str, Value]]:
         """All Value-typed fields (auto-introspected)."""
         result: list[Value] = []
-        for f in fields(self):
-            if f.name == "name":
-                continue
-            val = getattr(self, f.name)
-            if isinstance(val, Value):
-                result.append(val)
-            elif isinstance(val, list):
-                result.extend(v for v in val if isinstance(v, Value))
+        for f in dataclasses.fields(self):
+            if isinstance(attr := getattr(self, f.name), Value):
+                yield f.name, attr
         return result
 
     @property
@@ -155,8 +147,6 @@ class Function:
 @builtin.type("String")
 @dataclass
 class String:
-    from toy_python.layout import FatPointer, BYTE
-
     __layout__ = FatPointer(BYTE)
 
     @property
@@ -242,13 +232,14 @@ def _walk_all_ops(op: Op) -> Iterable[Op]:
 
 def _collect_type_dialects(func: FuncOp, dialects: set):
     """Collect non-builtin dialects referenced by types in a function."""
+
     def _check(t):
-        d = getattr(t, '_dialect', None)
+        d = getattr(t, "_dialect", None)
         if d is not None and d.name != "builtin":
             dialects.add(d)
 
     for op in _walk_all_ops(func):
-        _check(getattr(op, 'type', None))
+        _check(getattr(op, "type", None))
     for arg in func.body.args:
         _check(arg.type)
     _check(func.func_type.result)

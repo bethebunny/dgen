@@ -7,7 +7,6 @@ from copy import deepcopy
 
 from toy_python.dialects import builtin, toy
 
-
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
@@ -17,24 +16,19 @@ def collect_uses(ops: list[builtin.Op]) -> set[int]:
     """Return set of id()s of Values referenced as operands."""
     used: set[int] = set()
     for op in ops:
-        for v in op.operands:
+        for _, v in op.operands:
             used.add(id(v))
     return used
 
 
-def rewrite_uses(ops: list[builtin.Op], old_value: builtin.Value, new_value: builtin.Value):
+def rewrite_uses(
+    ops: list[builtin.Op], old_value: builtin.Value, new_value: builtin.Value
+):
     """Replace all operand references to old_value with new_value."""
     for op in ops:
-        for f in dataclasses.fields(op):
-            if f.name == "name":
-                continue
-            val = getattr(op, f.name)
-            if val is old_value:
-                object.__setattr__(op, f.name, new_value)
-            elif isinstance(val, list):
-                for i, item in enumerate(val):
-                    if item is old_value:
-                        val[i] = new_value
+        for name, operand in op.operands:
+            if operand is old_value:
+                object.__setattr__(op, name, new_value)
 
 
 # ===----------------------------------------------------------------------=== #
