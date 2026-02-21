@@ -5,6 +5,7 @@ from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.affine_to_llvm import lower_to_llvm
 from toy.passes.optimize import optimize
+from toy.passes.shape_inference import infer_shapes
 from toy.passes.toy_to_affine import lower_to_affine
 from toy.test.helpers import strip_prefix
 
@@ -14,7 +15,8 @@ def run_toy(source: str) -> str:
     ast = parse_toy(source)
     ir = lower(ast)
     opt = optimize(ir)
-    affine = lower_to_affine(opt)
+    typed = infer_shapes(opt)
+    affine = lower_to_affine(typed)
     ll = lower_to_llvm(affine)
     output = compile_and_run(ll, capture_output=True)
     assert output is not None

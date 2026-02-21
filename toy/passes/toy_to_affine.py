@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import product
+
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
@@ -11,7 +13,6 @@ from toy.dialects import affine, toy
 class ToyToAffineLowering:
     def __init__(self):
         self.ops: list[dgen.Op] = []
-        self.shape_map: dict[dgen.Value, list[int]] = {}
         self.alloc_map: dict[dgen.Value, dgen.Value] = {}
         self.live_allocs: list[dgen.Value] = []
 
@@ -21,7 +22,6 @@ class ToyToAffineLowering:
 
     def lower_function(self, f: builtin.FuncOp) -> builtin.FuncOp:
         self.ops = []
-        self.shape_map = {}
         self.alloc_map = {}
         self.live_allocs = []
 
@@ -52,9 +52,17 @@ class ToyToAffineLowering:
         elif isinstance(op, builtin.ReturnOp):
             self._lower_return(op)
 
+    def _nested_for(self, shape, body_fn):
+        """Build nested ForOps for each dimension. body_fn(ivars) -> innermost ops."""
+        ivars = [BlockArgument(type=builtin.IndexType()) for _ in shape]
+        ops = body_fn(ivars)
+        for dim in reversed(range(len(shape))):
+            ops = [affine.ForOp(lo=0, hi=shape[dim], body=dgen.Block(ops=ops, args=[ivars[dim]]))]
+        self.ops.append(ops[0])
+
     def _lower_constant(self, op: builtin.ConstantOp):
         assert isinstance(op.type, toy.TensorType)
-        shape = list(op.type.shape)
+        shape = op.type.shape
 
         alloc_op = affine.AllocOp(shape=shape)
         self.ops.append(alloc_op)
@@ -63,67 +71,38 @@ class ToyToAffineLowering:
         values = op.value
         assert isinstance(values, list)
 
-        if len(shape) == 1:
-            for i, v in enumerate(values):
-                cst = builtin.ConstantOp(value=v, type=builtin.F64Type())
-                self.ops.append(cst)
-                idx = builtin.ConstantOp(value=i, type=builtin.IndexType())
+        for flat, nd_idx in enumerate(product(*(range(d) for d in shape))):
+            cst = builtin.ConstantOp(value=values[flat], type=builtin.F64Type())
+            self.ops.append(cst)
+            indices = []
+            for dim_val in nd_idx:
+                idx = builtin.ConstantOp(value=dim_val, type=builtin.IndexType())
                 self.ops.append(idx)
-                self.ops.append(
-                    affine.StoreOp(value=cst, memref=alloc_op, indices=[idx])
-                )
-        elif len(shape) == 2:
-            rows, cols = shape[0], shape[1]
-            for r in range(rows):
-                for c in range(cols):
-                    flat = r * cols + c
-                    cst = builtin.ConstantOp(value=values[flat], type=builtin.F64Type())
-                    self.ops.append(cst)
-                    ri = builtin.ConstantOp(value=r, type=builtin.IndexType())
-                    self.ops.append(ri)
-                    ci = builtin.ConstantOp(value=c, type=builtin.IndexType())
-                    self.ops.append(ci)
-                    self.ops.append(
-                        affine.StoreOp(value=cst, memref=alloc_op, indices=[ri, ci])
-                    )
+                indices.append(idx)
+            self.ops.append(
+                affine.StoreOp(value=cst, memref=alloc_op, indices=indices)
+            )
 
-        self.shape_map[op] = shape
         self.alloc_map[op] = alloc_op
 
     def _lower_transpose(self, op: toy.TransposeOp):
-        input_val = op.input
-        in_shape = self.shape_map[input_val]
-        if len(in_shape) != 2:
-            raise RuntimeError("Transpose only supports 2D tensors")
+        assert isinstance(op.type, toy.TensorType)
+        assert isinstance(op.input.type, toy.TensorType)
+        in_shape = op.input.type.shape
 
-        rows, cols = in_shape[0], in_shape[1]
-        out_shape = [cols, rows]
-
-        alloc_op = affine.AllocOp(shape=list(out_shape))
+        alloc_op = affine.AllocOp(shape=op.type.shape)
         self.ops.append(alloc_op)
         self.live_allocs.append(alloc_op)
+        in_alloc = self.alloc_map.get(op.input, op.input)
 
-        in_alloc = self.alloc_map.get(input_val, input_val)
+        def body(ivars):
+            load = affine.LoadOp(memref=in_alloc, indices=ivars)
+            store = affine.StoreOp(
+                value=load, memref=alloc_op, indices=list(reversed(ivars))
+            )
+            return [load, store]
 
-        # Nested for: load [i,j] from input, store [j,i] to output
-        ivar = BlockArgument(type=builtin.IndexType())
-        jvar = BlockArgument(type=builtin.IndexType())
-        inner_body: list[dgen.Op] = []
-
-        load_op = affine.LoadOp(memref=in_alloc, indices=[ivar, jvar])
-        inner_body.append(load_op)
-        inner_body.append(
-            affine.StoreOp(value=load_op, memref=alloc_op, indices=[jvar, ivar])
-        )
-
-        outer_body: list[dgen.Op] = [
-            affine.ForOp(lo=0, hi=cols, body=dgen.Block(ops=inner_body, args=[jvar])),
-        ]
-        self.ops.append(
-            affine.ForOp(lo=0, hi=rows, body=dgen.Block(ops=outer_body, args=[ivar]))
-        )
-
-        self.shape_map[op] = out_shape
+        self._nested_for(in_shape, body)
         self.alloc_map[op] = alloc_op
 
     def _lower_binop(
@@ -133,77 +112,35 @@ class ToyToAffineLowering:
         rhs_val: dgen.Value,
         is_mul: bool,
     ):
-        shape = list(self.shape_map[lhs_val])
-        alloc_op = affine.AllocOp(shape=list(shape))
+        assert isinstance(lhs_val.type, toy.TensorType)
+        shape = lhs_val.type.shape
+        alloc_op = affine.AllocOp(shape=shape)
         self.ops.append(alloc_op)
         self.live_allocs.append(alloc_op)
-
         lhs_alloc = self.alloc_map.get(lhs_val, lhs_val)
         rhs_alloc = self.alloc_map.get(rhs_val, rhs_val)
 
-        if len(shape) == 1:
-            ivar = BlockArgument(type=builtin.IndexType())
-            body: list[dgen.Op] = []
-            lv = affine.LoadOp(memref=lhs_alloc, indices=[ivar])
-            body.append(lv)
-            rv = affine.LoadOp(memref=rhs_alloc, indices=[ivar])
-            body.append(rv)
+        def body(ivars):
+            lv = affine.LoadOp(memref=lhs_alloc, indices=ivars)
+            rv = affine.LoadOp(memref=rhs_alloc, indices=ivars)
             if is_mul:
                 res = affine.ArithMulFOp(lhs=lv, rhs=rv)
             else:
                 res = affine.ArithAddFOp(lhs=lv, rhs=rv)
-            body.append(res)
-            body.append(affine.StoreOp(value=res, memref=alloc_op, indices=[ivar]))
-            self.ops.append(
-                affine.ForOp(lo=0, hi=shape[0], body=dgen.Block(ops=body, args=[ivar]))
-            )
-        elif len(shape) == 2:
-            ivar = BlockArgument(type=builtin.IndexType())
-            jvar = BlockArgument(type=builtin.IndexType())
-            inner_body: list[dgen.Op] = []
-            lv = affine.LoadOp(memref=lhs_alloc, indices=[ivar, jvar])
-            inner_body.append(lv)
-            rv = affine.LoadOp(memref=rhs_alloc, indices=[ivar, jvar])
-            inner_body.append(rv)
-            if is_mul:
-                res = affine.ArithMulFOp(lhs=lv, rhs=rv)
-            else:
-                res = affine.ArithAddFOp(lhs=lv, rhs=rv)
-            inner_body.append(res)
-            inner_body.append(
-                affine.StoreOp(value=res, memref=alloc_op, indices=[ivar, jvar])
-            )
-            outer_body: list[dgen.Op] = [
-                affine.ForOp(
-                    lo=0, hi=shape[1], body=dgen.Block(ops=inner_body, args=[jvar])
-                ),
-            ]
-            self.ops.append(
-                affine.ForOp(
-                    lo=0, hi=shape[0], body=dgen.Block(ops=outer_body, args=[ivar])
-                )
-            )
+            store = affine.StoreOp(value=res, memref=alloc_op, indices=ivars)
+            return [lv, rv, res, store]
 
-        self.shape_map[result_op] = shape
+        self._nested_for(shape, body)
         self.alloc_map[result_op] = alloc_op
 
     def _lower_reshape(self, op: toy.ReshapeOp):
-        input_val = op.input
-        # Reshape is a no-op: just update the shape map
-        if isinstance(op.type, toy.TensorType):
-            self.shape_map[op] = list(op.type.shape)
-        else:
-            self.shape_map[op] = list(self.shape_map[input_val])
-        # Point to the same alloc
-        self.alloc_map[op] = self.alloc_map.get(input_val, input_val)
+        self.alloc_map[op] = self.alloc_map.get(op.input, op.input)
 
     def _lower_print(self, op: toy.PrintOp):
-        input_val = op.input
-        alloc = self.alloc_map.get(input_val, input_val)
+        alloc = self.alloc_map.get(op.input, op.input)
         self.ops.append(affine.PrintOp(input=alloc))
 
     def _lower_return(self, op: builtin.ReturnOp):
-        # Dealloc all live allocs
         for alloc_val in self.live_allocs:
             self.ops.append(affine.DeallocOp(input=alloc_val))
         self.ops.append(builtin.ReturnOp(value=op.value))
