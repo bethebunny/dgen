@@ -6,8 +6,6 @@ import ctypes
 import sys
 from io import StringIO
 
-import llvmlite.binding as llvmlite
-
 import dgen
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
@@ -33,9 +31,11 @@ _initialized = False
 def _ensure_initialized():
     global _initialized
     if not _initialized:
-        llvmlite.initialize_native_target()
-        llvmlite.initialize_native_asmprinter()
-        llvmlite.add_symbol(
+        import llvmlite.binding as _llvm
+
+        _llvm.initialize_native_target()
+        _llvm.initialize_native_asmprinter()
+        _llvm.add_symbol(
             "print_memref", ctypes.cast(_print_memref, ctypes.c_void_p).value
         )
         _initialized = True
@@ -179,15 +179,17 @@ def compile_and_run(
     ll_module: builtin.Module, capture_output: bool = False
 ) -> str | None:
     """Emit LLVM IR, JIT-compile, and execute the module's main function."""
+    import llvmlite.binding as _llvm
+
     _ensure_initialized()
     ir_text = emit_llvm_ir(ll_module)
 
-    mod = llvmlite.parse_assembly(ir_text)
+    mod = _llvm.parse_assembly(ir_text)
     mod.verify()
 
-    target = llvmlite.Target.from_default_triple()
+    target = _llvm.Target.from_default_triple()
     target_machine = target.create_target_machine()
-    engine = llvmlite.create_mcjit_compiler(mod, target_machine)
+    engine = _llvm.create_mcjit_compiler(mod, target_machine)
 
     func_ptr = engine.get_function_address("main")
     cfunc = ctypes.CFUNCTYPE(None)(func_ptr)

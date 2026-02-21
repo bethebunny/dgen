@@ -7,6 +7,7 @@ from dataclass field declarations alone — no per-op asm/parse code needed.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import types
 from collections.abc import Iterable
 from typing import Annotated, Union, get_args, get_origin, get_type_hints
@@ -149,6 +150,11 @@ def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
     return str(value)
 
 
+@functools.cache
+def _class_hints(cls: type) -> dict[str, type]:
+    return get_type_hints(cls, include_extras=True)
+
+
 def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
     """Generic asm emitter. Introspects _asm_name and field types."""
     from dgen.dialects.builtin import _register_ops
@@ -156,7 +162,7 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
     cls = type(op)
     asm_name = cls._asm_name
     dialect_name = op.dialect.name
-    hints = get_type_hints(cls, include_extras=True)
+    hints = _class_hints(cls)
     fields = dataclasses.fields(cls)
 
     # If no tracker provided, create one and register this op
