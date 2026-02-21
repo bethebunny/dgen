@@ -87,6 +87,56 @@ def test_element_wise_add():
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
 
 
+def test_3d_constant_print():
+    """3D constant tensor + print produces alloca, stores, and print_memref."""
+    source = strip_prefix("""
+        | def main() {
+        |   var x = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   print(x);
+        |   return;
+        | }
+    """)
+    result = compile(source)
+    assert "llvm.alloca(8)" in result, "Should alloca 8 elements for 2x2x2 tensor"
+    assert "constant(1.0)" in result, "Should store 1.0"
+    assert "constant(8.0)" in result, "Should store 8.0"
+    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+
+
+def test_3d_element_wise_add():
+    """3D element-wise add produces fadd in the LLVM IR."""
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   var b = [[[2, 3], [4, 5]], [[6, 7], [8, 9]]];
+        |   var c = a + b;
+        |   print(c);
+        |   return;
+        | }
+    """)
+    result = compile(source)
+    assert "llvm.fadd(" in result, "Should have fadd for element-wise add"
+    assert "llvm.mul(" in result, "Should have mul for 3D index linearization"
+    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+
+
+def test_3d_element_wise_mul():
+    """3D element-wise multiply produces fmul in the LLVM IR."""
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   var b = [[[2, 3], [4, 5]], [[6, 7], [8, 9]]];
+        |   var c = a * b;
+        |   print(c);
+        |   return;
+        | }
+    """)
+    result = compile(source)
+    assert "llvm.fmul(" in result, "Should have fmul for element-wise multiply"
+    assert "llvm.mul(" in result, "Should have mul for 3D index linearization"
+    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+
+
 def test_reshape_folds_away():
     """Reshape of matching shape is optimized away -- no extra alloc."""
     source = strip_prefix("""

@@ -103,6 +103,66 @@ def test_print():
     assert "affine.print_memref" in result, "Should have print_memref"
 
 
+def test_3d_constant():
+    """3D constant lowers to alloc + stores."""
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %_ = toy.print(%0)
+        |     %_ = return()
+    """)
+    m = parse_module(ir_text)
+    affine = lower_to_affine(m)
+    result = asm.format(affine)
+    assert "affine.alloc(<2x2x2>)" in result, "Should have 2x2x2 alloc"
+    assert "affine.store" in result, "Should have stores"
+    assert "constant(" in result, "Should have constants"
+    assert result.count("affine.store") == 8, "Should have 8 stores for 2x2x2"
+
+
+def test_3d_add():
+    """3D add lowers to alloc + element-wise nested loops."""
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %1 : toy.Tensor[(2, 2, 2), f64] = constant([2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+        |     %2 : toy.Tensor[(2, 2, 2), f64] = toy.add(%0, %1)
+        |     %_ = toy.print(%2)
+        |     %_ = return()
+    """)
+    m = parse_module(ir_text)
+    affine = lower_to_affine(m)
+    result = asm.format(affine)
+    assert "affine.add_f" in result, "Should have add_f op"
+    alloc_count = result.count("affine.alloc(")
+    assert alloc_count >= 3, "Should have 3 allocs (2 constants + 1 result)"
+    assert "affine.alloc(<2x2x2>)" in result, "Should have 2x2x2 allocs"
+
+
+def test_3d_mul():
+    """3D mul lowers to alloc + element-wise nested loops."""
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %1 : toy.Tensor[(2, 2, 2), f64] = constant([2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+        |     %2 : toy.Tensor[(2, 2, 2), f64] = toy.mul(%0, %1)
+        |     %_ = toy.print(%2)
+        |     %_ = return()
+    """)
+    m = parse_module(ir_text)
+    affine = lower_to_affine(m)
+    result = asm.format(affine)
+    assert "affine.mul_f" in result, "Should have mul_f op"
+    alloc_count = result.count("affine.alloc(")
+    assert alloc_count >= 3, "Should have 3 allocs (2 constants + 1 result)"
+
+
 def test_full_example():
     """Full pipeline: constant + reshape + transpose + mul + print."""
     ir_text = strip_prefix("""

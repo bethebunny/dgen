@@ -60,6 +60,54 @@ def test_mul():
     assert result == expected
 
 
+def test_3d_add():
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   var b = [[[2, 3], [4, 5]], [[6, 7], [8, 9]]];
+        |   var c = a + b;
+        |   print(c);
+        |   return;
+        | }
+    """)
+    result = compile_and_infer(source)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %1 : toy.Tensor[(2, 2, 2), f64] = constant([2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+        |     %2 : toy.Tensor[(2, 2, 2), f64] = toy.add(%0, %1)
+        |     %3 : () = toy.print(%2)
+        |     %4 : () = return()
+    """)
+    assert result == expected
+
+
+def test_3d_mul():
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   var b = [[[2, 3], [4, 5]], [[6, 7], [8, 9]]];
+        |   var c = a * b;
+        |   print(c);
+        |   return;
+        | }
+    """)
+    result = compile_and_infer(source)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %1 : toy.Tensor[(2, 2, 2), f64] = constant([2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+        |     %2 : toy.Tensor[(2, 2, 2), f64] = toy.mul(%0, %1)
+        |     %3 : () = toy.print(%2)
+        |     %4 : () = return()
+    """)
+    assert result == expected
+
+
 def test_generic_call():
     source = strip_prefix("""
         | def multiply_transpose(a, b) {

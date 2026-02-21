@@ -80,6 +80,49 @@ def test_element_wise_add():
     assert output.strip() == "6, 8, 10, 12"
 
 
+def test_3d_constant_print():
+    """3D constant tensor printed as flat values."""
+    source = strip_prefix("""
+        | def main() {
+        |   var x = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   print(x);
+        |   return;
+        | }
+    """)
+    output = run_toy(source)
+    assert output.strip() == "1, 2, 3, 4, 5, 6, 7, 8"
+
+
+def test_3d_element_wise_add():
+    """Element-wise add of two 2x2x2 tensors."""
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   var b = [[[2, 3], [4, 5]], [[6, 7], [8, 9]]];
+        |   var c = a + b;
+        |   print(c);
+        |   return;
+        | }
+    """)
+    output = run_toy(source)
+    assert output.strip() == "3, 5, 7, 9, 11, 13, 15, 17"
+
+
+def test_3d_element_wise_mul():
+    """Element-wise multiply of two 2x2x2 tensors."""
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   var b = [[[2, 3], [4, 5]], [[6, 7], [8, 9]]];
+        |   var c = a * b;
+        |   print(c);
+        |   return;
+        | }
+    """)
+    output = run_toy(source)
+    assert output.strip() == "2, 6, 12, 20, 30, 42, 56, 72"
+
+
 def test_double_transpose_optimized():
     """transpose(transpose(x)) optimized away — same output as original."""
     source = strip_prefix("""

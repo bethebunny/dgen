@@ -81,6 +81,41 @@ def test_load_store_linearization():
     assert "llvm.mul(" in result, "Should have mul for index linearization"
 
 
+def test_3d_constant_flat_stores():
+    """3D constants lower to flat stores (no loops)."""
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %_ = toy.print(%0)
+        |     %_ = return()
+    """)
+    result = compile_to_llvm(ir_text)
+    assert result.count("llvm.store(") == 8, "Should have 8 flat stores"
+    assert "llvm.alloca(8)" in result, "Should have alloca for 8 elements"
+
+
+def test_3d_load_store_linearization():
+    """3D load/store indices are linearized with stride multiplication."""
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %1 : toy.Tensor[(2, 2, 2), f64] = constant([2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+        |     %2 : toy.Tensor[(2, 2, 2), f64] = toy.add(%0, %1)
+        |     %_ = toy.print(%2)
+        |     %_ = return()
+    """)
+    result = compile_to_llvm(ir_text)
+    assert "llvm.mul(" in result, "Should have mul for stride linearization"
+    assert "llvm.add(" in result, "Should have add for index accumulation"
+    assert "llvm.gep(" in result, "Should have gep for pointer arithmetic"
+    assert "llvm.load(" in result, "Should have load"
+    assert "llvm.fadd(" in result, "Should have fadd for add op"
+
+
 def test_full_example():
     """Full pipeline: constant + transpose + mul + print -> LLVM IR."""
     ir_text = strip_prefix("""

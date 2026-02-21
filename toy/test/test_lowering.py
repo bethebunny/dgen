@@ -134,6 +134,50 @@ def test_generic_call():
     assert result == expected
 
 
+def test_3d_constant():
+    source = strip_prefix("""
+        | def main() {
+        |   var x = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   print(x);
+        |   return;
+        | }
+    """)
+    result = compile_toy(source)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %1 : () = toy.print(%0)
+        |     %2 : () = return()
+    """)
+    assert result == expected
+
+
+def test_3d_binary_operations():
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   var b = [[[2, 3], [4, 5]], [[6, 7], [8, 9]]];
+        |   var c = a + b;
+        |   print(c);
+        |   return;
+        | }
+    """)
+    result = compile_toy(source)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %1 : toy.Tensor[(2, 2, 2), f64] = constant([2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+        |     %2 : toy.InferredShapeTensor[f64] = toy.add(%0, %1)
+        |     %3 : () = toy.print(%2)
+        |     %4 : () = return()
+    """)
+    assert result == expected
+
+
 def test_full_tutorial_example():
     """The complete multiply_transpose example from the MLIR Toy tutorial."""
     source = strip_prefix("""
