@@ -88,7 +88,7 @@ class List:
 @builtin.op("constant")
 @dataclass(eq=False, kw_only=True)
 class ConstantOp(Op):
-    value: float | int | list[float]
+    value: object
     type: Type
 
 

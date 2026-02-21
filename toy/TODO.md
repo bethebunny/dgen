@@ -1,8 +1,7 @@
 - Figure out why some ASM still doesn't have types, these should fail to parse
 - Remove anything that's thinking about "origin"s and generic python types or annotations
 - SSA types via JIT
-- Analyze performance
-- Go through and rename file
+- Go through and rename files
 - Generalize parsing
 - Make `constant` op implicit on literals
 - General literals
@@ -16,3 +15,6 @@
 - Generate dialects from dialect files
 - Pass input/output types, pre/post validation
 - Simple pass infrastructure
+- Write more down into design docs
+- Massively simplify / clean the asm parser and formatter code
+- See if we can make `Block` an op in a generic way.

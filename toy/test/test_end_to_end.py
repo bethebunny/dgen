@@ -31,7 +31,7 @@ def test_constant_print():
     """)
     result = compile(source)
     assert "%main = function () -> ():" in result, "Should have function def"
-    assert "constant([" in result, "Tensor constant should pass through"
+    assert "= (" in result, "Tensor constant should pass through"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
     assert "return()" in result, "Should return void"
 
@@ -95,7 +95,7 @@ def test_3d_constant_print():
         | }
     """)
     result = compile(source)
-    assert "constant([" in result, "Tensor constant should pass through"
+    assert "= (" in result, "Tensor constant should pass through"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
 
 
@@ -143,7 +143,7 @@ def test_reshape_folds_away():
         | }
     """)
     result = compile(source)
-    assert "constant([" in result, "Tensor constant should pass through"
+    assert "= (" in result, "Tensor constant should pass through"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
 
 
@@ -158,7 +158,7 @@ def test_double_transpose_optimized():
         | }
     """)
     result = compile(source)
-    assert "constant([" in result, "Tensor constant should pass through"
+    assert "= (" in result, "Tensor constant should pass through"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
     assert "return()" in result, "Should return void"
 

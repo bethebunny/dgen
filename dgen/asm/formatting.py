@@ -87,6 +87,17 @@ class SlotTracker:
 # ===----------------------------------------------------------------------=== #
 
 
+def _format_json_value(value) -> str:
+    """Format a plain JSON-like value (int, float, or nested list)."""
+    if isinstance(value, list):
+        return "(" + ", ".join(_format_json_value(v) for v in value) + ")"
+    if isinstance(value, float):
+        return format_float(value)
+    if isinstance(value, int):
+        return str(value)
+    return str(value)
+
+
 def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
     """Format a single value based on its type hint."""
     from dgen.dialects.builtin import Value
@@ -141,9 +152,6 @@ def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
     # Plain float
     if hint is float:
         return format_float(value)
-    # list[float]
-    if get_origin(hint) is list and get_args(hint) == (float,):
-        return "[" + ", ".join(format_float(v) for v in value) + "]"
     # Type protocol (has .asm)
     if hasattr(value, "asm"):
         return value.asm
@@ -185,7 +193,10 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
         if inner is not None and value is None:
             continue
         effective_hint = inner if inner is not None else hint
-        arg_parts.append(_format_value(value, effective_hint, tracker))
+        if effective_hint is object:
+            arg_parts.append(_format_json_value(value))
+        else:
+            arg_parts.append(_format_value(value, effective_hint, tracker))
 
     args_str = ", ".join(arg_parts)
 
@@ -193,7 +204,10 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
     result_name = tracker.get_name(op)
     parts = [f"%{result_name} : {op.type.asm} = "]
     prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
-    parts.append(f"{prefix}{asm_name}({args_str})")
+    if asm_name == "constant" and dialect_name == "builtin":
+        parts.append(args_str)
+    else:
+        parts.append(f"{prefix}{asm_name}({args_str})")
     if has_body:
         from dgen.dialects.builtin import Block
 

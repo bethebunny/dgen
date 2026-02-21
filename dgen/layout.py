@@ -13,6 +13,9 @@ class Struct:
     def byte_size(self) -> int:
         raise NotImplementedError
 
+    def parse(self, obj) -> object:
+        raise NotImplementedError
+
 
 class Byte(Struct):
     def byte_size(self) -> int:
@@ -25,12 +28,20 @@ class Int(Struct):
     def byte_size(self) -> int:
         return 8
 
+    def parse(self, obj) -> int:
+        assert isinstance(obj, int), f"expected int, got {type(obj).__name__}"
+        return obj
+
 
 class Float64(Struct):
     """64-bit float (f64)."""
 
     def byte_size(self) -> int:
         return 8
+
+    def parse(self, obj) -> float:
+        assert isinstance(obj, (int, float)), f"expected number, got {type(obj).__name__}"
+        return float(obj)
 
 
 class Array(Struct):
@@ -42,6 +53,10 @@ class Array(Struct):
 
     def byte_size(self) -> int:
         return self.element.byte_size() * self.count
+
+    def parse(self, obj) -> list:
+        assert isinstance(obj, list), f"expected list, got {type(obj).__name__}"
+        return [self.element.parse(v) for v in obj]
 
 
 class Pointer(Struct):

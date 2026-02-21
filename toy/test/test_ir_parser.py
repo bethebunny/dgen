@@ -34,11 +34,31 @@ def test_roundtrip_constant():
         | import toy
         |
         | %f = function () -> toy.Tensor[(2, 3), f64]:
-        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %_ : () = return(%0)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
+
+
+def test_explicit_constant():
+    """Explicit constant(...) syntax is accepted and normalizes to implicit form."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> toy.Tensor[(2, 3), f64]:
+        |     %0 : toy.Tensor[(2, 3), f64] = constant((1.0, 2.0, 3.0, 4.0, 5.0, 6.0))
+        |     %_ : () = return(%0)
+    """)
+    module = parse_module(ir)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> toy.Tensor[(2, 3), f64]:
+        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        |     %_ : () = return(%0)
+    """)
+    assert asm.format(module) == expected
 
 
 def test_roundtrip_mul():
@@ -109,9 +129,9 @@ def test_roundtrip_full_program():
         |     %_ : () = return(%2)
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %1 : toy.Tensor[(2, 3), f64] = toy.reshape(%0)
-        |     %2 : toy.Tensor[(6), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %2 : toy.Tensor[(6), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %3 : toy.Tensor[(2, 3), f64] = toy.reshape(%2)
         |     %4 : toy.InferredShapeTensor[f64] = toy.generic_call(@multiply_transpose, [%1, %3])
         |     %5 : toy.InferredShapeTensor[f64] = toy.generic_call(@multiply_transpose, [%3, %1])

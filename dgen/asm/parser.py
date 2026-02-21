@@ -17,6 +17,33 @@ from dgen.dialects import builtin
 from .formatting import _SPECIAL_FIELDS, _get_annotation, _is_optional
 
 
+def _parse_json_value(parser):
+    """Parse a plain JSON-like value: int, float, or parenthesized list."""
+    if parser.peek() == "(":
+        parser.expect("(")
+        parser.skip_whitespace()
+        items = []
+        if parser.peek() != ")":
+            items.append(_parse_json_value(parser))
+            parser.skip_whitespace()
+            while parser.peek() == ",":
+                parser.expect(",")
+                parser.skip_whitespace()
+                items.append(_parse_json_value(parser))
+                parser.skip_whitespace()
+        parser.expect(")")
+        return items
+    # Peek ahead: '.' after digits means float, otherwise int
+    p = parser.pos
+    if p < len(parser.text) and parser.text[p] == "-":
+        p += 1
+    while p < len(parser.text) and parser.text[p].isdigit():
+        p += 1
+    if p < len(parser.text) and parser.text[p] == ".":
+        return parser.parse_number()
+    return parser.parse_int()
+
+
 def parse_op_fields(parser, cls, name=None, pre_type=None):
     """Generic op field parser. Introspects field types to parse args."""
     hints = get_type_hints(cls, include_extras=True)
@@ -50,7 +77,10 @@ def parse_op_fields(parser, cls, name=None, pre_type=None):
             parser.expect(",")
             parser.skip_whitespace()
 
-        kwargs[f.name] = _parse_value(parser, hint_to_parse)
+        if hint_to_parse is object:
+            kwargs[f.name] = _parse_json_value(parser)
+        else:
+            kwargs[f.name] = _parse_value(parser, hint_to_parse)
         parser.skip_whitespace()
 
     parser.expect(")")
@@ -186,20 +216,6 @@ def _parse_value(parser, hint):
     # Plain float
     if hint is float:
         return parser.parse_number()
-    # list[float]
-    if get_origin(hint) is list and get_args(hint) == (float,):
-        parser.expect("[")
-        parser.skip_whitespace()
-        items = []
-        if parser.peek() != "]":
-            items.append(parser.parse_number())
-            while parser.peek() == ",":
-                parser.expect(",")
-                parser.skip_whitespace()
-                items.append(parser.parse_number())
-        parser.expect("]")
-        return items
-
     raise RuntimeError(f"Don't know how to parse type hint: {hint}")
 
 
@@ -530,6 +546,12 @@ class IRParser:
             self.skip_whitespace()
         self.expect("=")
         self.skip_whitespace()
+        # Implicit constant: value starts with '(' or digit/minus
+        if self.peek() in "(-0123456789":
+            value = _parse_json_value(self)
+            op = builtin.ConstantOp(name=op_name_str, value=value, type=pre_type)
+            self.name_table[op_name_str] = op
+            return op
         name = self.parse_identifier()
         if not self.at_end() and self.peek() == ".":
             self.advance()  # skip '.'

@@ -25,7 +25,7 @@ def test_simple_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %1 : () = toy.print(%0)
         |     %2 : () = return()
     """)
@@ -46,7 +46,7 @@ def test_explicit_shape_with_reshape():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %1 : toy.Tensor[(2, 3), f64] = toy.reshape(%0)
         |     %2 : () = toy.print(%1)
         |     %3 : () = return()
@@ -69,8 +69,8 @@ def test_binary_operations():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0])
-        |     %1 : toy.Tensor[(2, 2), f64] = constant([5.0, 6.0, 7.0, 8.0])
+        |     %0 : toy.Tensor[(2, 2), f64] = (1.0, 2.0, 3.0, 4.0)
+        |     %1 : toy.Tensor[(2, 2), f64] = (5.0, 6.0, 7.0, 8.0)
         |     %2 : toy.InferredShapeTensor[f64] = toy.mul(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %4 : () = return()
@@ -92,7 +92,7 @@ def test_transpose_builtin():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %1 : toy.InferredShapeTensor[f64] = toy.transpose(%0)
         |     %2 : () = toy.print(%1)
         |     %3 : () = return()
@@ -125,8 +125,8 @@ def test_generic_call():
         |     %3 : () = return(%2)
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        |     %1 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        |     %1 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %2 : toy.InferredShapeTensor[f64] = toy.generic_call(@multiply_transpose, [%0, %1])
         |     %3 : () = toy.print(%2)
         |     %4 : () = return()
@@ -147,7 +147,7 @@ def test_3d_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
         |     %1 : () = toy.print(%0)
         |     %2 : () = return()
     """)
@@ -169,8 +169,8 @@ def test_3d_binary_operations():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2, 2), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
-        |     %1 : toy.Tensor[(2, 2, 2), f64] = constant([2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
+        |     %0 : toy.Tensor[(2, 2, 2), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
+        |     %1 : toy.Tensor[(2, 2, 2), f64] = (2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0)
         |     %2 : toy.InferredShapeTensor[f64] = toy.add(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %4 : () = return()
@@ -205,9 +205,9 @@ def test_full_tutorial_example():
         |     %3 : () = return(%2)
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %1 : toy.Tensor[(2, 3), f64] = toy.reshape(%0)
-        |     %2 : toy.Tensor[(6), f64] = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        |     %2 : toy.Tensor[(6), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         |     %3 : toy.Tensor[(2, 3), f64] = toy.reshape(%2)
         |     %4 : toy.InferredShapeTensor[f64] = toy.generic_call(@multiply_transpose, [%1, %3])
         |     %5 : toy.InferredShapeTensor[f64] = toy.generic_call(@multiply_transpose, [%3, %1])
