@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator, Iterator
+
 import dgen
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import StaticString
@@ -39,7 +41,7 @@ class AffineToLLVMLowering:
         """Resolve an affine Value to its LLVM counterpart."""
         return self.value_map.get(old, old)
 
-    def lower_op(self, op):
+    def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
         if isinstance(op, affine.AllocOp):
             yield from self._lower_alloc(op)
         elif isinstance(op, affine.DeallocOp):
@@ -68,7 +70,7 @@ class AffineToLLVMLowering:
             val = self._map(op.value) if op.value is not None else None
             yield builtin.ReturnOp(value=val)
 
-    def _lower_alloc(self, op):
+    def _lower_alloc(self, op: affine.AllocOp) -> Iterator[dgen.Op]:
         total = 1
         for d in op.shape:
             total *= d
@@ -78,7 +80,7 @@ class AffineToLLVMLowering:
         self.alloc_shapes[alloca_op] = list(op.shape)
         self.alloc_sizes[alloca_op] = total
 
-    def _lower_load(self, op):
+    def _lower_load(self, op: affine.LoadOp) -> Iterator[dgen.Op]:
         memref_val = self._map(op.memref)
         index_vals = [self._map(v) for v in op.indices]
         linear = yield from self._linearize_indices(memref_val, index_vals)
@@ -88,7 +90,7 @@ class AffineToLLVMLowering:
         yield load_op
         self.value_map[op] = load_op
 
-    def _lower_store(self, op):
+    def _lower_store(self, op: affine.StoreOp) -> Iterator[dgen.Op]:
         memref_val = self._map(op.memref)
         index_vals = [self._map(v) for v in op.indices]
         linear = yield from self._linearize_indices(memref_val, index_vals)
@@ -96,7 +98,9 @@ class AffineToLLVMLowering:
         yield ptr_op
         yield llvm.StoreOp(value=self._map(op.value), ptr=ptr_op)
 
-    def _linearize_indices(self, memref, indices):
+    def _linearize_indices(
+        self, memref: dgen.Value, indices: list[dgen.Value]
+    ) -> Generator[dgen.Op, None, dgen.Value]:
         if len(indices) == 1:
             return indices[0]
 
@@ -130,7 +134,7 @@ class AffineToLLVMLowering:
         assert result_val is not None
         return result_val
 
-    def _lower_for(self, op):
+    def _lower_for(self, op: affine.ForOp) -> Iterator[dgen.Op]:
         loop_id = self.loop_counter
         self.loop_counter += 1
 
@@ -188,7 +192,7 @@ class AffineToLLVMLowering:
         yield llvm.LabelOp(label_name=exit_label)
         self.current_label = exit_label
 
-    def _lower_print(self, op):
+    def _lower_print(self, op: affine.PrintOp) -> Iterator[dgen.Op]:
         input_val = self._map(op.input)
         size = self.alloc_sizes[input_val]
         size_op = builtin.ConstantOp(value=size, type=builtin.IndexType())

@@ -16,3 +16,4 @@
 - Generate dialects from dialect files
 - Pass input/output types, pre/post validation
 - Simple pass infrastructure
+- Add tests for rank 3 tensors

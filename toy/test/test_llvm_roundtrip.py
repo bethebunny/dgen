@@ -2,7 +2,6 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
-from dgen.dialects import llvm
 from toy.test.helpers import strip_prefix
 
 

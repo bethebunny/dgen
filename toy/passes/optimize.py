@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from copy import deepcopy
 
 import dgen
@@ -25,7 +24,7 @@ def collect_uses(ops: list[dgen.Op]) -> set[int]:
 
 def rewrite_uses(
     ops: list[dgen.Op], old_value: dgen.Value, new_value: dgen.Value
-):
+) -> None:
     """Replace all operand references to old_value with new_value."""
     for op in ops:
         for name, operand in op.operands:
@@ -38,7 +37,7 @@ def rewrite_uses(
 # ===----------------------------------------------------------------------=== #
 
 
-def eliminate_transpose(func: builtin.FuncOp):
+def eliminate_transpose(func: builtin.FuncOp) -> None:
     to_remove: list[int] = []
     ops = func.body.ops
     for i, op in enumerate(ops):
@@ -54,7 +53,7 @@ def eliminate_transpose(func: builtin.FuncOp):
     _remove_indices(ops, to_remove)
 
 
-def fold_constants(func: builtin.FuncOp):
+def fold_constants(func: builtin.FuncOp) -> None:
     ops = func.body.ops
     for i, op in enumerate(ops):
         if not isinstance(op, toy.ReshapeOp):
@@ -69,6 +68,7 @@ def fold_constants(func: builtin.FuncOp):
         if isinstance(defn.type, toy.TensorType):
             if defn.type.shape == target_shape:
                 continue
+        assert isinstance(defn.value, list)
         new_op = builtin.ConstantOp(
             value=list(defn.value),
             type=toy.TensorType(shape=list(target_shape)),
@@ -78,7 +78,7 @@ def fold_constants(func: builtin.FuncOp):
         ops[i] = new_op
 
 
-def simplify_reshape(func: builtin.FuncOp):
+def simplify_reshape(func: builtin.FuncOp) -> None:
     to_remove: list[int] = []
     ops = func.body.ops
     for i, op in enumerate(ops):
@@ -108,7 +108,7 @@ def simplify_reshape(func: builtin.FuncOp):
     _remove_indices(ops, to_remove)
 
 
-def eliminate_dead_code(func: builtin.FuncOp):
+def eliminate_dead_code(func: builtin.FuncOp) -> None:
     changed = True
     while changed:
         changed = False
@@ -123,7 +123,7 @@ def eliminate_dead_code(func: builtin.FuncOp):
         _remove_indices(func.body.ops, to_remove)
 
 
-def _remove_indices(ops: list, indices: list[int]):
+def _remove_indices(ops: list[dgen.Op], indices: list[int]) -> None:
     for idx in reversed(indices):
         ops.pop(idx)
 

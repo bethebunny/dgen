@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator, Iterator
+
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
@@ -70,7 +72,7 @@ class Lowering:
             body=dgen.Block(ops=ops, args=args),
         )
 
-    def _lower_statement(self, stmt: Statement):
+    def _lower_statement(self, stmt: Statement) -> Iterator[dgen.Op]:
         if isinstance(stmt, VarDecl):
             yield from self._lower_var_decl(stmt)
         elif isinstance(stmt, ReturnStmt):
@@ -78,7 +80,7 @@ class Lowering:
         elif isinstance(stmt, ExprStmt):
             yield from self.lower_expr(stmt.expr)
 
-    def _lower_var_decl(self, decl: VarDecl):
+    def _lower_var_decl(self, decl: VarDecl) -> Iterator[dgen.Op]:
         expr_val = yield from self.lower_expr(decl.value)
 
         # If explicit shape, add a Reshape
@@ -92,14 +94,14 @@ class Lowering:
         else:
             self.scope[decl.name] = expr_val
 
-    def _lower_return(self, ret: ReturnStmt):
+    def _lower_return(self, ret: ReturnStmt) -> Iterator[dgen.Op]:
         if ret.value is not None:
             val = yield from self.lower_expr(ret.value)
             yield builtin.ReturnOp(value=val)
         else:
             yield builtin.ReturnOp()
 
-    def lower_expr(self, expr: Expression):
+    def lower_expr(self, expr: Expression) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression, yielding ops and returning the result Value."""
         if isinstance(expr, NumberLiteral):
             op = builtin.ConstantOp(
@@ -136,7 +138,7 @@ class Lowering:
             return (yield from self._lower_print(expr))
         raise RuntimeError("Unknown expression type")
 
-    def _lower_call(self, call: CallExpr):
+    def _lower_call(self, call: CallExpr) -> Generator[dgen.Op, None, dgen.Value]:
         # Builtin: transpose
         if call.callee == "transpose":
             if len(call.args) != 1:
@@ -158,7 +160,7 @@ class Lowering:
         yield op
         return op
 
-    def _lower_print(self, p: PrintExpr):
+    def _lower_print(self, p: PrintExpr) -> Generator[dgen.Op, None, dgen.Value]:
         arg = yield from self.lower_expr(p.arg)
         yield toy.PrintOp(input=arg)
         return arg

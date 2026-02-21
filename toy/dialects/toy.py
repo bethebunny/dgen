@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from dgen import Dialect, Op, Type, Value
 from dgen.asm.formatting import Sym
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 class TensorType:
     """toy.Tensor[(2, 3), f64]."""
 
+    _dialect: ClassVar[Dialect]
     shape: list[int]
 
     @property
@@ -33,6 +34,7 @@ class TensorType:
 class InferredShapeTensor:
     """toy.InferredShapeTensor[f64] — shape to be filled in by inference."""
 
+    _dialect: ClassVar[Dialect]
     dtype: str = "f64"
 
     @property

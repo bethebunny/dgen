@@ -19,7 +19,7 @@ def _infer_function(
     func: builtin.FuncOp,
     func_map: dict[str, builtin.FuncOp],
     type_of: dict[int, toy.TensorType],
-):
+) -> None:
     """Infer shapes for all ops in a function body."""
     # Seed from block args that already have concrete types
     for arg in func.body.args:
@@ -48,8 +48,9 @@ def _infer_function(
                 type_of[id(op)] = t
 
         elif isinstance(op, toy.GenericCallOp):
-            arg_types = [_resolve(type_of, a) for a in op.args]
-            if all(t is not None for t in arg_types):
+            resolved = [_resolve(type_of, a) for a in op.args]
+            arg_types = [t for t in resolved if t is not None]
+            if len(arg_types) == len(resolved):
                 callee = func_map.get(op.callee)
                 if callee is not None:
                     # Set callee param types from call-site args
@@ -67,7 +68,7 @@ def _infer_function(
                         ret_type = _resolve(type_of, ret_op.value)
                         if ret_type is not None:
                             callee.type = toy.FunctionType(
-                                inputs=list(arg_types),
+                                inputs=arg_types,
                                 result=ret_type,
                             )
                             op.type = toy.TensorType(shape=list(ret_type.shape))
@@ -76,7 +77,9 @@ def _infer_function(
 
 def infer_shapes(m: builtin.Module) -> builtin.Module:
     m = deepcopy(m)
-    func_map = {f.name: f for f in m.functions}
+    func_map: dict[str, builtin.FuncOp] = {
+        f.name: f for f in m.functions if f.name is not None
+    }
     type_of: dict[int, toy.TensorType] = {}
 
     # Process main first (all shapes derivable from constants)

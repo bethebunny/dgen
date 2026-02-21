@@ -151,7 +151,7 @@ def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
 
 def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
     """Generic asm emitter. Introspects _asm_name and field types."""
-    from dgen.dialects.builtin import Value, _register_ops
+    from dgen.dialects.builtin import _register_ops
 
     cls = type(op)
     asm_name = cls._asm_name

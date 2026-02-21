@@ -67,6 +67,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
         vid = id(op)
         if isinstance(op, builtin.ConstantOp):
             if isinstance(op.type, builtin.F64Type):
+                assert isinstance(op.value, (int, float))
                 constants[vid] = f"double {format_float(op.value)}"
                 types[vid] = "double"
             elif isinstance(op.type, builtin.IndexType):

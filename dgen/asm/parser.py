@@ -457,6 +457,7 @@ class IRParser:
             self.expect(":")
             self.skip_whitespace()
             type_ = self.parse_type()
+        assert type_ is not None, f"parameter %{param_name} missing type annotation"
         arg = BlockArgument(name=param_name, type=type_)
         self.name_table[param_name] = arg
         return arg

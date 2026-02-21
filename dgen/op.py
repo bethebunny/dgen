@@ -6,7 +6,6 @@ from typing import ClassVar, Iterable
 
 from .block import Block
 from .dialect import Dialect
-from .type import Type
 from .value import Value
 
 
