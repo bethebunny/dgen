@@ -47,42 +47,17 @@ def _ensure_initialized():
 # ---------------------------------------------------------------------------
 
 
-def emit_llvm_ir(module: builtin.Module) -> str:
+def emit_llvm_ir(module: builtin.Module, host_buffers: list | None = None) -> str:
     """Emit valid LLVM IR text that llvmlite can parse."""
+    if host_buffers is None:
+        host_buffers = []
     lines: list[str] = ["declare void @print_memref(ptr, i64)", ""]
     for func in module.functions:
-        lines.extend(_emit_func(func))
+        lines.extend(_emit_func(func, host_buffers))
     return "\n".join(lines)
 
 
-def _materialize_constant(op: builtin.ConstantOp, name: str) -> list[str]:
-    """Emit alloca + stores for a tensor constant, driven by its type's layout."""
-    layout = op.type.__layout__  # type: ignore[union-attr]
-    elem = layout.element
-    if isinstance(elem, Float64):
-        llvm_type = "double"
-    elif isinstance(elem, Int):
-        llvm_type = "i64"
-    else:
-        raise ValueError(f"Unsupported layout element type: {elem}")
-    count = layout.count
-    values = op.value
-    assert isinstance(values, list)
-    lines = [f"  %{name} = alloca {llvm_type}, i64 {count}"]
-    for i, v in enumerate(values):
-        val_str = format_float(v) if llvm_type == "double" else str(v)
-        if i == 0:
-            lines.append(f"  store {llvm_type} {val_str}, ptr %{name}")
-        else:
-            gep_name = f"_mc{name}_{i}"
-            lines.append(
-                f"  %{gep_name} = getelementptr {llvm_type}, ptr %{name}, i64 {i}"
-            )
-            lines.append(f"  store {llvm_type} {val_str}, ptr %{gep_name}")
-    return lines
-
-
-def _emit_func(f: builtin.FuncOp) -> list[str]:
+def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
     # Build a SlotTracker so all ops get stable names
     tracker = SlotTracker()
     builtin._register_ops(tracker, f.body.ops)
@@ -95,6 +70,15 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
         vid = id(op)
         if isinstance(op, builtin.ConstantOp):
             if isinstance(op.value, list):
+                layout = op.type.__layout__  # type: ignore[union-attr]
+                elem = layout.element
+                ctype = ctypes.c_double if isinstance(elem, Float64) else ctypes.c_int64
+                values = op.value
+                assert isinstance(values, list)
+                buf = (ctype * layout.count)(*values)
+                host_buffers.append(buf)
+                addr = ctypes.addressof(buf)
+                constants[vid] = f"ptr inttoptr (i64 {addr} to ptr)"
                 types[vid] = "ptr"
             elif isinstance(op.type, builtin.F64Type):
                 assert isinstance(op.value, (int, float))
@@ -138,9 +122,6 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
 
     for op in f.body.ops:
         if isinstance(op, builtin.ConstantOp):
-            if isinstance(op.value, list):
-                name = tracker.get_name(op)
-                lines.extend(_materialize_constant(op, name))
             continue
 
         name = tracker.get_name(op)
@@ -151,7 +132,7 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
             lines.append(f"  %{name} = alloca double, i64 {op.elem_count}")
         elif isinstance(op, llvm.GepOp):
             lines.append(
-                f"  %{name} = getelementptr double, ptr %{tracker.get_name(op.base)},"
+                f"  %{name} = getelementptr double, ptr {bare_ref(op.base)},"
                 f" {typed_ref(op.index)}"
             )
         elif isinstance(op, llvm.LoadOp):
@@ -215,7 +196,8 @@ def compile_and_run(
     import llvmlite.binding as _llvm
 
     _ensure_initialized()
-    ir_text = emit_llvm_ir(ll_module)
+    host_buffers: list = []
+    ir_text = emit_llvm_ir(ll_module, host_buffers)
 
     mod = _llvm.parse_assembly(ir_text)
     mod.verify()
