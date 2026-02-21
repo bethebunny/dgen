@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator, Iterator
+from math import prod
 
 import dgen
 from dgen.dialects import builtin, llvm
@@ -56,6 +57,10 @@ class AffineToLLVMLowering:
             new_op = builtin.ConstantOp(value=op.value, type=op.type)
             yield new_op
             self.value_map[op] = new_op
+            if isinstance(op.value, list):
+                shape = op.type.shape
+                self.alloc_shapes[new_op] = list(shape)
+                self.alloc_sizes[new_op] = prod(shape)
         elif isinstance(op, affine.ArithMulFOp):
             llvm_op = llvm.FMulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op

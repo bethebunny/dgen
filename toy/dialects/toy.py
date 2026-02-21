@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import prod
 from typing import TYPE_CHECKING, ClassVar
 
 from dgen import Dialect, Op, Type, Value
 from dgen.asm.formatting import Sym
 from dgen.dialects import builtin
+from dgen.layout import FLOAT64, Array
 
 if TYPE_CHECKING:
     from dgen.asm.parser import IRParser
@@ -23,6 +25,10 @@ class TensorType:
 
     _dialect: ClassVar[Dialect]
     shape: list[int]
+
+    @property
+    def __layout__(self):
+        return Array(FLOAT64, prod(self.shape))
 
     @property
     def asm(self) -> str:

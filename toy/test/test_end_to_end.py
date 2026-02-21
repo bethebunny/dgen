@@ -21,7 +21,7 @@ def compile(source: str) -> str:
 
 
 def test_constant_print():
-    """Constant tensor + print produces alloca, stores, and print_memref call."""
+    """Constant tensor + print: tensor constant passes through, codegen materializes."""
     source = strip_prefix("""
         | def main() {
         |   var x = [[1, 2, 3], [4, 5, 6]];
@@ -31,9 +31,7 @@ def test_constant_print():
     """)
     result = compile(source)
     assert "%main = function () -> ():" in result, "Should have function def"
-    assert "llvm.alloca(6)" in result, "Should alloca 6 elements for 2x3 tensor"
-    assert "constant(1.0)" in result, "Should store 1.0"
-    assert "constant(6.0)" in result, "Should store 6.0"
+    assert "constant([" in result, "Tensor constant should pass through"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
     assert "return()" in result, "Should return void"
 
@@ -49,7 +47,7 @@ def test_transpose():
         | }
     """)
     result = compile(source)
-    assert "llvm.alloca(6)" in result, "Should have alloca for tensor"
+    assert "llvm.alloca(6)" in result, "Should have alloca for transpose result"
     assert "llvm.load(" in result, "Should have loads for transpose"
     assert "llvm.gep(" in result, "Should have gep for indexing"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
@@ -88,7 +86,7 @@ def test_element_wise_add():
 
 
 def test_3d_constant_print():
-    """3D constant tensor + print produces alloca, stores, and print_memref."""
+    """3D constant tensor + print: tensor constant passes through."""
     source = strip_prefix("""
         | def main() {
         |   var x = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
@@ -97,9 +95,7 @@ def test_3d_constant_print():
         | }
     """)
     result = compile(source)
-    assert "llvm.alloca(8)" in result, "Should alloca 8 elements for 2x2x2 tensor"
-    assert "constant(1.0)" in result, "Should store 1.0"
-    assert "constant(8.0)" in result, "Should store 8.0"
+    assert "constant([" in result, "Tensor constant should pass through"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
 
 
@@ -147,7 +143,7 @@ def test_reshape_folds_away():
         | }
     """)
     result = compile(source)
-    assert "llvm.alloca(6)" in result, "Should have single alloc"
+    assert "constant([" in result, "Tensor constant should pass through"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
 
 
@@ -162,7 +158,7 @@ def test_double_transpose_optimized():
         | }
     """)
     result = compile(source)
-    assert "llvm.alloca(6)" in result, "Should have alloc for constant"
+    assert "constant([" in result, "Tensor constant should pass through"
     assert "llvm.call(@print_memref" in result, "Should call print_memref"
     assert "return()" in result, "Should return void"
 

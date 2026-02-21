@@ -35,3 +35,12 @@ def test_f64type_layout():
 
 def test_index_type_layout():
     assert builtin.IndexType().__layout__.byte_size() == 8
+
+
+def test_tensor_type_layout():
+    from toy.dialects.toy import TensorType
+
+    t = TensorType(shape=[2, 3])
+    layout = t.__layout__
+    assert layout.byte_size() == 48  # 6 * 8 bytes
+    assert layout.count == 6

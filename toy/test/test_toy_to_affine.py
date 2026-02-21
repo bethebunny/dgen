@@ -7,7 +7,7 @@ from toy.test.helpers import strip_prefix
 
 
 def test_simple_constant():
-    """Constant op lowers to alloc + stores."""
+    """Tensor constant passes through as-is (no alloc/store expansion)."""
     ir_text = strip_prefix("""
         | import toy
         |
@@ -19,9 +19,9 @@ def test_simple_constant():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "affine.alloc(<2x3>)" in result, "Should have alloc"
-    assert "affine.store" in result, "Should have stores"
-    assert "constant(" in result, "Should have constants"
+    assert "constant([" in result, "Tensor constant should pass through"
+    assert "affine.alloc(" not in result, "No alloc for constants"
+    assert "affine.store" not in result, "No stores for constants"
     assert "affine.print_memref" in result, "Should have print"
     assert "affine.dealloc" in result, "Should have dealloc"
     assert "return" in result, "Should have return"
@@ -41,12 +41,10 @@ def test_transpose():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    alloc_count = result.count("affine.alloc(")
-    assert alloc_count >= 2, "Should have at least 2 allocs"
+    assert result.count("affine.alloc(") == 1, "Should have 1 alloc (transpose result)"
+    assert "affine.alloc(<3x2>)" in result, "Should have 3x2 alloc for transposed result"
     assert "affine.load" in result, "Should have loads for transpose"
-    assert "affine.alloc(<3x2>)" in result, (
-        "Should have 3x2 alloc for transposed result"
-    )
+    assert "affine.store" in result, "Should have stores for transpose"
 
 
 def test_mul():
@@ -65,8 +63,7 @@ def test_mul():
     affine = lower_to_affine(m)
     result = asm.format(affine)
     assert "affine.mul_f" in result, "Should have mul_f op"
-    alloc_count = result.count("affine.alloc(")
-    assert alloc_count >= 3, "Should have 3 allocs (2 constants + 1 result)"
+    assert result.count("affine.alloc(") == 1, "Should have 1 alloc (result only)"
 
 
 def test_add():
@@ -104,7 +101,7 @@ def test_print():
 
 
 def test_3d_constant():
-    """3D constant lowers to alloc + stores."""
+    """3D tensor constant passes through as-is."""
     ir_text = strip_prefix("""
         | import toy
         |
@@ -116,10 +113,9 @@ def test_3d_constant():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "affine.alloc(<2x2x2>)" in result, "Should have 2x2x2 alloc"
-    assert "affine.store" in result, "Should have stores"
-    assert "constant(" in result, "Should have constants"
-    assert result.count("affine.store") == 8, "Should have 8 stores for 2x2x2"
+    assert "constant([" in result, "Tensor constant should pass through"
+    assert "affine.alloc(" not in result, "No alloc for constants"
+    assert "affine.store" not in result, "No stores for constants"
 
 
 def test_3d_add():
@@ -138,9 +134,8 @@ def test_3d_add():
     affine = lower_to_affine(m)
     result = asm.format(affine)
     assert "affine.add_f" in result, "Should have add_f op"
-    alloc_count = result.count("affine.alloc(")
-    assert alloc_count >= 3, "Should have 3 allocs (2 constants + 1 result)"
-    assert "affine.alloc(<2x2x2>)" in result, "Should have 2x2x2 allocs"
+    assert result.count("affine.alloc(") == 1, "Should have 1 alloc (result only)"
+    assert "affine.alloc(<2x2x2>)" in result, "Should have 2x2x2 alloc for result"
 
 
 def test_3d_mul():
@@ -159,8 +154,7 @@ def test_3d_mul():
     affine = lower_to_affine(m)
     result = asm.format(affine)
     assert "affine.mul_f" in result, "Should have mul_f op"
-    alloc_count = result.count("affine.alloc(")
-    assert alloc_count >= 3, "Should have 3 allocs (2 constants + 1 result)"
+    assert result.count("affine.alloc(") == 1, "Should have 1 alloc (result only)"
 
 
 def test_full_example():
@@ -181,7 +175,7 @@ def test_full_example():
     affine = lower_to_affine(m)
     result = asm.format(affine)
     alloc_count = result.count("affine.alloc(")
-    assert alloc_count >= 5, "Should have at least 5 allocs"
+    assert alloc_count == 3, "Should have 3 allocs (2 transpose + 1 mul result)"
     assert "affine.mul_f" in result, "Should have mul_f"
     assert "affine.load" in result, "Should have loads"
     assert "affine.store" in result, "Should have stores"

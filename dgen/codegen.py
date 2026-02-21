@@ -9,6 +9,7 @@ from io import StringIO
 import dgen
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
+from dgen.layout import Float64, Int
 
 # ---------------------------------------------------------------------------
 # Runtime: print_memref callback
@@ -54,6 +55,33 @@ def emit_llvm_ir(module: builtin.Module) -> str:
     return "\n".join(lines)
 
 
+def _materialize_constant(op: builtin.ConstantOp, name: str) -> list[str]:
+    """Emit alloca + stores for a tensor constant, driven by its type's layout."""
+    layout = op.type.__layout__  # type: ignore[union-attr]
+    elem = layout.element
+    if isinstance(elem, Float64):
+        llvm_type = "double"
+    elif isinstance(elem, Int):
+        llvm_type = "i64"
+    else:
+        raise ValueError(f"Unsupported layout element type: {elem}")
+    count = layout.count
+    values = op.value
+    assert isinstance(values, list)
+    lines = [f"  %{name} = alloca {llvm_type}, i64 {count}"]
+    for i, v in enumerate(values):
+        val_str = format_float(v) if llvm_type == "double" else str(v)
+        if i == 0:
+            lines.append(f"  store {llvm_type} {val_str}, ptr %{name}")
+        else:
+            gep_name = f"_mc{name}_{i}"
+            lines.append(
+                f"  %{gep_name} = getelementptr {llvm_type}, ptr %{name}, i64 {i}"
+            )
+            lines.append(f"  store {llvm_type} {val_str}, ptr %{gep_name}")
+    return lines
+
+
 def _emit_func(f: builtin.FuncOp) -> list[str]:
     # Build a SlotTracker so all ops get stable names
     tracker = SlotTracker()
@@ -66,7 +94,9 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
     for op in f.body.ops:
         vid = id(op)
         if isinstance(op, builtin.ConstantOp):
-            if isinstance(op.type, builtin.F64Type):
+            if isinstance(op.value, list):
+                types[vid] = "ptr"
+            elif isinstance(op.type, builtin.F64Type):
                 assert isinstance(op.value, (int, float))
                 constants[vid] = f"double {format_float(op.value)}"
                 types[vid] = "double"
@@ -108,7 +138,10 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
 
     for op in f.body.ops:
         if isinstance(op, builtin.ConstantOp):
-            continue  # inlined at use sites
+            if isinstance(op.value, list):
+                name = tracker.get_name(op)
+                lines.extend(_materialize_constant(op, name))
+            continue
 
         name = tracker.get_name(op)
 

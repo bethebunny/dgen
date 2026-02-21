@@ -179,7 +179,7 @@ class Module:
                     dialects.add(op.dialect)
             _collect_type_dialects(func, dialects)
 
-        for d in sorted(dialects):
+        for d in sorted(dialects, key=lambda d: d.name):
             yield f"import {d.name}"
         if dialects:
             yield ""

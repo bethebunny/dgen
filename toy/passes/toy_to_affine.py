@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from itertools import product
 from typing import Iterable
 
 import dgen
@@ -60,27 +59,10 @@ class ToyToAffineLowering:
         yield ops[0]
 
     def _lower_constant(self, op: builtin.ConstantOp) -> Iterator[dgen.Op]:
-        assert isinstance(op.type, toy.TensorType)
-        shape = op.type.shape
-
-        alloc_op = affine.AllocOp(shape=shape)
-        yield alloc_op
-        self.live_allocs.append(alloc_op)
-
-        values = op.value
-        assert isinstance(values, list)
-
-        for flat, nd_idx in enumerate(product(*(range(d) for d in shape))):
-            cst = builtin.ConstantOp(value=values[flat], type=builtin.F64Type())
-            indices = [
-                builtin.ConstantOp(value=dim_val, type=builtin.IndexType())
-                for dim_val in nd_idx
-            ]
-            yield cst
-            yield from indices
-            yield affine.StoreOp(value=cst, memref=alloc_op, indices=indices)
-
-        self.alloc_map[op] = alloc_op
+        new_const = builtin.ConstantOp(value=op.value, type=op.type)
+        yield new_const
+        self.alloc_map[op] = new_const
+        self.live_allocs.append(new_const)
 
     def _lower_transpose(self, op: toy.TransposeOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, toy.TensorType)
