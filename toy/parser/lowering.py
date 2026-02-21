@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dgen
+from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from toy.dialects import toy
 from toy.parser.ast import (
@@ -21,18 +23,18 @@ from toy.parser.ast import (
 )
 
 
-def _inferred() -> builtin.Type:
+def _inferred() -> dgen.Type:
     return toy.InferredShapeTensor()
 
 
-def _ranked(shape: list[int]) -> builtin.Type:
+def _ranked(shape: list[int]) -> dgen.Type:
     return toy.TensorType(shape=shape)
 
 
 class Lowering:
     def __init__(self):
-        self.ops: list[builtin.Op] = []
-        self.scope: dict[str, builtin.Value] = {}
+        self.ops: list[dgen.Op] = []
+        self.scope: dict[str, dgen.Value] = {}
 
     def lower_module(self, tm: ToyModule) -> builtin.Module:
         functions = [self.lower_function(f) for f in tm.functions]
@@ -44,10 +46,10 @@ class Lowering:
         self.scope = {}
 
         # Create block args for function params
-        args: list[builtin.BlockArg] = []
-        input_types: list[builtin.Type] = []
+        args: list[BlockArgument] = []
+        input_types: list[dgen.Type] = []
         for param_name in f.proto.params:
-            arg = builtin.BlockArg(name=param_name, type=_inferred())
+            arg = BlockArgument(name=param_name, type=_inferred())
             self.scope[param_name] = arg
             args.append(arg)
             input_types.append(_inferred())
@@ -57,7 +59,7 @@ class Lowering:
             self.lower_statement(stmt)
 
         # Determine return type from ops
-        result: builtin.Type = builtin.Nil()
+        result: dgen.Type = builtin.Nil()
         if self.ops:
             last_op = self.ops[-1]
             if isinstance(last_op, builtin.ReturnOp) and last_op.value is not None:
@@ -68,8 +70,8 @@ class Lowering:
         func_type = toy.FunctionType(inputs=input_types, result=result)
         return builtin.FuncOp(
             name=f.proto.name,
-            func_type=func_type,
-            body=builtin.Block(ops=ops, args=args),
+            type=func_type,
+            body=dgen.Block(ops=ops, args=args),
         )
 
     def lower_statement(self, stmt: Statement):
@@ -101,7 +103,7 @@ class Lowering:
         else:
             self.ops.append(builtin.ReturnOp())
 
-    def lower_expr(self, expr: Expression) -> builtin.Value:
+    def lower_expr(self, expr: Expression) -> dgen.Value:
         """Lower an expression, return the Value of the result."""
         if isinstance(expr, NumberLiteral):
             return self._lower_number(expr)
@@ -117,7 +119,7 @@ class Lowering:
             return self._lower_print(expr)
         raise RuntimeError("Unknown expression type")
 
-    def _lower_number(self, num: NumberLiteral) -> builtin.Value:
+    def _lower_number(self, num: NumberLiteral) -> dgen.Value:
         op = builtin.ConstantOp(
             value=[num.value],
             type=_ranked([1]),
@@ -125,7 +127,7 @@ class Lowering:
         self.ops.append(op)
         return op
 
-    def _lower_tensor(self, tensor: TensorLiteral) -> builtin.Value:
+    def _lower_tensor(self, tensor: TensorLiteral) -> dgen.Value:
         op = builtin.ConstantOp(
             value=list(tensor.values),
             type=_ranked(list(tensor.shape)),
@@ -133,12 +135,12 @@ class Lowering:
         self.ops.append(op)
         return op
 
-    def _lower_varref(self, vr: VarRef) -> builtin.Value:
+    def _lower_varref(self, vr: VarRef) -> dgen.Value:
         if vr.name not in self.scope:
             raise RuntimeError(f"Undefined variable: {vr.name}")
         return self.scope[vr.name]
 
-    def _lower_binop(self, op: BinaryOp) -> builtin.Value:
+    def _lower_binop(self, op: BinaryOp) -> dgen.Value:
         lhs = self.lower_expr(op.lhs)
         rhs = self.lower_expr(op.rhs)
         if op.op == "*":
@@ -150,7 +152,7 @@ class Lowering:
         self.ops.append(result_op)
         return result_op
 
-    def _lower_call(self, call: CallExpr) -> builtin.Value:
+    def _lower_call(self, call: CallExpr) -> dgen.Value:
         # Builtin: transpose
         if call.callee == "transpose":
             if len(call.args) != 1:
@@ -170,7 +172,7 @@ class Lowering:
         self.ops.append(op)
         return op
 
-    def _lower_print(self, p: PrintExpr) -> builtin.Value:
+    def _lower_print(self, p: PrintExpr) -> dgen.Value:
         arg = self.lower_expr(p.arg)
         self.ops.append(toy.PrintOp(input=arg))
         return arg

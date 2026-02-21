@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from dgen import Dialect, Op, Type, Value
 from dgen.asm.formatting import Sym
-from dgen.dialect import Dialect
-from dgen.dialects.builtin import Function, Nil, Op, Type, Value
+from dgen.dialects import builtin
 
 if TYPE_CHECKING:
     from dgen.asm.parser import IRParser
@@ -41,7 +41,7 @@ class InferredShapeTensor:
 
 
 @dataclass
-class FunctionType(Function):
+class FunctionType(builtin.Function):
     """(toy.Tensor[(2, 3), f64]) -> ()"""
 
     inputs: list[Type]
@@ -98,6 +98,7 @@ class GenericCallOp(Op):
 @dataclass(eq=False, kw_only=True)
 class PrintOp(Op):
     input: Value
+    type: Type = builtin.Nil()
 
 
 # ===----------------------------------------------------------------------=== #

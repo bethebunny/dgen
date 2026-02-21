@@ -1,16 +1,18 @@
 """Phase 1 tests: construct IR manually, print, verify output."""
 
+import dgen
 from dgen import asm
+from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from toy.dialects import toy
 from toy.test.helpers import strip_prefix
 
 
-def inferred() -> builtin.Type:
+def inferred() -> dgen.Type:
     return toy.InferredShapeTensor()
 
 
-def ranked(shape: list[int]) -> builtin.Type:
+def ranked(shape: list[int]) -> dgen.Type:
     return toy.TensorType(shape=shape)
 
 
@@ -27,34 +29,34 @@ def test_constant_op():
 
 
 def test_transpose_op():
-    a = builtin.Value(name="a")
+    a = dgen.Value(name="a", type=builtin.Nil())
     op = toy.TransposeOp(name="0", input=a, type=inferred())
     assert asm.format(op) == "%0 : toy.InferredShapeTensor[f64] = toy.transpose(%a)"
 
 
 def test_reshape_op():
-    v0 = builtin.Value(name="0")
+    v0 = dgen.Value(name="0", type=builtin.Nil())
     op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
     assert asm.format(op) == "%1 : toy.Tensor[(2, 3), f64] = toy.reshape(%0)"
 
 
 def test_mul_op():
-    v0 = builtin.Value(name="0")
-    v1 = builtin.Value(name="1")
+    v0 = dgen.Value(name="0", type=builtin.Nil())
+    v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.MulOp(name="2", lhs=v0, rhs=v1, type=inferred())
     assert asm.format(op) == "%2 : toy.InferredShapeTensor[f64] = toy.mul(%0, %1)"
 
 
 def test_add_op():
-    v0 = builtin.Value(name="0")
-    v1 = builtin.Value(name="1")
+    v0 = dgen.Value(name="0", type=builtin.Nil())
+    v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.AddOp(name="2", lhs=v0, rhs=v1, type=inferred())
     assert asm.format(op) == "%2 : toy.InferredShapeTensor[f64] = toy.add(%0, %1)"
 
 
 def test_generic_call_op():
-    v1 = builtin.Value(name="1")
-    v3 = builtin.Value(name="3")
+    v1 = dgen.Value(name="1", type=builtin.Nil())
+    v3 = dgen.Value(name="3", type=builtin.Nil())
     op = toy.GenericCallOp(
         name="4",
         callee="multiply_transpose",
@@ -68,14 +70,14 @@ def test_generic_call_op():
 
 
 def test_print_op():
-    v5 = builtin.Value(name="5")
+    v5 = dgen.Value(name="5", type=builtin.Nil())
     op = toy.PrintOp(input=v5)
     # PrintOp has no name -> auto-numbered as %0
     assert asm.format(op) == "%0 : () = toy.print(%5)"
 
 
 def test_return_op_with_value():
-    v2 = builtin.Value(name="2")
+    v2 = dgen.Value(name="2", type=builtin.Nil())
     op = builtin.ReturnOp(value=v2)
     assert asm.format(op) == "%0 : () = return(%2)"
 
@@ -87,8 +89,8 @@ def test_return_op_void():
 
 def test_full_module():
     # Build multiply_transpose function
-    mt_arg_a = builtin.BlockArg(name="a", type=inferred())
-    mt_arg_b = builtin.BlockArg(name="b", type=inferred())
+    mt_arg_a = BlockArgument(name="a", type=inferred())
+    mt_arg_b = BlockArgument(name="b", type=inferred())
 
     t0 = toy.TransposeOp(input=mt_arg_a, type=inferred())
     t1 = toy.TransposeOp(input=mt_arg_b, type=inferred())
@@ -98,8 +100,8 @@ def test_full_module():
     mt_func_type = toy.FunctionType(inputs=[inferred(), inferred()], result=inferred())
     mt_func = builtin.FuncOp(
         name="multiply_transpose",
-        func_type=mt_func_type,
-        body=builtin.Block(ops=[t0, t1, m0, ret_mt], args=[mt_arg_a, mt_arg_b]),
+        type=mt_func_type,
+        body=dgen.Block(ops=[t0, t1, m0, ret_mt], args=[mt_arg_a, mt_arg_b]),
     )
 
     # Build main function
@@ -129,8 +131,10 @@ def test_full_module():
     main_func_type = toy.FunctionType(inputs=[], result=builtin.Nil())
     main_func = builtin.FuncOp(
         name="main",
-        func_type=main_func_type,
-        body=builtin.Block(ops=[c0, r1, c2, r3, call4, call5, print_op, ret_main]),
+        type=main_func_type,
+        body=dgen.Block(
+            ops=[c0, r1, c2, r3, call4, call5, print_op, ret_main], args=[]
+        ),
     )
 
     module = builtin.Module(functions=[mt_func, main_func])

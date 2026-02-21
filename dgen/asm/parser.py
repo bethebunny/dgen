@@ -10,9 +10,9 @@ import importlib
 import types
 from typing import get_args, get_origin, get_type_hints
 
-from dgen.dialect import Dialect
+from dgen import Block, Dialect, Op, Type, Value
+from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.dialects.builtin import StaticString
 
 from .formatting import _SPECIAL_FIELDS, _get_annotation, _is_optional
 
@@ -63,7 +63,7 @@ def parse_op_fields(parser, cls, name=None, pre_type=None):
     if "body" in hints:
         body_hint = hints["body"]
         parser.skip_whitespace()
-        if body_hint is builtin.Block:
+        if body_hint is Block:
             # Parse optional block args: (%name: type, ...)
             args = []
             if parser.peek() == "(":
@@ -81,7 +81,7 @@ def parse_op_fields(parser, cls, name=None, pre_type=None):
             parser.skip_whitespace()
             parser.expect(":")
             ops = parser.parse_indented_block()
-            kwargs["body"] = builtin.Block(ops=ops, args=args)
+            kwargs["body"] = Block(ops=ops, args=args)
         else:
             parser.expect(":")
             kwargs["body"] = parser.parse_indented_block()
@@ -95,10 +95,10 @@ def parse_op_fields(parser, cls, name=None, pre_type=None):
     return op
 
 
-def _resolve_or_create(parser, ssa_name: str) -> builtin.Value:
+def _resolve_or_create(parser, ssa_name: str) -> Value:
     """Resolve an SSA name to a Value, creating a forward reference if needed."""
     if ssa_name not in parser.name_table:
-        val = builtin.Value(name=ssa_name)
+        val = Value(name=ssa_name, type=builtin.Nil())
         parser.name_table[ssa_name] = val
         return val
     return parser.name_table[ssa_name]
@@ -107,7 +107,7 @@ def _resolve_or_create(parser, ssa_name: str) -> builtin.Value:
 def _parse_value(parser, hint):
     """Parse a single value based on its type hint."""
     # Value reference — resolve via name table (or create if forward definition)
-    if isinstance(hint, type) and issubclass(hint, builtin.Value):
+    if isinstance(hint, type) and issubclass(hint, Value):
         return _resolve_or_create(parser, parser.parse_ssa_name())
 
     # list[Value] — parse as [%a, %b]
@@ -115,7 +115,7 @@ def _parse_value(parser, hint):
         get_origin(hint) is list
         and get_args(hint)
         and isinstance(get_args(hint)[0], type)
-        and issubclass(get_args(hint)[0], builtin.Value)
+        and issubclass(get_args(hint)[0], Value)
     ):
         parser.expect("[")
         parser.skip_whitespace()
@@ -130,13 +130,13 @@ def _parse_value(parser, hint):
         return items
 
     # StaticString -> quoted string
-    if hint is StaticString:
+    if hint is builtin.StaticString:
         return parser.parse_string_literal()
     # list[StaticString] -> ["a", "b"]
     if (
         get_origin(hint) is list
         and get_args(hint)
-        and get_args(hint)[0] is StaticString
+        and get_args(hint)[0] is builtin.StaticString
     ):
         parser.expect("[")
         parser.skip_whitespace()
@@ -209,7 +209,7 @@ class IRParser:
         self.pos = 0
         self._ops: dict[str, type] = {}
         self._types: dict = {}
-        self.name_table: dict[str, builtin.Value] = {}
+        self.name_table: dict[str, Value] = {}
 
         # Implicit: from builtin import *
         builtin_dialect = Dialect.get("builtin")
@@ -312,7 +312,7 @@ class IRParser:
             raise RuntimeError(f"Expected integer at position {self.pos}")
         return int(self.text[start : self.pos])
 
-    def parse_type(self) -> builtin.Type:
+    def parse_type(self) -> Type:
         """Parse a type via the registered type table, or () for Nil."""
         if self.peek() == "(":
             self.expect("()")
@@ -415,7 +415,7 @@ class IRParser:
         self.expect("(")
 
         # Parse parameters
-        args: list[builtin.BlockArg] = []
+        args: list[BlockArgument] = []
         self.skip_whitespace()
         if self.peek() != ")":
             arg = self._parse_param()
@@ -433,7 +433,7 @@ class IRParser:
         self.skip_whitespace()
         self.expect("->")
         self.skip_whitespace()
-        result_type: builtin.Type = self.parse_type()
+        result_type: Type = self.parse_type()
 
         self.expect(":")
         self.skip_line()
@@ -443,14 +443,12 @@ class IRParser:
 
         func_type = builtin.Function(result=result_type)
         func_op = builtin.FuncOp(
-            name=func_name,
-            func_type=func_type,
-            body=builtin.Block(ops=ops, args=args),
+            name=func_name, type=func_type, body=Block(ops=ops, args=args)
         )
         self.name_table[func_name] = func_op
         return func_op
 
-    def _parse_param(self) -> builtin.BlockArg:
+    def _parse_param(self) -> BlockArgument:
         """Parse %name or %name: Type"""
         param_name = self.parse_ssa_name()
         self.skip_whitespace()
@@ -459,13 +457,13 @@ class IRParser:
             self.expect(":")
             self.skip_whitespace()
             type_ = self.parse_type()
-        arg = builtin.BlockArg(name=param_name, type=type_)
+        arg = BlockArgument(name=param_name, type=type_)
         self.name_table[param_name] = arg
         return arg
 
-    def _parse_block(self, min_indent: int) -> list[builtin.Op]:
+    def _parse_block(self, min_indent: int) -> list[Op]:
         """Parse a block of indented ops."""
-        ops: list[builtin.Op] = []
+        ops: list[Op] = []
         while not self.at_end():
             line_start = self.pos
             indent = 0
@@ -501,7 +499,7 @@ class IRParser:
                 self.skip_line()
         return ops
 
-    def parse_indented_block(self) -> list[builtin.Op]:
+    def parse_indented_block(self) -> list[Op]:
         """Parse an indented block after a ':' (for ops with body)."""
         self.skip_line()
         # Determine indent of first line
@@ -518,7 +516,7 @@ class IRParser:
             return []
         return self._parse_block(min_indent=indent)
 
-    def parse_op(self) -> builtin.Op:
+    def parse_op(self) -> Op:
         """Parse a single operation: %result [: type] = [dialect.]op(...)"""
         op_name_str = self.parse_ssa_name()
         self.skip_whitespace()

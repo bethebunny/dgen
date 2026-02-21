@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dgen
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import StaticString
 from toy.dialects import affine
@@ -10,10 +11,10 @@ from toy.dialects import affine
 class AffineToLLVMLowering:
     def __init__(self):
         self.loop_counter = 0
-        self.ops: list[builtin.Op] = []
-        self.value_map: dict[builtin.Value, builtin.Value] = {}  # affine -> llvm
-        self.alloc_shapes: dict[builtin.Value, list[int]] = {}  # llvm alloca -> shape
-        self.alloc_sizes: dict[builtin.Value, int] = {}  # llvm alloca -> total size
+        self.ops: list[dgen.Op] = []
+        self.value_map: dict[dgen.Value, dgen.Value] = {}  # affine -> llvm
+        self.alloc_shapes: dict[dgen.Value, list[int]] = {}  # llvm alloca -> shape
+        self.alloc_sizes: dict[dgen.Value, int] = {}  # llvm alloca -> total size
         self.current_label = StaticString("entry")
 
     def lower_module(self, m: builtin.Module) -> builtin.Module:
@@ -35,15 +36,15 @@ class AffineToLLVMLowering:
         self.ops = []
         return builtin.FuncOp(
             name=f.name,
-            body=builtin.Block(ops=ops),
-            func_type=builtin.Function(result=builtin.Nil()),
+            body=dgen.Block(ops=ops),
+            type=builtin.Function(result=builtin.Nil()),
         )
 
-    def _map(self, old: builtin.Value) -> builtin.Value:
+    def _map(self, old: dgen.Value) -> dgen.Value:
         """Resolve an affine Value to its LLVM counterpart."""
         return self.value_map.get(old, old)
 
-    def lower_op(self, op: builtin.Op):
+    def lower_op(self, op: dgen.Op):
         if isinstance(op, affine.AllocOp):
             self._lower_alloc(op)
         elif isinstance(op, affine.DeallocOp):
@@ -101,14 +102,14 @@ class AffineToLLVMLowering:
         self.ops.append(llvm.StoreOp(value=self._map(op.value), ptr=ptr_op))
 
     def _linearize_indices(
-        self, memref: builtin.Value, indices: list[builtin.Value]
-    ) -> builtin.Value:
+        self, memref: dgen.Value, indices: list[dgen.Value]
+    ) -> dgen.Value:
         if len(indices) == 1:
             return indices[0]
 
         shape = self.alloc_shapes[memref]
 
-        result_val: builtin.Value | None = None
+        result_val: dgen.Value | None = None
         for i, idx_val in enumerate(indices):
             # Compute stride: product of shape[i+1], shape[i+2], ...
             stride = 1

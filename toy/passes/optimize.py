@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 from copy import deepcopy
 
+import dgen
 from dgen.dialects import builtin
 from toy.dialects import toy
 
@@ -13,7 +14,7 @@ from toy.dialects import toy
 # ===----------------------------------------------------------------------=== #
 
 
-def collect_uses(ops: list[builtin.Op]) -> set[int]:
+def collect_uses(ops: list[dgen.Op]) -> set[int]:
     """Return set of id()s of Values referenced as operands."""
     used: set[int] = set()
     for op in ops:
@@ -23,7 +24,7 @@ def collect_uses(ops: list[builtin.Op]) -> set[int]:
 
 
 def rewrite_uses(
-    ops: list[builtin.Op], old_value: builtin.Value, new_value: builtin.Value
+    ops: list[dgen.Op], old_value: dgen.Value, new_value: dgen.Value
 ):
     """Replace all operand references to old_value with new_value."""
     for op in ops:

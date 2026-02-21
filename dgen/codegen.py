@@ -8,6 +8,7 @@ from io import StringIO
 
 import llvmlite.binding as llvmlite
 
+import dgen
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 
@@ -87,14 +88,14 @@ def _emit_func(f: builtin.FuncOp) -> list[str]:
             first_val = op.values[0]
             types[vid] = types.get(id(first_val), "i64")
 
-    def typed_ref(val: builtin.Value) -> str:
+    def typed_ref(val: dgen.Value) -> str:
         """'type value' — e.g. 'double 1.0' or 'ptr %v3'."""
         vid = id(val)
         if vid in constants:
             return constants[vid]
         return f"{types.get(vid, 'i64')} %{tracker.get_name(val)}"
 
-    def bare_ref(val: builtin.Value) -> str:
+    def bare_ref(val: dgen.Value) -> str:
         """Just the value — e.g. '1.0' or '%v3'."""
         vid = id(val)
         if vid in constants:

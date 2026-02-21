@@ -2,89 +2,15 @@
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Iterable
-from dataclasses import dataclass, field
-from typing import ClassVar, NewType, Protocol, get_type_hints
+from dataclasses import dataclass
+from typing import NewType
 
-from dgen import asm
+from dgen import Block, Dialect, Op, Type, Value, asm
 from dgen.asm.formatting import SlotTracker, op_asm
-from dgen.dialect import Dialect
-from dgen.layout import BYTE, FLOAT64, FatPointer, INT
+from dgen.layout import BYTE, FLOAT64, INT, FatPointer
 
 StaticString = NewType("StaticString", str)
-
-
-class Type(Protocol):
-    """Any dialect type."""
-
-    @property
-    def asm(self) -> str: ...
-
-
-@dataclass(eq=False, kw_only=True)
-class Value:
-    """Base class for SSA values. An op or block argument."""
-
-    name: str | None = None
-
-    @property
-    def operands(self) -> list[Value]:
-        return []
-
-    @property
-    def blocks(self) -> dict[str, Block]:
-        return {}
-
-
-@dataclass(eq=False, kw_only=True)
-class BlockArg(Value):
-    """A block argument (function parameter)."""
-
-    type: Type = None  # type: ignore[assignment]
-
-
-@dataclass(eq=False, kw_only=True)
-class Op(Value):
-    """Base class for all dialect operations."""
-
-    _asm_name: ClassVar[str]
-    dialect: ClassVar[Dialect]
-    type: Type = field(default_factory=lambda: Nil())
-
-    @property
-    def operands(self) -> Iterable[Tuple[str, Value]]:
-        """All Value-typed fields (auto-introspected)."""
-        result: list[Value] = []
-        for f in dataclasses.fields(self):
-            if isinstance(attr := getattr(self, f.name), Value):
-                yield f.name, attr
-        return result
-
-    @property
-    def blocks(self) -> dict[str, Block]:
-        """All Block-typed fields as a name->block dict (auto-introspected)."""
-        hints = get_type_hints(type(self), include_extras=True)
-        result: dict[str, Block] = {}
-        for fname, hint in hints.items():
-            if hint is Block:
-                result[fname] = getattr(self, fname)
-        return result
-
-    @property
-    def asm(self) -> Iterable[str]:
-        return op_asm(self)
-
-
-@dataclass
-class Block:
-    ops: list[Op]
-    args: list[BlockArg] = field(default_factory=list)
-
-    @property
-    def asm(self) -> Iterable[str]:
-        for op in self.ops:
-            yield from op.asm
 
 
 # ===----------------------------------------------------------------------=== #
@@ -170,6 +96,7 @@ class ConstantOp(Op):
 @dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):
     value: Value | None = None
+    type: Type = Nil()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -180,8 +107,8 @@ class ReturnOp(Op):
 @builtin.op("function")
 @dataclass(eq=False, kw_only=True)
 class FuncOp(Op):
-    body: Block = None  # type: ignore[assignment]
-    func_type: Function = None  # type: ignore[assignment]
+    body: Block
+    type: Function
 
     @property
     def asm(self) -> Iterable[str]:
@@ -200,7 +127,7 @@ class FuncOp(Op):
             else:
                 arg_parts.append(f"%{n}")
         args = ", ".join(arg_parts)
-        yield f"%{name} = function ({args}) -> {self.func_type.result.asm}:"
+        yield f"%{name} = function ({args}) -> {self.type.result.asm}:"
         for op in self.body.ops:
             yield from asm.indent(op_asm(op, tracker))
 
@@ -209,7 +136,7 @@ def _register_ops(tracker, ops: list[Op]):
     """Pre-register all ops in a tracker so slot numbers are stable."""
     for op in ops:
         tracker.get_name(op)
-        for block in op.blocks.values():
+        for _, block in op.blocks:
             for arg in block.args:
                 tracker.get_name(arg)
             _register_ops(tracker, block.ops)
@@ -218,7 +145,7 @@ def _register_ops(tracker, ops: list[Op]):
 def _walk_all_ops(op: Op) -> Iterable[Op]:
     """Recursively yield all ops, descending into op bodies."""
     yield op
-    for block in op.blocks.values():
+    for _, block in op.blocks:
         for child in block.ops:
             yield from _walk_all_ops(child)
 
@@ -235,7 +162,7 @@ def _collect_type_dialects(func: FuncOp, dialects: set):
         _check(getattr(op, "type", None))
     for arg in func.body.args:
         _check(arg.type)
-    _check(func.func_type.result)
+    _check(func.type.result)
 
 
 @dataclass

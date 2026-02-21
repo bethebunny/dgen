@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import dgen
 from dgen.dialects import builtin
 from toy.dialects import toy
 
 
 def _resolve(
-    type_of: dict[int, toy.TensorType], val: builtin.Value
+    type_of: dict[int, toy.TensorType], val: dgen.Value
 ) -> toy.TensorType | None:
     return type_of.get(id(val))
 
@@ -65,7 +66,7 @@ def _infer_function(
                     ):
                         ret_type = _resolve(type_of, ret_op.value)
                         if ret_type is not None:
-                            callee.func_type = toy.FunctionType(
+                            callee.type = toy.FunctionType(
                                 inputs=list(arg_types),
                                 result=ret_type,
                             )

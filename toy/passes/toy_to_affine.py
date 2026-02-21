@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import dgen
+from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from toy.dialects import affine, toy
 
 
 class ToyToAffineLowering:
     def __init__(self):
-        self.ops: list[builtin.Op] = []
-        self.shape_map: dict[builtin.Value, list[int]] = {}
-        self.alloc_map: dict[builtin.Value, builtin.Value] = {}
-        self.live_allocs: list[builtin.Value] = []
+        self.ops: list[dgen.Op] = []
+        self.shape_map: dict[dgen.Value, list[int]] = {}
+        self.alloc_map: dict[dgen.Value, dgen.Value] = {}
+        self.live_allocs: list[dgen.Value] = []
 
     def lower_module(self, m: builtin.Module) -> builtin.Module:
         functions = [self.lower_function(f) for f in m.functions]
@@ -30,11 +32,11 @@ class ToyToAffineLowering:
         self.ops = []
         return builtin.FuncOp(
             name=f.name,
-            body=builtin.Block(ops=ops),
-            func_type=builtin.Function(result=builtin.Nil()),
+            body=dgen.Block(ops=ops),
+            type=builtin.Function(result=builtin.Nil()),
         )
 
-    def lower_op(self, op: builtin.Op):
+    def lower_op(self, op: dgen.Op):
         if isinstance(op, builtin.ConstantOp) and isinstance(op.value, list):
             self._lower_constant(op)
         elif isinstance(op, toy.TransposeOp):
@@ -51,13 +53,16 @@ class ToyToAffineLowering:
             self._lower_return(op)
 
     def _lower_constant(self, op: builtin.ConstantOp):
+        assert isinstance(op.type, toy.TensorType)
         shape = list(op.type.shape)
 
-        alloc_op = affine.AllocOp(shape=list(shape))
+        alloc_op = affine.AllocOp(shape=shape)
         self.ops.append(alloc_op)
         self.live_allocs.append(alloc_op)
 
         values = op.value
+        assert isinstance(values, list)
+
         if len(shape) == 1:
             for i, v in enumerate(values):
                 cst = builtin.ConstantOp(value=v, type=builtin.F64Type())
@@ -101,9 +106,9 @@ class ToyToAffineLowering:
         in_alloc = self.alloc_map.get(input_val, input_val)
 
         # Nested for: load [i,j] from input, store [j,i] to output
-        ivar = builtin.BlockArg(type=affine.IndexType())
-        jvar = builtin.BlockArg(type=affine.IndexType())
-        inner_body: list[builtin.Op] = []
+        ivar = BlockArgument(type=builtin.IndexType())
+        jvar = BlockArgument(type=builtin.IndexType())
+        inner_body: list[dgen.Op] = []
 
         load_op = affine.LoadOp(memref=in_alloc, indices=[ivar, jvar])
         inner_body.append(load_op)
@@ -111,13 +116,11 @@ class ToyToAffineLowering:
             affine.StoreOp(value=load_op, memref=alloc_op, indices=[jvar, ivar])
         )
 
-        outer_body: list[builtin.Op] = [
-            affine.ForOp(
-                lo=0, hi=cols, body=builtin.Block(ops=inner_body, args=[jvar])
-            ),
+        outer_body: list[dgen.Op] = [
+            affine.ForOp(lo=0, hi=cols, body=dgen.Block(ops=inner_body, args=[jvar])),
         ]
         self.ops.append(
-            affine.ForOp(lo=0, hi=rows, body=builtin.Block(ops=outer_body, args=[ivar]))
+            affine.ForOp(lo=0, hi=rows, body=dgen.Block(ops=outer_body, args=[ivar]))
         )
 
         self.shape_map[op] = out_shape
@@ -125,9 +128,9 @@ class ToyToAffineLowering:
 
     def _lower_binop(
         self,
-        result_op: builtin.Op,
-        lhs_val: builtin.Value,
-        rhs_val: builtin.Value,
+        result_op: dgen.Op,
+        lhs_val: dgen.Value,
+        rhs_val: dgen.Value,
         is_mul: bool,
     ):
         shape = list(self.shape_map[lhs_val])
@@ -139,8 +142,8 @@ class ToyToAffineLowering:
         rhs_alloc = self.alloc_map.get(rhs_val, rhs_val)
 
         if len(shape) == 1:
-            ivar = builtin.BlockArg(type=affine.IndexType())
-            body: list[builtin.Op] = []
+            ivar = BlockArgument(type=builtin.IndexType())
+            body: list[dgen.Op] = []
             lv = affine.LoadOp(memref=lhs_alloc, indices=[ivar])
             body.append(lv)
             rv = affine.LoadOp(memref=rhs_alloc, indices=[ivar])
@@ -152,14 +155,12 @@ class ToyToAffineLowering:
             body.append(res)
             body.append(affine.StoreOp(value=res, memref=alloc_op, indices=[ivar]))
             self.ops.append(
-                affine.ForOp(
-                    lo=0, hi=shape[0], body=builtin.Block(ops=body, args=[ivar])
-                )
+                affine.ForOp(lo=0, hi=shape[0], body=dgen.Block(ops=body, args=[ivar]))
             )
         elif len(shape) == 2:
-            ivar = builtin.BlockArg(type=affine.IndexType())
-            jvar = builtin.BlockArg(type=affine.IndexType())
-            inner_body: list[builtin.Op] = []
+            ivar = BlockArgument(type=builtin.IndexType())
+            jvar = BlockArgument(type=builtin.IndexType())
+            inner_body: list[dgen.Op] = []
             lv = affine.LoadOp(memref=lhs_alloc, indices=[ivar, jvar])
             inner_body.append(lv)
             rv = affine.LoadOp(memref=rhs_alloc, indices=[ivar, jvar])
@@ -172,14 +173,14 @@ class ToyToAffineLowering:
             inner_body.append(
                 affine.StoreOp(value=res, memref=alloc_op, indices=[ivar, jvar])
             )
-            outer_body: list[builtin.Op] = [
+            outer_body: list[dgen.Op] = [
                 affine.ForOp(
-                    lo=0, hi=shape[1], body=builtin.Block(ops=inner_body, args=[jvar])
+                    lo=0, hi=shape[1], body=dgen.Block(ops=inner_body, args=[jvar])
                 ),
             ]
             self.ops.append(
                 affine.ForOp(
-                    lo=0, hi=shape[0], body=builtin.Block(ops=outer_body, args=[ivar])
+                    lo=0, hi=shape[0], body=dgen.Block(ops=outer_body, args=[ivar])
                 )
             )
 
