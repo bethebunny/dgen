@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from itertools import product
+from typing import Iterable
 
 import dgen
 from dgen.block import BlockArgument
@@ -37,10 +38,8 @@ class ToyToAffineLowering:
             yield from self._lower_constant(op)
         elif isinstance(op, toy.TransposeOp):
             yield from self._lower_transpose(op)
-        elif isinstance(op, toy.MulOp):
-            yield from self._lower_binop(op, op.lhs, op.rhs, is_mul=True)
-        elif isinstance(op, toy.AddOp):
-            yield from self._lower_binop(op, op.lhs, op.rhs, is_mul=False)
+        elif isinstance(op, (toy.MulOp, toy.AddOp)):
+            yield from self._lower_binop(op, op.lhs, op.rhs)
         elif isinstance(op, toy.ReshapeOp):
             self._lower_reshape(op)
         elif isinstance(op, toy.PrintOp):
@@ -49,17 +48,15 @@ class ToyToAffineLowering:
             yield from self._lower_return(op)
 
     def _nested_for(
-        self, shape: list[int], body_fn: Callable[[list[BlockArgument]], list[dgen.Op]]
+        self,
+        shape: list[int],
+        body_fn: Callable[[Iterable[BlockArgument]], list[dgen.Op]],
     ) -> Iterator[dgen.Op]:
         """Build nested ForOps for each dimension. body_fn(ivars) -> innermost ops."""
         ivars = [BlockArgument(type=builtin.IndexType()) for _ in shape]
-        ops = body_fn(ivars)
-        for dim in reversed(range(len(shape))):
-            ops = [
-                affine.ForOp(
-                    lo=0, hi=shape[dim], body=dgen.Block(ops=ops, args=[ivars[dim]])
-                )
-            ]
+        ops = list(body_fn(ivars))
+        for dim, var in reversed(list(zip(shape, ivars))):
+            ops = [affine.ForOp(lo=0, hi=dim, body=dgen.Block(ops=ops, args=[var]))]
         yield ops[0]
 
     def _lower_constant(self, op: builtin.ConstantOp) -> Iterator[dgen.Op]:
@@ -75,12 +72,12 @@ class ToyToAffineLowering:
 
         for flat, nd_idx in enumerate(product(*(range(d) for d in shape))):
             cst = builtin.ConstantOp(value=values[flat], type=builtin.F64Type())
+            indices = [
+                builtin.ConstantOp(value=dim_val, type=builtin.IndexType())
+                for dim_val in nd_idx
+            ]
             yield cst
-            indices = []
-            for dim_val in nd_idx:
-                idx = builtin.ConstantOp(value=dim_val, type=builtin.IndexType())
-                yield idx
-                indices.append(idx)
+            yield from indices
             yield affine.StoreOp(value=cst, memref=alloc_op, indices=indices)
 
         self.alloc_map[op] = alloc_op
@@ -106,7 +103,7 @@ class ToyToAffineLowering:
         self.alloc_map[op] = alloc_op
 
     def _lower_binop(
-        self, result_op: dgen.Op, lhs_val: dgen.Value, rhs_val: dgen.Value, is_mul: bool
+        self, result_op: dgen.Op, lhs_val: dgen.Value, rhs_val: dgen.Value
     ) -> Iterator[dgen.Op]:
         assert isinstance(lhs_val.type, toy.TensorType)
         shape = lhs_val.type.shape
@@ -116,13 +113,15 @@ class ToyToAffineLowering:
         lhs_alloc = self.alloc_map.get(lhs_val, lhs_val)
         rhs_alloc = self.alloc_map.get(rhs_val, rhs_val)
 
+        binop = {
+            toy.MulOp: affine.ArithMulFOp,
+            toy.AddOp: affine.ArithAddFOp,
+        }
+
         def body(ivars):
             lv = affine.LoadOp(memref=lhs_alloc, indices=ivars)
             rv = affine.LoadOp(memref=rhs_alloc, indices=ivars)
-            if is_mul:
-                res = affine.ArithMulFOp(lhs=lv, rhs=rv)
-            else:
-                res = affine.ArithAddFOp(lhs=lv, rhs=rv)
+            res = binop[type(result_op)](lhs=lv, rhs=rv)
             store = affine.StoreOp(value=res, memref=alloc_op, indices=ivars)
             return [lv, rv, res, store]
 
