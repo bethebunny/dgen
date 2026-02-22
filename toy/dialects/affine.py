@@ -14,6 +14,12 @@ from dgen.dialects import builtin
 affine = Dialect("affine")
 
 
+@affine.type("Shape")
+@dataclass(frozen=True)
+class ShapeType:
+    pass
+
+
 @affine.type("MemRef")
 @dataclass(frozen=True)
 class MemRefType:

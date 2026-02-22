@@ -131,3 +131,31 @@ def test_roundtrip_multi_index_load_store():
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
+
+
+def test_roundtrip_ssa_in_op_arg():
+    """SSA value used as an op argument where a literal list would normally go."""
+    ir = strip_prefix("""
+        | import affine
+        |
+        | %f = function () -> ():
+        |     %shape : affine.Shape = [2, 3]
+        |     %0 : affine.MemRef([2, 3], f64) = affine.alloc(%shape)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+
+def test_roundtrip_ssa_in_type_param():
+    """SSA value used inside a type parameter position."""
+    ir = strip_prefix("""
+        | import affine
+        |
+        | %f = function () -> ():
+        |     %shape : affine.Shape = [2, 3]
+        |     %0 : affine.MemRef(%shape, f64) = affine.alloc(%shape)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir

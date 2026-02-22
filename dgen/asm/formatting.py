@@ -98,14 +98,14 @@ def format_expr(value, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, str):
         return f'"{value}"'
     if hasattr(value, "_asm_name"):
-        return type_asm(value)
+        return type_asm(value, tracker)
     # Fallback for types with hand-written .asm (e.g. llvm types)
     if hasattr(value, "asm") and isinstance(value.asm, str):
         return value.asm
     return str(value)
 
 
-def type_asm(type_obj) -> str:
+def type_asm(type_obj, tracker: SlotTracker | None = None) -> str:
     """Generic type formatter via field introspection."""
     cls = type(type_obj)
     prefix = f"{cls.dialect.name}." if cls.dialect.name != "builtin" else ""
@@ -116,7 +116,7 @@ def type_asm(type_obj) -> str:
         fields = ()
     if not fields:
         return name
-    args = ", ".join(format_expr(getattr(type_obj, f.name)) for f in fields)
+    args = ", ".join(format_expr(getattr(type_obj, f.name), tracker) for f in fields)
     return f"{name}({args})"
 
 
@@ -165,7 +165,7 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
 
     # Build the line
     result_name = tracker.get_name(op)
-    parts = [f"%{result_name} : {format_expr(op.type)} = "]
+    parts = [f"%{result_name} : {format_expr(op.type, tracker)} = "]
     prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
     if asm_name == "constant" and dialect_name == "builtin":
         parts.append(args_str)

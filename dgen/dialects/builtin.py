@@ -92,11 +92,11 @@ class FuncOp(Op):
         for a in self.body.args:
             n = tracker.get_name(a)
             if a.type is not None:
-                arg_parts.append(f"%{n}: {format_expr(a.type)}")
+                arg_parts.append(f"%{n}: {format_expr(a.type, tracker)}")
             else:
                 arg_parts.append(f"%{n}")
         args = ", ".join(arg_parts)
-        yield f"%{name} = function ({args}) -> {format_expr(self.type.result)}:"
+        yield f"%{name} = function ({args}) -> {format_expr(self.type.result, tracker)}:"
         for op in self.body.ops:
             yield from asm.indent(op_asm(op, tracker))
 

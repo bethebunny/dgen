@@ -17,3 +17,5 @@
 - See if we can make `Block` an op in a generic way.
 - Make `call` a generic op in builtin
 - Update all tests to show all asm rather than partial asserts
+- What are "special fields" in the parser? They shouldn't exist
+- Add parser failure tests
