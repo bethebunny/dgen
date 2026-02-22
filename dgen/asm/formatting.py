@@ -84,10 +84,7 @@ def format_expr(value, tracker: SlotTracker | None = None) -> str:
         name = value.name if value.name is not None else "?"
         return f"%{name}"
     if isinstance(value, list):
-        # Use [...] for Value lists and string lists, (...) for data tuples
-        if value and isinstance(value[0], (Value, str)):
-            return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
-        return "(" + ", ".join(format_expr(v, tracker) for v in value) + ")"
+        return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
     if isinstance(value, float):
         return format_float(value)
     if isinstance(value, int):
@@ -114,7 +111,7 @@ def type_asm(type_obj) -> str:
     if not fields:
         return name
     args = ", ".join(format_expr(getattr(type_obj, f.name)) for f in fields)
-    return f"{name}[{args}]"
+    return f"{name}({args})"
 
 
 # ===----------------------------------------------------------------------=== #

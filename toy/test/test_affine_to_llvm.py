@@ -20,12 +20,12 @@ def test_simple_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(3), f64] = (1.0, 2.0, 3.0)
+        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
-    assert "= (" in result, "Tensor constant should pass through"
+    assert "= [" in result, "Tensor constant should pass through"
     assert 'llvm.call("print_memref"' in result, "Should have print_memref call"
     assert "return()" in result, "Should have return()"
 
@@ -36,12 +36,12 @@ def test_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(3), f64] = (1.0, 2.0, 3.0)
+        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
-    assert "= (1.0, 2.0, 3.0)" in result
+    assert "= [1.0, 2.0, 3.0]" in result
     assert result.count("llvm.store(") == 0, "No stores at dgen IR level for constants"
 
 
@@ -51,12 +51,12 @@ def test_2d_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
-    assert "= (" in result, "Tensor constant should pass through"
+    assert "= [" in result, "Tensor constant should pass through"
 
 
 def test_load_store_linearization():
@@ -65,8 +65,8 @@ def test_load_store_linearization():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-        |     %1 : toy.Tensor[(3, 2), f64] = toy.transpose(%0)
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor([3, 2], f64) = toy.transpose(%0)
         |     %_ = toy.print(%1)
         |     %_ = return()
     """)
@@ -82,12 +82,12 @@ def test_3d_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2, 2), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
+        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
-    assert "= (" in result, "Tensor constant should pass through"
+    assert "= [" in result, "Tensor constant should pass through"
 
 
 def test_3d_load_store_linearization():
@@ -96,9 +96,9 @@ def test_3d_load_store_linearization():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2, 2), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
-        |     %1 : toy.Tensor[(2, 2, 2), f64] = (2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0)
-        |     %2 : toy.Tensor[(2, 2, 2), f64] = toy.add(%0, %1)
+        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor([2, 2, 2], f64) = toy.add(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return()
     """)
@@ -116,18 +116,18 @@ def test_full_example():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-        |     %1 : toy.Tensor[(3, 2), f64] = toy.transpose(%0)
-        |     %2 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-        |     %3 : toy.Tensor[(3, 2), f64] = toy.transpose(%2)
-        |     %4 : toy.Tensor[(3, 2), f64] = toy.mul(%1, %3)
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor([3, 2], f64) = toy.transpose(%0)
+        |     %2 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor([3, 2], f64) = toy.transpose(%2)
+        |     %4 : toy.Tensor([3, 2], f64) = toy.mul(%1, %3)
         |     %_ = toy.print(%4)
         |     %_ = return()
     """)
     result = compile_to_llvm(ir_text)
     assert "%main = function () -> ():" in result, "Should have function def"
     assert "llvm.alloca(" in result, "Should have alloca for non-constant allocs"
-    assert "= (" in result, "Should have tensor constants"
+    assert "= [" in result, "Should have tensor constants"
     assert "llvm.fmul(" in result, "Should have fmul for Mul op"
     assert 'llvm.call("print_memref"' in result, "Should have print_memref"
     assert "return()" in result, "Should have return()"

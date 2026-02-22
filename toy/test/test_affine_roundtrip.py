@@ -10,7 +10,7 @@ def test_roundtrip_alloc():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef[(2, 3), f64] = affine.alloc((2, 3))
+        |     %0 : affine.MemRef([2, 3], f64) = affine.alloc([2, 3])
         |     %_ : () = affine.dealloc(%0)
         |     %_ : () = return()
     """)
@@ -23,7 +23,7 @@ def test_roundtrip_store_load():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef[(3), f64] = affine.alloc((3))
+        |     %0 : affine.MemRef([3], f64) = affine.alloc([3])
         |     %1 : f64 = 1.0
         |     %2 : index = 0
         |     %_ : () = affine.store(%1, %0, [%2])
@@ -64,7 +64,7 @@ def test_roundtrip_print_memref():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef[(3), f64] = affine.alloc((3))
+        |     %0 : affine.MemRef([3], f64) = affine.alloc([3])
         |     %_ : () = affine.print_memref(%0)
         |     %_ : () = return()
     """)
@@ -77,7 +77,7 @@ def test_roundtrip_for_op():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef[(3), f64] = affine.alloc((3))
+        |     %0 : affine.MemRef([3], f64) = affine.alloc([3])
         |     %_ : () = affine.for(0, 3) (%i0: index):
         |         %1 : f64 = 1.0
         |         %2 : index = 0
@@ -94,7 +94,7 @@ def test_roundtrip_nested_for():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef[(2, 3), f64] = affine.alloc((2, 3))
+        |     %0 : affine.MemRef([2, 3], f64) = affine.alloc([2, 3])
         |     %_ : () = affine.for(0, 2) (%i0: index):
         |         %_ : () = affine.for(0, 3) (%i1: index):
         |             %1 : f64 = 1.0
@@ -121,7 +121,7 @@ def test_roundtrip_multi_index_load_store():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef[(2, 3), f64] = affine.alloc((2, 3))
+        |     %0 : affine.MemRef([2, 3], f64) = affine.alloc([2, 3])
         |     %1 : f64 = 5.0
         |     %2 : index = 0
         |     %3 : index = 1

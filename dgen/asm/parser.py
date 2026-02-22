@@ -28,23 +28,6 @@ def parse_expr(parser):
     """Parse a single expression, dispatching on syntax."""
     c = parser.peek()
 
-    if c == "(":
-        # Tuple or nil: "()" -> [], "(items)" -> [items]
-        parser.expect("(")
-        parser.skip_whitespace()
-        if parser.peek() == ")":
-            parser.expect(")")
-            return []
-        items = [parse_expr(parser)]
-        parser.skip_whitespace()
-        while parser.peek() == ",":
-            parser.expect(",")
-            parser.skip_whitespace()
-            items.append(parse_expr(parser))
-            parser.skip_whitespace()
-        parser.expect(")")
-        return items
-
     if c == "[":
         # List: [expr, expr, ...]
         parser.expect("[")
@@ -91,11 +74,11 @@ def parse_expr(parser):
         fields = ()
     if not fields:
         return cls()
-    # Parameterized type: Name[expr, expr, ...]
-    parser.expect("[")
+    # Parameterized type: Name(expr, expr, ...)
+    parser.expect("(")
     parser.skip_whitespace()
     kwargs = _parse_fields_from_exprs(parser, cls)
-    parser.expect("]")
+    parser.expect(")")
     return cls(**kwargs)
 
 
@@ -517,8 +500,8 @@ class IRParser:
             self.skip_whitespace()
         self.expect("=")
         self.skip_whitespace()
-        # Implicit constant: value starts with '(' or digit/minus
-        if self.peek() in "(-0123456789":
+        # Implicit constant: value starts with '[' or digit/minus
+        if self.peek() in "[-0123456789":
             value = parse_expr(self)
             op = builtin.ConstantOp(name=op_name_str, value=value, type=pre_type)
             self.name_table[op_name_str] = op

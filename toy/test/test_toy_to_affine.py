@@ -12,14 +12,14 @@ def test_simple_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "= (" in result, "Tensor constant should pass through"
+    assert "= [" in result, "Tensor constant should pass through"
     assert "affine.alloc(" not in result, "No alloc for constants"
     assert "affine.store" not in result, "No stores for constants"
     assert "affine.print_memref" in result, "Should have print"
@@ -33,8 +33,8 @@ def test_transpose():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-        |     %1 : toy.Tensor[(3, 2), f64] = toy.transpose(%0)
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor([3, 2], f64) = toy.transpose(%0)
         |     %_ = toy.print(%1)
         |     %_ = return()
     """)
@@ -42,7 +42,7 @@ def test_transpose():
     affine = lower_to_affine(m)
     result = asm.format(affine)
     assert result.count("affine.alloc(") == 1, "Should have 1 alloc (transpose result)"
-    assert "affine.alloc((3, 2))" in result, "Should have 3x2 alloc for transposed result"
+    assert "affine.alloc([3, 2])" in result, "Should have 3x2 alloc for transposed result"
     assert "affine.load" in result, "Should have loads for transpose"
     assert "affine.store" in result, "Should have stores for transpose"
 
@@ -53,9 +53,9 @@ def test_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2), f64] = (1.0, 2.0, 3.0, 4.0)
-        |     %1 : toy.Tensor[(2, 2), f64] = (5.0, 6.0, 7.0, 8.0)
-        |     %2 : toy.Tensor[(2, 2), f64] = toy.mul(%0, %1)
+        |     %0 : toy.Tensor([2, 2], f64) = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor([2, 2], f64) = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : toy.Tensor([2, 2], f64) = toy.mul(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return()
     """)
@@ -72,9 +72,9 @@ def test_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2), f64] = (1.0, 2.0, 3.0, 4.0)
-        |     %1 : toy.Tensor[(2, 2), f64] = (5.0, 6.0, 7.0, 8.0)
-        |     %2 : toy.Tensor[(2, 2), f64] = toy.add(%0, %1)
+        |     %0 : toy.Tensor([2, 2], f64) = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor([2, 2], f64) = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : toy.Tensor([2, 2], f64) = toy.add(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return()
     """)
@@ -90,7 +90,7 @@ def test_print():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
@@ -106,14 +106,14 @@ def test_3d_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2, 2), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
+        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %_ = toy.print(%0)
         |     %_ = return()
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "= (" in result, "Tensor constant should pass through"
+    assert "= [" in result, "Tensor constant should pass through"
     assert "affine.alloc(" not in result, "No alloc for constants"
     assert "affine.store" not in result, "No stores for constants"
 
@@ -124,9 +124,9 @@ def test_3d_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2, 2), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
-        |     %1 : toy.Tensor[(2, 2, 2), f64] = (2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0)
-        |     %2 : toy.Tensor[(2, 2, 2), f64] = toy.add(%0, %1)
+        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor([2, 2, 2], f64) = toy.add(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return()
     """)
@@ -135,7 +135,7 @@ def test_3d_add():
     result = asm.format(affine)
     assert "affine.add_f" in result, "Should have add_f op"
     assert result.count("affine.alloc(") == 1, "Should have 1 alloc (result only)"
-    assert "affine.alloc((2, 2, 2))" in result, "Should have 2x2x2 alloc for result"
+    assert "affine.alloc([2, 2, 2])" in result, "Should have 2x2x2 alloc for result"
 
 
 def test_3d_mul():
@@ -144,9 +144,9 @@ def test_3d_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 2, 2), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0)
-        |     %1 : toy.Tensor[(2, 2, 2), f64] = (2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0)
-        |     %2 : toy.Tensor[(2, 2, 2), f64] = toy.mul(%0, %1)
+        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor([2, 2, 2], f64) = toy.mul(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return()
     """)
@@ -163,11 +163,11 @@ def test_full_example():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-        |     %1 : toy.Tensor[(3, 2), f64] = toy.transpose(%0)
-        |     %2 : toy.Tensor[(2, 3), f64] = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-        |     %3 : toy.Tensor[(3, 2), f64] = toy.transpose(%2)
-        |     %4 : toy.Tensor[(3, 2), f64] = toy.mul(%1, %3)
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor([3, 2], f64) = toy.transpose(%0)
+        |     %2 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor([3, 2], f64) = toy.transpose(%2)
+        |     %4 : toy.Tensor([3, 2], f64) = toy.mul(%1, %3)
         |     %_ = toy.print(%4)
         |     %_ = return()
     """)

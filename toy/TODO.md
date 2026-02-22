@@ -4,14 +4,9 @@
 - Remove anything that's thinking about "origin"s and generic python types or annotations
 - SSA types via JIT
 - Go through and rename files
-- Generalize parsing
-- Make `constant` op implicit on literals
-- General literals
 - Struct literals
 - JIT test
-- Generalize asm formatting
 - DTypes
-- Remove "Sym"
 - Read, understand, clean passes
 - Create dialect files
 - Generate dialects from dialect files
@@ -20,3 +15,5 @@
 - Write more down into design docs
 - Massively simplify / clean the asm parser and formatter code
 - See if we can make `Block` an op in a generic way.
+- Make `call` a generic op in builtin
+- Update all tests to show all asm rather than partial asserts
