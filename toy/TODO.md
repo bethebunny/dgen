@@ -1,3 +1,5 @@
+- `affine.load` / `affine.mul_f` / `affine.add_f` should return `f64` (not `()`)
+- `affine.store` / `affine.dealloc` returning `()` is correct (void ops)
 - Figure out why some ASM still doesn't have types, these should fail to parse
 - Remove anything that's thinking about "origin"s and generic python types or annotations
 - SSA types via JIT

@@ -42,7 +42,7 @@ def test_transpose():
     affine = lower_to_affine(m)
     result = asm.format(affine)
     assert result.count("affine.alloc(") == 1, "Should have 1 alloc (transpose result)"
-    assert "affine.alloc(<3x2>)" in result, "Should have 3x2 alloc for transposed result"
+    assert "affine.alloc((3, 2))" in result, "Should have 3x2 alloc for transposed result"
     assert "affine.load" in result, "Should have loads for transpose"
     assert "affine.store" in result, "Should have stores for transpose"
 
@@ -135,7 +135,7 @@ def test_3d_add():
     result = asm.format(affine)
     assert "affine.add_f" in result, "Should have add_f op"
     assert result.count("affine.alloc(") == 1, "Should have 1 alloc (result only)"
-    assert "affine.alloc(<2x2x2>)" in result, "Should have 2x2x2 alloc for result"
+    assert "affine.alloc((2, 2, 2))" in result, "Should have 2x2x2 alloc for result"
 
 
 def test_3d_mul():

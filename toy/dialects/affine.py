@@ -19,7 +19,8 @@ class MemRefType:
 
     @property
     def asm(self) -> str:
-        return f"memref<{'x'.join(str(d) for d in self.shape)}xf64>"
+        dims = ", ".join(str(d) for d in self.shape)
+        return f"affine.MemRef[({dims}), f64]"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -29,11 +30,25 @@ class MemRefType:
 affine = Dialect("affine")
 
 
+@affine.type("MemRef")
+def _parse_memref_type(parser) -> MemRefType:
+    parser.expect("[(")
+    shape = [parser.parse_int()]
+    while parser.peek() == ",":
+        parser.expect(",")
+        parser.skip_whitespace()
+        shape.append(parser.parse_int())
+    parser.expect(")")
+    parser.expect(",")
+    parser.skip_whitespace()
+    parser.expect("f64]")
+    return MemRefType(shape=shape)
+
+
 @affine.op("alloc")
 @dataclass(eq=False, kw_only=True)
 class AllocOp(Op):
     shape: Shape
-    type: Type = builtin.Nil()
 
 
 @affine.op("dealloc")

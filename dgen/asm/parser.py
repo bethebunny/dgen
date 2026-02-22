@@ -186,15 +186,9 @@ def _parse_value(parser, hint):
     if base is str and tag == "sym":
         parser.expect("@")
         return parser.parse_identifier()
-    # Annotated[list[int], "shape"] -> <2x3>
+    # Annotated[list[int], "shape"] -> (2, 3)
     if tag == "shape" and get_origin(base) is list:
-        parser.expect("<")
-        dims = [parser.parse_int()]
-        while parser.peek() == "x":
-            parser.expect("x")
-            dims.append(parser.parse_int())
-        parser.expect(">")
-        return dims
+        return _parse_json_value(parser)
     # Union types (float | int | list[float], etc.)
     if isinstance(hint, types.UnionType):
         if parser.peek() == "[":

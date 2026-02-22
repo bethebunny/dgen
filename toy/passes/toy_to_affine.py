@@ -69,7 +69,7 @@ class ToyToAffineLowering:
         assert isinstance(op.input.type, toy.TensorType)
         in_shape = op.input.type.shape
 
-        alloc_op = affine.AllocOp(shape=op.type.shape)
+        alloc_op = affine.AllocOp(shape=op.type.shape, type=affine.MemRefType(shape=op.type.shape))
         yield alloc_op
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
@@ -89,7 +89,7 @@ class ToyToAffineLowering:
     ) -> Iterator[dgen.Op]:
         assert isinstance(lhs_val.type, toy.TensorType)
         shape = lhs_val.type.shape
-        alloc_op = affine.AllocOp(shape=shape)
+        alloc_op = affine.AllocOp(shape=shape, type=affine.MemRefType(shape=shape))
         yield alloc_op
         self.live_allocs.append(alloc_op)
         lhs_alloc = self.alloc_map.get(lhs_val, lhs_val)

@@ -133,9 +133,9 @@ def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
     # Annotated[str, "sym"] -> @name
     if base is str and tag == "sym":
         return f"@{value}"
-    # Annotated[list[int], "shape"] -> <2x3>
+    # Annotated[list[int], "shape"] -> (2, 3)
     if tag == "shape" and get_origin(base) is list:
-        return "<" + "x".join(str(d) for d in value) + ">"
+        return _format_json_value(value)
     # Union types (float | int | list[float], etc.)
     if isinstance(hint, types.UnionType):
         if isinstance(value, list):
