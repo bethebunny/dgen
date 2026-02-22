@@ -12,7 +12,13 @@ import types
 from collections.abc import Iterable
 from typing import Union, get_args, get_origin, get_type_hints
 
-from .asm import indent
+from .. import Block
+
+
+def indent(it: Iterable[str], prefix: str = "    ") -> Iterable[str]:
+    for line in it:
+        yield f"{prefix}{line}"
+
 
 # ===----------------------------------------------------------------------=== #
 # Helpers
@@ -166,12 +172,9 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
     else:
         parts.append(f"{prefix}{asm_name}({args_str})")
     if has_body:
-        from dgen.dialects.builtin import Block
-
         if isinstance(op.body, Block) and op.body.args:
             block_args = ", ".join(
-                f"%{tracker.get_name(a)}: {format_expr(a.type)}"
-                for a in op.body.args
+                f"%{tracker.get_name(a)}: {format_expr(a.type)}" for a in op.body.args
             )
             parts.append(f" ({block_args})")
         parts.append(":")
@@ -180,8 +183,6 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
     yield line
 
     if has_body:
-        from dgen.dialects.builtin import Block
-
         body_ops = op.body.ops if isinstance(op.body, Block) else op.body
         for child_op in body_ops:
             yield from indent(op_asm(child_op, tracker))
