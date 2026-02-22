@@ -109,7 +109,7 @@ def test_roundtrip_call_with_result():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 : () = llvm.call(@foo, [%a, %b])
+        |     %0 : () = llvm.call("foo", [%a, %b])
         |     %_ : () = return()
     """)
     module = parse_module(ir)
@@ -121,7 +121,7 @@ def test_roundtrip_call_void():
         | import llvm
         |
         | %f = function () -> ():
-        |     %_ : () = llvm.call(@print_memref, [%ptr, %size])
+        |     %_ : () = llvm.call("print_memref", [%ptr, %size])
         |     %_ : () = return()
     """)
     module = parse_module(ir)

@@ -32,7 +32,7 @@ def test_constant_print():
     result = compile(source)
     assert "%main = function () -> ():" in result, "Should have function def"
     assert "= (" in result, "Tensor constant should pass through"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
     assert "return()" in result, "Should return void"
 
 
@@ -50,7 +50,7 @@ def test_transpose():
     assert "llvm.alloca(6)" in result, "Should have alloca for transpose result"
     assert "llvm.load(" in result, "Should have loads for transpose"
     assert "llvm.gep(" in result, "Should have gep for indexing"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
 
 
 def test_element_wise_mul():
@@ -66,7 +66,7 @@ def test_element_wise_mul():
     """)
     result = compile(source)
     assert "llvm.fmul(" in result, "Should have fmul for element-wise multiply"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
 
 
 def test_element_wise_add():
@@ -82,7 +82,7 @@ def test_element_wise_add():
     """)
     result = compile(source)
     assert "llvm.fadd(" in result, "Should have fadd for element-wise add"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
 
 
 def test_3d_constant_print():
@@ -96,7 +96,7 @@ def test_3d_constant_print():
     """)
     result = compile(source)
     assert "= (" in result, "Tensor constant should pass through"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
 
 
 def test_3d_element_wise_add():
@@ -113,7 +113,7 @@ def test_3d_element_wise_add():
     result = compile(source)
     assert "llvm.fadd(" in result, "Should have fadd for element-wise add"
     assert "llvm.mul(" in result, "Should have mul for 3D index linearization"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
 
 
 def test_3d_element_wise_mul():
@@ -130,7 +130,7 @@ def test_3d_element_wise_mul():
     result = compile(source)
     assert "llvm.fmul(" in result, "Should have fmul for element-wise multiply"
     assert "llvm.mul(" in result, "Should have mul for 3D index linearization"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
 
 
 def test_reshape_folds_away():
@@ -144,7 +144,7 @@ def test_reshape_folds_away():
     """)
     result = compile(source)
     assert "= (" in result, "Tensor constant should pass through"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
 
 
 def test_double_transpose_optimized():
@@ -159,7 +159,7 @@ def test_double_transpose_optimized():
     """)
     result = compile(source)
     assert "= (" in result, "Tensor constant should pass through"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
     assert "return()" in result, "Should return void"
 
 
@@ -179,5 +179,5 @@ def test_multiply_transpose_inlined():
     assert "llvm.fmul(" in result, "Should have fmul for multiply"
     assert '"loop_header' in result, "Should have loop headers"
     assert "llvm.phi(" in result, "Should have phi nodes"
-    assert "llvm.call(@print_memref" in result, "Should call print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should call print_memref"
     assert "return()" in result, "Should return void"

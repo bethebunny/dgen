@@ -7,7 +7,6 @@ from math import prod
 
 import dgen
 from dgen.dialects import builtin, llvm
-from dgen.dialects.builtin import StaticString
 from toy.dialects import affine
 
 
@@ -17,7 +16,7 @@ class AffineToLLVMLowering:
         self.value_map: dict[dgen.Value, dgen.Value] = {}  # affine -> llvm
         self.alloc_shapes: dict[dgen.Value, list[int]] = {}  # llvm alloca -> shape
         self.alloc_sizes: dict[dgen.Value, int] = {}  # llvm alloca -> total size
-        self.current_label = StaticString("entry")
+        self.current_label = "entry"
 
     def lower_module(self, m: builtin.Module) -> builtin.Module:
         functions = [self.lower_function(f) for f in m.functions]
@@ -28,7 +27,7 @@ class AffineToLLVMLowering:
         self.value_map = {}
         self.alloc_shapes = {}
         self.alloc_sizes = {}
-        self.current_label = StaticString("entry")
+        self.current_label = "entry"
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
@@ -143,9 +142,9 @@ class AffineToLLVMLowering:
         loop_id = self.loop_counter
         self.loop_counter += 1
 
-        header_label = StaticString(f"loop_header{loop_id}")
-        body_label = StaticString(f"loop_body{loop_id}")
-        exit_label = StaticString(f"loop_exit{loop_id}")
+        header_label = f"loop_header{loop_id}"
+        body_label = f"loop_body{loop_id}"
+        exit_label = f"loop_exit{loop_id}"
 
         # Init: constant lo, br header
         init_op = builtin.ConstantOp(value=op.lo, type=builtin.IndexType())
@@ -169,7 +168,7 @@ class AffineToLLVMLowering:
         # Compare and branch
         hi_op = builtin.ConstantOp(value=op.hi, type=builtin.IndexType())
         yield hi_op
-        cmp_op = llvm.IcmpOp(pred=StaticString("slt"), lhs=phi_op, rhs=hi_op)
+        cmp_op = llvm.IcmpOp(pred="slt", lhs=phi_op, rhs=hi_op)
         yield cmp_op
         yield llvm.CondBrOp(cond=cmp_op, true_dest=body_label, false_dest=exit_label)
 

@@ -7,45 +7,115 @@ at the top of the IR text.
 
 import dataclasses
 import importlib
-import types
-from typing import get_args, get_origin, get_type_hints
 
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 
-from .formatting import _SPECIAL_FIELDS, _get_annotation, _is_optional
+from .formatting import _SPECIAL_FIELDS, _is_optional
 
 
-def _parse_json_value(parser):
-    """Parse a plain JSON-like value: int, float, or parenthesized list."""
-    if parser.peek() == "(":
+def _resolve_or_create(parser, ssa_name: str) -> Value:
+    """Resolve an SSA name to a Value, creating a forward reference if needed."""
+    if ssa_name not in parser.name_table:
+        val = Value(name=ssa_name, type=builtin.Nil())
+        parser.name_table[ssa_name] = val
+        return val
+    return parser.name_table[ssa_name]
+
+
+def parse_expr(parser):
+    """Parse a single expression, dispatching on syntax."""
+    c = parser.peek()
+
+    if c == "(":
+        # Tuple or nil: "()" -> [], "(items)" -> [items]
         parser.expect("(")
         parser.skip_whitespace()
+        if parser.peek() == ")":
+            parser.expect(")")
+            return []
+        items = [parse_expr(parser)]
+        parser.skip_whitespace()
+        while parser.peek() == ",":
+            parser.expect(",")
+            parser.skip_whitespace()
+            items.append(parse_expr(parser))
+            parser.skip_whitespace()
+        parser.expect(")")
+        return items
+
+    if c == "[":
+        # List: [expr, expr, ...]
+        parser.expect("[")
+        parser.skip_whitespace()
         items = []
-        if parser.peek() != ")":
-            items.append(_parse_json_value(parser))
+        if parser.peek() != "]":
+            items.append(parse_expr(parser))
             parser.skip_whitespace()
             while parser.peek() == ",":
                 parser.expect(",")
                 parser.skip_whitespace()
-                items.append(_parse_json_value(parser))
+                items.append(parse_expr(parser))
                 parser.skip_whitespace()
-        parser.expect(")")
+        parser.expect("]")
         return items
-    # Peek ahead: '.' after digits means float, otherwise int
-    p = parser.pos
-    if p < len(parser.text) and parser.text[p] == "-":
-        p += 1
-    while p < len(parser.text) and parser.text[p].isdigit():
-        p += 1
-    if p < len(parser.text) and parser.text[p] == ".":
-        return parser.parse_number()
-    return parser.parse_int()
+
+    if c == "%":
+        # SSA reference
+        return _resolve_or_create(parser, parser.parse_ssa_name())
+
+    if c == '"':
+        # String literal
+        return parser.parse_string_literal()
+
+    if c in "-0123456789":
+        # Number: peek for "." to distinguish int vs float
+        p = parser.pos
+        if p < len(parser.text) and parser.text[p] == "-":
+            p += 1
+        while p < len(parser.text) and parser.text[p].isdigit():
+            p += 1
+        if p < len(parser.text) and parser.text[p] == ".":
+            return parser.parse_number()
+        return parser.parse_int()
+
+    # Identifier -> type reference or qualified name
+    name = parser.parse_qualified_name()
+    cls = parser._types.get(name)
+    if cls is None:
+        raise RuntimeError(f"Unknown name: {name}")
+    if dataclasses.is_dataclass(cls):
+        fields = dataclasses.fields(cls)
+    else:
+        fields = ()
+    if not fields:
+        return cls()
+    # Parameterized type: Name[expr, expr, ...]
+    parser.expect("[")
+    parser.skip_whitespace()
+    kwargs = _parse_fields_from_exprs(parser, cls)
+    parser.expect("]")
+    return cls(**kwargs)
+
+
+def _parse_fields_from_exprs(parser, cls):
+    """Parse comma-separated exprs and map them to dataclass fields."""
+    fields = dataclasses.fields(cls)
+    kwargs = {}
+    for i, f in enumerate(fields):
+        if i > 0:
+            parser.expect(",")
+            parser.skip_whitespace()
+        kwargs[f.name] = parse_expr(parser)
+        parser.skip_whitespace()
+    return kwargs
 
 
 def parse_op_fields(parser, cls, name=None, pre_type=None):
     """Generic op field parser. Introspects field types to parse args."""
+    from typing import get_type_hints
+
     hints = get_type_hints(cls, include_extras=True)
     fields = dataclasses.fields(cls)
 
@@ -69,18 +139,12 @@ def parse_op_fields(parser, cls, name=None, pre_type=None):
             if parser.peek() == ")":
                 kwargs[f.name] = None
                 continue
-            hint_to_parse = inner
-        else:
-            hint_to_parse = hint
 
         if i > 0:
             parser.expect(",")
             parser.skip_whitespace()
 
-        if hint_to_parse is object:
-            kwargs[f.name] = _parse_json_value(parser)
-        else:
-            kwargs[f.name] = _parse_value(parser, hint_to_parse)
+        kwargs[f.name] = parse_expr(parser)
         parser.skip_whitespace()
 
     parser.expect(")")
@@ -123,94 +187,6 @@ def parse_op_fields(parser, cls, name=None, pre_type=None):
         parser.name_table[name] = op
 
     return op
-
-
-def _resolve_or_create(parser, ssa_name: str) -> Value:
-    """Resolve an SSA name to a Value, creating a forward reference if needed."""
-    if ssa_name not in parser.name_table:
-        val = Value(name=ssa_name, type=builtin.Nil())
-        parser.name_table[ssa_name] = val
-        return val
-    return parser.name_table[ssa_name]
-
-
-def _parse_value(parser, hint):
-    """Parse a single value based on its type hint."""
-    # Value reference — resolve via name table (or create if forward definition)
-    if isinstance(hint, type) and issubclass(hint, Value):
-        return _resolve_or_create(parser, parser.parse_ssa_name())
-
-    # list[Value] — parse as [%a, %b]
-    if (
-        get_origin(hint) is list
-        and get_args(hint)
-        and isinstance(get_args(hint)[0], type)
-        and issubclass(get_args(hint)[0], Value)
-    ):
-        parser.expect("[")
-        parser.skip_whitespace()
-        items = []
-        if parser.peek() != "]":
-            items.append(_resolve_or_create(parser, parser.parse_ssa_name()))
-            while parser.peek() == ",":
-                parser.expect(",")
-                parser.skip_whitespace()
-                items.append(_resolve_or_create(parser, parser.parse_ssa_name()))
-        parser.expect("]")
-        return items
-
-    # StaticString -> quoted string
-    if hint is builtin.StaticString:
-        return parser.parse_string_literal()
-    # list[StaticString] -> ["a", "b"]
-    if (
-        get_origin(hint) is list
-        and get_args(hint)
-        and get_args(hint)[0] is builtin.StaticString
-    ):
-        parser.expect("[")
-        parser.skip_whitespace()
-        items = []
-        if parser.peek() != "]":
-            items.append(parser.parse_string_literal())
-            while parser.peek() == ",":
-                parser.expect(",")
-                parser.skip_whitespace()
-                items.append(parser.parse_string_literal())
-        parser.expect("]")
-        return items
-
-    base, tag = _get_annotation(hint)
-
-    # Annotated[str, "sym"] -> @name
-    if base is str and tag == "sym":
-        parser.expect("@")
-        return parser.parse_identifier()
-    # Annotated[list[int], "shape"] -> (2, 3)
-    if tag == "shape" and get_origin(base) is list:
-        return _parse_json_value(parser)
-    # Union types (float | int | list[float], etc.)
-    if isinstance(hint, types.UnionType):
-        if parser.peek() == "[":
-            for arm in get_args(hint):
-                if get_origin(arm) is list:
-                    return _parse_value(parser, arm)
-        # Peek ahead: '.' means float, otherwise int
-        p = parser.pos
-        if p < len(parser.text) and parser.text[p] == "-":
-            p += 1
-        while p < len(parser.text) and parser.text[p].isdigit():
-            p += 1
-        if p < len(parser.text) and parser.text[p] == ".":
-            return parser.parse_number()
-        return parser.parse_int()
-    # Plain int
-    if hint is int:
-        return parser.parse_int()
-    # Plain float
-    if hint is float:
-        return parser.parse_number()
-    raise RuntimeError(f"Don't know how to parse type hint: {hint}")
 
 
 class IRParser:
@@ -270,6 +246,14 @@ class IRParser:
                 break
         return self.text[start : self.pos]
 
+    def parse_qualified_name(self) -> str:
+        """Parse a possibly-qualified name: ident or ident.ident"""
+        name = self.parse_identifier()
+        if not self.at_end() and self.peek() == ".":
+            self.advance()
+            name += "." + self.parse_identifier()
+        return name
+
     def parse_string_literal(self) -> str:
         """Parse a double-quoted string literal, return the contents."""
         self.expect('"')
@@ -327,14 +311,7 @@ class IRParser:
         if self.peek() == "(":
             self.expect("()")
             return builtin.Nil()
-        name = self.parse_identifier()
-        if not self.at_end() and self.peek() == ".":
-            self.advance()
-            type_name = self.parse_identifier()
-            name = f"{name}.{type_name}"
-        if name not in self._types:
-            raise RuntimeError(f"Unknown type: {name}")
-        return self._types[name](self)
+        return parse_expr(self)
 
     def skip_line(self):
         """Skip to the next line."""
@@ -389,8 +366,8 @@ class IRParser:
                 d = Dialect.get(dialect_name)
                 for op_name, cls in d.ops.items():
                     self._ops[f"{dialect_name}.{op_name}"] = cls
-                for tname, fn in d.types.items():
-                    self._types[f"{dialect_name}.{tname}"] = fn
+                for tname, tcls in d.types.items():
+                    self._types[f"{dialect_name}.{tname}"] = tcls
             else:
                 # Not an import line — rewind
                 self.pos = saved
@@ -542,15 +519,11 @@ class IRParser:
         self.skip_whitespace()
         # Implicit constant: value starts with '(' or digit/minus
         if self.peek() in "(-0123456789":
-            value = _parse_json_value(self)
+            value = parse_expr(self)
             op = builtin.ConstantOp(name=op_name_str, value=value, type=pre_type)
             self.name_table[op_name_str] = op
             return op
-        name = self.parse_identifier()
-        if not self.at_end() and self.peek() == ".":
-            self.advance()  # skip '.'
-            op_name = self.parse_identifier()
-            name = f"{name}.{op_name}"
+        name = self.parse_qualified_name()
         cls = self._ops.get(name)
         if cls is None:
             raise RuntimeError(f"Unknown op: {name}")

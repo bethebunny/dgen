@@ -5,9 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Op, Type, Value
-from dgen.asm.formatting import Sym
 from dgen.dialect import Dialect
-from dgen.dialects.builtin import Nil, StaticString
+from dgen.dialects.builtin import Nil
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -116,7 +115,7 @@ class MulOp(Op):
 @llvm.op("icmp")
 @dataclass(eq=False, kw_only=True)
 class IcmpOp(Op):
-    pred: StaticString
+    pred: str
     lhs: Value
     rhs: Value
     type: Type = Nil()
@@ -125,7 +124,7 @@ class IcmpOp(Op):
 @llvm.op("br")
 @dataclass(eq=False, kw_only=True)
 class BrOp(Op):
-    dest: StaticString
+    dest: str
     type: Type = Nil()
 
 
@@ -133,15 +132,15 @@ class BrOp(Op):
 @dataclass(eq=False, kw_only=True)
 class CondBrOp(Op):
     cond: Value
-    true_dest: StaticString
-    false_dest: StaticString
+    true_dest: str
+    false_dest: str
     type: Type = Nil()
 
 
 @llvm.op("label")
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
-    label_name: StaticString
+    label_name: str
     type: Type = Nil()
 
 
@@ -149,13 +148,13 @@ class LabelOp(Op):
 @dataclass(eq=False, kw_only=True)
 class PhiOp(Op):
     values: list[Value]
-    labels: list[StaticString]
+    labels: list[str]
     type: Type = Nil()
 
 
 @llvm.op("call")
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):
-    callee: Sym
+    callee: str
     args: list[Value]
     type: Type = Nil()

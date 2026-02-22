@@ -4,48 +4,37 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import prod
-from typing import TYPE_CHECKING, ClassVar
 
 from dgen import Dialect, Op, Type, Value
-from dgen.asm.formatting import Sym
 from dgen.dialects import builtin
 from dgen.layout import FLOAT64, Array
-
-if TYPE_CHECKING:
-    from dgen.asm.parser import IRParser
 
 # ===----------------------------------------------------------------------=== #
 # Types
 # ===----------------------------------------------------------------------=== #
 
+toy = Dialect("toy")
 
+
+@toy.type("Tensor")
 @dataclass
 class TensorType:
     """toy.Tensor[(2, 3), f64]."""
 
-    _dialect: ClassVar[Dialect]
     shape: list[int]
+    dtype: Type = builtin.F64Type()
 
     @property
     def __layout__(self):
         return Array(FLOAT64, prod(self.shape))
 
-    @property
-    def asm(self) -> str:
-        dims = ", ".join(str(d) for d in self.shape)
-        return f"toy.Tensor[({dims}), f64]"
 
-
-@dataclass
+@toy.type("InferredShapeTensor")
+@dataclass(frozen=True)
 class InferredShapeTensor:
     """toy.InferredShapeTensor[f64] — shape to be filled in by inference."""
 
-    _dialect: ClassVar[Dialect]
-    dtype: str = "f64"
-
-    @property
-    def asm(self) -> str:
-        return f"toy.InferredShapeTensor[{self.dtype}]"
+    dtype: Type = builtin.F64Type()
 
 
 @dataclass
@@ -58,10 +47,6 @@ class FunctionType(builtin.Function):
 # ===----------------------------------------------------------------------=== #
 # Operations
 # ===----------------------------------------------------------------------=== #
-
-toy = Dialect("toy")
-TensorType._dialect = toy
-InferredShapeTensor._dialect = toy
 
 
 @toy.op("transpose")
@@ -97,7 +82,7 @@ class AddOp(Op):
 @toy.op("generic_call")
 @dataclass(eq=False, kw_only=True)
 class GenericCallOp(Op):
-    callee: Sym
+    callee: str
     args: list[Value]
     type: Type
 
@@ -107,31 +92,3 @@ class GenericCallOp(Op):
 class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
-
-
-# ===----------------------------------------------------------------------=== #
-# Type parser
-# ===----------------------------------------------------------------------=== #
-
-
-@toy.type("Tensor")
-def _parse_tensor_type(parser: IRParser) -> TensorType:
-    parser.expect("[(")
-    shape = [parser.parse_int()]
-    while parser.peek() == ",":
-        parser.expect(",")
-        parser.skip_whitespace()
-        shape.append(parser.parse_int())
-    parser.expect(")")
-    parser.expect(",")
-    parser.skip_whitespace()
-    parser.expect("f64]")
-    return TensorType(shape=shape)
-
-
-@toy.type("InferredShapeTensor")
-def _parse_inferred_type(parser: IRParser) -> InferredShapeTensor:
-    parser.expect("[")
-    dtype = parser.parse_identifier()
-    parser.expect("]")
-    return InferredShapeTensor(dtype=dtype)

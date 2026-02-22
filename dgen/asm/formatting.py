@@ -1,6 +1,6 @@
 """Generic format-driven IR serialization and parsing.
 
-Type aliases and Dialect.op() drive both asm emission and parsing
+Dialect.op() and Dialect.type() drive both asm emission and parsing
 from dataclass field declarations alone — no per-op asm/parse code needed.
 """
 
@@ -10,16 +10,9 @@ import dataclasses
 import functools
 import types
 from collections.abc import Iterable
-from typing import Annotated, Union, get_args, get_origin, get_type_hints
+from typing import Union, get_args, get_origin, get_type_hints
 
 from .asm import indent
-
-# ===----------------------------------------------------------------------=== #
-# Annotated field-type aliases
-# ===----------------------------------------------------------------------=== #
-
-Sym = Annotated[str, "sym"]  # @name
-Shape = Annotated[list[int], "shape"]  # <2x3>
 
 # ===----------------------------------------------------------------------=== #
 # Helpers
@@ -34,14 +27,6 @@ def format_float(v: float) -> str:
     if float(iv) == v:
         return f"{iv}.0"
     return str(v)
-
-
-def _get_annotation(hint):
-    """Return (base_type, tag) for Annotated types, else (hint, None)."""
-    if get_origin(hint) is Annotated:
-        args = get_args(hint)
-        return args[0], args[1]
-    return hint, None
 
 
 def _is_optional(hint):
@@ -83,79 +68,58 @@ class SlotTracker:
 
 
 # ===----------------------------------------------------------------------=== #
-# Generic serializer
+# Expression formatter — dispatches on value type
 # ===----------------------------------------------------------------------=== #
 
 
-def _format_json_value(value) -> str:
-    """Format a plain JSON-like value (int, float, or nested list)."""
-    if isinstance(value, list):
-        return "(" + ", ".join(_format_json_value(v) for v in value) + ")"
-    if isinstance(value, float):
-        return format_float(value)
-    if isinstance(value, int):
-        return str(value)
-    return str(value)
+def format_expr(value, tracker: SlotTracker | None = None) -> str:
+    """Format a value as an expression string, dispatching on runtime type."""
+    from dgen.dialects.builtin import Nil, Value
 
-
-def _format_value(value, hint, tracker: SlotTracker | None = None) -> str:
-    """Format a single value based on its type hint."""
-    from dgen.dialects.builtin import Value
-
-    # Value reference — use tracker to get %name
+    if isinstance(value, Nil):
+        return "()"
     if isinstance(value, Value):
         if tracker is not None:
             return f"%{tracker.get_name(value)}"
         name = value.name if value.name is not None else "?"
         return f"%{name}"
-
-    # list[Value] — format as [%a, %b]
-    if isinstance(value, list) and value and isinstance(value[0], Value):
-        if tracker is not None:
-            return "[" + ", ".join(f"%{tracker.get_name(v)}" for v in value) + "]"
-        return "[" + ", ".join(f"%{v.name or '?'}" for v in value) + "]"
-
-    from dgen.dialects.builtin import StaticString
-
-    # StaticString -> quoted string
-    if hint is StaticString:
-        return f'"{value}"'
-    # list[StaticString] -> ["a", "b"]
-    if (
-        get_origin(hint) is list
-        and get_args(hint)
-        and get_args(hint)[0] is StaticString
-    ):
-        return "[" + ", ".join(f'"{v}"' for v in value) + "]"
-
-    base, tag = _get_annotation(hint)
-
-    # Annotated[str, "sym"] -> @name
-    if base is str and tag == "sym":
-        return f"@{value}"
-    # Annotated[list[int], "shape"] -> (2, 3)
-    if tag == "shape" and get_origin(base) is list:
-        return _format_json_value(value)
-    # Union types (float | int | list[float], etc.)
-    if isinstance(hint, types.UnionType):
-        if isinstance(value, list):
-            for arm in get_args(hint):
-                if get_origin(arm) is list:
-                    return _format_value(value, arm, tracker)
-        if isinstance(value, float):
-            return format_float(value)
-        if isinstance(value, int):
-            return str(value)
-    # Plain int
-    if hint is int:
-        return str(value)
-    # Plain float
-    if hint is float:
+    if isinstance(value, list):
+        # Use [...] for Value lists and string lists, (...) for data tuples
+        if value and isinstance(value[0], (Value, str)):
+            return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
+        return "(" + ", ".join(format_expr(v, tracker) for v in value) + ")"
+    if isinstance(value, float):
         return format_float(value)
-    # Type protocol (has .asm)
-    if hasattr(value, "asm"):
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return f'"{value}"'
+    if hasattr(value, "_asm_name"):
+        return type_asm(value)
+    # Fallback for types with hand-written .asm (e.g. llvm types)
+    if hasattr(value, "asm") and isinstance(value.asm, str):
         return value.asm
     return str(value)
+
+
+def type_asm(type_obj) -> str:
+    """Generic type formatter via field introspection."""
+    cls = type(type_obj)
+    prefix = f"{cls.dialect.name}." if cls.dialect.name != "builtin" else ""
+    name = f"{prefix}{cls._asm_name}"
+    if dataclasses.is_dataclass(cls):
+        fields = dataclasses.fields(cls)
+    else:
+        fields = ()
+    if not fields:
+        return name
+    args = ", ".join(format_expr(getattr(type_obj, f.name)) for f in fields)
+    return f"{name}[{args}]"
+
+
+# ===----------------------------------------------------------------------=== #
+# Generic serializer
+# ===----------------------------------------------------------------------=== #
 
 
 @functools.cache
@@ -192,17 +156,13 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
         inner = _is_optional(hint)
         if inner is not None and value is None:
             continue
-        effective_hint = inner if inner is not None else hint
-        if effective_hint is object:
-            arg_parts.append(_format_json_value(value))
-        else:
-            arg_parts.append(_format_value(value, effective_hint, tracker))
+        arg_parts.append(format_expr(value, tracker))
 
     args_str = ", ".join(arg_parts)
 
     # Build the line
     result_name = tracker.get_name(op)
-    parts = [f"%{result_name} : {op.type.asm} = "]
+    parts = [f"%{result_name} : {format_expr(op.type)} = "]
     prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
     if asm_name == "constant" and dialect_name == "builtin":
         parts.append(args_str)
@@ -213,7 +173,8 @@ def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
 
         if isinstance(op.body, Block) and op.body.args:
             block_args = ", ".join(
-                f"%{tracker.get_name(a)}: {a.type.asm}" for a in op.body.args
+                f"%{tracker.get_name(a)}: {format_expr(a.type)}"
+                for a in op.body.args
             )
             parts.append(f" ({block_args})")
         parts.append(":")

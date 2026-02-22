@@ -28,8 +28,10 @@ class Dialect:
         return decorator
 
     def type(self, name: str):
-        def decorator(fn):
-            self.types[name] = fn
-            return fn
+        def decorator(cls):
+            cls._asm_name = name
+            cls.dialect = self
+            self.types[name] = cls
+            return cls
 
         return decorator

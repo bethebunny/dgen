@@ -26,7 +26,7 @@ def test_simple_constant():
     """)
     result = compile_to_llvm(ir_text)
     assert "= (" in result, "Tensor constant should pass through"
-    assert "llvm.call(@print_memref" in result, "Should have print_memref call"
+    assert 'llvm.call("print_memref"' in result, "Should have print_memref call"
     assert "return()" in result, "Should have return()"
 
 
@@ -129,5 +129,5 @@ def test_full_example():
     assert "llvm.alloca(" in result, "Should have alloca for non-constant allocs"
     assert "= (" in result, "Should have tensor constants"
     assert "llvm.fmul(" in result, "Should have fmul for Mul op"
-    assert "llvm.call(@print_memref" in result, "Should have print_memref"
+    assert 'llvm.call("print_memref"' in result, "Should have print_memref"
     assert "return()" in result, "Should have return()"
