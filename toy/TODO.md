@@ -1,7 +1,7 @@
 ## Make the JIT work in the general case
 - Understand how the heck `args` work in `run`
   - We can make this generic because of `Layout` and `ConstantOp`!!! This is actually really sweet
-- Remove `Type.prepare_arg`
+- Remove `Type.prepare_arg`, `_LayoutAsType`
 - Remove ctype buffer/pointer from `Memory`
 - Remove `_format` from `Type`, it can just have the `Struct` as a field directly.
 - Generalize `compile_and_run_staged` to not need an `infer` stage
@@ -33,6 +33,7 @@
 - Add parser failure tests
 - Formatter: use %_ for unused outputs
 - Formatter: clearly delineate names in sub-blocks
+- Support broader set of literals
 
 ## Easy cleanup
 - `affine.load` / `affine.mul_f` / `affine.add_f` should return `f64` (not `()`)

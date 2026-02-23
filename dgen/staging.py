@@ -65,7 +65,7 @@ def _prepare_ctypes_args(
     ctypes_args: list = []
     host_bufs: list = []
     for arg, param in zip(python_args, block_args):
-        ct_val, refs = param.type.__layout__.prepare_arg(arg)
+        ct_val, refs = param.type.__layout__.prepare_arg(arg, param.type)
         ctypes_args.append(ct_val)
         host_bufs.extend(refs)
     return ctypes_args, host_bufs

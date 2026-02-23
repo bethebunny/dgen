@@ -98,7 +98,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         if isinstance(op, builtin.ConstantOp):
             layout = op.type.__layout__  # type: ignore[union-attr]
             if isinstance(op.value, list):
-                mem = Memory(layout)
+                mem = Memory(op.type)
                 mem.pack(*op.value)
                 host_buffers.append(mem)
                 constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
