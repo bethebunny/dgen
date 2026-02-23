@@ -87,6 +87,23 @@ class GenericCallOp(Op):
     type: Type
 
 
+@toy.op("concat")
+@dataclass(eq=False, kw_only=True)
+class ConcatOp(Op):
+    lhs: Value
+    rhs: Value
+    axis: int
+    type: Type
+
+
+@toy.op("tile")
+@dataclass(eq=False, kw_only=True)
+class TileOp(Op):
+    input: Value
+    count: Value
+    type: Type
+
+
 @toy.op("print")
 @dataclass(eq=False, kw_only=True)
 class PrintOp(Op):

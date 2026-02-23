@@ -61,6 +61,14 @@ class ConstantOp(Op):
     type: Type
 
 
+@builtin.op("add_index")
+@dataclass(eq=False, kw_only=True)
+class AddIndexOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = IndexType()
+
+
 @builtin.op("return")
 @dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):

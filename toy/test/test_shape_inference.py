@@ -1,6 +1,7 @@
 """Ch4 tests: Shape inference pass."""
 
 from dgen import asm
+from dgen.asm.parser import parse_module
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.shape_inference import infer_shapes
@@ -140,6 +141,117 @@ def test_generic_call():
         |     %4 : () = return()
     """)
     assert result == expected
+
+
+def test_concat():
+    """Concat shape is computed from input shapes: [2,3] concat [3,3] axis=0 -> [5,3]."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor([3, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.InferredShapeTensor(f64) = toy.concat(%0, %1, 0)
+        |     %3 : () = toy.print(%2)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    result = infer_shapes(module)
+    out = asm.format(result)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor([3, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor([5, 3], f64) = toy.concat(%0, %1, 0)
+        |     %3 : () = toy.print(%2)
+        |     %_ : () = return()
+    """)
+    assert out == expected
+
+
+def test_concat_axis1():
+    """Concat along axis 1: [2,3] concat [2,5] -> [2,8]."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor([2, 5], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        |     %2 : toy.InferredShapeTensor(f64) = toy.concat(%0, %1, 1)
+        |     %3 : () = toy.print(%2)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    result = infer_shapes(module)
+    out = asm.format(result)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor([2, 5], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        |     %2 : toy.Tensor([2, 8], f64) = toy.concat(%0, %1, 1)
+        |     %3 : () = toy.print(%2)
+        |     %_ : () = return()
+    """)
+    assert out == expected
+
+
+def test_tile_with_constant_count():
+    """Tile where count is a constant — shape inference peeks through the constant."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
+        |     %1 : index = 4
+        |     %2 : toy.InferredShapeTensor(f64) = toy.tile(%0, %1)
+        |     %3 : () = toy.print(%2)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    result = infer_shapes(module)
+    out = asm.format(result)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
+        |     %1 : index = 4
+        |     %2 : toy.Tensor([4, 3], f64) = toy.tile(%0, %1)
+        |     %3 : () = toy.print(%2)
+        |     %_ : () = return()
+    """)
+    assert out == expected
+
+
+def test_tile_with_computed_count():
+    """Tile where count is add_index(2, 2) — shape inference CANNOT resolve this.
+
+    This is the staging boundary: the shape depends on a value that requires
+    evaluation. The InferredShapeTensor remains unresolved.
+    """
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
+        |     %1 : index = 2
+        |     %2 : index = 2
+        |     %3 : index = add_index(%1, %2)
+        |     %4 : toy.InferredShapeTensor(f64) = toy.tile(%0, %3)
+        |     %5 : () = toy.print(%4)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    result = infer_shapes(module)
+    out = asm.format(result)
+    # Shape inference cannot resolve %4 — it stays InferredShapeTensor
+    # because the count (%3) is not a constant, it's a computed value.
+    # Resolving this requires a staging evaluator.
+    assert "toy.InferredShapeTensor(f64) = toy.tile" in out
 
 
 def test_full_tutorial_example():

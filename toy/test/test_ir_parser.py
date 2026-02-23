@@ -118,6 +118,70 @@ def test_roundtrip_void_return():
     assert asm.format(module) == ir
 
 
+def test_roundtrip_concat():
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function (%a: toy.Tensor([2, 3], f64), %b: toy.Tensor([2, 5], f64)) -> toy.Tensor([2, 8], f64):
+        |     %0 : toy.Tensor([2, 8], f64) = toy.concat(%a, %b, 1)
+        |     %_ : () = return(%0)
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+
+def test_roundtrip_tile():
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function (%a: toy.Tensor([3], f64), %n: index) -> toy.Tensor([4, 3], f64):
+        |     %0 : toy.Tensor([4, 3], f64) = toy.tile(%a, %n)
+        |     %_ : () = return(%0)
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+
+def test_roundtrip_tile_with_index_constant():
+    """Tile where count is an index constant — shape inference can peek through."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function (%a: toy.Tensor([3], f64)) -> toy.Tensor([4, 3], f64):
+        |     %0 : index = 4
+        |     %1 : toy.Tensor([4, 3], f64) = toy.tile(%a, %0)
+        |     %_ : () = return(%1)
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+
+def test_roundtrip_tile_with_computed_count():
+    """Tile where count is computed — shape inference CANNOT resolve without evaluation."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function (%a: toy.Tensor([3], f64)) -> toy.InferredShapeTensor(f64):
+        |     %0 : index = 2
+        |     %1 : index = 2
+        |     %2 : index = add_index(%0, %1)
+        |     %3 : toy.InferredShapeTensor(f64) = toy.tile(%a, %2)
+        |     %_ : () = return(%3)
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+
+def test_roundtrip_add_index():
+    ir = strip_prefix("""
+        | %f = function (%x: index, %y: index) -> index:
+        |     %0 : index = add_index(%x, %y)
+        |     %_ : () = return(%0)
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+
 def test_roundtrip_full_program():
     ir = strip_prefix("""
         | import toy

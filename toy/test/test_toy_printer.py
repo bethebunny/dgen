@@ -87,6 +87,33 @@ def test_return_op_void():
     assert asm.format(op) == "%0 : () = return()"
 
 
+def test_concat_op():
+    v0 = dgen.Value(name="0", type=builtin.Nil())
+    v1 = dgen.Value(name="1", type=builtin.Nil())
+    op = toy.ConcatOp(name="2", lhs=v0, rhs=v1, axis=0, type=inferred())
+    assert (
+        asm.format(op)
+        == "%2 : toy.InferredShapeTensor(f64) = toy.concat(%0, %1, 0)"
+    )
+
+
+def test_tile_op():
+    v0 = dgen.Value(name="0", type=builtin.Nil())
+    n = dgen.Value(name="n", type=builtin.IndexType())
+    op = toy.TileOp(name="1", input=v0, count=n, type=inferred())
+    assert (
+        asm.format(op)
+        == "%1 : toy.InferredShapeTensor(f64) = toy.tile(%0, %n)"
+    )
+
+
+def test_add_index_op():
+    x = dgen.Value(name="x", type=builtin.IndexType())
+    y = dgen.Value(name="y", type=builtin.IndexType())
+    op = builtin.AddIndexOp(name="0", lhs=x, rhs=y)
+    assert asm.format(op) == "%0 : index = add_index(%x, %y)"
+
+
 def test_full_module():
     # Build multiply_transpose function
     mt_arg_a = BlockArgument(name="a", type=inferred())

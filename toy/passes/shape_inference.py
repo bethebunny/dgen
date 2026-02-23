@@ -15,6 +15,18 @@ def _resolve(
     return type_of.get(id(val))
 
 
+def _resolve_index_value(val: dgen.Value) -> int | None:
+    """Try to resolve an index Value to a concrete int.
+
+    Only succeeds if val is a ConstantOp with an integer value.
+    Returns None for computed values (add_index, etc.) — those require
+    a staging evaluator.
+    """
+    if isinstance(val, builtin.ConstantOp) and isinstance(val.value, int):
+        return val.value
+    return None
+
+
 def _infer_function(
     func: builtin.FuncOp,
     func_map: dict[str, builtin.FuncOp],
@@ -46,6 +58,26 @@ def _infer_function(
                 t = toy.TensorType(shape=list(src.shape))
                 op.type = t
                 type_of[id(op)] = t
+
+        elif isinstance(op, toy.ConcatOp):
+            lhs = _resolve(type_of, op.lhs)
+            rhs = _resolve(type_of, op.rhs)
+            if lhs is not None and rhs is not None:
+                shape = list(lhs.shape)
+                shape[op.axis] = lhs.shape[op.axis] + rhs.shape[op.axis]
+                t = toy.TensorType(shape=shape)
+                op.type = t
+                type_of[id(op)] = t
+
+        elif isinstance(op, toy.TileOp):
+            src = _resolve(type_of, op.input)
+            if src is not None:
+                # Try to resolve count by peeking through a constant op
+                count_val = _resolve_index_value(op.count)
+                if count_val is not None:
+                    t = toy.TensorType(shape=[count_val] + list(src.shape))
+                    op.type = t
+                    type_of[id(op)] = t
 
         elif isinstance(op, toy.GenericCallOp):
             resolved = [_resolve(type_of, a) for a in op.args]
