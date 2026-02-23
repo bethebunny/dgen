@@ -1,22 +1,31 @@
-"""Memory layout types for language-agnostic Layout descriptions.
+"""Memory layout types for language-agnostic type descriptions.
 
 Layouts are value-level descriptors: Byte, Int, Float64 are singletons;
-Array, Pointer, FatPointer are parameterized via conLayoutors.
+Array, Pointer, FatPointer are parameterized via constructors.
+
+Each layout has a `struct` property returning a `struct.Struct` that
+describes its binary encoding. The `Memory` class pairs a layout with
+a buffer for pack/unpack operations.
 """
 
 from __future__ import annotations
 
-import ctypes
+import ctypes as _ctypes
+import struct as _struct
+from functools import cached_property
 
 
 class Layout:
     """Base for memory layout types."""
 
-    ctype = None
-    llvm_type = None
+    _format = None
+
+    @cached_property
+    def struct(self) -> _struct.Struct:
+        return _struct.Struct(f'@{self._format}')
 
     def byte_size(self) -> int:
-        raise NotImplementedError
+        return self.struct.size
 
     def parse(self, obj) -> object:
         raise NotImplementedError
@@ -27,18 +36,13 @@ class Layout:
 
 
 class Byte(Layout):
-    def byte_size(self) -> int:
-        return 1
+    _format = 'B'
 
 
 class Int(Layout):
     """64-bit integer (i64)."""
 
-    ctype = ctypes.c_int64
-    llvm_type = "i64"
-
-    def byte_size(self) -> int:
-        return 8
+    _format = 'q'
 
     def parse(self, obj) -> int:
         assert isinstance(obj, int), f"expected int, got {type(obj).__name__}"
@@ -48,11 +52,7 @@ class Int(Layout):
 class Float64(Layout):
     """64-bit float (f64)."""
 
-    ctype = ctypes.c_double
-    llvm_type = "double"
-
-    def byte_size(self) -> int:
-        return 8
+    _format = 'd'
 
     def parse(self, obj) -> float:
         assert isinstance(obj, (int, float)), (
@@ -64,49 +64,69 @@ class Float64(Layout):
 class Array(Layout):
     """Fixed-size inline array: n × sizeof(T) bytes."""
 
-    ctype = ctypes.c_void_p
-    llvm_type = "ptr"
-
     def __init__(self, element: Layout, count: int):
         self.element = element
         self.count = count
-
-    def byte_size(self) -> int:
-        return self.element.byte_size() * self.count
+        self._format = f'{count}{element._format}'
 
     def parse(self, obj) -> list:
         assert isinstance(obj, list), f"expected list, got {type(obj).__name__}"
         return [self.element.parse(v) for v in obj]
 
     def prepare_arg(self, value):
-        buf = (self.element.ctype * self.count)(*value)
-        return ctypes.cast(buf, ctypes.c_void_p), [buf]
+        mem = Memory(self)
+        mem.pack(*value)
+        return mem.ptr, [mem]
 
 
 class Pointer(Layout):
     """8-byte pointer to T."""
 
-    ctype = ctypes.c_void_p
-    llvm_type = "ptr"
+    _format = 'P'
 
     def __init__(self, pointee: Layout):
         self.pointee = pointee
-
-    def byte_size(self) -> int:
-        return 8
 
 
 class FatPointer(Layout):
     """Pointer + i64 length (16 bytes)."""
 
-    ctype = ctypes.c_void_p
-    llvm_type = "ptr"
+    _format = 'PQ'
 
     def __init__(self, pointee: Layout):
         self.pointee = pointee
 
-    def byte_size(self) -> int:
-        return 16
+
+# ---------------------------------------------------------------------------
+# Memory: typed buffer for layout ABI
+# ---------------------------------------------------------------------------
+
+
+class Memory:
+    """Typed memory buffer — the ABI for a layout."""
+
+    __slots__ = ('layout', 'buffer', '_ct_buf')
+
+    def __init__(self, layout: Layout, buffer: bytearray | None = None):
+        self.layout = layout
+        self.buffer = bytearray(layout.struct.size) if buffer is None else buffer
+        self._ct_buf = (_ctypes.c_char * len(self.buffer)).from_buffer(self.buffer)
+
+    def pack(self, *values):
+        self.layout.struct.pack_into(self.buffer, 0, *values)
+
+    def unpack(self):
+        return self.layout.struct.unpack(self.buffer)
+
+    @property
+    def ptr(self):
+        """ctypes void pointer to the buffer."""
+        return _ctypes.cast(self._ct_buf, _ctypes.c_void_p)
+
+    @property
+    def address(self) -> int:
+        """Raw memory address of the buffer."""
+        return _ctypes.addressof(self._ct_buf)
 
 
 # Module-level singletons for primitives

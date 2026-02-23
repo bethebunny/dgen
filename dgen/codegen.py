@@ -9,6 +9,27 @@ from io import StringIO
 import dgen
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
+from dgen.layout import Memory
+
+# ---------------------------------------------------------------------------
+# struct.format → LLVM / ctypes mapping
+# ---------------------------------------------------------------------------
+
+_FMT_LLVM = {'q': 'i64', 'd': 'double'}
+_FMT_CTYPE = {'q': ctypes.c_int64, 'd': ctypes.c_double}
+
+
+def _llvm_type(layout) -> str:
+    """Derive LLVM type from a layout's struct format."""
+    fmt = layout.struct.format.lstrip('=@<>!')
+    return _FMT_LLVM.get(fmt, 'ptr')
+
+
+def _ctype(layout):
+    """Derive ctypes type from a layout's struct format."""
+    fmt = layout.struct.format.lstrip('=@<>!')
+    return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
+
 
 # ---------------------------------------------------------------------------
 # Runtime: print_memref callback
@@ -70,26 +91,27 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
 
     # Register block arg types
     for arg in f.body.args:
-        types[id(arg)] = arg.type.__layout__.llvm_type
+        types[id(arg)] = _llvm_type(arg.type.__layout__)
 
     for op in f.body.ops:
         vid = id(op)
         if isinstance(op, builtin.ConstantOp):
             layout = op.type.__layout__  # type: ignore[union-attr]
             if isinstance(op.value, list):
-                buf = (layout.element.ctype * layout.count)(*op.value)
-                host_buffers.append(buf)
-                addr = ctypes.addressof(buf)
-                constants[vid] = f"ptr inttoptr (i64 {addr} to ptr)"
+                mem = Memory(layout)
+                mem.pack(*op.value)
+                host_buffers.append(mem)
+                constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
                 types[vid] = "ptr"
             else:
+                lt = _llvm_type(layout)
                 val_str = (
                     format_float(op.value)
                     if isinstance(op.value, float)
                     else str(op.value)
                 )
-                constants[vid] = f"{layout.llvm_type} {val_str}"
-                types[vid] = layout.llvm_type
+                constants[vid] = f"{lt} {val_str}"
+                types[vid] = lt
         elif isinstance(op, llvm.AllocaOp):
             types[vid] = "ptr"
         elif isinstance(op, llvm.GepOp):
@@ -130,7 +152,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
     if isinstance(result_type, builtin.Nil):
         llvm_ret = "void"
     else:
-        llvm_ret = result_type.__layout__.llvm_type
+        llvm_ret = _llvm_type(result_type.__layout__)
     # Build parameter list from block args
     params = []
     for arg in f.body.args:
@@ -217,7 +239,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
 
 def _func_param_ctypes(func: builtin.FuncOp) -> list:
     """Map function block arg types to ctypes parameter types."""
-    return [arg.type.__layout__.ctype for arg in func.body.args]
+    return [_ctype(arg.type.__layout__) for arg in func.body.args]
 
 
 def compile_and_run(
@@ -278,6 +300,6 @@ def jit_eval(
     main_func = ll_module.functions[0]
     param_types = _func_param_ctypes(main_func)
     func_ptr = engine.get_function_address(main_func.name)
-    cfunc = ctypes.CFUNCTYPE(return_layout.ctype, *param_types)(func_ptr)
+    cfunc = ctypes.CFUNCTYPE(_ctype(return_layout), *param_types)(func_ptr)
     call_args = args if args else []
     return cfunc(*call_args)
