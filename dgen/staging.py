@@ -128,6 +128,53 @@ def _prepare_ctypes_args(
     return ctypes_args, host_bufs
 
 
+def _jit_stage1_value(
+    func: builtin.FuncOp,
+    comptime_value: dgen.Value,
+    lower: Callable[[builtin.Module], builtin.Module],
+    args: list | None,
+) -> object:
+    """JIT stage-1 subgraph with runtime args, return the scalar result."""
+    subgraph = _trace_dependencies(comptime_value, func)
+    stage1_ops = list(subgraph) + [builtin.ReturnOp(value=comptime_value)]
+    stage1_func = builtin.FuncOp(
+        name="main",
+        body=dgen.Block(ops=stage1_ops, args=list(func.body.args)),
+        type=builtin.Function(result=comptime_value.type),
+    )
+    stage1_module = builtin.Module(functions=[stage1_func])
+    lowered = lower(stage1_module)
+    ctypes_args, _ = _prepare_ctypes_args(func.body.args, args or [])
+    layout = comptime_value.type.__layout__
+    return jit_eval(lowered, layout, args=ctypes_args)
+
+
+def _resolve_constant_ops(func: builtin.FuncOp) -> bool:
+    """Replace ops that implement resolve_constant() with ConstantOps.
+
+    After shape inference runs, ops like DimSizeOp may be resolvable to
+    constants because their input types are now concrete. This function
+    finds such ops and replaces them, patching any Comptime field references.
+    """
+    resolved = False
+    for i, op in enumerate(func.body.ops):
+        resolver = getattr(op, "resolve_constant", None)
+        if resolver is None:
+            continue
+        val = resolver()
+        if val is None:
+            continue
+        const = builtin.ConstantOp(value=val, type=op.type)
+        func.body.ops[i] = const
+        # Patch any Comptime fields that reference the old op
+        for other in func.body.ops:
+            for fn in _comptime_fields(type(other)):
+                if getattr(other, fn) is op:
+                    setattr(other, fn, const)
+        resolved = True
+    return resolved
+
+
 def compile_and_run_staged(
     module: builtin.Module,
     *,
@@ -138,14 +185,19 @@ def compile_and_run_staged(
 ) -> str | None:
     """Full staged compilation pipeline.
 
-    1. Resolves stage-0 Comptime fields via isolated JIT.
-    2. For stage-1 Comptime fields (runtime-dependent):
-       - JITs stage 1 to compute the comptime value from runtime args
-       - Instantiates and runs stage 2 with the resolved value
+    Iteratively resolves all Comptime fields:
+    - Stage-0 fields (constant dependencies) are JIT-evaluated in isolation.
+    - Stage-1 fields (runtime dependencies) are JIT-evaluated with runtime args.
+    After each resolution, shape inference is interleaved to propagate types,
+    and constant-resolving ops (e.g. DimSizeOp) are replaced with ConstantOps.
+    The loop restarts to handle subsequent Comptime fields.
     """
     module = deepcopy(module)
 
-    for func in module.functions:
+    changed = True
+    while changed:
+        changed = False
+        func = module.functions[0]
         for op in list(func.body.ops):
             for field_name in _comptime_fields(type(op)):
                 value = getattr(op, field_name)
@@ -161,67 +213,37 @@ def compile_and_run_staged(
                     func.body.ops.insert(idx, const_op)
                     setattr(op, field_name, const_op)
                 else:
-                    # Stage 1: runtime-dependent comptime value
-                    return _execute_stage1(
-                        func, op, field_name, value,
-                        infer=infer, lower=lower,
-                        args=args, capture_output=capture_output,
+                    # Stage 1: JIT to resolve, then patch
+                    result = _jit_stage1_value(func, value, lower, args)
+                    const_op = builtin.ConstantOp(
+                        value=int(result), type=value.type
                     )
+                    # Remove subgraph ops, insert constant
+                    subgraph_ids = {
+                        id(o) for o in _trace_dependencies(value, func)
+                    }
+                    func.body.ops[:] = [
+                        o for o in func.body.ops if id(o) not in subgraph_ids
+                    ]
+                    idx = func.body.ops.index(op)
+                    func.body.ops.insert(idx, const_op)
+                    setattr(op, field_name, const_op)
 
-    # All stage-0 resolved (or no comptime fields), run normally
+                # Interleave shape inference and resolve constant ops
+                module = infer(module)
+                _resolve_constant_ops(module.functions[0])
+                changed = True
+                break  # restart scan after mutation
+            if changed:
+                break
+
+    # All comptime resolved, run full pipeline
+    func = module.functions[0]
     typed = infer(module)
     lowered = lower(typed)
-    return compile_and_run(lowered, capture_output=capture_output)
-
-
-def _execute_stage1(
-    func: builtin.FuncOp,
-    boundary_op: dgen.Op,
-    field_name: str,
-    comptime_value: dgen.Value,
-    *,
-    infer: Callable[[builtin.Module], builtin.Module],
-    lower: Callable[[builtin.Module], builtin.Module],
-    args: list | None,
-    capture_output: bool,
-) -> str | None:
-    """Execute stage-1 JIT to resolve a runtime-dependent Comptime field."""
-    subgraph = _trace_dependencies(comptime_value, func)
-
-    # --- Stage 1: compute the comptime value from runtime args ---
-    stage1_ops = list(subgraph) + [builtin.ReturnOp(value=comptime_value)]
-    stage1_func = builtin.FuncOp(
-        name="main",
-        body=dgen.Block(ops=stage1_ops, args=list(func.body.args)),
-        type=builtin.Function(result=comptime_value.type),
+    ctypes_args: list = []
+    if args and func.body.args:
+        ctypes_args, _ = _prepare_ctypes_args(func.body.args, args)
+    return compile_and_run(
+        lowered, capture_output=capture_output, args=ctypes_args
     )
-    stage1_module = builtin.Module(functions=[stage1_func])
-    lowered_s1 = lower(stage1_module)
-
-    # Prepare ctypes args and JIT stage 1
-    ctypes_args, _host_bufs = _prepare_ctypes_args(
-        func.body.args, args if args is not None else []
-    )
-    layout = comptime_value.type.__layout__
-    result = jit_eval(lowered_s1, layout, args=ctypes_args)
-
-    # --- Stage 2: instantiate with the resolved value ---
-    subgraph_ids = {id(op) for op in subgraph}
-    stage2_ops = [op for op in func.body.ops if id(op) not in subgraph_ids]
-
-    const_op = builtin.ConstantOp(value=int(result), type=comptime_value.type)
-    idx = stage2_ops.index(boundary_op)
-    stage2_ops.insert(idx, const_op)
-    setattr(boundary_op, field_name, const_op)
-
-    stage2_func = builtin.FuncOp(
-        name="main",
-        body=dgen.Block(ops=stage2_ops),
-        type=builtin.Function(result=func.type.result),
-    )
-    stage2_module = builtin.Module(functions=[stage2_func])
-
-    # Run stage 2 through the full pipeline
-    typed = infer(stage2_module)
-    lowered_s2 = lower(typed)
-    return compile_and_run(lowered_s2, capture_output=capture_output)

@@ -177,14 +177,25 @@ for i in 0..2:           # outer: tile count
 
 The count must be a `ConstantOp` by the time lowering runs — staging has resolved it. The output shape is `[count] + input_shape`.
 
-## Restrictions and Future Work
+## Resolved Extensions
 
-The current stage-1 implementation has a key restriction: **only scalar values cross the stage boundary**. The comptime value (e.g., a tile count) is an integer that stage 1 returns and stage 2 receives as a constant.
+The staging system supports three capabilities beyond the basic stage-0/stage-1 split:
 
-Future extensions:
-- **Pointer-crossing**: If stage-2 code needs to access stage-1's runtime data (e.g., the original tensor), the function must use a callback approach where stage 1's stack frame stays alive while stage 2 executes.
-- **Multiple comptime fields**: Currently handles one stage-1 boundary per function. Multiple boundaries would need iterative splitting or a more general partitioning scheme.
-- **Arbitrary stages**: The current architecture hard-codes a finite number of stages. The generic system needs to be able to compute any sequence of stages.
+### Pointer-crossing
+
+Stage-2 code can access the original function parameters (e.g., the tensor passed to the function). `compile_and_run_staged` preserves block args and ctypes args through to the final `compile_and_run` call.
+
+### Multiple Comptime Fields
+
+`compile_and_run_staged` uses an iterative `while changed` loop that rescans after each resolution. Multiple independent stage-1 boundaries in the same function are resolved one at a time, with subgraph ops removed and replaced by constants after each step.
+
+### Arbitrary Stages (Interleaved Shape Inference)
+
+After each comptime resolution, `infer()` is called to propagate types with the newly-known constants. Ops that implement `resolve_constant()` (e.g., `DimSizeOp`) are then replaced with `ConstantOp`s. This enables chained dependencies where a second comptime value depends on the *shape* resolved by the first.
+
+### Remaining Restrictions
+
+The current implementation has one key restriction: **only scalar values cross the stage boundary**. The comptime value (e.g., a tile count) is an integer that stage 1 returns and stage 2 receives as a constant. Tensor values crossing stages would require a callback approach where stage 1's stack frame stays alive while stage 2 executes.
 
 ## File Map
 

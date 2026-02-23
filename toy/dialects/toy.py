@@ -111,6 +111,20 @@ class NonzeroCountOp(Op):
     type: Type = builtin.IndexType()
 
 
+@toy.op("dim_size")
+@dataclass(eq=False, kw_only=True)
+class DimSizeOp(Op):
+    input: Value
+    axis: int
+    type: Type = builtin.IndexType()
+
+    def resolve_constant(self) -> int | None:
+        """Return constant value if input type has a resolved shape."""
+        if hasattr(self.input.type, "shape"):
+            return self.input.type.shape[self.axis]
+        return None
+
+
 @toy.op("print")
 @dataclass(eq=False, kw_only=True)
 class PrintOp(Op):
