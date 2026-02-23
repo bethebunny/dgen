@@ -7,7 +7,8 @@ a computed value, not a constant literal.
 
 from dgen import asm
 from dgen.asm.parser import parse_module
-from dgen.staging import evaluate_stage0
+from dgen.codegen import compile_and_run
+from dgen.staging import compile_and_run_staged, evaluate_stage0
 from toy.passes.affine_to_llvm import lower_to_llvm
 from toy.passes.shape_inference import infer_shapes
 from toy.passes.toy_to_affine import lower_to_affine
@@ -158,3 +159,127 @@ def test_tile_nonzero_plus_add():
     result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([3, 2], f64) = toy.tile" in out
+
+
+# ===----------------------------------------------------------------------=== #
+# Phase 2: TileOp lowering — full pipeline with JIT execution
+# ===----------------------------------------------------------------------=== #
+
+
+def test_tile_constant():
+    """tile([1.0, 2.0, 3.0], 2) prints two copies of the tensor."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
+        |     %1 : index = 2
+        |     %2 : toy.Tensor([2, 3], f64) = toy.tile(%0, %1)
+        |     %3 : () = toy.print(%2)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    typed = infer_shapes(module)
+    affine = lower_to_affine(typed)
+    ll = lower_to_llvm(affine)
+    output = compile_and_run(ll, capture_output=True)
+    assert output is not None
+    assert output.strip() == "1, 2, 3, 1, 2, 3"
+
+
+def test_tile_constant_3copies():
+    """tile([1.0, 2.0], 3) prints three copies."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([2], f64) = [4.0, 5.0]
+        |     %1 : index = 3
+        |     %2 : toy.Tensor([3, 2], f64) = toy.tile(%0, %1)
+        |     %3 : () = toy.print(%2)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    typed = infer_shapes(module)
+    affine = lower_to_affine(typed)
+    ll = lower_to_llvm(affine)
+    output = compile_and_run(ll, capture_output=True)
+    assert output is not None
+    assert output.strip() == "4, 5, 4, 5, 4, 5"
+
+
+def test_tile_staged_constant():
+    """tile with computed count (add_index) through full JIT pipeline."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([3], f64) = [7.0, 8.0, 9.0]
+        |     %1 : index = 1
+        |     %2 : index = 1
+        |     %3 : index = add_index(%1, %2)
+        |     %4 : toy.InferredShapeTensor(f64) = toy.tile(%0, %3)
+        |     %5 : () = toy.print(%4)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    staged = evaluate_stage0(module, _stage_lower)
+    typed = infer_shapes(staged)
+    affine = lower_to_affine(typed)
+    ll = lower_to_llvm(affine)
+    output = compile_and_run(ll, capture_output=True)
+    assert output is not None
+    assert output.strip() == "7, 8, 9, 7, 8, 9"
+
+
+# ===----------------------------------------------------------------------=== #
+# Phase 3: Stage-1 JIT — runtime-dependent comptime values
+# ===----------------------------------------------------------------------=== #
+
+
+def test_stage1_nonzero_count():
+    """nonzero_count on a function parameter — stage-1 JIT resolves tile shape."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function (%x: toy.Tensor([4], f64)) -> ():
+        |     %1 : index = toy.nonzero_count(%x)
+        |     %2 : toy.Tensor([3], f64) = [7.0, 8.0, 9.0]
+        |     %3 : toy.InferredShapeTensor(f64) = toy.tile(%2, %1)
+        |     %4 : () = toy.print(%3)
+        |     %_ : () = return()
+    """)
+    tensor = [1.0, 0.0, 3.0, 0.0]  # 2 nonzero elements
+    output = compile_and_run_staged(
+        parse_module(ir),
+        infer=infer_shapes,
+        lower=_stage_lower,
+        args=[tensor],
+    )
+    # tile([7,8,9], 2) → print 7, 8, 9, 7, 8, 9
+    assert output is not None
+    assert output.strip() == "7, 8, 9, 7, 8, 9"
+
+
+def test_stage1_nonzero_count_different_input():
+    """Different tensor, different nonzero count — stage-1 adapts."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function (%x: toy.Tensor([4], f64)) -> ():
+        |     %1 : index = toy.nonzero_count(%x)
+        |     %2 : toy.Tensor([3], f64) = [7.0, 8.0, 9.0]
+        |     %3 : toy.InferredShapeTensor(f64) = toy.tile(%2, %1)
+        |     %4 : () = toy.print(%3)
+        |     %_ : () = return()
+    """)
+    tensor = [1.0, 2.0, 3.0, 4.0]  # 4 nonzero elements
+    output = compile_and_run_staged(
+        parse_module(ir),
+        infer=infer_shapes,
+        lower=_stage_lower,
+        args=[tensor],
+    )
+    # tile([7,8,9], 4) → 4 copies
+    assert output is not None
+    assert output.strip() == "7, 8, 9, 7, 8, 9, 7, 8, 9, 7, 8, 9"

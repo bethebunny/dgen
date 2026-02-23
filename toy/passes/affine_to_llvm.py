@@ -28,12 +28,18 @@ class AffineToLLVMLowering:
         self.alloc_shapes = {}
         self.alloc_sizes = {}
         self.current_label = "entry"
+        # Register block args (function parameters)
+        for arg in f.body.args:
+            self.value_map[arg] = arg
+            if hasattr(arg.type, "shape"):
+                self.alloc_shapes[arg] = list(arg.type.shape)
+                self.alloc_sizes[arg] = prod(arg.type.shape)
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
         return builtin.FuncOp(
             name=f.name,
-            body=dgen.Block(ops=ops),
+            body=dgen.Block(ops=ops, args=f.body.args),
             type=builtin.Function(result=f.type.result),
         )
 

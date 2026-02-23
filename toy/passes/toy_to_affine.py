@@ -23,12 +23,15 @@ class ToyToAffineLowering:
     def lower_function(self, f: builtin.FuncOp) -> builtin.FuncOp:
         self.alloc_map = {}
         self.live_allocs = []
+        # Register block args (function parameters) as themselves
+        for arg in f.body.args:
+            self.alloc_map[arg] = arg
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
         return builtin.FuncOp(
             name=f.name,
-            body=dgen.Block(ops=ops),
+            body=dgen.Block(ops=ops, args=f.body.args),
             type=builtin.Function(result=f.type.result),
         )
 
@@ -56,6 +59,8 @@ class ToyToAffineLowering:
             )
             yield new_op
             self.alloc_map[op] = new_op
+        elif isinstance(op, toy.TileOp):
+            yield from self._lower_tile(op)
         elif isinstance(op, toy.PrintOp):
             yield from self._lower_print(op)
         elif isinstance(op, builtin.ReturnOp):
@@ -124,6 +129,29 @@ class ToyToAffineLowering:
 
         yield from self._nested_for(shape, body)
         self.alloc_map[result_op] = alloc_op
+
+    def _lower_tile(self, op: toy.TileOp) -> Iterator[dgen.Op]:
+        assert isinstance(op.count, builtin.ConstantOp)
+        count = op.count.value
+        assert isinstance(op.input.type, toy.TensorType)
+        input_shape = op.input.type.shape
+        output_shape = [count] + list(input_shape)
+
+        alloc_op = affine.AllocOp(
+            shape=output_shape, type=affine.MemRefType(shape=output_shape)
+        )
+        yield alloc_op
+        self.live_allocs.append(alloc_op)
+        in_alloc = self.alloc_map.get(op.input, op.input)
+
+        def body(ivars):
+            inner_ivars = list(ivars[1:])  # indices into input tensor
+            load = affine.LoadOp(memref=in_alloc, indices=inner_ivars)
+            store = affine.StoreOp(value=load, memref=alloc_op, indices=list(ivars))
+            return [load, store]
+
+        yield from self._nested_for(output_shape, body)
+        self.alloc_map[op] = alloc_op
 
     def _lower_reshape(self, op: toy.ReshapeOp) -> None:
         self.alloc_map[op] = self.alloc_map.get(op.input, op.input)
