@@ -6,15 +6,24 @@ Array, Pointer, FatPointer are parameterized via constructors.
 
 from __future__ import annotations
 
+import ctypes
+
 
 class Struct:
     """Base for memory layout types."""
+
+    ctype = None
+    llvm_type = None
 
     def byte_size(self) -> int:
         raise NotImplementedError
 
     def parse(self, obj) -> object:
         raise NotImplementedError
+
+    def prepare_arg(self, value):
+        """Convert Python value to (ctypes_arg, refs_to_keep_alive)."""
+        return value, []
 
 
 class Byte(Struct):
@@ -24,6 +33,9 @@ class Byte(Struct):
 
 class Int(Struct):
     """64-bit integer (i64)."""
+
+    ctype = ctypes.c_int64
+    llvm_type = "i64"
 
     def byte_size(self) -> int:
         return 8
@@ -36,6 +48,9 @@ class Int(Struct):
 class Float64(Struct):
     """64-bit float (f64)."""
 
+    ctype = ctypes.c_double
+    llvm_type = "double"
+
     def byte_size(self) -> int:
         return 8
 
@@ -46,6 +61,9 @@ class Float64(Struct):
 
 class Array(Struct):
     """Fixed-size inline array: n × sizeof(T) bytes."""
+
+    ctype = ctypes.c_void_p
+    llvm_type = "ptr"
 
     def __init__(self, element: Struct, count: int):
         self.element = element
@@ -58,9 +76,16 @@ class Array(Struct):
         assert isinstance(obj, list), f"expected list, got {type(obj).__name__}"
         return [self.element.parse(v) for v in obj]
 
+    def prepare_arg(self, value):
+        buf = (self.element.ctype * self.count)(*value)
+        return ctypes.cast(buf, ctypes.c_void_p), [buf]
+
 
 class Pointer(Struct):
     """8-byte pointer to T."""
+
+    ctype = ctypes.c_void_p
+    llvm_type = "ptr"
 
     def __init__(self, pointee: Struct):
         self.pointee = pointee
@@ -71,6 +96,9 @@ class Pointer(Struct):
 
 class FatPointer(Struct):
     """Pointer + i64 length (16 bytes)."""
+
+    ctype = ctypes.c_void_p
+    llvm_type = "ptr"
 
     def __init__(self, pointee: Struct):
         self.pointee = pointee

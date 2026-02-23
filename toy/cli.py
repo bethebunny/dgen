@@ -41,6 +41,22 @@ def run(
     )
 
 
+def run_ir(
+    ir_text: str, *, args: list | None = None, capture_output: bool = False
+) -> str | None:
+    """Parse IR text and run through the staging pipeline."""
+    from dgen.asm.parser import IRParser
+
+    module = IRParser(ir_text).parse_module()
+    return compile_and_run_staged(
+        module,
+        infer=infer_shapes,
+        lower=_lower,
+        args=args,
+        capture_output=capture_output,
+    )
+
+
 @click.command()
 @click.argument("source_file", type=click.Path(exists=True))
 def main(source_file):

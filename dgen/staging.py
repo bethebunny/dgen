@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ctypes
 from collections.abc import Callable
 from copy import deepcopy
 from typing import get_type_hints
@@ -66,12 +65,9 @@ def _prepare_ctypes_args(
     ctypes_args: list = []
     host_bufs: list = []
     for arg, param in zip(python_args, block_args):
-        if hasattr(param.type, "shape"):
-            buf = (ctypes.c_double * len(arg))(*arg)
-            host_bufs.append(buf)
-            ctypes_args.append(ctypes.cast(buf, ctypes.c_void_p))
-        else:
-            ctypes_args.append(arg)
+        ct_val, refs = param.type.__layout__.prepare_arg(arg)
+        ctypes_args.append(ct_val)
+        host_bufs.extend(refs)
     return ctypes_args, host_bufs
 
 
