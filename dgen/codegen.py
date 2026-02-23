@@ -15,19 +15,19 @@ from dgen.layout import Memory
 # struct.format → LLVM / ctypes mapping
 # ---------------------------------------------------------------------------
 
-_FMT_LLVM = {'q': 'i64', 'd': 'double'}
-_FMT_CTYPE = {'q': ctypes.c_int64, 'd': ctypes.c_double}
+_FMT_LLVM = {"q": "i64", "d": "double"}
+_FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double}
 
 
 def _llvm_type(layout) -> str:
     """Derive LLVM type from a layout's struct format."""
-    fmt = layout.struct.format.lstrip('=@<>!')
-    return _FMT_LLVM.get(fmt, 'ptr')
+    fmt = layout.struct.format.lstrip("=@<>!")
+    return _FMT_LLVM.get(fmt, "ptr")
 
 
 def _ctype(layout):
     """Derive ctypes type from a layout's struct format."""
-    fmt = layout.struct.format.lstrip('=@<>!')
+    fmt = layout.struct.format.lstrip("=@<>!")
     return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
 
 
@@ -96,7 +96,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
     for op in f.body.ops:
         vid = id(op)
         if isinstance(op, builtin.ConstantOp):
-            layout = op.type.__layout__  # type: ignore[union-attr]
+            layout = op.type.__layout__
             if isinstance(op.value, list):
                 mem = Memory(op.type)
                 mem.pack(*op.value)

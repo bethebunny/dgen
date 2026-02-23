@@ -1,9 +1,9 @@
 ## Make the JIT work in the general case
-- Understand how the heck `args` work in `run`
-  - We can make this generic because of `Layout` and `ConstantOp`!!! This is actually really sweet
-- Remove `Type.prepare_arg`, `_LayoutAsType`
-- Remove ctype buffer/pointer from `Memory`
-- Remove `_format` from `Type`, it can just have the `Struct` as a field directly.
+- Polish `Memory` and `Layout` a bit
+  - Remove `Type.prepare_arg`, `_LayoutAsType`
+  - Remove ctype buffer/pointer from `Memory`
+  - Remove `_format` from `Type`, it can just have the `Struct` as a field directly.
+  - Remove `Array` special case from 
 - Generalize `compile_and_run_staged` to not need an `infer` stage
 - SSA types via JIT
 - Remove any "if stage0/stage1" logic
@@ -42,6 +42,7 @@
 - Figure out why some ASM still doesn't have types, these should fail to parse
 - Go through and rename files
 - Read, understand, clean passes
+- Remove the janky `if args` stuff from `cli.run`
 
 ## Misc
 - Write more down into design docs
