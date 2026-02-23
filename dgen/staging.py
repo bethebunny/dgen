@@ -107,7 +107,9 @@ def _resolve_comptime_field(
     subgraph = _trace_dependencies(value, func)
     stage1 = not _is_stage0_evaluable(value)
     result = _jit_evaluate(
-        subgraph, value, lower,
+        subgraph,
+        value,
+        lower,
         block_args=func.body.args if stage1 else None,
         args=args,
     )

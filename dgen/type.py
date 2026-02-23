@@ -1,5 +1,7 @@
 from typing import Protocol
 
+from .layout import Layout
+
 
 class Type(Protocol):
     """Any dialect type.
@@ -9,5 +11,7 @@ class Type(Protocol):
     type_asm() for registered types, or falls back to .asm for types
     with hand-written formatting (e.g. llvm types).
     """
+
+    __layout__: Layout
 
     ...

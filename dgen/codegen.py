@@ -83,7 +83,11 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
                 constants[vid] = f"ptr inttoptr (i64 {addr} to ptr)"
                 types[vid] = "ptr"
             else:
-                val_str = format_float(op.value) if isinstance(op.value, float) else str(op.value)
+                val_str = (
+                    format_float(op.value)
+                    if isinstance(op.value, float)
+                    else str(op.value)
+                )
                 constants[vid] = f"{layout.llvm_type} {val_str}"
                 types[vid] = layout.llvm_type
         elif isinstance(op, llvm.AllocaOp):
@@ -211,11 +215,6 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _layout_to_ctype(layout):
-    """Map a layout descriptor to its ctypes equivalent."""
-    return layout.ctype
-
-
 def _func_param_ctypes(func: builtin.FuncOp) -> list:
     """Map function block arg types to ctypes parameter types."""
     return [arg.type.__layout__.ctype for arg in func.body.args]
@@ -279,7 +278,6 @@ def jit_eval(
     main_func = ll_module.functions[0]
     param_types = _func_param_ctypes(main_func)
     func_ptr = engine.get_function_address(main_func.name)
-    ctype = _layout_to_ctype(return_layout)
-    cfunc = ctypes.CFUNCTYPE(ctype, *param_types)(func_ptr)
+    cfunc = ctypes.CFUNCTYPE(return_layout.ctype, *param_types)(func_ptr)
     call_args = args if args else []
     return cfunc(*call_args)

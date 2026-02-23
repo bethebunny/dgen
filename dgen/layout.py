@@ -1,7 +1,7 @@
-"""Memory layout types for language-agnostic struct descriptions.
+"""Memory layout types for language-agnostic Layout descriptions.
 
 Layouts are value-level descriptors: Byte, Int, Float64 are singletons;
-Array, Pointer, FatPointer are parameterized via constructors.
+Array, Pointer, FatPointer are parameterized via conLayoutors.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import ctypes
 
 
-class Struct:
+class Layout:
     """Base for memory layout types."""
 
     ctype = None
@@ -26,12 +26,12 @@ class Struct:
         return value, []
 
 
-class Byte(Struct):
+class Byte(Layout):
     def byte_size(self) -> int:
         return 1
 
 
-class Int(Struct):
+class Int(Layout):
     """64-bit integer (i64)."""
 
     ctype = ctypes.c_int64
@@ -45,7 +45,7 @@ class Int(Struct):
         return obj
 
 
-class Float64(Struct):
+class Float64(Layout):
     """64-bit float (f64)."""
 
     ctype = ctypes.c_double
@@ -55,17 +55,19 @@ class Float64(Struct):
         return 8
 
     def parse(self, obj) -> float:
-        assert isinstance(obj, (int, float)), f"expected number, got {type(obj).__name__}"
+        assert isinstance(obj, (int, float)), (
+            f"expected number, got {type(obj).__name__}"
+        )
         return float(obj)
 
 
-class Array(Struct):
+class Array(Layout):
     """Fixed-size inline array: n × sizeof(T) bytes."""
 
     ctype = ctypes.c_void_p
     llvm_type = "ptr"
 
-    def __init__(self, element: Struct, count: int):
+    def __init__(self, element: Layout, count: int):
         self.element = element
         self.count = count
 
@@ -81,26 +83,26 @@ class Array(Struct):
         return ctypes.cast(buf, ctypes.c_void_p), [buf]
 
 
-class Pointer(Struct):
+class Pointer(Layout):
     """8-byte pointer to T."""
 
     ctype = ctypes.c_void_p
     llvm_type = "ptr"
 
-    def __init__(self, pointee: Struct):
+    def __init__(self, pointee: Layout):
         self.pointee = pointee
 
     def byte_size(self) -> int:
         return 8
 
 
-class FatPointer(Struct):
+class FatPointer(Layout):
     """Pointer + i64 length (16 bytes)."""
 
     ctype = ctypes.c_void_p
     llvm_type = "ptr"
 
-    def __init__(self, pointee: Struct):
+    def __init__(self, pointee: Layout):
         self.pointee = pointee
 
     def byte_size(self) -> int:
