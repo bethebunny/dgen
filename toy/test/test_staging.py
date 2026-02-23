@@ -5,17 +5,13 @@ Shape inference alone cannot resolve them because the shape depends on
 a computed value, not a constant literal.
 """
 
-import pytest
-
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.staging import evaluate_stage0
 from toy.passes.shape_inference import infer_shapes
 from toy.test.helpers import strip_prefix
 
-SKIP_REASON = "requires staging evaluator"
 
-
-@pytest.mark.skip(reason=SKIP_REASON)
 def test_tile_add_index():
     """tile count = add_index(2, 2) should resolve to Tensor([4, 3])."""
     ir = strip_prefix("""
@@ -31,12 +27,12 @@ def test_tile_add_index():
         |     %_ : () = return()
     """)
     module = parse_module(ir)
-    result = infer_shapes(module)
+    staged = evaluate_stage0(module)
+    result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([4, 3], f64) = toy.tile" in out
 
 
-@pytest.mark.skip(reason=SKIP_REASON)
 def test_tile_chained_add():
     """tile count = add_index(add_index(1, 1), add_index(1, 1)) -> 4."""
     ir = strip_prefix("""
@@ -56,12 +52,12 @@ def test_tile_chained_add():
         |     %_ : () = return()
     """)
     module = parse_module(ir)
-    result = infer_shapes(module)
+    staged = evaluate_stage0(module)
+    result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([4, 3], f64) = toy.tile" in out
 
 
-@pytest.mark.skip(reason=SKIP_REASON)
 def test_concat_after_computed_tile():
     """concat with a tile whose count is computed — both shapes need evaluation.
 
@@ -83,12 +79,12 @@ def test_concat_after_computed_tile():
         |     %_ : () = return()
     """)
     module = parse_module(ir)
-    result = infer_shapes(module)
+    staged = evaluate_stage0(module)
+    result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([5, 3], f64) = toy.concat" in out
 
 
-@pytest.mark.skip(reason=SKIP_REASON)
 def test_tile_shape_propagates_to_mul():
     """Shape from computed tile propagates to downstream ops.
 
@@ -110,6 +106,7 @@ def test_tile_shape_propagates_to_mul():
         |     %_ : () = return()
     """)
     module = parse_module(ir)
-    result = infer_shapes(module)
+    staged = evaluate_stage0(module)
+    result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([4, 3], f64) = toy.mul" in out

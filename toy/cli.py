@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 
 from dgen.codegen import compile_and_run
+from dgen.staging import evaluate_stage0
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.affine_to_llvm import lower_to_llvm
@@ -21,7 +22,8 @@ def main(source_file):
     ast = parse_toy(source)
     ir = lower(ast)
     opt = optimize(ir)
-    typed = infer_shapes(opt)
+    staged = evaluate_stage0(opt)
+    typed = infer_shapes(staged)
     affine = lower_to_affine(typed)
     ll = lower_to_llvm(affine)
     compile_and_run(ll)

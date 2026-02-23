@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import prod
 
-from dgen import Dialect, Op, Type, Value
+from dgen import Comptime, Dialect, Op, Type, Value
 from dgen.dialects import builtin
 from dgen.layout import FLOAT64, Array
 
@@ -100,7 +100,7 @@ class ConcatOp(Op):
 @dataclass(eq=False, kw_only=True)
 class TileOp(Op):
     input: Value
-    count: Value
+    count: Comptime
     type: Type
 
 

@@ -9,7 +9,7 @@ from io import StringIO
 import dgen
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
-from dgen.layout import Float64, Int
+from dgen.layout import FLOAT64, INT, Float64, Int
 
 # ---------------------------------------------------------------------------
 # Runtime: print_memref callback
@@ -118,7 +118,15 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         return f"%{tracker.get_name(val)}"
 
     func_name = tracker.get_name(f) if f.name is not None else f.name
-    lines = [f"define void @{func_name}() {{", "entry:"]
+    # Derive LLVM return type from function signature
+    result_type = f.type.result
+    if isinstance(result_type, builtin.IndexType):
+        llvm_ret = "i64"
+    elif isinstance(result_type, builtin.F64Type):
+        llvm_ret = "double"
+    else:
+        llvm_ret = "void"
+    lines = [f"define {llvm_ret} @{func_name}() {{", "entry:"]
 
     for op in f.body.ops:
         if isinstance(op, builtin.ConstantOp):
@@ -189,6 +197,15 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _layout_to_ctype(layout):
+    """Map a layout descriptor to its ctypes equivalent."""
+    if isinstance(layout, Int):
+        return ctypes.c_int64
+    elif isinstance(layout, Float64):
+        return ctypes.c_double
+    raise ValueError(f"unsupported layout for JIT return: {layout}")
+
+
 def compile_and_run(
     ll_module: builtin.Module, capture_output: bool = False
 ) -> str | None:
@@ -220,3 +237,24 @@ def compile_and_run(
     else:
         cfunc()
         return None
+
+
+def jit_eval(ll_module: builtin.Module, return_layout) -> object:
+    """JIT-compile a module and return the result of its main function."""
+    import llvmlite.binding as _llvm
+
+    _ensure_initialized()
+    host_buffers: list = []
+    ir_text = emit_llvm_ir(ll_module, host_buffers)
+
+    mod = _llvm.parse_assembly(ir_text)
+    mod.verify()
+
+    target = _llvm.Target.from_default_triple()
+    target_machine = target.create_target_machine()
+    engine = _llvm.create_mcjit_compiler(mod, target_machine)
+
+    func_ptr = engine.get_function_address("main")
+    ctype = _layout_to_ctype(return_layout)
+    cfunc = ctypes.CFUNCTYPE(ctype)(func_ptr)
+    return cfunc()

@@ -70,6 +70,10 @@ class AffineToLLVMLowering:
             self.value_map[op] = llvm_op
         elif isinstance(op, affine.PrintOp):
             yield from self._lower_print(op)
+        elif isinstance(op, builtin.AddIndexOp):
+            llvm_op = llvm.AddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
+            yield llvm_op
+            self.value_map[op] = llvm_op
         elif isinstance(op, builtin.ReturnOp):
             val = self._map(op.value) if op.value is not None else None
             yield builtin.ReturnOp(value=val)
