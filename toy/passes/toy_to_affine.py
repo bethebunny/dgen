@@ -61,6 +61,8 @@ class ToyToAffineLowering:
             self.alloc_map[op] = new_op
         elif isinstance(op, toy.TileOp):
             yield from self._lower_tile(op)
+        elif isinstance(op, toy.ConcatOp):
+            yield from self._lower_concat(op)
         elif isinstance(op, toy.PrintOp):
             yield from self._lower_print(op)
         elif isinstance(op, builtin.ReturnOp):
@@ -151,6 +153,49 @@ class ToyToAffineLowering:
             return [load, store]
 
         yield from self._nested_for(output_shape, body)
+        self.alloc_map[op] = alloc_op
+
+    def _lower_concat(self, op: toy.ConcatOp) -> Iterator[dgen.Op]:
+        assert isinstance(op.lhs.type, toy.TensorType)
+        assert isinstance(op.rhs.type, toy.TensorType)
+        lhs_shape = op.lhs.type.shape
+        rhs_shape = op.rhs.type.shape
+        axis = op.axis
+
+        output_shape = list(lhs_shape)
+        output_shape[axis] = lhs_shape[axis] + rhs_shape[axis]
+
+        alloc_op = affine.AllocOp(
+            shape=output_shape, type=affine.MemRefType(shape=output_shape)
+        )
+        yield alloc_op
+        self.live_allocs.append(alloc_op)
+        lhs_alloc = self.alloc_map.get(op.lhs, op.lhs)
+        rhs_alloc = self.alloc_map.get(op.rhs, op.rhs)
+
+        # Copy lhs into output[0:lhs_shape[axis], ...]
+        def lhs_body(ivars):
+            load = affine.LoadOp(memref=lhs_alloc, indices=ivars)
+            store = affine.StoreOp(value=load, memref=alloc_op, indices=list(ivars))
+            return [load, store]
+
+        yield from self._nested_for(lhs_shape, lhs_body)
+
+        # Copy rhs into output[lhs_shape[axis]:, ...] with offset along axis
+        offset_const = builtin.ConstantOp(
+            value=lhs_shape[axis], type=builtin.IndexType()
+        )
+        yield offset_const
+
+        def rhs_body(ivars):
+            load = affine.LoadOp(memref=rhs_alloc, indices=ivars)
+            offset_idx = builtin.AddIndexOp(lhs=ivars[axis], rhs=offset_const)
+            out_indices = list(ivars)
+            out_indices[axis] = offset_idx
+            store = affine.StoreOp(value=load, memref=alloc_op, indices=out_indices)
+            return [load, offset_idx, store]
+
+        yield from self._nested_for(rhs_shape, rhs_body)
         self.alloc_map[op] = alloc_op
 
     def _lower_reshape(self, op: toy.ReshapeOp) -> None:

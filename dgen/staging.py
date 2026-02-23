@@ -1,4 +1,4 @@
-"""Staging evaluator: JIT-compile stage-0 expressions to resolve Comptime fields."""
+"""Staging evaluator: JIT-compile comptime expressions to resolve dependent types."""
 
 from __future__ import annotations
 
@@ -59,59 +59,6 @@ def _is_stage0_evaluable(target: dgen.Value) -> bool:
     return True
 
 
-def _jit_evaluate(
-    subgraph: list[dgen.Op],
-    target: dgen.Value,
-    lower: Callable[[builtin.Module], builtin.Module],
-) -> object:
-    """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
-    ops = list(subgraph) + [builtin.ReturnOp(value=target)]
-    func = builtin.FuncOp(
-        name="main",
-        body=dgen.Block(ops=ops),
-        type=builtin.Function(result=target.type),
-    )
-    module = builtin.Module(functions=[func])
-    lowered = lower(module)
-    layout = target.type.__layout__
-    return jit_eval(lowered, layout)
-
-
-def evaluate_stage0(
-    module: builtin.Module,
-    lower: Callable[[builtin.Module], builtin.Module],
-) -> builtin.Module:
-    """Evaluate Comptime fields by JIT-compiling their dependency subgraphs.
-
-    ``lower`` is a callable that takes a Module containing stage-0 ops and
-    returns a Module ready for codegen (LLVM dialect).  This is the same
-    lowering pipeline the rest of the compiler uses, so any op with a
-    lowering path works automatically.
-
-    After this pass, all Comptime fields point to ConstantOps, so that
-    shape inference can resolve them via _resolve_index_value.
-    """
-    module = deepcopy(module)
-    for func in module.functions:
-        for op in list(func.body.ops):
-            for field_name in _comptime_fields(type(op)):
-                value = getattr(op, field_name)
-                if isinstance(value, builtin.ConstantOp):
-                    continue
-                subgraph = _trace_dependencies(value, func)
-                result = _jit_evaluate(subgraph, value, lower)
-                const_op = builtin.ConstantOp(value=result, type=value.type)
-                idx = func.body.ops.index(op)
-                func.body.ops.insert(idx, const_op)
-                setattr(op, field_name, const_op)
-    return module
-
-
-# ---------------------------------------------------------------------------
-# Stage-1 JIT: runtime-dependent comptime values
-# ---------------------------------------------------------------------------
-
-
 def _prepare_ctypes_args(
     block_args: list[BlockArgument], python_args: list
 ) -> tuple[list, list]:
@@ -128,35 +75,63 @@ def _prepare_ctypes_args(
     return ctypes_args, host_bufs
 
 
-def _jit_stage1_value(
-    func: builtin.FuncOp,
-    comptime_value: dgen.Value,
+def _jit_evaluate(
+    subgraph: list[dgen.Op],
+    target: dgen.Value,
     lower: Callable[[builtin.Module], builtin.Module],
-    args: list | None,
+    *,
+    block_args: list[BlockArgument] | None = None,
+    args: list | None = None,
 ) -> object:
-    """JIT stage-1 subgraph with runtime args, return the scalar result."""
-    subgraph = _trace_dependencies(comptime_value, func)
-    stage1_ops = list(subgraph) + [builtin.ReturnOp(value=comptime_value)]
-    stage1_func = builtin.FuncOp(
+    """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
+    ops = list(subgraph) + [builtin.ReturnOp(value=target)]
+    func = builtin.FuncOp(
         name="main",
-        body=dgen.Block(ops=stage1_ops, args=list(func.body.args)),
-        type=builtin.Function(result=comptime_value.type),
+        body=dgen.Block(ops=ops, args=list(block_args or [])),
+        type=builtin.Function(result=target.type),
     )
-    stage1_module = builtin.Module(functions=[stage1_func])
-    lowered = lower(stage1_module)
-    ctypes_args, _ = _prepare_ctypes_args(func.body.args, args or [])
-    layout = comptime_value.type.__layout__
+    module = builtin.Module(functions=[func])
+    lowered = lower(module)
+    layout = target.type.__layout__
+    ctypes_args: list = []
+    if block_args and args:
+        ctypes_args, _ = _prepare_ctypes_args(block_args, args)
     return jit_eval(lowered, layout, args=ctypes_args)
 
 
-def _resolve_constant_ops(func: builtin.FuncOp) -> bool:
+def _resolve_comptime_field(
+    func: builtin.FuncOp,
+    op: dgen.Op,
+    field_name: str,
+    value: dgen.Value,
+    lower: Callable[[builtin.Module], builtin.Module],
+    args: list | None = None,
+) -> None:
+    """Resolve a single Comptime field: JIT the dependency subgraph, patch with ConstantOp."""
+    subgraph = _trace_dependencies(value, func)
+    stage1 = not _is_stage0_evaluable(value)
+    result = _jit_evaluate(
+        subgraph, value, lower,
+        block_args=func.body.args if stage1 else None,
+        args=args,
+    )
+    if stage1:
+        result = int(result)
+        subgraph_ids = {id(o) for o in subgraph}
+        func.body.ops[:] = [o for o in func.body.ops if id(o) not in subgraph_ids]
+    const_op = builtin.ConstantOp(value=result, type=value.type)
+    idx = func.body.ops.index(op)
+    func.body.ops.insert(idx, const_op)
+    setattr(op, field_name, const_op)
+
+
+def _resolve_constant_ops(func: builtin.FuncOp) -> None:
     """Replace ops that implement resolve_constant() with ConstantOps.
 
     After shape inference runs, ops like DimSizeOp may be resolvable to
     constants because their input types are now concrete. This function
     finds such ops and replaces them, patching any Comptime field references.
     """
-    resolved = False
     for i, op in enumerate(func.body.ops):
         resolver = getattr(op, "resolve_constant", None)
         if resolver is None:
@@ -166,13 +141,15 @@ def _resolve_constant_ops(func: builtin.FuncOp) -> bool:
             continue
         const = builtin.ConstantOp(value=val, type=op.type)
         func.body.ops[i] = const
-        # Patch any Comptime fields that reference the old op
         for other in func.body.ops:
             for fn in _comptime_fields(type(other)):
                 if getattr(other, fn) is op:
                     setattr(other, fn, const)
-        resolved = True
-    return resolved
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def compile_and_run_staged(
@@ -203,37 +180,11 @@ def compile_and_run_staged(
                 value = getattr(op, field_name)
                 if isinstance(value, builtin.ConstantOp):
                     continue
-
-                if _is_stage0_evaluable(value):
-                    # Stage 0: evaluate in isolation
-                    subgraph = _trace_dependencies(value, func)
-                    result = _jit_evaluate(subgraph, value, lower)
-                    const_op = builtin.ConstantOp(value=result, type=value.type)
-                    idx = func.body.ops.index(op)
-                    func.body.ops.insert(idx, const_op)
-                    setattr(op, field_name, const_op)
-                else:
-                    # Stage 1: JIT to resolve, then patch
-                    result = _jit_stage1_value(func, value, lower, args)
-                    const_op = builtin.ConstantOp(
-                        value=int(result), type=value.type
-                    )
-                    # Remove subgraph ops, insert constant
-                    subgraph_ids = {
-                        id(o) for o in _trace_dependencies(value, func)
-                    }
-                    func.body.ops[:] = [
-                        o for o in func.body.ops if id(o) not in subgraph_ids
-                    ]
-                    idx = func.body.ops.index(op)
-                    func.body.ops.insert(idx, const_op)
-                    setattr(op, field_name, const_op)
-
-                # Interleave shape inference and resolve constant ops
+                _resolve_comptime_field(func, op, field_name, value, lower, args)
                 module = infer(module)
                 _resolve_constant_ops(module.functions[0])
                 changed = True
-                break  # restart scan after mutation
+                break
             if changed:
                 break
 
@@ -244,6 +195,4 @@ def compile_and_run_staged(
     ctypes_args: list = []
     if args and func.body.args:
         ctypes_args, _ = _prepare_ctypes_args(func.body.args, args)
-    return compile_and_run(
-        lowered, capture_output=capture_output, args=ctypes_args
-    )
+    return compile_and_run(lowered, capture_output=capture_output, args=ctypes_args)

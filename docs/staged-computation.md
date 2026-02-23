@@ -56,7 +56,7 @@ def _is_stage0_evaluable(target: Value) -> bool:
 
 ## Stage 0: Isolated JIT
 
-When a comptime subgraph is self-contained (all leaves are `ConstantOp`s), `evaluate_stage0` resolves it:
+When a comptime subgraph is self-contained (all leaves are `ConstantOp`s), `compile_and_run_staged` resolves it in isolation:
 
 1. Extract the dependency subgraph
 2. Build a mini-module: the subgraph ops + `ReturnOp(target)`
@@ -64,15 +64,7 @@ When a comptime subgraph is self-contained (all leaves are `ConstantOp`s), `eval
 4. JIT-compile and call — get the result as a Python value
 5. Create a `ConstantOp` with the result and patch the comptime field
 
-```
-evaluate_stage0(module, lower)
-    for each Comptime field:
-        subgraph = trace_dependencies(value)
-        result = jit_evaluate(subgraph)       # builds mini-module, lowers, JITs
-        op.count = ConstantOp(value=result)    # patch in place
-```
-
-This is the existing mechanism. It handles cases like `tile(%data, add_index(2, 3))`.
+This handles cases like `tile(%data, add_index(2, 3))`.
 
 ## Stage 1: Runtime-Dependent Comptime Values
 

@@ -4,8 +4,7 @@ from pathlib import Path
 
 import click
 
-from dgen.codegen import compile_and_run
-from dgen.staging import compile_and_run_staged, evaluate_stage0
+from dgen.staging import compile_and_run_staged
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.affine_to_llvm import lower_to_llvm
@@ -18,19 +17,35 @@ def _lower(m):
     return lower_to_llvm(lower_to_affine(m))
 
 
+def run(
+    source: str, *, args: list | None = None, capture_output: bool = False
+) -> str | None:
+    """Compile and run a .toy source string through the full pipeline."""
+    ast = parse_toy(source)
+    ir = lower(ast)
+    # Set parameter types from runtime args (needed for stage-1 staging)
+    if args:
+        from toy.dialects.toy import TensorType
+
+        func = ir.functions[0]
+        for arg_val, param in zip(args, func.body.args):
+            if isinstance(arg_val, list):
+                param.type = TensorType(shape=[len(arg_val)])
+    opt = optimize(ir)
+    return compile_and_run_staged(
+        opt,
+        infer=infer_shapes,
+        lower=_lower,
+        args=args,
+        capture_output=capture_output,
+    )
+
+
 @click.command()
 @click.argument("source_file", type=click.Path(exists=True))
 def main(source_file):
     """Compile and run a .toy source file."""
-    source = Path(source_file).read_text()
-    ast = parse_toy(source)
-    ir = lower(ast)
-    opt = optimize(ir)
-    staged = evaluate_stage0(opt, _lower)
-    typed = infer_shapes(staged)
-    affine = lower_to_affine(typed)
-    ll = lower_to_llvm(affine)
-    compile_and_run(ll)
+    run(Path(source_file).read_text())
 
 
 if __name__ == "__main__":

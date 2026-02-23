@@ -138,6 +138,14 @@ class Lowering:
             return (yield from self._lower_print(expr))
         raise RuntimeError("Unknown expression type")
 
+    def _lower_index_expr(self, expr: Expression) -> Generator[dgen.Op, None, dgen.Value]:
+        """Lower an expression that should produce an index value."""
+        if isinstance(expr, NumberLiteral):
+            op = builtin.ConstantOp(value=int(expr.value), type=builtin.IndexType())
+            yield op
+            return op
+        return (yield from self.lower_expr(expr))
+
     def _lower_call(self, call: CallExpr) -> Generator[dgen.Op, None, dgen.Value]:
         # Builtin: transpose
         if call.callee == "transpose":
@@ -145,6 +153,60 @@ class Lowering:
                 raise RuntimeError("transpose takes exactly 1 argument")
             arg = yield from self.lower_expr(call.args[0])
             op = toy.TransposeOp(input=arg, type=_inferred())
+            yield op
+            return op
+
+        # Builtin: tile(tensor, count)
+        if call.callee == "tile":
+            if len(call.args) != 2:
+                raise RuntimeError("tile takes exactly 2 arguments")
+            input_val = yield from self.lower_expr(call.args[0])
+            count_val = yield from self._lower_index_expr(call.args[1])
+            op = toy.TileOp(input=input_val, count=count_val, type=_inferred())
+            yield op
+            return op
+
+        # Builtin: nonzero_count(tensor)
+        if call.callee == "nonzero_count":
+            if len(call.args) != 1:
+                raise RuntimeError("nonzero_count takes exactly 1 argument")
+            arg = yield from self.lower_expr(call.args[0])
+            op = toy.NonzeroCountOp(input=arg)
+            yield op
+            return op
+
+        # Builtin: concat(lhs, rhs, axis)
+        if call.callee == "concat":
+            if len(call.args) != 3:
+                raise RuntimeError("concat takes exactly 3 arguments")
+            lhs = yield from self.lower_expr(call.args[0])
+            rhs = yield from self.lower_expr(call.args[1])
+            if not isinstance(call.args[2], NumberLiteral):
+                raise RuntimeError("concat axis must be a literal")
+            axis = int(call.args[2].value)
+            op = toy.ConcatOp(lhs=lhs, rhs=rhs, axis=axis, type=_inferred())
+            yield op
+            return op
+
+        # Builtin: dim_size(tensor, axis)
+        if call.callee == "dim_size":
+            if len(call.args) != 2:
+                raise RuntimeError("dim_size takes exactly 2 arguments")
+            input_val = yield from self.lower_expr(call.args[0])
+            if not isinstance(call.args[1], NumberLiteral):
+                raise RuntimeError("dim_size axis must be a literal")
+            axis = int(call.args[1].value)
+            op = toy.DimSizeOp(input=input_val, axis=axis)
+            yield op
+            return op
+
+        # Builtin: add_index(lhs, rhs)
+        if call.callee == "add_index":
+            if len(call.args) != 2:
+                raise RuntimeError("add_index takes exactly 2 arguments")
+            lhs = yield from self._lower_index_expr(call.args[0])
+            rhs = yield from self._lower_index_expr(call.args[1])
+            op = builtin.AddIndexOp(lhs=lhs, rhs=rhs)
             yield op
             return op
 
