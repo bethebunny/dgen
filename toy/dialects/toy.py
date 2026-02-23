@@ -104,6 +104,13 @@ class TileOp(Op):
     type: Type
 
 
+@toy.op("nonzero_count")
+@dataclass(eq=False, kw_only=True)
+class NonzeroCountOp(Op):
+    input: Value
+    type: Type = builtin.IndexType()
+
+
 @toy.op("print")
 @dataclass(eq=False, kw_only=True)
 class PrintOp(Op):

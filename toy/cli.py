@@ -22,7 +22,7 @@ def main(source_file):
     ast = parse_toy(source)
     ir = lower(ast)
     opt = optimize(ir)
-    staged = evaluate_stage0(opt)
+    staged = evaluate_stage0(opt, lambda m: lower_to_llvm(lower_to_affine(m)))
     typed = infer_shapes(staged)
     affine = lower_to_affine(typed)
     ll = lower_to_llvm(affine)

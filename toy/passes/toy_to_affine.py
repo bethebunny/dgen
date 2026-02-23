@@ -29,18 +29,33 @@ class ToyToAffineLowering:
         return builtin.FuncOp(
             name=f.name,
             body=dgen.Block(ops=ops),
-            type=builtin.Function(result=builtin.Nil()),
+            type=builtin.Function(result=f.type.result),
         )
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
         if isinstance(op, builtin.ConstantOp) and isinstance(op.value, list):
             yield from self._lower_constant(op)
+        elif isinstance(op, builtin.ConstantOp):
+            yield op
+        elif isinstance(op, builtin.AddIndexOp):
+            new_op = builtin.AddIndexOp(
+                lhs=self.alloc_map.get(op.lhs, op.lhs),
+                rhs=self.alloc_map.get(op.rhs, op.rhs),
+            )
+            yield new_op
+            self.alloc_map[op] = new_op
         elif isinstance(op, toy.TransposeOp):
             yield from self._lower_transpose(op)
         elif isinstance(op, (toy.MulOp, toy.AddOp)):
             yield from self._lower_binop(op, op.lhs, op.rhs)
         elif isinstance(op, toy.ReshapeOp):
             self._lower_reshape(op)
+        elif isinstance(op, toy.NonzeroCountOp):
+            new_op = toy.NonzeroCountOp(
+                input=self.alloc_map.get(op.input, op.input),
+            )
+            yield new_op
+            self.alloc_map[op] = new_op
         elif isinstance(op, toy.PrintOp):
             yield from self._lower_print(op)
         elif isinstance(op, builtin.ReturnOp):
@@ -120,7 +135,8 @@ class ToyToAffineLowering:
     def _lower_return(self, op: builtin.ReturnOp) -> Iterator[dgen.Op]:
         for alloc_val in self.live_allocs:
             yield affine.DeallocOp(input=alloc_val)
-        yield builtin.ReturnOp(value=op.value)
+        val = self.alloc_map.get(op.value, op.value) if op.value is not None else None
+        yield builtin.ReturnOp(value=val)
 
 
 def lower_to_affine(m: builtin.Module) -> builtin.Module:

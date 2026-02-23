@@ -152,6 +152,22 @@ class PhiOp(Op):
     type: Type = Nil()
 
 
+@llvm.op("fcmp")
+@dataclass(eq=False, kw_only=True)
+class FcmpOp(Op):
+    pred: str
+    lhs: Value
+    rhs: Value
+    type: Type = Nil()
+
+
+@llvm.op("zext")
+@dataclass(eq=False, kw_only=True)
+class ZextOp(Op):
+    input: Value
+    type: Type = Nil()
+
+
 @llvm.op("call")
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):

@@ -7,7 +7,7 @@ from math import prod
 
 import dgen
 from dgen.dialects import builtin, llvm
-from toy.dialects import affine
+from toy.dialects import affine, toy
 
 
 class AffineToLLVMLowering:
@@ -34,7 +34,7 @@ class AffineToLLVMLowering:
         return builtin.FuncOp(
             name=f.name,
             body=dgen.Block(ops=ops),
-            type=builtin.Function(result=builtin.Nil()),
+            type=builtin.Function(result=f.type.result),
         )
 
     def _map(self, old: dgen.Value) -> dgen.Value:
@@ -74,6 +74,8 @@ class AffineToLLVMLowering:
             llvm_op = llvm.AddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
             self.value_map[op] = llvm_op
+        elif isinstance(op, toy.NonzeroCountOp):
+            yield from self._lower_nonzero_count(op)
         elif isinstance(op, builtin.ReturnOp):
             val = self._map(op.value) if op.value is not None else None
             yield builtin.ReturnOp(value=val)
@@ -199,6 +201,34 @@ class AffineToLLVMLowering:
         # Exit label
         yield llvm.LabelOp(label_name=exit_label)
         self.current_label = exit_label
+
+    def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> Iterator[dgen.Op]:
+        """Unrolled nonzero_count: count non-zero elements in a tensor."""
+        input_val = self._map(op.input)
+        assert isinstance(op.input.type, toy.TensorType)
+        total = prod(op.input.type.shape)
+
+        zero_f = builtin.ConstantOp(value=0.0, type=builtin.F64Type())
+        yield zero_f
+        acc = builtin.ConstantOp(value=0, type=builtin.IndexType())
+        yield acc
+
+        for i in range(total):
+            idx = builtin.ConstantOp(value=i, type=builtin.IndexType())
+            yield idx
+            gep = llvm.GepOp(base=input_val, index=idx)
+            yield gep
+            elem = llvm.LoadOp(ptr=gep)
+            yield elem
+            cmp = llvm.FcmpOp(pred="one", lhs=elem, rhs=zero_f)
+            yield cmp
+            ext = llvm.ZextOp(input=cmp)
+            yield ext
+            new_acc = llvm.AddOp(lhs=acc, rhs=ext)
+            yield new_acc
+            acc = new_acc
+
+        self.value_map[op] = acc
 
     def _lower_print(self, op: affine.PrintOp) -> Iterator[dgen.Op]:
         input_val = self._map(op.input)

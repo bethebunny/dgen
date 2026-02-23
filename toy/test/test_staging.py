@@ -8,8 +8,14 @@ a computed value, not a constant literal.
 from dgen import asm
 from dgen.asm.parser import parse_module
 from dgen.staging import evaluate_stage0
+from toy.passes.affine_to_llvm import lower_to_llvm
 from toy.passes.shape_inference import infer_shapes
+from toy.passes.toy_to_affine import lower_to_affine
 from toy.test.helpers import strip_prefix
+
+
+def _stage_lower(m):
+    return lower_to_llvm(lower_to_affine(m))
 
 
 def test_tile_add_index():
@@ -27,7 +33,7 @@ def test_tile_add_index():
         |     %_ : () = return()
     """)
     module = parse_module(ir)
-    staged = evaluate_stage0(module)
+    staged = evaluate_stage0(module, _stage_lower)
     result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([4, 3], f64) = toy.tile" in out
@@ -52,7 +58,7 @@ def test_tile_chained_add():
         |     %_ : () = return()
     """)
     module = parse_module(ir)
-    staged = evaluate_stage0(module)
+    staged = evaluate_stage0(module, _stage_lower)
     result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([4, 3], f64) = toy.tile" in out
@@ -79,7 +85,7 @@ def test_concat_after_computed_tile():
         |     %_ : () = return()
     """)
     module = parse_module(ir)
-    staged = evaluate_stage0(module)
+    staged = evaluate_stage0(module, _stage_lower)
     result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([5, 3], f64) = toy.concat" in out
@@ -106,7 +112,49 @@ def test_tile_shape_propagates_to_mul():
         |     %_ : () = return()
     """)
     module = parse_module(ir)
-    staged = evaluate_stage0(module)
+    staged = evaluate_stage0(module, _stage_lower)
     result = infer_shapes(staged)
     out = asm.format(result)
     assert "toy.Tensor([4, 3], f64) = toy.mul" in out
+
+
+def test_tile_nonzero_count():
+    """tile count = nonzero_count([1.0, 0.0, 3.0, 0.0]) -> 2."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([4], f64) = [1.0, 0.0, 3.0, 0.0]
+        |     %1 : index = toy.nonzero_count(%0)
+        |     %2 : toy.Tensor([3], f64) = [7.0, 8.0, 9.0]
+        |     %3 : toy.InferredShapeTensor(f64) = toy.tile(%2, %1)
+        |     %4 : () = toy.print(%3)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    staged = evaluate_stage0(module, _stage_lower)
+    result = infer_shapes(staged)
+    out = asm.format(result)
+    assert "toy.Tensor([2, 3], f64) = toy.tile" in out
+
+
+def test_tile_nonzero_plus_add():
+    """tile count = add_index(nonzero_count([1.0, 0.0, 3.0, 0.0]), 1) -> 3."""
+    ir = strip_prefix("""
+        | import toy
+        |
+        | %f = function () -> ():
+        |     %0 : toy.Tensor([4], f64) = [1.0, 0.0, 3.0, 0.0]
+        |     %1 : index = toy.nonzero_count(%0)
+        |     %2 : index = 1
+        |     %3 : index = add_index(%1, %2)
+        |     %4 : toy.Tensor([2], f64) = [5.0, 6.0]
+        |     %5 : toy.InferredShapeTensor(f64) = toy.tile(%4, %3)
+        |     %6 : () = toy.print(%5)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    staged = evaluate_stage0(module, _stage_lower)
+    result = infer_shapes(staged)
+    out = asm.format(result)
+    assert "toy.Tensor([3, 2], f64) = toy.tile" in out

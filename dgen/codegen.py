@@ -97,6 +97,10 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
             types[vid] = "double"
         elif isinstance(op, (llvm.AddOp, llvm.MulOp)):
             types[vid] = "i64"
+        elif isinstance(op, llvm.FcmpOp):
+            types[vid] = "i1"
+        elif isinstance(op, llvm.ZextOp):
+            types[vid] = "i64"
         elif isinstance(op, llvm.IcmpOp):
             types[vid] = "i1"
         elif isinstance(op, llvm.PhiOp):
@@ -159,6 +163,12 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
             lines.append(f"  %{name} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
         elif isinstance(op, llvm.MulOp):
             lines.append(f"  %{name} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
+        elif isinstance(op, llvm.FcmpOp):
+            lines.append(
+                f"  %{name} = fcmp {op.pred} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+            )
+        elif isinstance(op, llvm.ZextOp):
+            lines.append(f"  %{name} = zext i1 {bare_ref(op.input)} to i64")
         elif isinstance(op, llvm.IcmpOp):
             lines.append(
                 f"  %{name} = icmp {op.pred} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
