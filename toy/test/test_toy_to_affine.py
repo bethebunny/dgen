@@ -19,12 +19,17 @@ def test_simple_constant():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "= [" in result, "Tensor constant should pass through"
-    assert "affine.alloc(" not in result, "No alloc for constants"
-    assert "affine.store" not in result, "No stores for constants"
-    assert "affine.print_memref" in result, "Should have print"
-    assert "affine.dealloc" in result, "Should have dealloc"
-    assert "return" in result, "Should have return"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : () = affine.print_memref(%0)
+        |     %2 : () = affine.dealloc(%0)
+        |     %3 : () = return()
+    """)
+    assert result == expected
 
 
 def test_transpose():
@@ -41,10 +46,23 @@ def test_transpose():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert result.count("affine.alloc(") == 1, "Should have 1 alloc (transpose result)"
-    assert "affine.alloc([3, 2])" in result, "Should have 3x2 alloc for transposed result"
-    assert "affine.load" in result, "Should have loads for transpose"
-    assert "affine.store" in result, "Should have stores for transpose"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : affine.MemRef([3, 2], f64) = affine.alloc([3, 2])
+        |     %2 : () = affine.for(0, 2) (%3: index):
+        |         %4 : () = affine.for(0, 3) (%5: index):
+        |             %6 : () = affine.load(%0, [%3, %5])
+        |             %7 : () = affine.store(%6, %1, [%5, %3])
+        |     %8 : () = affine.print_memref(%1)
+        |     %9 : () = affine.dealloc(%0)
+        |     %10 : () = affine.dealloc(%1)
+        |     %11 : () = return()
+    """)
+    assert result == expected
 
 
 def test_mul():
@@ -62,8 +80,27 @@ def test_mul():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "affine.mul_f" in result, "Should have mul_f op"
-    assert result.count("affine.alloc(") == 1, "Should have 1 alloc (result only)"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 2], f64) = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor([2, 2], f64) = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : affine.MemRef([2, 2], f64) = affine.alloc([2, 2])
+        |     %3 : () = affine.for(0, 2) (%4: index):
+        |         %5 : () = affine.for(0, 2) (%6: index):
+        |             %7 : () = affine.load(%0, [%4, %6])
+        |             %8 : () = affine.load(%1, [%4, %6])
+        |             %9 : () = affine.mul_f(%7, %8)
+        |             %10 : () = affine.store(%9, %2, [%4, %6])
+        |     %11 : () = affine.print_memref(%2)
+        |     %12 : () = affine.dealloc(%0)
+        |     %13 : () = affine.dealloc(%1)
+        |     %14 : () = affine.dealloc(%2)
+        |     %15 : () = return()
+    """)
+    assert result == expected
 
 
 def test_add():
@@ -81,7 +118,27 @@ def test_add():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "affine.add_f" in result, "Should have add_f op"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 2], f64) = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor([2, 2], f64) = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : affine.MemRef([2, 2], f64) = affine.alloc([2, 2])
+        |     %3 : () = affine.for(0, 2) (%4: index):
+        |         %5 : () = affine.for(0, 2) (%6: index):
+        |             %7 : () = affine.load(%0, [%4, %6])
+        |             %8 : () = affine.load(%1, [%4, %6])
+        |             %9 : () = affine.add_f(%7, %8)
+        |             %10 : () = affine.store(%9, %2, [%4, %6])
+        |     %11 : () = affine.print_memref(%2)
+        |     %12 : () = affine.dealloc(%0)
+        |     %13 : () = affine.dealloc(%1)
+        |     %14 : () = affine.dealloc(%2)
+        |     %15 : () = return()
+    """)
+    assert result == expected
 
 
 def test_print():
@@ -97,7 +154,17 @@ def test_print():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "affine.print_memref" in result, "Should have print_memref"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : () = affine.print_memref(%0)
+        |     %2 : () = affine.dealloc(%0)
+        |     %3 : () = return()
+    """)
+    assert result == expected
 
 
 def test_3d_constant():
@@ -113,9 +180,17 @@ def test_3d_constant():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "= [" in result, "Tensor constant should pass through"
-    assert "affine.alloc(" not in result, "No alloc for constants"
-    assert "affine.store" not in result, "No stores for constants"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : () = affine.print_memref(%0)
+        |     %2 : () = affine.dealloc(%0)
+        |     %3 : () = return()
+    """)
+    assert result == expected
 
 
 def test_3d_add():
@@ -133,9 +208,28 @@ def test_3d_add():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "affine.add_f" in result, "Should have add_f op"
-    assert result.count("affine.alloc(") == 1, "Should have 1 alloc (result only)"
-    assert "affine.alloc([2, 2, 2])" in result, "Should have 2x2x2 alloc for result"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : affine.MemRef([2, 2, 2], f64) = affine.alloc([2, 2, 2])
+        |     %3 : () = affine.for(0, 2) (%4: index):
+        |         %5 : () = affine.for(0, 2) (%6: index):
+        |             %7 : () = affine.for(0, 2) (%8: index):
+        |                 %9 : () = affine.load(%0, [%4, %6, %8])
+        |                 %10 : () = affine.load(%1, [%4, %6, %8])
+        |                 %11 : () = affine.add_f(%9, %10)
+        |                 %12 : () = affine.store(%11, %2, [%4, %6, %8])
+        |     %13 : () = affine.print_memref(%2)
+        |     %14 : () = affine.dealloc(%0)
+        |     %15 : () = affine.dealloc(%1)
+        |     %16 : () = affine.dealloc(%2)
+        |     %17 : () = return()
+    """)
+    assert result == expected
 
 
 def test_3d_mul():
@@ -153,8 +247,28 @@ def test_3d_mul():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    assert "affine.mul_f" in result, "Should have mul_f op"
-    assert result.count("affine.alloc(") == 1, "Should have 1 alloc (result only)"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : affine.MemRef([2, 2, 2], f64) = affine.alloc([2, 2, 2])
+        |     %3 : () = affine.for(0, 2) (%4: index):
+        |         %5 : () = affine.for(0, 2) (%6: index):
+        |             %7 : () = affine.for(0, 2) (%8: index):
+        |                 %9 : () = affine.load(%0, [%4, %6, %8])
+        |                 %10 : () = affine.load(%1, [%4, %6, %8])
+        |                 %11 : () = affine.mul_f(%9, %10)
+        |                 %12 : () = affine.store(%11, %2, [%4, %6, %8])
+        |     %13 : () = affine.print_memref(%2)
+        |     %14 : () = affine.dealloc(%0)
+        |     %15 : () = affine.dealloc(%1)
+        |     %16 : () = affine.dealloc(%2)
+        |     %17 : () = return()
+    """)
+    assert result == expected
 
 
 def test_full_example():
@@ -174,10 +288,36 @@ def test_full_example():
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
     result = asm.format(affine)
-    alloc_count = result.count("affine.alloc(")
-    assert alloc_count == 3, "Should have 3 allocs (2 transpose + 1 mul result)"
-    assert "affine.mul_f" in result, "Should have mul_f"
-    assert "affine.load" in result, "Should have loads"
-    assert "affine.store" in result, "Should have stores"
-    assert "affine.print_memref" in result, "Should have print"
-    assert "return" in result, "Should have return"
+    expected = strip_prefix("""
+        | import affine
+        | import toy
+        |
+        | %main = function () -> ():
+        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : affine.MemRef([3, 2], f64) = affine.alloc([3, 2])
+        |     %2 : () = affine.for(0, 2) (%3: index):
+        |         %4 : () = affine.for(0, 3) (%5: index):
+        |             %6 : () = affine.load(%0, [%3, %5])
+        |             %7 : () = affine.store(%6, %1, [%5, %3])
+        |     %8 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %9 : affine.MemRef([3, 2], f64) = affine.alloc([3, 2])
+        |     %10 : () = affine.for(0, 2) (%11: index):
+        |         %12 : () = affine.for(0, 3) (%13: index):
+        |             %14 : () = affine.load(%8, [%11, %13])
+        |             %15 : () = affine.store(%14, %9, [%13, %11])
+        |     %16 : affine.MemRef([3, 2], f64) = affine.alloc([3, 2])
+        |     %17 : () = affine.for(0, 3) (%18: index):
+        |         %19 : () = affine.for(0, 2) (%20: index):
+        |             %21 : () = affine.load(%1, [%18, %20])
+        |             %22 : () = affine.load(%9, [%18, %20])
+        |             %23 : () = affine.mul_f(%21, %22)
+        |             %24 : () = affine.store(%23, %16, [%18, %20])
+        |     %25 : () = affine.print_memref(%16)
+        |     %26 : () = affine.dealloc(%0)
+        |     %27 : () = affine.dealloc(%1)
+        |     %28 : () = affine.dealloc(%8)
+        |     %29 : () = affine.dealloc(%9)
+        |     %30 : () = affine.dealloc(%16)
+        |     %31 : () = return()
+    """)
+    assert result == expected
