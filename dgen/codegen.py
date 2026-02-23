@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import _ctypes
 import ctypes
-import sys
-from io import StringIO
+from dataclasses import dataclass, field
+from typing import Any
 
 import dgen
+from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 from dgen.layout import Layout, Memory
@@ -25,7 +27,7 @@ def _llvm_type(layout: Layout) -> str:
     return _FMT_LLVM.get(fmt, "ptr")
 
 
-def _ctype(layout: Layout) -> type[ctypes._SimpleCData]:
+def _ctype(layout: Layout) -> type[ctypes._CData]:
     """Derive ctypes type from a layout's struct format."""
     fmt = layout.struct.format.lstrip("=@<>!")
     return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
@@ -233,73 +235,61 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# JIT compilation
+# Compilation and execution
 # ---------------------------------------------------------------------------
 
 
-def _func_param_ctypes(func: builtin.FuncOp) -> list:
-    """Map function block arg types to ctypes parameter types."""
-    return [_ctype(arg.type.__layout__) for arg in func.body.args]
+@dataclass
+class Executable:
+    """Compiled LLVM IR ready for JIT execution."""
+
+    ir: str
+    input_types: list[Type]
+    result_type: Type
+    main_name: str
+    host_refs: list = field(default_factory=list)
+
+    @property
+    def ctype(self) -> type[_ctypes.CFuncPtr]:
+        """ctypes function pointer type for this executable."""
+        param_ctypes = [_ctype(t.__layout__) for t in self.input_types]
+        result_ctype = _ctype(self.result_type.__layout__)
+        return ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
+
+    def run(self, *args: Memory) -> object:
+        """JIT and execute, returning the function's result."""
+        engine = _jit_engine(self)
+        func_ptr = engine.get_function_address(self.main_name)
+        cfunc = self.ctype(func_ptr)
+        ctypes_args = [
+            m.ptr if ct is ctypes.c_void_p else m.unpack()[0]
+            for m, ct in zip(args, cfunc._argtypes_)  # type: ignore
+        ]
+        return cfunc(*ctypes_args)
 
 
-def compile_and_run(
-    ll_module: builtin.Module,
-    capture_output: bool = False,
-    args: list | None = None,
-) -> str | None:
-    """Emit LLVM IR, JIT-compile, and execute the module's main function."""
+def compile(module: builtin.Module) -> Executable:
+    """Emit LLVM IR and bundle with execution metadata."""
+    host_buffers: list = []
+    ir = emit_llvm_ir(module, host_buffers)
+    main = module.functions[0]
+    assert main.name is not None
+    return Executable(
+        ir=ir,
+        input_types=[arg.type for arg in main.body.args],
+        main_name=main.name,
+        result_type=main.type.result,
+        host_refs=host_buffers,
+    )
+
+
+def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
+    """Parse, verify, and create MCJIT engine from an Executable."""
     import llvmlite.binding as _llvm
 
     _ensure_initialized()
-    host_buffers: list = []
-    ir_text = emit_llvm_ir(ll_module, host_buffers)
-
-    mod = _llvm.parse_assembly(ir_text)
+    mod = _llvm.parse_assembly(exe.ir)
     mod.verify()
-
     target = _llvm.Target.from_default_triple()
-    target_machine = target.create_target_machine()
-    engine = _llvm.create_mcjit_compiler(mod, target_machine)
-
-    main_func = ll_module.functions[0]
-    param_types = _func_param_ctypes(main_func)
-    func_ptr = engine.get_function_address(main_func.name)
-    cfunc = ctypes.CFUNCTYPE(None, *param_types)(func_ptr)
-    call_args = args if args else []
-
-    if capture_output:
-        old_stdout = sys.stdout
-        sys.stdout = StringIO()
-        try:
-            cfunc(*call_args)
-            return sys.stdout.getvalue()
-        finally:
-            sys.stdout = old_stdout
-    else:
-        cfunc(*call_args)
-        return None
-
-
-def jit_eval(
-    ll_module: builtin.Module, return_layout: Layout, args: list | None = None
-) -> object:
-    """JIT-compile a module and return the result of its main function."""
-    import llvmlite.binding as _llvm
-
-    _ensure_initialized()
-    host_buffers: list = []
-    ir_text = emit_llvm_ir(ll_module, host_buffers)
-
-    mod = _llvm.parse_assembly(ir_text)
-    mod.verify()
-
-    target = _llvm.Target.from_default_triple()
-    target_machine = target.create_target_machine()
-    engine = _llvm.create_mcjit_compiler(mod, target_machine)
-
-    main_func = ll_module.functions[0]
-    param_types = _func_param_ctypes(main_func)
-    func_ptr = engine.get_function_address(main_func.name)
-    cfunc = ctypes.CFUNCTYPE(_ctype(return_layout), *param_types)(func_ptr)
-    call_args = args if args else []
-    return cfunc(*call_args)
+    tm = target.create_target_machine()
+    return _llvm.create_mcjit_compiler(mod, tm)

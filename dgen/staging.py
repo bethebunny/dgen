@@ -7,9 +7,10 @@ from copy import deepcopy
 from typing import get_type_hints
 
 import dgen
+from dgen import codegen
 from dgen.block import BlockArgument
-from dgen.codegen import compile_and_run, jit_eval
 from dgen.dialects import builtin
+from dgen.layout import Memory
 from dgen.value import Comptime
 
 
@@ -58,17 +59,14 @@ def _is_stage0_evaluable(target: dgen.Value) -> bool:
     return True
 
 
-def _prepare_ctypes_args(
+def _make_memories(
     block_args: list[BlockArgument], python_args: list
-) -> tuple[list, list]:
-    """Convert Python args to ctypes values based on block argument types."""
-    ctypes_args: list = []
-    host_bufs: list = []
-    for arg, param in zip(python_args, block_args):
-        ct_val, refs = param.type.__layout__.prepare_arg(arg, param.type)
-        ctypes_args.append(ct_val)
-        host_bufs.extend(refs)
-    return ctypes_args, host_bufs
+) -> list[Memory]:
+    """Convert Python args to Memory objects using block argument types."""
+    return [
+        Memory.from_value(param.type, arg)
+        for arg, param in zip(python_args, block_args)
+    ]
 
 
 def _jit_evaluate(
@@ -88,11 +86,11 @@ def _jit_evaluate(
     )
     module = builtin.Module(functions=[func])
     lowered = lower(module)
-    layout = target.type.__layout__
-    ctypes_args: list = []
+    exe = codegen.compile(lowered)
+    memories: list[Memory] = []
     if block_args and args:
-        ctypes_args, _ = _prepare_ctypes_args(block_args, args)
-    return jit_eval(lowered, layout, args=ctypes_args)
+        memories = _make_memories(block_args, args)
+    return exe.run(*memories)
 
 
 def _resolve_comptime_field(
@@ -150,25 +148,15 @@ def _resolve_constant_ops(func: builtin.FuncOp) -> None:
 # ---------------------------------------------------------------------------
 
 
-def compile_and_run_staged(
+def _resolve_all_comptime(
     module: builtin.Module,
     *,
     infer: Callable[[builtin.Module], builtin.Module],
     lower: Callable[[builtin.Module], builtin.Module],
     args: list | None = None,
-    capture_output: bool = True,
-) -> str | None:
-    """Full staged compilation pipeline.
-
-    Iteratively resolves all Comptime fields:
-    - Stage-0 fields (constant dependencies) are JIT-evaluated in isolation.
-    - Stage-1 fields (runtime dependencies) are JIT-evaluated with runtime args.
-    After each resolution, shape inference is interleaved to propagate types,
-    and constant-resolving ops (e.g. DimSizeOp) are replaced with ConstantOps.
-    The loop restarts to handle subsequent Comptime fields.
-    """
+) -> builtin.Module:
+    """Deepcopy + resolve all Comptime fields. Returns pre-lowered module."""
     module = deepcopy(module)
-
     changed = True
     while changed:
         changed = False
@@ -185,12 +173,38 @@ def compile_and_run_staged(
                 break
             if changed:
                 break
+    return module
 
-    # All comptime resolved, run full pipeline
-    func = module.functions[0]
-    typed = infer(module)
+
+def compile_staged(
+    module: builtin.Module,
+    *,
+    infer: Callable[[builtin.Module], builtin.Module],
+    lower: Callable[[builtin.Module], builtin.Module],
+    args: list | None = None,
+) -> codegen.Executable:
+    """Stage-resolve, infer, lower, and compile to an Executable."""
+    resolved = _resolve_all_comptime(module, infer=infer, lower=lower, args=args)
+    func = resolved.functions[0]
+    typed = infer(resolved)
     lowered = lower(typed)
-    ctypes_args: list = []
-    if args and func.body.args:
-        ctypes_args, _ = _prepare_ctypes_args(func.body.args, args)
-    return compile_and_run(lowered, capture_output=capture_output, args=ctypes_args)
+    exe = codegen.compile(lowered)
+    # Override with pre-lowered types so Memory.from_value works correctly
+    if func.body.args:
+        exe.input_types = [arg.type for arg in func.body.args]
+    return exe
+
+
+def compile_and_run_staged(
+    module: builtin.Module,
+    *,
+    infer: Callable[[builtin.Module], builtin.Module],
+    lower: Callable[[builtin.Module], builtin.Module],
+    args: list | None = None,
+) -> object:
+    """Full staged compilation pipeline: resolve, compile, and run."""
+    exe = compile_staged(module, infer=infer, lower=lower, args=args)
+    memories = [
+        Memory.from_value(t, a) for t, a in zip(exe.input_types, args or [])
+    ]
+    return exe.run(*memories)

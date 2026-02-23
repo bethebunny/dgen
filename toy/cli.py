@@ -25,9 +25,7 @@ def _parse_arg(arg: str) -> object:
     return parse_expr(IRParser(arg))
 
 
-def run(
-    source: str, *, args: list | None = None, capture_output: bool = False
-) -> str | None:
+def run(source: str, *, args: list | None = None) -> object:
     """Compile and run a .toy source string through the full pipeline."""
     ast = parse_toy(source)
     ir = lower(ast)
@@ -46,7 +44,6 @@ def run(
         infer=infer_shapes,
         lower=_lower,
         args=args,
-        capture_output=capture_output,
     )
 
 
