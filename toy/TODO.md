@@ -19,3 +19,7 @@
 - Update all tests to show all asm rather than partial asserts
 - What are "special fields" in the parser? They shouldn't exist
 - Add parser failure tests
+- Formatter: use %_ for unused outputs
+- Formatter: clearly delineate names in sub-blocks
+- Generalized notion of chains
+- Generalized dead code elimination (mutable ops _must_ be chained)
