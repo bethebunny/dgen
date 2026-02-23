@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from dgen import Op, Type, Value
 from dgen.dialect import Dialect
 from dgen.dialects.builtin import Nil
+from dgen.layout import FLOAT64, INT, VOID, Pointer
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -15,6 +16,8 @@ from dgen.dialects.builtin import Nil
 
 @dataclass
 class PtrType:
+    __layout__ = Pointer(VOID)
+
     @property
     def asm(self) -> str:
         return "ptr"
@@ -22,6 +25,7 @@ class PtrType:
 
 @dataclass
 class IntType:
+    __layout__ = INT
     bits: int
 
     @property
@@ -31,6 +35,8 @@ class IntType:
 
 @dataclass
 class FloatType:
+    __layout__ = FLOAT64
+
     @property
     def asm(self) -> str:
         return "f64"
@@ -38,6 +44,8 @@ class FloatType:
 
 @dataclass
 class VoidType:
+    __layout__ = VOID
+
     @property
     def asm(self) -> str:
         return "void"

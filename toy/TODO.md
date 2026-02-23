@@ -3,7 +3,9 @@
   - Remove `Type.prepare_arg`, `_LayoutAsType`
   - Remove ctype buffer/pointer from `Memory`
   - Remove `_format` from `Type`, it can just have the `Struct` as a field directly.
-  - Remove `Array` special case from 
+  - Add tests for types
+    - Round trip through ASM literals
+    - Round trip through JIT
 - Generalize `compile_and_run_staged` to not need an `infer` stage
 - SSA types via JIT
 - Remove any "if stage0/stage1" logic
@@ -43,6 +45,10 @@
 - Go through and rename files
 - Read, understand, clean passes
 - Remove the janky `if args` stuff from `cli.run`
+- Remove `hasattr` checks
+- Remove `cast`s
+- Remove `Any`s
+- Remove `type: ignore`s
 
 ## Misc
 - Write more down into design docs

@@ -25,7 +25,7 @@ def _llvm_type(layout: Layout) -> str:
     return _FMT_LLVM.get(fmt, "ptr")
 
 
-def _ctype(layout: Layout) -> type[ctypes._SimpleCData]:  # type: ignore[type-arg]
+def _ctype(layout: Layout) -> type[ctypes._SimpleCData]:
     """Derive ctypes type from a layout's struct format."""
     fmt = layout.struct.format.lstrip("=@<>!")
     return _FMT_CTYPE.get(fmt, ctypes.c_void_p)

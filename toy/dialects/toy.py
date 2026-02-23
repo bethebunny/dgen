@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import prod
+from typing import Any, cast
 
 from dgen import Comptime, Dialect, Op, Type, Value
 from dgen.dialects import builtin
-from dgen.layout import FLOAT64, Array, Layout
+from dgen.layout import FLOAT64, VOID, Array, Layout
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -34,6 +35,7 @@ class TensorType:
 class InferredShapeTensor:
     """toy.InferredShapeTensor[f64] — shape to be filled in by inference."""
 
+    __layout__ = VOID
     dtype: Type = builtin.F64Type()
 
 
@@ -121,7 +123,7 @@ class DimSizeOp(Op):
     def resolve_constant(self) -> int | None:
         """Return constant value if input type has a resolved shape."""
         if hasattr(self.input.type, "shape"):
-            return self.input.type.shape[self.axis]
+            return cast(Any, self.input.type).shape[self.axis]
         return None
 
 

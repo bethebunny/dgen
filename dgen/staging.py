@@ -114,7 +114,7 @@ def _resolve_comptime_field(
         args=args,
     )
     if stage1:
-        result = int(result)
+        result = int(result)  # type: ignore[arg-type]
         subgraph_ids = {id(o) for o in subgraph}
         func.body.ops[:] = [o for o in func.body.ops if id(o) not in subgraph_ids]
     const_op = builtin.ConstantOp(value=result, type=value.type)

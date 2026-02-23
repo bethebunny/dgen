@@ -2,14 +2,14 @@
 
 from pathlib import Path
 
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 
 from toy.cli import main
 
 TESTDATA = Path(__file__).parent / "testdata"
 
 
-def _run_cli(toy_file: Path, args=()) -> CliRunner.invoke:
+def _run_cli(toy_file: Path, args=()) -> Result:
     return CliRunner().invoke(main, [str(toy_file), *args])
 
 

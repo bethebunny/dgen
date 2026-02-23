@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Iterable
 
 import dgen
 from dgen.block import BlockArgument
@@ -71,10 +70,10 @@ class ToyToAffineLowering:
     def _nested_for(
         self,
         shape: list[int],
-        body_fn: Callable[[Iterable[BlockArgument]], list[dgen.Op]],
+        body_fn: Callable[[list[dgen.Value]], list[dgen.Op]],
     ) -> Iterator[dgen.Op]:
         """Build nested ForOps for each dimension. body_fn(ivars) -> innermost ops."""
-        ivars = [BlockArgument(type=builtin.IndexType()) for _ in shape]
+        ivars: list[dgen.Value] = [BlockArgument(type=builtin.IndexType()) for _ in shape]
         ops = list(body_fn(ivars))
         for dim, var in reversed(list(zip(shape, ivars))):
             ops = [affine.ForOp(lo=0, hi=dim, body=dgen.Block(ops=ops, args=[var]))]
@@ -96,7 +95,7 @@ class ToyToAffineLowering:
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
 
-        def body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
+        def body(ivars: list[dgen.Value]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=in_alloc, indices=ivars)
             store = affine.StoreOp(
                 value=load, memref=alloc_op, indices=list(reversed(ivars))
@@ -122,7 +121,7 @@ class ToyToAffineLowering:
             toy.AddOp: affine.ArithAddFOp,
         }
 
-        def body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
+        def body(ivars: list[dgen.Value]) -> list[dgen.Op]:
             lv = affine.LoadOp(memref=lhs_alloc, indices=ivars)
             rv = affine.LoadOp(memref=rhs_alloc, indices=ivars)
             res = binop[type(result_op)](lhs=lv, rhs=rv)
@@ -135,9 +134,10 @@ class ToyToAffineLowering:
     def _lower_tile(self, op: toy.TileOp) -> Iterator[dgen.Op]:
         assert isinstance(op.count, builtin.ConstantOp)
         count = op.count.value
+        assert isinstance(count, int)
         assert isinstance(op.input.type, toy.TensorType)
         input_shape = op.input.type.shape
-        output_shape = [count] + list(input_shape)
+        output_shape: list[int] = [count] + list(input_shape)
 
         alloc_op = affine.AllocOp(
             shape=output_shape, type=affine.MemRefType(shape=output_shape)
@@ -146,10 +146,10 @@ class ToyToAffineLowering:
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
 
-        def body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
-            inner_ivars = list(ivars[1:])  # indices into input tensor
+        def body(ivars: list[dgen.Value]) -> list[dgen.Op]:
+            inner_ivars = ivars[1:]  # indices into input tensor
             load = affine.LoadOp(memref=in_alloc, indices=inner_ivars)
-            store = affine.StoreOp(value=load, memref=alloc_op, indices=list(ivars))
+            store = affine.StoreOp(value=load, memref=alloc_op, indices=ivars)
             return [load, store]
 
         yield from self._nested_for(output_shape, body)
@@ -174,9 +174,9 @@ class ToyToAffineLowering:
         rhs_alloc = self.alloc_map.get(op.rhs, op.rhs)
 
         # Copy lhs into output[0:lhs_shape[axis], ...]
-        def lhs_body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
+        def lhs_body(ivars: list[dgen.Value]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=lhs_alloc, indices=ivars)
-            store = affine.StoreOp(value=load, memref=alloc_op, indices=list(ivars))
+            store = affine.StoreOp(value=load, memref=alloc_op, indices=ivars)
             return [load, store]
 
         yield from self._nested_for(lhs_shape, lhs_body)
@@ -187,10 +187,10 @@ class ToyToAffineLowering:
         )
         yield offset_const
 
-        def rhs_body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
+        def rhs_body(ivars: list[dgen.Value]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=rhs_alloc, indices=ivars)
             offset_idx = builtin.AddIndexOp(lhs=ivars[axis], rhs=offset_const)
-            out_indices = list(ivars)
+            out_indices: list[dgen.Value] = list(ivars)
             out_indices[axis] = offset_idx
             store = affine.StoreOp(value=load, memref=alloc_op, indices=out_indices)
             return [load, offset_idx, store]

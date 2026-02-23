@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.dialects import builtin
+from dgen.layout import VOID, Pointer
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -17,12 +18,13 @@ affine = Dialect("affine")
 @affine.type("Shape")
 @dataclass(frozen=True)
 class ShapeType:
-    pass
+    __layout__ = VOID
 
 
 @affine.type("MemRef")
 @dataclass(frozen=True)
 class MemRefType:
+    __layout__ = Pointer(VOID)
     shape: list[int]
     dtype: Type = builtin.F64Type()
 

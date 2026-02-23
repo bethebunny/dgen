@@ -110,8 +110,9 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
 def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
     """Generic type formatter via field introspection."""
     cls = type(type_obj)
-    prefix = f"{cls.dialect.name}." if cls.dialect.name != "builtin" else ""
-    name = f"{prefix}{cls._asm_name}"
+    dialect = getattr(cls, 'dialect', None)
+    prefix = f"{dialect.name}." if dialect is not None and dialect.name != "builtin" else ""
+    name = f"{prefix}{getattr(cls, '_asm_name', '')}"
     if dataclasses.is_dataclass(cls):
         fields = dataclasses.fields(cls)
     else:
@@ -173,10 +174,11 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         parts.append(args_str)
     else:
         parts.append(f"{prefix}{asm_name}({args_str})")
+    body = getattr(op, 'body', None)
     if has_body:
-        if isinstance(op.body, Block) and op.body.args:
+        if isinstance(body, Block) and body.args:
             block_args = ", ".join(
-                f"%{tracker.get_name(a)}: {format_expr(a.type)}" for a in op.body.args
+                f"%{tracker.get_name(a)}: {format_expr(a.type)}" for a in body.args
             )
             parts.append(f" ({block_args})")
         parts.append(":")
@@ -184,7 +186,7 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     line = "".join(parts)
     yield line
 
-    if has_body:
-        body_ops = op.body.ops if isinstance(op.body, Block) else op.body
+    if has_body and body is not None:
+        body_ops: Iterable[Op] = body.ops if isinstance(body, Block) else body
         for child_op in body_ops:
             yield from indent(op_asm(child_op, tracker))

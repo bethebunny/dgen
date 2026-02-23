@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 
 class Dialect:
@@ -18,8 +19,8 @@ class Dialect:
     def get(cls, name: str) -> Dialect:
         return cls._registry[name]
 
-    def op(self, asm_name: str) -> Callable[[type], type]:
-        def decorator(cls: type) -> type:
+    def op(self, asm_name: str) -> Callable[[Any], Any]:  # noqa: ANN401
+        def decorator(cls: Any) -> Any:  # noqa: ANN401
             cls._asm_name = asm_name
             cls.dialect = self
             self.ops[asm_name] = cls
@@ -27,8 +28,8 @@ class Dialect:
 
         return decorator
 
-    def type(self, name: str) -> Callable[[type], type]:
-        def decorator(cls: type) -> type:
+    def type(self, name: str) -> Callable[[Any], Any]:  # noqa: ANN401
+        def decorator(cls: Any) -> Any:  # noqa: ANN401
             cls._asm_name = name
             cls.dialect = self
             self.types[name] = cls

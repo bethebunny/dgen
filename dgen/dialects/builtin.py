@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from dgen import Block, Dialect, Op, Type, Value, asm
 from dgen.asm.formatting import SlotTracker, format_expr, op_asm
-from dgen.layout import BYTE, FLOAT64, INT, FatPointer
+from dgen.layout import BYTE, FLOAT64, INT, VOID, FatPointer
 
 
 # ===----------------------------------------------------------------------=== #
@@ -34,11 +34,14 @@ class F64Type:
 class Nil:
     """Represents a void/empty return type."""
 
+    __layout__ = VOID
+
 
 @dataclass
 class Function:
     """A function signature."""
 
+    __layout__ = VOID
     result: Type
 
 
@@ -51,6 +54,7 @@ class String:
 @builtin.type("List")
 @dataclass
 class List:
+    __layout__ = VOID
     element_type: Type
 
 

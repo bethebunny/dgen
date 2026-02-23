@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterator
 from math import prod
+from typing import Any, cast
 
 import dgen
 from dgen.dialects import builtin, llvm
@@ -32,8 +33,9 @@ class AffineToLLVMLowering:
         for arg in f.body.args:
             self.value_map[arg] = arg
             if hasattr(arg.type, "shape"):
-                self.alloc_shapes[arg] = list(arg.type.shape)
-                self.alloc_sizes[arg] = prod(arg.type.shape)
+                shape = cast(Any, arg.type).shape
+                self.alloc_shapes[arg] = list(shape)
+                self.alloc_sizes[arg] = prod(shape)
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
@@ -63,7 +65,7 @@ class AffineToLLVMLowering:
             yield new_op
             self.value_map[op] = new_op
             if isinstance(op.value, list):
-                shape = op.type.shape
+                shape = cast(Any, op.type).shape
                 self.alloc_shapes[new_op] = list(shape)
                 self.alloc_sizes[new_op] = prod(shape)
         elif isinstance(op, affine.ArithMulFOp):
