@@ -12,7 +12,7 @@ from toy.dialects import affine, toy
 
 
 class ToyToAffineLowering:
-    def __init__(self):
+    def __init__(self) -> None:
         self.alloc_map: dict[dgen.Value, dgen.Value] = {}
         self.live_allocs: list[dgen.Value] = []
 
@@ -96,7 +96,7 @@ class ToyToAffineLowering:
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
 
-        def body(ivars):
+        def body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=in_alloc, indices=ivars)
             store = affine.StoreOp(
                 value=load, memref=alloc_op, indices=list(reversed(ivars))
@@ -122,7 +122,7 @@ class ToyToAffineLowering:
             toy.AddOp: affine.ArithAddFOp,
         }
 
-        def body(ivars):
+        def body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
             lv = affine.LoadOp(memref=lhs_alloc, indices=ivars)
             rv = affine.LoadOp(memref=rhs_alloc, indices=ivars)
             res = binop[type(result_op)](lhs=lv, rhs=rv)
@@ -146,7 +146,7 @@ class ToyToAffineLowering:
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
 
-        def body(ivars):
+        def body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
             inner_ivars = list(ivars[1:])  # indices into input tensor
             load = affine.LoadOp(memref=in_alloc, indices=inner_ivars)
             store = affine.StoreOp(value=load, memref=alloc_op, indices=list(ivars))
@@ -174,7 +174,7 @@ class ToyToAffineLowering:
         rhs_alloc = self.alloc_map.get(op.rhs, op.rhs)
 
         # Copy lhs into output[0:lhs_shape[axis], ...]
-        def lhs_body(ivars):
+        def lhs_body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=lhs_alloc, indices=ivars)
             store = affine.StoreOp(value=load, memref=alloc_op, indices=list(ivars))
             return [load, store]
@@ -187,7 +187,7 @@ class ToyToAffineLowering:
         )
         yield offset_const
 
-        def rhs_body(ivars):
+        def rhs_body(ivars: Iterable[BlockArgument]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=rhs_alloc, indices=ivars)
             offset_idx = builtin.AddIndexOp(lhs=ivars[axis], rhs=offset_const)
             out_indices = list(ivars)

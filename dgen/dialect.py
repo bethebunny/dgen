@@ -8,7 +8,7 @@ from collections.abc import Callable
 class Dialect:
     _registry: dict[str, Dialect] = {}
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self.ops: dict[str, type] = {}
         self.types: dict[str, Callable] = {}
@@ -18,8 +18,8 @@ class Dialect:
     def get(cls, name: str) -> Dialect:
         return cls._registry[name]
 
-    def op(self, asm_name: str):
-        def decorator(cls):
+    def op(self, asm_name: str) -> Callable[[type], type]:
+        def decorator(cls: type) -> type:
             cls._asm_name = asm_name
             cls.dialect = self
             self.ops[asm_name] = cls
@@ -27,8 +27,8 @@ class Dialect:
 
         return decorator
 
-    def type(self, name: str):
-        def decorator(cls):
+    def type(self, name: str) -> Callable[[type], type]:
+        def decorator(cls: type) -> type:
             cls._asm_name = name
             cls.dialect = self
             self.types[name] = cls

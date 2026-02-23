@@ -11,7 +11,7 @@ from toy.dialects import affine, toy
 
 
 class AffineToLLVMLowering:
-    def __init__(self):
+    def __init__(self) -> None:
         self.loop_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}  # affine -> llvm
         self.alloc_shapes: dict[dgen.Value, list[int]] = {}  # llvm alloca -> shape

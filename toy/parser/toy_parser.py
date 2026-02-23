@@ -22,11 +22,11 @@ from toy.parser.lexer import Lexer, Token
 
 
 class ToyParser:
-    def __init__(self, text: str):
+    def __init__(self, text: str) -> None:
         self.lexer = Lexer(text)
         self.current = self.lexer.next_token()
 
-    def advance(self):
+    def advance(self) -> None:
         self.current = self.lexer.next_token()
 
     def expect(self, kind: str) -> Token:
@@ -169,7 +169,7 @@ class ToyParser:
         self._parse_tensor_level(values, shape, 0)
         return TensorLiteral(values=values, shape=shape)
 
-    def _parse_tensor_level(self, values: list[float], shape: list[int], depth: int):
+    def _parse_tensor_level(self, values: list[float], shape: list[int], depth: int) -> None:
         """Recursively parse one level of [...] nesting."""
         self.expect("[")
         count = 0

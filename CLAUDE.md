@@ -74,6 +74,14 @@ python -m toy.cli toy/test/testdata/constant.toy
 
 Tests validate IR round-trips, pass correctness, and end-to-end JIT output. 110 tests, runs in ~1s.
 
+Type checking, linting, formatting: Use `ruff` and `ty`.
+
+```bash
+ruff format
+ruff check --fix
+ty check
+```
+
 ## Version Control
 
 This repo uses **jj** (Jujutsu) as its VCS frontend over git. Use `jj` commands rather than `git` for day-to-day operations (e.g., `jj st`, `jj log`, `jj new`, `jj commit`, `jj describe`).

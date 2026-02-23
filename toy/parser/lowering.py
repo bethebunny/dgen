@@ -34,7 +34,7 @@ def _ranked(shape: list[int]) -> dgen.Type:
 
 
 class Lowering:
-    def __init__(self):
+    def __init__(self) -> None:
         self.scope: dict[str, dgen.Value] = {}
 
     def lower_module(self, tm: ToyModule) -> builtin.Module:

@@ -109,7 +109,7 @@ class FuncOp(Op):
             yield from asm.indent(op_asm(op, tracker))
 
 
-def _register_ops(tracker, ops: list[Op]):
+def _register_ops(tracker: SlotTracker, ops: list[Op]) -> None:
     """Pre-register all ops in a tracker so slot numbers are stable."""
     for op in ops:
         tracker.get_name(op)
@@ -127,10 +127,10 @@ def _walk_all_ops(op: Op) -> Iterable[Op]:
             yield from _walk_all_ops(child)
 
 
-def _collect_type_dialects(func: FuncOp, dialects: set):
+def _collect_type_dialects(func: FuncOp, dialects: set[Dialect]) -> None:
     """Collect non-builtin dialects referenced by types in a function."""
 
-    def _check(t):
+    def _check(t: object) -> None:
         d = getattr(t, "dialect", None)
         if d is not None and d.name != "builtin":
             dialects.add(d)

@@ -9,7 +9,7 @@ from io import StringIO
 import dgen
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
-from dgen.layout import Memory
+from dgen.layout import Layout, Memory
 
 # ---------------------------------------------------------------------------
 # struct.format → LLVM / ctypes mapping
@@ -19,13 +19,13 @@ _FMT_LLVM = {"q": "i64", "d": "double"}
 _FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double}
 
 
-def _llvm_type(layout) -> str:
+def _llvm_type(layout: Layout) -> str:
     """Derive LLVM type from a layout's struct format."""
     fmt = layout.struct.format.lstrip("=@<>!")
     return _FMT_LLVM.get(fmt, "ptr")
 
 
-def _ctype(layout):
+def _ctype(layout: Layout) -> type[ctypes._SimpleCData]:  # type: ignore[type-arg]
     """Derive ctypes type from a layout's struct format."""
     fmt = layout.struct.format.lstrip("=@<>!")
     return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
@@ -37,7 +37,7 @@ def _ctype(layout):
 
 
 @ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_int64)
-def _print_memref(ptr, size):
+def _print_memref(ptr: int, size: int) -> None:
     arr = (ctypes.c_double * size).from_address(ptr)
     print(", ".join(f"{arr[i]:g}" for i in range(size)))
 
@@ -49,7 +49,7 @@ def _print_memref(ptr, size):
 _initialized = False
 
 
-def _ensure_initialized():
+def _ensure_initialized() -> None:
     global _initialized
     if not _initialized:
         import llvmlite.binding as _llvm
@@ -212,7 +212,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         elif isinstance(op, llvm.PhiOp):
             ty = types.get(id(op), "i64")
             pairs = ", ".join(
-                f"[ {bare_ref(v)}, %{l} ]" for v, l in zip(op.values, op.labels)
+                f"[ {bare_ref(v)}, %{lab} ]" for v, lab in zip(op.values, op.labels)
             )
             lines.append(f"  %{name} = phi {ty} {pairs}")
         elif isinstance(op, llvm.CallOp):
@@ -281,7 +281,7 @@ def compile_and_run(
 
 
 def jit_eval(
-    ll_module: builtin.Module, return_layout, args: list | None = None
+    ll_module: builtin.Module, return_layout: Layout, args: list | None = None
 ) -> object:
     """JIT-compile a module and return the result of its main function."""
     import llvmlite.binding as _llvm

@@ -13,6 +13,8 @@ from collections.abc import Iterable
 from typing import Union, get_args, get_origin, get_type_hints
 
 from .. import Block
+from ..op import Op
+from ..value import Value
 
 
 def indent(it: Iterable[str], prefix: str = "    ") -> Iterable[str]:
@@ -35,7 +37,7 @@ def format_float(v: float) -> str:
     return str(v)
 
 
-def _is_optional(hint):
+def _is_optional(hint: type) -> type | None:
     """Check if hint is X | None, return X if so, else None."""
     origin = get_origin(hint)
     if origin is Union or isinstance(hint, types.UnionType):
@@ -53,11 +55,11 @@ def _is_optional(hint):
 class SlotTracker:
     """Assigns sequential %0, %1, ... names to unnamed Values."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._slots: dict[int, str] = {}  # id(value) -> name
         self._counter = 0
 
-    def get_name(self, value) -> str:
+    def get_name(self, value: Value) -> str:
         vid = id(value)
         if vid in self._slots:
             return self._slots[vid]
@@ -78,7 +80,7 @@ class SlotTracker:
 # ===----------------------------------------------------------------------=== #
 
 
-def format_expr(value, tracker: SlotTracker | None = None) -> str:
+def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     """Format a value as an expression string, dispatching on runtime type."""
     from dgen.dialects.builtin import Nil, Value
 
@@ -105,7 +107,7 @@ def format_expr(value, tracker: SlotTracker | None = None) -> str:
     return str(value)
 
 
-def type_asm(type_obj, tracker: SlotTracker | None = None) -> str:
+def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
     """Generic type formatter via field introspection."""
     cls = type(type_obj)
     prefix = f"{cls.dialect.name}." if cls.dialect.name != "builtin" else ""
@@ -130,7 +132,7 @@ def _class_hints(cls: type) -> dict[str, type]:
     return get_type_hints(cls, include_extras=True)
 
 
-def op_asm(op, tracker: SlotTracker | None = None) -> Iterable[str]:
+def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     """Generic asm emitter. Introspects _asm_name and field types."""
     from dgen.dialects.builtin import _register_ops
 

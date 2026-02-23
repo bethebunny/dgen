@@ -5,6 +5,8 @@ Module data structures.  Dialect knowledge is discovered from import headers
 at the top of the IR text.
 """
 
+from __future__ import annotations
+
 import dataclasses
 import importlib
 
@@ -15,7 +17,7 @@ from dgen.dialects import builtin
 from .formatting import _SPECIAL_FIELDS, _is_optional
 
 
-def _resolve_or_create(parser, ssa_name: str) -> Value:
+def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
     """Resolve an SSA name to a Value, creating a forward reference if needed."""
     if ssa_name not in parser.name_table:
         val = Value(name=ssa_name, type=builtin.Nil())
@@ -24,7 +26,7 @@ def _resolve_or_create(parser, ssa_name: str) -> Value:
     return parser.name_table[ssa_name]
 
 
-def parse_expr(parser):
+def parse_expr(parser: IRParser) -> object:
     """Parse a single expression, dispatching on syntax."""
     c = parser.peek()
 
@@ -82,7 +84,7 @@ def parse_expr(parser):
     return cls(**kwargs)
 
 
-def _parse_fields_from_exprs(parser, cls):
+def _parse_fields_from_exprs(parser: IRParser, cls: type) -> dict[str, object]:
     """Parse comma-separated exprs and map them to dataclass fields."""
     fields = dataclasses.fields(cls)
     kwargs = {}
@@ -95,7 +97,7 @@ def _parse_fields_from_exprs(parser, cls):
     return kwargs
 
 
-def parse_op_fields(parser, cls, name=None, pre_type=None):
+def parse_op_fields(parser: IRParser, cls: type, name: str | None = None, pre_type: Type | None = None) -> Op:
     """Generic op field parser. Introspects field types to parse args."""
     from typing import get_type_hints
 
@@ -173,7 +175,7 @@ def parse_op_fields(parser, cls, name=None, pre_type=None):
 
 
 class IRParser:
-    def __init__(self, text: str):
+    def __init__(self, text: str) -> None:
         self.text = text
         self.pos = 0
         self._ops: dict[str, type] = {}
@@ -198,15 +200,15 @@ class IRParser:
         self.pos += 1
         return c
 
-    def skip_whitespace(self):
+    def skip_whitespace(self) -> None:
         while not self.at_end() and self.text[self.pos] in " \t":
             self.pos += 1
 
-    def skip_whitespace_and_newlines(self):
+    def skip_whitespace_and_newlines(self) -> None:
         while not self.at_end() and self.text[self.pos] in " \t\n\r":
             self.pos += 1
 
-    def expect(self, expected: str):
+    def expect(self, expected: str) -> None:
         for ch in expected:
             if self.at_end() or self.text[self.pos] != ch:
                 raise RuntimeError(f"Expected '{expected}' at position {self.pos}")
@@ -296,7 +298,7 @@ class IRParser:
             return builtin.Nil()
         return parse_expr(self)
 
-    def skip_line(self):
+    def skip_line(self) -> None:
         """Skip to the next line."""
         while not self.at_end() and self.peek() != "\n":
             self.pos += 1
@@ -307,7 +309,7 @@ class IRParser:
     # Import header parsing
     # ===------------------------------------------------------------------=== #
 
-    def _parse_imports(self):
+    def _parse_imports(self) -> None:
         """Parse import headers at the top of the module."""
         while not self.at_end():
             self.skip_whitespace_and_newlines()

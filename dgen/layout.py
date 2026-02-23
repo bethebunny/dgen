@@ -13,12 +13,13 @@ from __future__ import annotations
 import ctypes as _ctypes
 import struct as _struct
 from functools import cached_property
+from typing import Any
 
 
 class Layout:
     """Base for memory layout types."""
 
-    _format = None
+    _format: str | None = None
 
     @cached_property
     def struct(self) -> _struct.Struct:
@@ -27,10 +28,10 @@ class Layout:
     def byte_size(self) -> int:
         return self.struct.size
 
-    def parse(self, obj) -> object:
+    def parse(self, obj: object) -> object:
         raise NotImplementedError
 
-    def prepare_arg(self, value, type=None):
+    def prepare_arg(self, value: object, type: object = None) -> tuple[Any, list[Any]]:
         """Convert Python value to (ctypes_arg, refs_to_keep_alive)."""
         return value, []
 
@@ -44,7 +45,7 @@ class Int(Layout):
 
     _format = 'q'
 
-    def parse(self, obj) -> int:
+    def parse(self, obj: object) -> int:
         assert isinstance(obj, int), f"expected int, got {type(obj).__name__}"
         return obj
 
@@ -54,7 +55,7 @@ class Float64(Layout):
 
     _format = 'd'
 
-    def parse(self, obj) -> float:
+    def parse(self, obj: object) -> float:
         assert isinstance(obj, (int, float)), (
             f"expected number, got {type(obj).__name__}"
         )
@@ -64,16 +65,16 @@ class Float64(Layout):
 class Array(Layout):
     """Fixed-size inline array: n × sizeof(T) bytes."""
 
-    def __init__(self, element: Layout, count: int):
+    def __init__(self, element: Layout, count: int) -> None:
         self.element = element
         self.count = count
         self._format = f'{count}{element._format}'
 
-    def parse(self, obj) -> list:
+    def parse(self, obj: object) -> list[object]:
         assert isinstance(obj, list), f"expected list, got {type(obj).__name__}"
         return [self.element.parse(v) for v in obj]
 
-    def prepare_arg(self, value, type=None):
+    def prepare_arg(self, value: object, type: object = None) -> tuple[Any, list[Memory]]:
         mem = Memory(type) if type is not None else Memory._from_layout(self)
         mem.pack(*value)
         return mem.ptr, [mem]
@@ -84,7 +85,7 @@ class Pointer(Layout):
 
     _format = 'P'
 
-    def __init__(self, pointee: Layout):
+    def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
 
 
@@ -93,7 +94,7 @@ class FatPointer(Layout):
 
     _format = 'PQ'
 
-    def __init__(self, pointee: Layout):
+    def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
 
 
@@ -105,7 +106,7 @@ class FatPointer(Layout):
 class _LayoutAsType:
     """Thin wrapper so Memory can treat a bare Layout like a Type."""
     __slots__ = ('__layout__',)
-    def __init__(self, layout):
+    def __init__(self, layout: Layout) -> None:
         self.__layout__ = layout
 
 
@@ -114,29 +115,29 @@ class Memory:
 
     __slots__ = ('type', 'buffer', '_ct_buf')
 
-    def __init__(self, type, buffer=None):
+    def __init__(self, type: object, buffer: bytearray | None = None) -> None:
         self.type = type
         layout = type.__layout__
         self.buffer = bytearray(layout.struct.size) if buffer is None else buffer
         self._ct_buf = (_ctypes.c_char * len(self.buffer)).from_buffer(self.buffer)
 
     @classmethod
-    def _from_layout(cls, layout: Layout):
+    def _from_layout(cls, layout: Layout) -> Memory:
         """Create Memory directly from a Layout (internal fallback)."""
         return cls(_LayoutAsType(layout))
 
     @property
-    def layout(self):
+    def layout(self) -> Layout:
         return self.type.__layout__
 
-    def pack(self, *values):
+    def pack(self, *values: int | float | bytes) -> None:
         self.layout.struct.pack_into(self.buffer, 0, *values)
 
-    def unpack(self):
+    def unpack(self) -> tuple[Any, ...]:
         return self.layout.struct.unpack(self.buffer)
 
     @classmethod
-    def from_value(cls, type, value):
+    def from_value(cls, type: object, value: object) -> Memory:
         """Create Memory from a Type and a Python value."""
         parsed = type.__layout__.parse(value)
         mem = cls(type)
@@ -147,7 +148,7 @@ class Memory:
         return mem
 
     @classmethod
-    def from_asm(cls, type, text):
+    def from_asm(cls, type: object, text: str) -> Memory:
         """Create Memory from a Type and an ASM literal string."""
         from dgen.asm.parser import IRParser, parse_expr
         parser = IRParser(text)
@@ -155,7 +156,7 @@ class Memory:
         return cls.from_value(type, value)
 
     @property
-    def ptr(self):
+    def ptr(self) -> _ctypes.c_void_p:
         """ctypes void pointer to the buffer."""
         return _ctypes.cast(self._ct_buf, _ctypes.c_void_p)
 

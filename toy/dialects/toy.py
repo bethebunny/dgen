@@ -7,7 +7,7 @@ from math import prod
 
 from dgen import Comptime, Dialect, Op, Type, Value
 from dgen.dialects import builtin
-from dgen.layout import FLOAT64, Array
+from dgen.layout import FLOAT64, Array, Layout
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -25,7 +25,7 @@ class TensorType:
     dtype: Type = builtin.F64Type()
 
     @property
-    def __layout__(self):
+    def __layout__(self) -> Layout:
         return Array(FLOAT64, prod(self.shape))
 
 

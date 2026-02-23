@@ -13,7 +13,7 @@ class Token:
 
 
 class Lexer:
-    def __init__(self, text: str):
+    def __init__(self, text: str) -> None:
         self.text = text
         self.pos = 0
 
@@ -30,7 +30,7 @@ class Lexer:
         self.pos += 1
         return c
 
-    def skip_whitespace_and_comments(self):
+    def skip_whitespace_and_comments(self) -> None:
         while not self.at_end():
             c = self.peek_char()
             if c in " \t\n\r":

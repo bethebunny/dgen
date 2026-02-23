@@ -4,6 +4,7 @@ from pathlib import Path
 
 import click
 
+from dgen.dialects import builtin
 from dgen.staging import compile_and_run_staged
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
@@ -13,11 +14,11 @@ from toy.passes.shape_inference import infer_shapes
 from toy.passes.toy_to_affine import lower_to_affine
 
 
-def _lower(m):
+def _lower(m: builtin.Module) -> builtin.Module:
     return lower_to_llvm(lower_to_affine(m))
 
 
-def _parse_arg(arg):
+def _parse_arg(arg: str) -> object:
     """Parse a string arg to a Python value via ASM expr parser."""
     from dgen.asm.parser import IRParser, parse_expr
 
@@ -53,7 +54,7 @@ def run(
 @click.command()
 @click.argument("source_file", type=click.Path(exists=True))
 @click.argument("args", nargs=-1)
-def main(source_file, args):
+def main(source_file: str, args: tuple[str, ...]) -> None:
     """Compile and run a .toy source file."""
     run(Path(source_file).read_text(), args=list(args) if args else None)
 
