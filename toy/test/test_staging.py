@@ -2,17 +2,27 @@
 
 These tests verify that the staging evaluator resolves Comptime fields
 so that shape inference and lowering can proceed. All tests exercise
-the full pipeline (source → IR → staging → shape inference → lowering → JIT).
+the full pipeline (source → CLI → staging → shape inference → lowering → JIT).
 """
 
-from toy.cli import run
+import tempfile
+
+from click.testing import CliRunner
+
+from toy.cli import main
 
 
 def _toy(source, *, args=None):
-    """Run .toy source through the full pipeline, return captured output."""
-    output = run(source, args=args, capture_output=True)
-    assert output is not None
-    return output.strip()
+    """Write .toy source to a temp file and run via CliRunner."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".toy") as f:
+        f.write(source)
+        f.flush()
+        cli_args = [f.name]
+        if args:
+            cli_args.extend(str(a) if not isinstance(a, str) else a for a in args)
+        r = CliRunner().invoke(main, cli_args)
+        assert r.exit_code == 0, r.output
+        return r.output.strip()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -278,3 +288,50 @@ def test_stage1_chained_nonzero_tile():
         )
         == "5, 5"
     )
+
+
+# ===----------------------------------------------------------------------=== #
+# String args (CLI path): args passed as ASM literal strings
+# ===----------------------------------------------------------------------=== #
+
+
+def test_stage1_string_arg():
+    """String arg parsed via Memory.from_asm in _prepare_ctypes_args."""
+    assert (
+        _toy(
+            """
+        def main(x) {
+            var n = nonzero_count(x);
+            var base = [7, 8, 9];
+            var t = tile(base, n);
+            print(t);
+            return;
+        }
+    """,
+            args=["[1.0, 0.0, 3.0, 0.0]"],
+        )
+        == "7, 8, 9, 7, 8, 9"
+    )
+
+
+def test_stage1_two_string_args():
+    """Two string args with independent runtime-dependent counts."""
+    output = _toy(
+        """
+        def main(x, y) {
+            var c1 = nonzero_count(x);
+            var d1 = [1, 2];
+            var t1 = tile(d1, c1);
+            print(t1);
+            var c2 = nonzero_count(y);
+            var d2 = [3, 4];
+            var t2 = tile(d2, c2);
+            print(t2);
+            return;
+        }
+    """,
+        args=["[1.0, 0.0, 3.0, 0.0]", "[1.0, 2.0, 0.0]"],
+    )
+    lines = output.split("\n")
+    assert lines[0] == "1, 2, 1, 2"
+    assert lines[1] == "3, 4, 3, 4"

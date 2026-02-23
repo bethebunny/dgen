@@ -17,20 +17,28 @@ def _lower(m):
     return lower_to_llvm(lower_to_affine(m))
 
 
+def _parse_arg(arg):
+    """Parse a string arg to a Python value via ASM expr parser."""
+    from dgen.asm.parser import IRParser, parse_expr
+
+    return parse_expr(IRParser(arg))
+
+
 def run(
     source: str, *, args: list | None = None, capture_output: bool = False
 ) -> str | None:
     """Compile and run a .toy source string through the full pipeline."""
     ast = parse_toy(source)
     ir = lower(ast)
-    # Set parameter types from runtime args (needed for stage-1 staging)
+    # Parse string args (from CLI) to Python values, set parameter types
     if args:
         from toy.dialects.toy import TensorType
 
+        args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
         func = ir.functions[0]
-        for arg_val, param in zip(args, func.body.args):
-            if isinstance(arg_val, list):
-                param.type = TensorType(shape=[len(arg_val)])
+        for arg, param in zip(args, func.body.args):
+            if isinstance(arg, list):
+                param.type = TensorType(shape=[len(arg)])
     opt = optimize(ir)
     return compile_and_run_staged(
         opt,
@@ -41,27 +49,13 @@ def run(
     )
 
 
-def run_ir(
-    ir_text: str, *, args: list | None = None, capture_output: bool = False
-) -> str | None:
-    """Parse IR text and run through the staging pipeline."""
-    from dgen.asm.parser import IRParser
-
-    module = IRParser(ir_text).parse_module()
-    return compile_and_run_staged(
-        module,
-        infer=infer_shapes,
-        lower=_lower,
-        args=args,
-        capture_output=capture_output,
-    )
-
 
 @click.command()
 @click.argument("source_file", type=click.Path(exists=True))
-def main(source_file):
+@click.argument("args", nargs=-1)
+def main(source_file, args):
     """Compile and run a .toy source file."""
-    run(Path(source_file).read_text())
+    run(Path(source_file).read_text(), args=list(args) if args else None)
 
 
 if __name__ == "__main__":
