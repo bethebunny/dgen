@@ -263,7 +263,7 @@ class Executable:
         func_ptr = engine.get_function_address(self.main_name)
         cfunc = self.ctype(func_ptr)
         ctypes_args = [
-            m.ptr if ct is ctypes.c_void_p else m.unpack()[0]
+            m.address if ct is ctypes.c_void_p else m.unpack()[0]
             for m, ct in zip(args, cfunc._argtypes_)  # type: ignore
         ]
         return cfunc(*ctypes_args)

@@ -18,6 +18,7 @@ class Layout:
 
     struct: Struct
 
+    @property
     def byte_size(self) -> int:
         return self.struct.size
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import ctypes as _ctypes
+import ctypes
 from typing import Any, Protocol
 
 from .layout import Layout
@@ -23,13 +23,12 @@ class Type(Protocol):
 class Memory:
     """Typed memory buffer — the ABI for a type."""
 
-    __slots__ = ("type", "buffer", "_ct_buf")
+    type: Type
+    buffer: bytearray
 
     def __init__(self, type: Type, buffer: bytearray | None = None) -> None:
         self.type = type
-        layout = type.__layout__
-        self.buffer = bytearray(layout.struct.size) if buffer is None else buffer
-        self._ct_buf = (_ctypes.c_char * len(self.buffer)).from_buffer(self.buffer)
+        self.buffer = bytearray(self.layout.byte_size) if buffer is None else buffer
 
     @property
     def layout(self) -> Layout:
@@ -42,7 +41,7 @@ class Memory:
         return self.layout.struct.unpack(self.buffer)
 
     @classmethod
-    def from_value(cls, type: _HasLayout, value: object) -> Memory:
+    def from_value(cls, type: Type, value: object) -> Memory:
         """Create Memory from a Type and a Python value."""
         parsed = type.__layout__.parse(value)
         mem = cls(type)
@@ -53,7 +52,7 @@ class Memory:
         return mem
 
     @classmethod
-    def from_asm(cls, type: _HasLayout, text: str) -> Memory:
+    def from_asm(cls, type: Type, text: str) -> Memory:
         """Create Memory from a Type and an ASM literal string."""
         from dgen.asm.parser import IRParser, parse_expr
 
@@ -62,11 +61,7 @@ class Memory:
         return cls.from_value(type, value)
 
     @property
-    def ptr(self) -> _ctypes.c_void_p:
-        """ctypes void pointer to the buffer."""
-        return _ctypes.cast(self._ct_buf, _ctypes.c_void_p)
-
-    @property
     def address(self) -> int:
         """Raw memory address of the buffer."""
-        return _ctypes.addressof(self._ct_buf)
+        ct = (ctypes.c_char * len(self.buffer)).from_buffer(self.buffer)
+        return ctypes.addressof(ct)

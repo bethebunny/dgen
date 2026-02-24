@@ -1,6 +1,5 @@
 ## Make the JIT work in the general case
 - Polish `Memory` and `Layout` a bit
-  - Remove ctype buffer/pointer from `Memory`
 - Add tests for types
     - Round trip through ASM literals
     - Round trip through JIT
