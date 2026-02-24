@@ -15,7 +15,7 @@ from dgen import Block, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 
-from .formatting import _SPECIAL_FIELDS, _is_optional
+from .formatting import _SPECIAL_FIELDS, _class_hints, _is_optional
 
 
 def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
@@ -86,14 +86,26 @@ def parse_expr(parser: IRParser) -> object:
 
 
 def _parse_fields_from_exprs(parser: IRParser, cls: type) -> dict[str, object]:
-    """Parse comma-separated exprs and map them to dataclass fields."""
+    """Parse comma-separated exprs and map them to dataclass fields.
+
+    For type dataclasses, if a field's annotation has a `for_value` classmethod,
+    the parsed value is wrapped in Memory (annotation-aware type reconstruction).
+    """
+    from dgen.type import Memory
+
     fields = dataclasses.fields(cls)
+    hints = _class_hints(cls)
     kwargs = {}
     for i, f in enumerate(fields):
         if i > 0:
             parser.expect(",")
             parser.skip_whitespace()
-        kwargs[f.name] = parse_expr(parser)
+        raw_value = parse_expr(parser)
+        hint = hints.get(f.name)
+        if hint is not None and hasattr(hint, 'for_value') and not isinstance(raw_value, Value):
+            concrete_type = hint.for_value(raw_value)
+            raw_value = Memory.from_value(concrete_type, raw_value)
+        kwargs[f.name] = raw_value
         parser.skip_whitespace()
     return kwargs
 

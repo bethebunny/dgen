@@ -7,6 +7,7 @@ from copy import deepcopy
 import dgen
 from dgen.dialects import builtin
 from toy.dialects import toy
+from toy.dialects.affine import shape_memory
 
 
 def _resolve(
@@ -48,14 +49,14 @@ def _infer_function(
         elif isinstance(op, toy.TransposeOp):
             src = _resolve(type_of, op.input)
             if src is not None:
-                t = toy.TensorType(shape=list(reversed(src.shape)))
+                t = toy.TensorType(shape=shape_memory(list(reversed(src.shape.unpack()))))
                 op.type = t
                 type_of[id(op)] = t
 
         elif isinstance(op, (toy.MulOp, toy.AddOp)):
             src = _resolve(type_of, op.lhs)
             if src is not None:
-                t = toy.TensorType(shape=list(src.shape))
+                t = toy.TensorType(shape=shape_memory(list(src.shape.unpack())))
                 op.type = t
                 type_of[id(op)] = t
 
@@ -63,9 +64,11 @@ def _infer_function(
             lhs = _resolve(type_of, op.lhs)
             rhs = _resolve(type_of, op.rhs)
             if lhs is not None and rhs is not None:
-                shape = list(lhs.shape)
-                shape[op.axis] = lhs.shape[op.axis] + rhs.shape[op.axis]
-                t = toy.TensorType(shape=shape)
+                lhs_dims = list(lhs.shape.unpack())
+                rhs_dims = list(rhs.shape.unpack())
+                shape = list(lhs_dims)
+                shape[op.axis] = lhs_dims[op.axis] + rhs_dims[op.axis]
+                t = toy.TensorType(shape=shape_memory(shape))
                 op.type = t
                 type_of[id(op)] = t
 
@@ -75,7 +78,7 @@ def _infer_function(
                 # Try to resolve count by peeking through a constant op
                 count_val = _resolve_index_value(op.count)
                 if count_val is not None:
-                    t = toy.TensorType(shape=[count_val] + list(src.shape))
+                    t = toy.TensorType(shape=shape_memory([count_val] + list(src.shape.unpack())))
                     op.type = t
                     type_of[id(op)] = t
 
@@ -103,7 +106,7 @@ def _infer_function(
                                 inputs=arg_types,
                                 result=ret_type,
                             )
-                            op.type = toy.TensorType(shape=list(ret_type.shape))
+                            op.type = toy.TensorType(shape=shape_memory(list(ret_type.shape.unpack())))
                             type_of[id(op)] = op.type
 
 

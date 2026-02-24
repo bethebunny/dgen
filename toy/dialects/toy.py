@@ -9,6 +9,8 @@ from typing import Any, cast
 from dgen import Comptime, Dialect, Op, Type, Value
 from dgen.dialects import builtin
 from dgen.layout import FLOAT64, VOID, Array, Layout
+from dgen.type import Memory
+from toy.dialects.affine import ShapeType
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -20,14 +22,14 @@ toy = Dialect("toy")
 @toy.type("Tensor")
 @dataclass
 class TensorType:
-    """toy.Tensor[(2, 3), f64]."""
+    """toy.Tensor([2, 3], f64)."""
 
-    shape: list[int]
+    shape: ShapeType  # runtime: Memory(type=ShapeType(ndim=N), buffer=<packed dims>)
     dtype: Type = builtin.F64Type()
 
     @property
     def __layout__(self) -> Layout:
-        return Array(FLOAT64, prod(self.shape))
+        return Array(FLOAT64, prod(self.shape.unpack()))
 
 
 @toy.type("InferredShapeTensor")
@@ -122,8 +124,8 @@ class DimSizeOp(Op):
 
     def resolve_constant(self) -> int | None:
         """Return constant value if input type has a resolved shape."""
-        if hasattr(self.input.type, "shape"):
-            return cast(Any, self.input.type).shape[self.axis]
+        if hasattr(self.input.type, "shape") and isinstance(cast(Any, self.input.type).shape, Memory):
+            return cast(Any, self.input.type).shape.unpack()[self.axis]
         return None
 
 

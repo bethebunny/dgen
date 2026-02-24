@@ -7,6 +7,7 @@ from copy import deepcopy
 import dgen
 from dgen.dialects import builtin
 from toy.dialects import toy
+from toy.dialects.affine import shape_memory
 
 # ===----------------------------------------------------------------------=== #
 # Helpers
@@ -71,7 +72,7 @@ def fold_constants(func: builtin.FuncOp) -> None:
         assert isinstance(defn.value, list)
         new_op = builtin.ConstantOp(
             value=list(defn.value),
-            type=toy.TensorType(shape=list(target_shape)),
+            type=toy.TensorType(shape=shape_memory(list(target_shape.unpack()))),
         )
         # Transfer identity: rewrite uses of old op to new op
         rewrite_uses(ops, op, new_op)

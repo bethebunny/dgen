@@ -60,6 +60,17 @@ class Memory:
         value = parse_expr(parser)
         return cls.from_value(type, value)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Memory):
+            return NotImplemented
+        return self.type == other.type and self.buffer == other.buffer
+
+    def __hash__(self) -> int:
+        return hash((self.type, bytes(self.buffer)))
+
+    def __repr__(self) -> str:
+        return f"Memory({self.type!r}, {self.unpack()!r})"
+
     @property
     def address(self) -> int:
         """Raw memory address of the buffer."""

@@ -7,6 +7,7 @@ from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from toy.dialects import toy
+from toy.dialects.affine import shape_memory
 from toy.test.helpers import strip_prefix
 
 
@@ -15,7 +16,7 @@ def inferred() -> dgen.Type:
 
 
 def ranked(shape: list[int]) -> dgen.Type:
-    return toy.TensorType(shape=shape)
+    return toy.TensorType(shape=shape_memory(shape))
 
 
 def test_constant_op():

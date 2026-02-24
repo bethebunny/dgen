@@ -139,7 +139,7 @@ def test_roundtrip_ssa_in_op_arg():
         | import affine
         |
         | %f = function () -> ():
-        |     %shape : affine.Shape = [2, 3]
+        |     %shape : affine.Shape(2) = [2, 3]
         |     %0 : affine.MemRef([2, 3], f64) = affine.alloc(%shape)
         |     %_ : () = return()
     """)
@@ -153,9 +153,34 @@ def test_roundtrip_ssa_in_type_param():
         | import affine
         |
         | %f = function () -> ():
-        |     %shape : affine.Shape = [2, 3]
+        |     %shape : affine.Shape(2) = [2, 3]
         |     %0 : affine.MemRef(%shape, f64) = affine.alloc(%shape)
         |     %_ : () = return()
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
+
+
+def test_ssa_shape_through_lowering():
+    """SSA shape reference form works through affine-to-LLVM lowering."""
+    ir = strip_prefix("""
+        | import affine
+        |
+        | %f = function () -> ():
+        |     %shape : affine.Shape(2) = [2, 3]
+        |     %0 : affine.MemRef([2, 3], f64) = affine.alloc(%shape)
+        |     %1 : f64 = 1.0
+        |     %2 : index = 0
+        |     %_ : () = affine.store(%1, %0, [%2, %2])
+        |     %3 : () = affine.load(%0, [%2, %2])
+        |     %_ : () = affine.dealloc(%0)
+        |     %_ : () = return()
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+    from toy.passes.affine_to_llvm import lower_to_llvm
+
+    llvm_module = lower_to_llvm(module)
+    result = asm.format(llvm_module)
+    assert "llvm.alloca(6)" in result

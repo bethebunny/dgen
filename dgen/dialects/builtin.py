@@ -132,9 +132,16 @@ def _walk_all_ops(op: Op) -> Iterable[Op]:
 
 
 def _collect_type_dialects(func: FuncOp, dialects: set[Dialect]) -> None:
-    """Collect non-builtin dialects referenced by types in a function."""
+    """Collect non-builtin dialects referenced by types in a function.
+
+    Only collects dialects whose names appear in the ASM text output.
+    Memory objects format as their value (e.g. [2, 3]), not as their type
+    (e.g. affine.Shape(2)), so Memory's internal type dialect is NOT collected.
+    """
 
     def _check(t: object) -> None:
+        if t is None:
+            return
         d = getattr(t, "dialect", None)
         if d is not None and d.name != "builtin":
             dialects.add(d)

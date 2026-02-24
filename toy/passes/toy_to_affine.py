@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
+from dgen.type import Memory
 from toy.dialects import affine, toy
 
 
@@ -67,6 +68,13 @@ class ToyToAffineLowering:
         elif isinstance(op, builtin.ReturnOp):
             yield from self._lower_return(op)
 
+    def _make_alloc(self, shape_mem: Memory) -> affine.AllocOp:
+        """Create an AllocOp from a Memory shape."""
+        return affine.AllocOp(
+            shape=list(shape_mem.unpack()),
+            type=affine.MemRefType(shape=shape_mem),
+        )
+
     def _nested_for(
         self,
         shape: list[int],
@@ -88,9 +96,9 @@ class ToyToAffineLowering:
     def _lower_transpose(self, op: toy.TransposeOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, toy.TensorType)
         assert isinstance(op.input.type, toy.TensorType)
-        in_shape = op.input.type.shape
+        in_shape = list(op.input.type.shape.unpack())
 
-        alloc_op = affine.AllocOp(shape=op.type.shape, type=affine.MemRefType(shape=op.type.shape))
+        alloc_op = self._make_alloc(op.type.shape)
         yield alloc_op
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
@@ -109,8 +117,9 @@ class ToyToAffineLowering:
         self, result_op: dgen.Op, lhs_val: dgen.Value, rhs_val: dgen.Value
     ) -> Iterator[dgen.Op]:
         assert isinstance(lhs_val.type, toy.TensorType)
-        shape = lhs_val.type.shape
-        alloc_op = affine.AllocOp(shape=shape, type=affine.MemRefType(shape=shape))
+        shape_mem = lhs_val.type.shape
+        shape = list(shape_mem.unpack())
+        alloc_op = self._make_alloc(shape_mem)
         yield alloc_op
         self.live_allocs.append(alloc_op)
         lhs_alloc = self.alloc_map.get(lhs_val, lhs_val)
@@ -136,12 +145,10 @@ class ToyToAffineLowering:
         count = op.count.value
         assert isinstance(count, int)
         assert isinstance(op.input.type, toy.TensorType)
-        input_shape = op.input.type.shape
-        output_shape: list[int] = [count] + list(input_shape)
+        input_shape = list(op.input.type.shape.unpack())
+        output_shape: list[int] = [count] + input_shape
 
-        alloc_op = affine.AllocOp(
-            shape=output_shape, type=affine.MemRefType(shape=output_shape)
-        )
+        alloc_op = self._make_alloc(affine.shape_memory(output_shape))
         yield alloc_op
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
@@ -158,16 +165,14 @@ class ToyToAffineLowering:
     def _lower_concat(self, op: toy.ConcatOp) -> Iterator[dgen.Op]:
         assert isinstance(op.lhs.type, toy.TensorType)
         assert isinstance(op.rhs.type, toy.TensorType)
-        lhs_shape = op.lhs.type.shape
-        rhs_shape = op.rhs.type.shape
+        lhs_shape = list(op.lhs.type.shape.unpack())
+        rhs_shape = list(op.rhs.type.shape.unpack())
         axis = op.axis
 
         output_shape = list(lhs_shape)
         output_shape[axis] = lhs_shape[axis] + rhs_shape[axis]
 
-        alloc_op = affine.AllocOp(
-            shape=output_shape, type=affine.MemRefType(shape=output_shape)
-        )
+        alloc_op = self._make_alloc(affine.shape_memory(output_shape))
         yield alloc_op
         self.live_allocs.append(alloc_op)
         lhs_alloc = self.alloc_map.get(op.lhs, op.lhs)

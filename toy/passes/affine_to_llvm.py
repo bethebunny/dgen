@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import dgen
 from dgen.dialects import builtin, llvm
+from dgen.type import Memory
 from toy.dialects import affine, toy
 
 
@@ -32,9 +33,9 @@ class AffineToLLVMLowering:
         # Register block args (function parameters)
         for arg in f.body.args:
             self.value_map[arg] = arg
-            if hasattr(arg.type, "shape"):
-                shape = cast(Any, arg.type).shape
-                self.alloc_shapes[arg] = list(shape)
+            if hasattr(arg.type, "shape") and isinstance(cast(Any, arg.type).shape, Memory):
+                shape = list(cast(Any, arg.type).shape.unpack())
+                self.alloc_shapes[arg] = shape
                 self.alloc_sizes[arg] = prod(shape)
         ops = []
         for op in f.body.ops:
@@ -64,10 +65,12 @@ class AffineToLLVMLowering:
             new_op = builtin.ConstantOp(value=op.value, type=op.type)
             yield new_op
             self.value_map[op] = new_op
-            if isinstance(op.value, list):
-                shape = cast(Any, op.type).shape
-                self.alloc_shapes[new_op] = list(shape)
-                self.alloc_sizes[new_op] = prod(shape)
+            if isinstance(op.value, list) and hasattr(op.type, 'shape'):
+                shape_val = getattr(op.type, 'shape')
+                if isinstance(shape_val, Memory):
+                    shape = list(shape_val.unpack())
+                    self.alloc_shapes[new_op] = shape
+                    self.alloc_sizes[new_op] = prod(shape)
         elif isinstance(op, affine.ArithMulFOp):
             llvm_op = llvm.FMulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
@@ -89,13 +92,13 @@ class AffineToLLVMLowering:
             yield builtin.ReturnOp(value=val)
 
     def _lower_alloc(self, op: affine.AllocOp) -> Iterator[dgen.Op]:
-        total = 1
-        for d in op.shape:
-            total *= d
+        assert isinstance(op.type, affine.MemRefType)
+        shape = list(op.type.shape.unpack())
+        total = prod(shape)
         alloca_op = llvm.AllocaOp(elem_count=total)
         yield alloca_op
         self.value_map[op] = alloca_op
-        self.alloc_shapes[alloca_op] = list(op.shape)
+        self.alloc_shapes[alloca_op] = shape
         self.alloc_sizes[alloca_op] = total
 
     def _lower_load(self, op: affine.LoadOp) -> Iterator[dgen.Op]:
@@ -214,7 +217,7 @@ class AffineToLLVMLowering:
         """Unrolled nonzero_count: count non-zero elements in a tensor."""
         input_val = self._map(op.input)
         assert isinstance(op.input.type, toy.TensorType)
-        total = prod(op.input.type.shape)
+        total = prod(op.input.type.shape.unpack())
 
         zero_f = builtin.ConstantOp(value=0.0, type=builtin.F64Type())
         yield zero_f

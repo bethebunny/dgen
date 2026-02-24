@@ -9,6 +9,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from toy.dialects import toy
+from toy.dialects.affine import shape_memory
 from toy.parser.ast import (
     BinaryOp,
     CallExpr,
@@ -31,7 +32,7 @@ def _inferred() -> dgen.Type:
 
 
 def _ranked(shape: list[int]) -> dgen.Type:
-    return toy.TensorType(shape=shape)
+    return toy.TensorType(shape=shape_memory(shape))
 
 
 class Lowering:

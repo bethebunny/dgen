@@ -14,6 +14,7 @@ from typing import Union, get_args, get_origin, get_type_hints
 
 from .. import Block
 from ..op import Op
+from ..type import Memory
 from ..value import Value
 
 
@@ -91,6 +92,9 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
             return f"%{tracker.get_name(value)}"
         name = value.name if value.name is not None else "?"
         return f"%{name}"
+    if isinstance(value, Memory):
+        vals = value.unpack()
+        return "[" + ", ".join(format_expr(v, tracker) for v in vals) + "]"
     if isinstance(value, list):
         return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
     if isinstance(value, float):
