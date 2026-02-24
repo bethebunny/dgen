@@ -3,25 +3,20 @@
 Layouts are value-level descriptors: Byte, Int, Float64 are singletons;
 Array, Pointer, FatPointer are parameterized via constructors.
 
-Each layout has a `struct` property returning a `struct.Struct` that
-describes its binary encoding. The `Memory` class pairs a layout with
-a buffer for pack/unpack operations.
+Each layout has a `struct` attribute (a `struct.Struct`) that describes
+its binary encoding. The `Memory` class pairs a layout with a buffer
+for pack/unpack operations.
 """
 
 from __future__ import annotations
 
-import struct as _struct
-from functools import cached_property
+from struct import Struct
 
 
 class Layout:
     """Base for memory layout types."""
 
-    _format: str | None = None
-
-    @cached_property
-    def struct(self) -> _struct.Struct:
-        return _struct.Struct(f"@{self._format}")
+    struct: Struct
 
     def byte_size(self) -> int:
         return self.struct.size
@@ -33,17 +28,17 @@ class Layout:
 class Void(Layout):
     """Zero-size layout for types with no runtime representation."""
 
-    _format = "0s"
+    struct = Struct("0s")
 
 
 class Byte(Layout):
-    _format = "B"
+    struct = Struct("B")
 
 
 class Int(Layout):
     """64-bit integer (i64)."""
 
-    _format = "q"
+    struct = Struct("q")
 
     def parse(self, obj: object) -> int:
         assert isinstance(obj, int), f"expected int, got {type(obj).__name__}"
@@ -53,7 +48,7 @@ class Int(Layout):
 class Float64(Layout):
     """64-bit float (f64)."""
 
-    _format = "d"
+    struct = Struct("d")
 
     def parse(self, obj: object) -> float:
         assert isinstance(obj, (int, float)), (
@@ -68,7 +63,7 @@ class Array(Layout):
     def __init__(self, element: Layout, count: int) -> None:
         self.element = element
         self.count = count
-        self._format = f"{count}{element._format}"
+        self.struct = Struct(f"{count}{element.struct.format}")
 
     def parse(self, obj: object) -> list[object]:
         assert isinstance(obj, list), f"expected list, got {type(obj).__name__}"
@@ -78,7 +73,7 @@ class Array(Layout):
 class Pointer(Layout):
     """8-byte pointer to T."""
 
-    _format = "P"
+    struct = Struct("P")
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
@@ -87,7 +82,7 @@ class Pointer(Layout):
 class FatPointer(Layout):
     """Pointer + i64 length (16 bytes)."""
 
-    _format = "PQ"
+    struct = Struct("PQ")
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee

@@ -1,8 +1,7 @@
 ## Make the JIT work in the general case
 - Polish `Memory` and `Layout` a bit
   - Remove ctype buffer/pointer from `Memory`
-  - Remove `_format` from `Type`, it can just have the `Struct` as a field directly.
-  - Add tests for types
+- Add tests for types
     - Round trip through ASM literals
     - Round trip through JIT
 - Generalize `compile_and_run_staged` to not need an `infer` stage
