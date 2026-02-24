@@ -1,6 +1,5 @@
 ## Make the JIT work in the general case
 - Polish `Memory` and `Layout` a bit
-  - Remove `Type.prepare_arg`, `_LayoutAsType`
   - Remove ctype buffer/pointer from `Memory`
   - Remove `_format` from `Type`, it can just have the `Struct` as a field directly.
   - Add tests for types
@@ -12,7 +11,6 @@
 - Right now "_jit_evaluate" assumes the result is an int. Should be able to return any type according to `__format__`.
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 - Figure out what `resolve_constant` does and whether we need it
-- Split `compile_and_run_staged` to explicit `compile` and `run` phases
 
 ## dgen dialect definition files + generation
 - Create dialect files

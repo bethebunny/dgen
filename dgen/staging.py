@@ -10,7 +10,7 @@ import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.layout import Memory
+from dgen.type import Memory
 from dgen.value import Comptime
 
 

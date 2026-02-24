@@ -10,10 +10,8 @@ a buffer for pack/unpack operations.
 
 from __future__ import annotations
 
-import ctypes as _ctypes
 import struct as _struct
 from functools import cached_property
-from typing import Any, Protocol, cast
 
 
 class Layout:
@@ -23,7 +21,7 @@ class Layout:
 
     @cached_property
     def struct(self) -> _struct.Struct:
-        return _struct.Struct(f'@{self._format}')
+        return _struct.Struct(f"@{self._format}")
 
     def byte_size(self) -> int:
         return self.struct.size
@@ -31,25 +29,21 @@ class Layout:
     def parse(self, obj: object) -> object:
         raise NotImplementedError
 
-    def prepare_arg(self, value: object, type: object = None) -> tuple[Any, list[Any]]:
-        """Convert Python value to (ctypes_arg, refs_to_keep_alive)."""
-        return value, []
-
 
 class Void(Layout):
     """Zero-size layout for types with no runtime representation."""
 
-    _format = '0s'
+    _format = "0s"
 
 
 class Byte(Layout):
-    _format = 'B'
+    _format = "B"
 
 
 class Int(Layout):
     """64-bit integer (i64)."""
 
-    _format = 'q'
+    _format = "q"
 
     def parse(self, obj: object) -> int:
         assert isinstance(obj, int), f"expected int, got {type(obj).__name__}"
@@ -59,7 +53,7 @@ class Int(Layout):
 class Float64(Layout):
     """64-bit float (f64)."""
 
-    _format = 'd'
+    _format = "d"
 
     def parse(self, obj: object) -> float:
         assert isinstance(obj, (int, float)), (
@@ -74,23 +68,17 @@ class Array(Layout):
     def __init__(self, element: Layout, count: int) -> None:
         self.element = element
         self.count = count
-        self._format = f'{count}{element._format}'
+        self._format = f"{count}{element._format}"
 
     def parse(self, obj: object) -> list[object]:
         assert isinstance(obj, list), f"expected list, got {type(obj).__name__}"
         return [self.element.parse(v) for v in obj]
 
-    def prepare_arg(self, value: object, type: object = None) -> tuple[Any, list[Memory]]:
-        mem = Memory(cast(_HasLayout, type)) if type is not None else Memory._from_layout(self)
-        assert isinstance(value, (list, tuple))
-        mem.pack(*value)
-        return mem.ptr, [mem]
-
 
 class Pointer(Layout):
     """8-byte pointer to T."""
 
-    _format = 'P'
+    _format = "P"
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
@@ -99,83 +87,10 @@ class Pointer(Layout):
 class FatPointer(Layout):
     """Pointer + i64 length (16 bytes)."""
 
-    _format = 'PQ'
+    _format = "PQ"
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
-
-
-# ---------------------------------------------------------------------------
-# Memory: typed buffer for layout ABI
-# ---------------------------------------------------------------------------
-
-
-class _HasLayout(Protocol):
-    """Protocol for objects that have a __layout__ attribute."""
-    __layout__: Layout
-
-
-class _LayoutAsType:
-    """Thin wrapper so Memory can treat a bare Layout like a Type."""
-    __slots__ = ('__layout__',)
-    def __init__(self, layout: Layout) -> None:
-        self.__layout__ = layout
-
-
-class Memory:
-    """Typed memory buffer — the ABI for a type."""
-
-    __slots__ = ('type', 'buffer', '_ct_buf')
-
-    def __init__(self, type: _HasLayout, buffer: bytearray | None = None) -> None:
-        self.type = type
-        layout = type.__layout__
-        self.buffer = bytearray(layout.struct.size) if buffer is None else buffer
-        self._ct_buf = (_ctypes.c_char * len(self.buffer)).from_buffer(self.buffer)
-
-    @classmethod
-    def _from_layout(cls, layout: Layout) -> Memory:
-        """Create Memory directly from a Layout (internal fallback)."""
-        return cls(_LayoutAsType(layout))
-
-    @property
-    def layout(self) -> Layout:
-        return self.type.__layout__
-
-    def pack(self, *values: object) -> None:
-        self.layout.struct.pack_into(self.buffer, 0, *values)
-
-    def unpack(self) -> tuple[Any, ...]:
-        return self.layout.struct.unpack(self.buffer)
-
-    @classmethod
-    def from_value(cls, type: _HasLayout, value: object) -> Memory:
-        """Create Memory from a Type and a Python value."""
-        parsed = type.__layout__.parse(value)
-        mem = cls(type)
-        if isinstance(parsed, list):
-            mem.pack(*parsed)
-        else:
-            mem.pack(parsed)
-        return mem
-
-    @classmethod
-    def from_asm(cls, type: _HasLayout, text: str) -> Memory:
-        """Create Memory from a Type and an ASM literal string."""
-        from dgen.asm.parser import IRParser, parse_expr
-        parser = IRParser(text)
-        value = parse_expr(parser)
-        return cls.from_value(type, value)
-
-    @property
-    def ptr(self) -> _ctypes.c_void_p:
-        """ctypes void pointer to the buffer."""
-        return _ctypes.cast(self._ct_buf, _ctypes.c_void_p)
-
-    @property
-    def address(self) -> int:
-        """Raw memory address of the buffer."""
-        return _ctypes.addressof(self._ct_buf)
 
 
 # Module-level singletons for primitives

@@ -11,7 +11,8 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
-from dgen.layout import Layout, Memory
+from dgen.layout import Layout
+from dgen.type import Memory
 
 # ---------------------------------------------------------------------------
 # struct.format → LLVM / ctypes mapping

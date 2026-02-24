@@ -3,7 +3,8 @@
 from typing import cast
 
 from dgen.dialects import builtin
-from dgen.layout import BYTE, FLOAT64, INT, Array, FatPointer, Memory, Pointer
+from dgen.layout import BYTE, FLOAT64, INT, Array, FatPointer, Pointer
+from dgen.type import Memory
 
 
 def test_primitive_sizes():
