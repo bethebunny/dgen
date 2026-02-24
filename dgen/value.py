@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated, TypeAlias
 
 import dgen
 
@@ -23,13 +24,10 @@ class Value:
         return {}
 
 
-class Comptime(Value):
-    """Type hint: a Value that must be resolvable at compile time.
+class _ComptimeMarker:
+    """Sentinel for staging evaluator field detection."""
 
-    Used as a field annotation on Op dataclasses to mark operands whose
-    concrete value is needed for type computation (e.g. tile count).
-    At runtime the field still holds a regular Value — Comptime is
-    purely a type-level marker inspected by the staging evaluator.
-    """
 
-    pass
+_COMPTIME = _ComptimeMarker()
+
+Comptime: TypeAlias = Annotated[int | float | str | list | Value, _COMPTIME]

@@ -27,11 +27,13 @@ class ShapeType:
 
     @classmethod
     def for_value(cls, value: object) -> ShapeType:
-        assert isinstance(value, list), f"ShapeType.for_value expects list, got {type(value).__name__}"
+        assert isinstance(value, list), (
+            f"ShapeType.for_value expects list, got {type(value).__name__}"
+        )
         return cls(ndim=len(value))
 
 
-def shape_memory(dims: list[int]) -> Memory:
+def shape_memory(dims: list[int]) -> Memory[ShapeType]:
     """Create a Memory object for a shape."""
     return Memory.from_value(ShapeType(ndim=len(dims)), dims)
 
@@ -40,7 +42,7 @@ def shape_memory(dims: list[int]) -> Memory:
 @dataclass
 class MemRefType:
     __layout__ = Pointer(VOID)
-    shape: ShapeType
+    shape: Memory[ShapeType]
     dtype: Type = builtin.F64Type()
 
 

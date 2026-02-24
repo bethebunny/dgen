@@ -140,7 +140,9 @@ class Lowering:
             return (yield from self._lower_print(expr))
         raise RuntimeError("Unknown expression type")
 
-    def _lower_index_expr(self, expr: Expression) -> Generator[dgen.Op, None, dgen.Value]:
+    def _lower_index_expr(
+        self, expr: Expression
+    ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression that should produce an index value."""
         if isinstance(expr, NumberLiteral):
             op = builtin.ConstantOp(value=int(expr.value), type=builtin.IndexType())
@@ -164,7 +166,9 @@ class Lowering:
                 raise RuntimeError("tile takes exactly 2 arguments")
             input_val = yield from self.lower_expr(call.args[0])
             count_val = yield from self._lower_index_expr(call.args[1])
-            op = toy.TileOp(input=input_val, count=cast(dgen.Comptime, count_val), type=_inferred())
+            op = toy.TileOp(
+                input=input_val, count=cast(dgen.Comptime, count_val), type=_inferred()
+            )
             yield op
             return op
 

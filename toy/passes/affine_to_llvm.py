@@ -33,7 +33,9 @@ class AffineToLLVMLowering:
         # Register block args (function parameters)
         for arg in f.body.args:
             self.value_map[arg] = arg
-            if hasattr(arg.type, "shape") and isinstance(cast(Any, arg.type).shape, Memory):
+            if hasattr(arg.type, "shape") and isinstance(
+                cast(Any, arg.type).shape, Memory
+            ):
                 shape = list(cast(Any, arg.type).shape.unpack())
                 self.alloc_shapes[arg] = shape
                 self.alloc_sizes[arg] = prod(shape)
@@ -65,8 +67,8 @@ class AffineToLLVMLowering:
             new_op = builtin.ConstantOp(value=op.value, type=op.type)
             yield new_op
             self.value_map[op] = new_op
-            if isinstance(op.value, list) and hasattr(op.type, 'shape'):
-                shape_val = getattr(op.type, 'shape')
+            if isinstance(op.value, list) and hasattr(op.type, "shape"):
+                shape_val = getattr(op.type, "shape")
                 if isinstance(shape_val, Memory):
                     shape = list(shape_val.unpack())
                     self.alloc_shapes[new_op] = shape

@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
-from typing import cast
+from typing import cast, get_args, get_origin, get_type_hints
 
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
+from dgen.type import Memory
 
 from .formatting import _SPECIAL_FIELDS, _class_hints, _is_optional
 
@@ -91,8 +92,6 @@ def _parse_fields_from_exprs(parser: IRParser, cls: type) -> dict[str, object]:
     For type dataclasses, if a field's annotation has a `for_value` classmethod,
     the parsed value is wrapped in Memory (annotation-aware type reconstruction).
     """
-    from dgen.type import Memory
-
     fields = dataclasses.fields(cls)
     hints = _class_hints(cls)
     kwargs = {}
@@ -102,18 +101,23 @@ def _parse_fields_from_exprs(parser: IRParser, cls: type) -> dict[str, object]:
             parser.skip_whitespace()
         raw_value = parse_expr(parser)
         hint = hints.get(f.name)
-        if hint is not None and hasattr(hint, 'for_value') and not isinstance(raw_value, Value):
-            concrete_type = hint.for_value(raw_value)
+        if (
+            hint is not None
+            and get_origin(hint) is Memory
+            and not isinstance(raw_value, Value)
+        ):
+            inner_cls = get_args(hint)[0]
+            concrete_type = inner_cls.for_value(raw_value)
             raw_value = Memory.from_value(concrete_type, raw_value)
         kwargs[f.name] = raw_value
         parser.skip_whitespace()
     return kwargs
 
 
-def parse_op_fields(parser: IRParser, cls: type, name: str | None = None, pre_type: Type | None = None) -> Op:
+def parse_op_fields(
+    parser: IRParser, cls: type, name: str | None = None, pre_type: Type | None = None
+) -> Op:
     """Generic op field parser. Introspects field types to parse args."""
-    from typing import get_type_hints
-
     hints = get_type_hints(cls, include_extras=True)
     fields = dataclasses.fields(cls)
 

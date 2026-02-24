@@ -169,7 +169,9 @@ class ToyParser:
         self._parse_tensor_level(values, shape, 0)
         return TensorLiteral(values=values, shape=shape)
 
-    def _parse_tensor_level(self, values: list[float], shape: list[int], depth: int) -> None:
+    def _parse_tensor_level(
+        self, values: list[float], shape: list[int], depth: int
+    ) -> None:
         """Recursively parse one level of [...] nesting."""
         self.expect("[")
         count = 0

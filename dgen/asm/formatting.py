@@ -114,8 +114,10 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
 def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
     """Generic type formatter via field introspection."""
     cls = type(type_obj)
-    dialect = getattr(cls, 'dialect', None)
-    prefix = f"{dialect.name}." if dialect is not None and dialect.name != "builtin" else ""
+    dialect = getattr(cls, "dialect", None)
+    prefix = (
+        f"{dialect.name}." if dialect is not None and dialect.name != "builtin" else ""
+    )
     name = f"{prefix}{getattr(cls, '_asm_name', '')}"
     if dataclasses.is_dataclass(cls):
         fields = dataclasses.fields(cls)
@@ -178,7 +180,7 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         parts.append(args_str)
     else:
         parts.append(f"{prefix}{asm_name}({args_str})")
-    body = getattr(op, 'body', None)
+    body = getattr(op, "body", None)
     if has_body:
         if isinstance(body, Block) and body.args:
             block_args = ", ".join(

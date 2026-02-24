@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ctypes
-from typing import Any, Protocol
+from typing import Any, Generic, Protocol, TypeVar
 
 from .layout import Layout
 
@@ -20,10 +20,13 @@ class Type(Protocol):
     ...
 
 
-class Memory:
+T = TypeVar("T", bound=Type)
+
+
+class Memory(Generic[T]):
     """Typed memory buffer — the ABI for a type."""
 
-    type: Type
+    type: T
     buffer: bytearray
 
     def __init__(self, type: Type, buffer: bytearray | None = None) -> None:

@@ -4,23 +4,28 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
-from typing import get_type_hints
+from typing import Annotated, get_args, get_origin, get_type_hints
 
 import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.type import Memory
-from dgen.value import Comptime
+from dgen.value import _ComptimeMarker
 
 
 def _comptime_fields(cls: type) -> list[str]:
-    """Return field names whose type hint is Comptime."""
+    """Return field names whose type hint is Comptime (Annotated with _ComptimeMarker)."""
     try:
-        hints = get_type_hints(cls)
+        hints = get_type_hints(cls, include_extras=True)
     except Exception:
         return []
-    return [name for name, hint in hints.items() if hint is Comptime]
+    result = []
+    for name, hint in hints.items():
+        if get_origin(hint) is Annotated:
+            if any(isinstance(a, _ComptimeMarker) for a in get_args(hint)[1:]):
+                result.append(name)
+    return result
 
 
 def _trace_dependencies(target: dgen.Value, func: builtin.FuncOp) -> list[dgen.Op]:
@@ -59,9 +64,7 @@ def _is_stage0_evaluable(target: dgen.Value) -> bool:
     return True
 
 
-def _make_memories(
-    block_args: list[BlockArgument], python_args: list
-) -> list[Memory]:
+def _make_memories(block_args: list[BlockArgument], python_args: list) -> list[Memory]:
     """Convert Python args to Memory objects using block argument types."""
     return [
         Memory.from_value(param.type, arg)
@@ -164,6 +167,8 @@ def _resolve_all_comptime(
         for op in list(func.body.ops):
             for field_name in _comptime_fields(type(op)):
                 value = getattr(op, field_name)
+                if not isinstance(value, dgen.Value):
+                    continue  # already a literal constant, no resolution needed
                 if isinstance(value, builtin.ConstantOp):
                     continue
                 _resolve_comptime_field(func, op, field_name, value, lower, args)
@@ -204,7 +209,5 @@ def compile_and_run_staged(
 ) -> object:
     """Full staged compilation pipeline: resolve, compile, and run."""
     exe = compile_staged(module, infer=infer, lower=lower, args=args)
-    memories = [
-        Memory.from_value(t, a) for t, a in zip(exe.input_types, args or [])
-    ]
+    memories = [Memory.from_value(t, a) for t, a in zip(exe.input_types, args or [])]
     return exe.run(*memories)

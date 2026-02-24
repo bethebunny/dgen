@@ -31,34 +31,55 @@ from toy.dialects.toy import InferredShapeTensor, TensorType
 
 BUILTIN_TYPES = [
     pytest.param(
-        builtin.IndexType(), 42, "42", (42,),
+        builtin.IndexType(),
+        42,
+        "42",
+        (42,),
         id="builtin.index",
     ),
     pytest.param(
-        builtin.F64Type(), 3.14, "3.14", (3.14,),
+        builtin.F64Type(),
+        3.14,
+        "3.14",
+        (3.14,),
         id="builtin.f64",
     ),
     pytest.param(
-        builtin.String(), ("hello", 5), None, None,
+        builtin.String(),
+        ("hello", 5),
+        None,
+        None,
         id="builtin.string",
     ),
     pytest.param(
-        builtin.List(element_type=builtin.F64Type()), None, None, None,
+        builtin.List(element_type=builtin.F64Type()),
+        None,
+        None,
+        None,
         id="builtin.list",
     ),
 ]
 
 LLVM_TYPES = [
     pytest.param(
-        llvm.IntType(bits=64), 42, "42", (42,),
+        llvm.IntType(bits=64),
+        42,
+        "42",
+        (42,),
         id="llvm.i64",
     ),
     pytest.param(
-        llvm.FloatType(), 3.14, "3.14", (3.14,),
+        llvm.FloatType(),
+        3.14,
+        "3.14",
+        (3.14,),
         id="llvm.f64",
     ),
     pytest.param(
-        llvm.PtrType(), (0,), None, None,
+        llvm.PtrType(),
+        (0,),
+        None,
+        None,
         id="llvm.ptr",
     ),
 ]
@@ -82,11 +103,17 @@ TOY_TYPES = [
 
 AFFINE_TYPES = [
     pytest.param(
-        ShapeType(ndim=2), [2, 3], "[2, 3]", (2, 3),
+        ShapeType(ndim=2),
+        [2, 3],
+        "[2, 3]",
+        (2, 3),
         id="affine.shape",
     ),
     pytest.param(
-        MemRefType(shape=shape_memory([2, 3])), (0,), None, None,
+        MemRefType(shape=shape_memory([2, 3])),
+        (0,),
+        None,
+        None,
         id="affine.memref",
     ),
 ]
@@ -186,7 +213,9 @@ _PARSEABLE_TYPES = [
     pytest.param(llvm.FloatType(), 3.14, "3.14", (3.14,), id="llvm.f64"),
     pytest.param(
         TensorType(shape=shape_memory([3])),
-        [1.0, 2.0, 3.0], "[1.0, 2.0, 3.0]", (1.0, 2.0, 3.0),
+        [1.0, 2.0, 3.0],
+        "[1.0, 2.0, 3.0]",
+        (1.0, 2.0, 3.0),
         id="toy.tensor_1d",
     ),
     pytest.param(
@@ -197,7 +226,10 @@ _PARSEABLE_TYPES = [
         id="toy.tensor_2d",
     ),
     pytest.param(
-        ShapeType(ndim=2), [2, 3], "[2, 3]", (2, 3),
+        ShapeType(ndim=2),
+        [2, 3],
+        "[2, 3]",
+        (2, 3),
         id="affine.shape",
     ),
 ]

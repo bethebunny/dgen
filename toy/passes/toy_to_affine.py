@@ -68,7 +68,7 @@ class ToyToAffineLowering:
         elif isinstance(op, builtin.ReturnOp):
             yield from self._lower_return(op)
 
-    def _make_alloc(self, shape_mem: Memory) -> affine.AllocOp:
+    def _make_alloc(self, shape_mem: Memory[affine.ShapeType]) -> affine.AllocOp:
         """Create an AllocOp from a Memory shape."""
         return affine.AllocOp(
             shape=list(shape_mem.unpack()),
@@ -81,7 +81,9 @@ class ToyToAffineLowering:
         body_fn: Callable[[list[dgen.Value]], list[dgen.Op]],
     ) -> Iterator[dgen.Op]:
         """Build nested ForOps for each dimension. body_fn(ivars) -> innermost ops."""
-        ivars: list[dgen.Value] = [BlockArgument(type=builtin.IndexType()) for _ in shape]
+        ivars: list[dgen.Value] = [
+            BlockArgument(type=builtin.IndexType()) for _ in shape
+        ]
         ops = list(body_fn(ivars))
         for dim, var in reversed(list(zip(shape, ivars))):
             ops = [affine.ForOp(lo=0, hi=dim, body=dgen.Block(ops=ops, args=[var]))]

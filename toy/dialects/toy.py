@@ -24,7 +24,7 @@ toy = Dialect("toy")
 class TensorType:
     """toy.Tensor([2, 3], f64)."""
 
-    shape: ShapeType  # runtime: Memory(type=ShapeType(ndim=N), buffer=<packed dims>)
+    shape: Memory[ShapeType]
     dtype: Type = builtin.F64Type()
 
     @property
@@ -124,7 +124,9 @@ class DimSizeOp(Op):
 
     def resolve_constant(self) -> int | None:
         """Return constant value if input type has a resolved shape."""
-        if hasattr(self.input.type, "shape") and isinstance(cast(Any, self.input.type).shape, Memory):
+        if hasattr(self.input.type, "shape") and isinstance(
+            cast(Any, self.input.type).shape, Memory
+        ):
             return cast(Any, self.input.type).shape.unpack()[self.axis]
         return None
 

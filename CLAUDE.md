@@ -74,7 +74,7 @@ python -m toy.cli toy/test/testdata/constant.toy
 
 Tests validate IR round-trips, pass correctness, and end-to-end JIT output. 110 tests, runs in ~1s.
 
-Type checking, linting, formatting: Use `ruff` and `ty`.
+Type checking, linting, formatting: Use `ruff` and `ty`. Always run `ruff format` directly (not `--check`).
 
 ```bash
 ruff format

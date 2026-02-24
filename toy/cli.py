@@ -48,7 +48,6 @@ def run(source: str, *, args: list | None = None) -> object:
     )
 
 
-
 @click.command()
 @click.argument("source_file", type=click.Path(exists=True))
 @click.argument("args", nargs=-1)

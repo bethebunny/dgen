@@ -49,7 +49,9 @@ def _infer_function(
         elif isinstance(op, toy.TransposeOp):
             src = _resolve(type_of, op.input)
             if src is not None:
-                t = toy.TensorType(shape=shape_memory(list(reversed(src.shape.unpack()))))
+                t = toy.TensorType(
+                    shape=shape_memory(list(reversed(src.shape.unpack())))
+                )
                 op.type = t
                 type_of[id(op)] = t
 
@@ -76,9 +78,15 @@ def _infer_function(
             src = _resolve(type_of, op.input)
             if src is not None:
                 # Try to resolve count by peeking through a constant op
-                count_val = _resolve_index_value(op.count)
+                count_val = (
+                    _resolve_index_value(op.count)
+                    if isinstance(op.count, dgen.Value)
+                    else None
+                )
                 if count_val is not None:
-                    t = toy.TensorType(shape=shape_memory([count_val] + list(src.shape.unpack())))
+                    t = toy.TensorType(
+                        shape=shape_memory([count_val] + list(src.shape.unpack()))
+                    )
                     op.type = t
                     type_of[id(op)] = t
 
@@ -106,7 +114,9 @@ def _infer_function(
                                 inputs=arg_types,
                                 result=ret_type,
                             )
-                            op.type = toy.TensorType(shape=shape_memory(list(ret_type.shape.unpack())))
+                            op.type = toy.TensorType(
+                                shape=shape_memory(list(ret_type.shape.unpack()))
+                            )
                             type_of[id(op)] = op.type
 
 
