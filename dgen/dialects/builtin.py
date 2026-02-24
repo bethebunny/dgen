@@ -54,7 +54,7 @@ class String:
 @builtin.type("List")
 @dataclass
 class List:
-    __layout__ = VOID
+    __layout__ = FatPointer(BYTE)
     element_type: Type
 
 
