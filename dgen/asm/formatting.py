@@ -15,7 +15,7 @@ from typing import Union, get_args, get_origin, get_type_hints
 from .. import Block
 from ..op import Op
 from ..type import Memory
-from ..value import Value
+from ..value import Constant, Value
 
 
 def indent(it: Iterable[str], prefix: str = "    ") -> Iterable[str]:
@@ -87,14 +87,26 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
 
     if isinstance(value, Nil):
         return "()"
+    if isinstance(value, Constant) and not isinstance(value, Op):
+        from ..layout import Array
+
+        mem = value.__constant__
+        vals = mem.unpack()
+        if isinstance(mem.layout, Array):
+            return "[" + ", ".join(format_expr(v, tracker) for v in vals) + "]"
+        return format_expr(vals[0], tracker)
     if isinstance(value, Value):
         if tracker is not None:
             return f"%{tracker.get_name(value)}"
         name = value.name if value.name is not None else "?"
         return f"%{name}"
     if isinstance(value, Memory):
+        from ..layout import Array
+
         vals = value.unpack()
-        return "[" + ", ".join(format_expr(v, tracker) for v in vals) + "]"
+        if isinstance(value.layout, Array):
+            return "[" + ", ".join(format_expr(v, tracker) for v in vals) + "]"
+        return format_expr(vals[0], tracker)
     if isinstance(value, list):
         return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
     if isinstance(value, float):

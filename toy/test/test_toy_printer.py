@@ -1,13 +1,11 @@
 """Phase 1 tests: construct IR manually, print, verify output."""
 
-from typing import cast
-
 import dgen
 from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from toy.dialects import toy
-from toy.dialects.affine import shape_memory
+from toy.dialects.affine import shape_constant
 from toy.test.helpers import strip_prefix
 
 
@@ -16,7 +14,7 @@ def inferred() -> dgen.Type:
 
 
 def ranked(shape: list[int]) -> dgen.Type:
-    return toy.TensorType(shape=shape_memory(shape))
+    return toy.TensorType(shape=shape_constant(shape))
 
 
 def test_constant_op():
@@ -100,7 +98,7 @@ def test_concat_op():
 def test_tile_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     n = dgen.Value(name="n", type=builtin.IndexType())
-    op = toy.TileOp(name="1", input=v0, count=cast(dgen.Comptime, n), type=inferred())
+    op = toy.TileOp(name="1", input=v0, count=n, type=inferred())
     assert asm.format(op) == "%1 : toy.InferredShapeTensor(f64) = toy.tile(%0, %n)"
 
 

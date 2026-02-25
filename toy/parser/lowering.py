@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Generator, Iterator
-from typing import cast
-
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from toy.dialects import toy
-from toy.dialects.affine import shape_memory
+from toy.dialects.affine import shape_constant
 from toy.parser.ast import (
     BinaryOp,
     CallExpr,
@@ -32,7 +30,7 @@ def _inferred() -> dgen.Type:
 
 
 def _ranked(shape: list[int]) -> dgen.Type:
-    return toy.TensorType(shape=shape_memory(shape))
+    return toy.TensorType(shape=shape_constant(shape))
 
 
 class Lowering:
@@ -166,9 +164,7 @@ class Lowering:
                 raise RuntimeError("tile takes exactly 2 arguments")
             input_val = yield from self.lower_expr(call.args[0])
             count_val = yield from self._lower_index_expr(call.args[1])
-            op = toy.TileOp(
-                input=input_val, count=cast(dgen.Comptime, count_val), type=_inferred()
-            )
+            op = toy.TileOp(input=input_val, count=count_val, type=_inferred())
             yield op
             return op
 

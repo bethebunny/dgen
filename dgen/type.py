@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 import ctypes
-from typing import Any, Generic, Protocol, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    Generic,
+    Iterator,
+    Self,
+    TypeVar,
+    get_args,
+    get_origin,
+)
 
 from .layout import Layout
 
+if TYPE_CHECKING:
+    from .value import Constant
 
-class Type(Protocol):
+
+class Type:
     """Any dialect type.
 
     Types registered via @dialect.type() get _asm_name and dialect set
@@ -15,9 +29,35 @@ class Type(Protocol):
     with hand-written formatting (e.g. llvm types).
     """
 
-    __layout__: Layout
+    __layout__: ClassVar[Layout]
 
-    ...
+    def constant(self, value: object) -> Constant[Self]:
+        """Create a Constant wrapping this type and a Python value."""
+        from .value import Constant
+
+        return Constant(type=self, value=Memory.from_value(self, value))
+
+    @classmethod
+    def for_value(cls, value: object) -> Type:
+        return cls()
+
+    @classmethod
+    def fields(cls) -> Iterator[tuple[str, type[Type], bool]]:
+        from .asm.formatting import _class_hints
+        from .value import Constant, Value
+
+        for name, hint in _class_hints(cls).items():
+            if get_origin(hint) is Annotated:
+                args = get_args(hint)
+                if Constant in args[1:]:
+                    wrapped_type = args[0]
+                    assert get_origin(wrapped_type) is Value
+                    yield name, get_args(wrapped_type)[0], True
+                    continue
+            elif get_origin(hint) is Value:
+                yield name, get_args(hint)[0], False
+            elif get_origin(hint) is not ClassVar:
+                yield name, None, False
 
 
 T = TypeVar("T", bound=Type)
@@ -29,7 +69,7 @@ class Memory(Generic[T]):
     type: T
     buffer: bytearray
 
-    def __init__(self, type: Type, buffer: bytearray | None = None) -> None:
+    def __init__(self, type: T, buffer: bytearray | None = None) -> None:
         self.type = type
         self.buffer = bytearray(self.layout.byte_size) if buffer is None else buffer
 

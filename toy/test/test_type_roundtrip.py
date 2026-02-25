@@ -18,7 +18,7 @@ from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
 from dgen.type import Memory
-from toy.dialects.affine import MemRefType, ShapeType, shape_memory
+from toy.dialects.affine import MemRefType, ShapeType, shape_constant
 from toy.dialects.toy import InferredShapeTensor, TensorType
 
 
@@ -86,14 +86,14 @@ LLVM_TYPES = [
 
 TOY_TYPES = [
     pytest.param(
-        TensorType(shape=shape_memory([3])),
+        TensorType(shape=shape_constant([3])),
         [1.0, 2.0, 3.0],
         "[1.0, 2.0, 3.0]",
         (1.0, 2.0, 3.0),
         id="toy.tensor_1d",
     ),
     pytest.param(
-        TensorType(shape=shape_memory([2, 3])),
+        TensorType(shape=shape_constant([2, 3])),
         [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         "[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]",
         (1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
@@ -103,14 +103,14 @@ TOY_TYPES = [
 
 AFFINE_TYPES = [
     pytest.param(
-        ShapeType(ndim=2),
+        ShapeType(rank=builtin.IndexType().constant(2)),
         [2, 3],
         "[2, 3]",
         (2, 3),
         id="affine.shape",
     ),
     pytest.param(
-        MemRefType(shape=shape_memory([2, 3])),
+        MemRefType(shape=shape_constant([2, 3])),
         (0,),
         None,
         None,
@@ -154,12 +154,12 @@ def _identity_exe(ty):
 # Types that are genuinely void (no runtime representation):
 # - Nil/VoidType: void return types
 # - InferredShapeTensor: pre-inference placeholder, becomes TensorType
-# - ShapeType(ndim=0): empty shape (zero dimensions)
+# - ShapeType(rank=builtin.IndexType().constant(0)): empty shape (zero dimensions)
 VOID_TYPES = [
     pytest.param(builtin.Nil(), id="builtin.nil"),
     pytest.param(llvm.VoidType(), id="llvm.void"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
-    pytest.param(ShapeType(ndim=0), id="affine.shape_0"),
+    pytest.param(ShapeType(rank=builtin.IndexType().constant(0)), id="affine.shape_0"),
 ]
 
 
@@ -185,12 +185,12 @@ _ASM_TYPES = [
     pytest.param(builtin.Nil(), id="builtin.nil"),
     pytest.param(builtin.String(), id="builtin.string"),
     pytest.param(builtin.List(element_type=builtin.F64Type()), id="builtin.list"),
-    pytest.param(TensorType(shape=shape_memory([3])), id="toy.tensor_1d"),
-    pytest.param(TensorType(shape=shape_memory([2, 3])), id="toy.tensor_2d"),
+    pytest.param(TensorType(shape=shape_constant([3])), id="toy.tensor_1d"),
+    pytest.param(TensorType(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
-    pytest.param(ShapeType(ndim=0), id="affine.shape_0"),
-    pytest.param(ShapeType(ndim=2), id="affine.shape_2"),
-    pytest.param(MemRefType(shape=shape_memory([2, 3])), id="affine.memref"),
+    pytest.param(ShapeType(rank=builtin.IndexType().constant(0)), id="affine.shape_0"),
+    pytest.param(ShapeType(rank=builtin.IndexType().constant(2)), id="affine.shape_2"),
+    pytest.param(MemRefType(shape=shape_constant([2, 3])), id="affine.memref"),
 ]
 
 
@@ -212,21 +212,21 @@ _PARSEABLE_TYPES = [
     pytest.param(llvm.IntType(bits=64), 42, "42", (42,), id="llvm.i64"),
     pytest.param(llvm.FloatType(), 3.14, "3.14", (3.14,), id="llvm.f64"),
     pytest.param(
-        TensorType(shape=shape_memory([3])),
+        TensorType(shape=shape_constant([3])),
         [1.0, 2.0, 3.0],
         "[1.0, 2.0, 3.0]",
         (1.0, 2.0, 3.0),
         id="toy.tensor_1d",
     ),
     pytest.param(
-        TensorType(shape=shape_memory([2, 3])),
+        TensorType(shape=shape_constant([2, 3])),
         [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         "[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]",
         (1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
         id="toy.tensor_2d",
     ),
     pytest.param(
-        ShapeType(ndim=2),
+        ShapeType(rank=builtin.IndexType().constant(2)),
         [2, 3],
         "[2, 3]",
         (2, 3),

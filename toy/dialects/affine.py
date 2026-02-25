@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
-from dgen import Block, Comptime, Dialect, Op, Type, Value
+from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.dialects import builtin
 from dgen.layout import INT, VOID, Array, Layout, Pointer
-from dgen.type import Memory
 
 # ===----------------------------------------------------------------------=== #
 # Types
@@ -18,31 +18,35 @@ affine = Dialect("affine")
 
 @affine.type("Shape")
 @dataclass(frozen=True)
-class ShapeType:
-    ndim: int
+class ShapeType(Type):
+    rank: Annotated[Value[builtin.IndexType], Constant]
 
     @property
     def __layout__(self) -> Layout:
-        return Array(INT, self.ndim)
+        assert self.rank.ready
+        return Array(INT, self.rank.__constant__.unpack()[0])
 
     @classmethod
     def for_value(cls, value: object) -> ShapeType:
-        assert isinstance(value, list), (
-            f"ShapeType.for_value expects list, got {type(value).__name__}"
-        )
-        return cls(ndim=len(value))
+        if isinstance(value, Constant):
+            assert isinstance(value.type, builtin.IndexType)
+            return cls(rank=value.type.constant(value.__constant__.unpack()[0]))
+        assert isinstance(value, list)
+        return cls(rank=builtin.IndexType().constant(len(value)))
 
 
-def shape_memory(dims: list[int]) -> Memory[ShapeType]:
-    """Create a Memory object for a shape."""
-    return Memory.from_value(ShapeType(ndim=len(dims)), dims)
+def shape_constant(dims: list[int]) -> Constant:
+    """Create a Constant[ShapeType] from a list of dims."""
+    rank = builtin.IndexType().constant(len(dims))
+    return ShapeType(rank=rank).constant(dims)
 
 
 @affine.type("MemRef")
 @dataclass
-class MemRefType:
+class MemRefType(Type):
     __layout__ = Pointer(VOID)
-    shape: Memory[ShapeType]
+
+    shape: Annotated[Value[ShapeType], Constant]
     dtype: Type = builtin.F64Type()
 
 
@@ -54,7 +58,7 @@ class MemRefType:
 @affine.op("alloc")
 @dataclass(eq=False, kw_only=True)
 class AllocOp(Op):
-    shape: Comptime
+    shape: Annotated[Value[ShapeType], Constant]
 
 
 @affine.op("dealloc")

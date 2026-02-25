@@ -82,6 +82,16 @@ ruff check --fix
 ty check
 ```
 
+## Type checking
+
+_Always_ strive to add correct type annotations! If the type annotations are incorrect, the code is substantially harder to reason about.
+- Don't leave objects un-annotated
+- Avoid `Any` or `object`. Use a protocol if necessary, prefer best-practices.
+- Don't use `cast`, use `assert isinstance` or typeguards.
+- Don't use `type: ignore`.
+
 ## Version Control
 
 This repo uses **jj** (Jujutsu) as its VCS frontend over git. Use `jj` commands rather than `git` for day-to-day operations (e.g., `jj st`, `jj log`, `jj new`, `jj commit`, `jj describe`).
+
+_Don't ever_ use `jj edit`, `jj abandon`, or `jj squash`, or other changes which mutate the commit history. Use `jj new` and add an appropriate commit description.

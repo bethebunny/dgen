@@ -6,7 +6,7 @@ argument-hint: "[optional guidance]"
 
 # Et Al — apply a local change everywhere relevant
 
-The user has made a small edit in their editor. Your job is to understand the *pattern* of that change and apply it to every other place in the codebase where the same pattern applies.
+The user has made a small edit in their editor. This represents a semantic or mechanical change to the codebase, and the user believes that the main idea is captured in the existing diff, and the remaining work to "draw the rest of the owl" for this change is mechanical and may be done with few creative decisions. Your job is to draw the rest of the owl, ie. understand the *pattern* of that change and apply it to every other place in the codebase where the same pattern applies, or otherwise complete the change across the codebase and turn it into a meaningful and correct diff.
 
 ## Steps
 
@@ -31,3 +31,7 @@ The user has made a small edit in their editor. Your job is to understand the *p
 - If the diff contains multiple unrelated changes, ask the user which one to propagate.
 - If you're unsure whether a site qualifies, mention it to the user rather than changing it silently.
 - Preserve existing formatting and style at each site.
+- Tests, type checker and lint failures caused by the current diff should be considered
+  in scope for changing, including adding new tests if necessary.
+- Update relevant documentation, and anything else that would be expected from a high
+  quality pull request.

@@ -7,7 +7,7 @@ from copy import deepcopy
 import dgen
 from dgen.dialects import builtin
 from toy.dialects import toy
-from toy.dialects.affine import shape_memory
+from toy.dialects.affine import shape_constant
 
 
 def _resolve(
@@ -23,8 +23,8 @@ def _resolve_index_value(val: dgen.Value) -> int | None:
     Returns None for computed values (add_index, etc.) — those require
     a staging evaluator.
     """
-    if isinstance(val, builtin.ConstantOp) and isinstance(val.value, int):
-        return val.value
+    if isinstance(val, builtin.ConstantOp) and isinstance(val.type, builtin.IndexType):
+        return val.__constant__.unpack()[0]
     return None
 
 
@@ -50,7 +50,9 @@ def _infer_function(
             src = _resolve(type_of, op.input)
             if src is not None:
                 t = toy.TensorType(
-                    shape=shape_memory(list(reversed(src.shape.unpack())))
+                    shape=shape_constant(
+                        list(reversed(src.shape.__constant__.unpack()))
+                    )
                 )
                 op.type = t
                 type_of[id(op)] = t
@@ -58,7 +60,9 @@ def _infer_function(
         elif isinstance(op, (toy.MulOp, toy.AddOp)):
             src = _resolve(type_of, op.lhs)
             if src is not None:
-                t = toy.TensorType(shape=shape_memory(list(src.shape.unpack())))
+                t = toy.TensorType(
+                    shape=shape_constant(list(src.shape.__constant__.unpack()))
+                )
                 op.type = t
                 type_of[id(op)] = t
 
@@ -66,11 +70,11 @@ def _infer_function(
             lhs = _resolve(type_of, op.lhs)
             rhs = _resolve(type_of, op.rhs)
             if lhs is not None and rhs is not None:
-                lhs_dims = list(lhs.shape.unpack())
-                rhs_dims = list(rhs.shape.unpack())
+                lhs_dims = list(lhs.shape.__constant__.unpack())
+                rhs_dims = list(rhs.shape.__constant__.unpack())
                 shape = list(lhs_dims)
                 shape[op.axis] = lhs_dims[op.axis] + rhs_dims[op.axis]
-                t = toy.TensorType(shape=shape_memory(shape))
+                t = toy.TensorType(shape=shape_constant(shape))
                 op.type = t
                 type_of[id(op)] = t
 
@@ -85,7 +89,9 @@ def _infer_function(
                 )
                 if count_val is not None:
                     t = toy.TensorType(
-                        shape=shape_memory([count_val] + list(src.shape.unpack()))
+                        shape=shape_constant(
+                            [count_val] + list(src.shape.__constant__.unpack())
+                        )
                     )
                     op.type = t
                     type_of[id(op)] = t
@@ -115,7 +121,9 @@ def _infer_function(
                                 result=ret_type,
                             )
                             op.type = toy.TensorType(
-                                shape=shape_memory(list(ret_type.shape.unpack()))
+                                shape=shape_constant(
+                                    list(ret_type.shape.__constant__.unpack())
+                                )
                             )
                             type_of[id(op)] = op.type
 

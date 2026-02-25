@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import prod
-from typing import Any, cast
+from typing import Annotated
 
-from dgen import Comptime, Dialect, Op, Type, Value
+from dgen import Constant, Dialect, Op, Type, Value
 from dgen.dialects import builtin
+from dgen.dialects.builtin import IndexType
 from dgen.layout import FLOAT64, VOID, Array, Layout
 from dgen.type import Memory
 from toy.dialects.affine import ShapeType
@@ -20,21 +21,23 @@ toy = Dialect("toy")
 
 
 @toy.type("Tensor")
-@dataclass
-class TensorType:
+@dataclass(frozen=True)
+class TensorType(Type):
     """toy.Tensor([2, 3], f64)."""
 
-    shape: Memory[ShapeType]
+    shape: Annotated[Value[ShapeType], Constant]
     dtype: Type = builtin.F64Type()
 
     @property
     def __layout__(self) -> Layout:
-        return Array(FLOAT64, prod(self.shape.unpack()))
+        assert self.shape.ready
+        shape: Memory[ShapeType] = self.shape.__constant__
+        return Array(FLOAT64, prod(shape.unpack()))
 
 
 @toy.type("InferredShapeTensor")
 @dataclass(frozen=True)
-class InferredShapeTensor:
+class InferredShapeTensor(Type):
     """toy.InferredShapeTensor[f64] — shape to be filled in by inference."""
 
     __layout__ = VOID
@@ -104,7 +107,7 @@ class ConcatOp(Op):
 @dataclass(eq=False, kw_only=True)
 class TileOp(Op):
     input: Value
-    count: Comptime
+    count: Annotated[Value[IndexType], Constant]
     type: Type
 
 
@@ -124,10 +127,9 @@ class DimSizeOp(Op):
 
     def resolve_constant(self) -> int | None:
         """Return constant value if input type has a resolved shape."""
-        if hasattr(self.input.type, "shape") and isinstance(
-            cast(Any, self.input.type).shape, Memory
-        ):
-            return cast(Any, self.input.type).shape.unpack()[self.axis]
+        shape = getattr(self.input.type, "shape", None)
+        if shape is not None and getattr(shape, "ready", False):
+            return shape.__constant__.unpack()[self.axis]
         return None
 
 

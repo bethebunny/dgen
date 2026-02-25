@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
-from typing import cast, get_args, get_origin, get_type_hints
+from typing import Annotated, TypeVar, cast, get_args, get_origin
 
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
@@ -86,30 +86,36 @@ def parse_expr(parser: IRParser) -> object:
     return cls(**kwargs)
 
 
-def _parse_fields_from_exprs(parser: IRParser, cls: type) -> dict[str, object]:
+T = TypeVar("T", bound=Type)
+
+
+def _constant_inner_type(hint: type) -> type[Type]:
+    """Extract inner type class from Annotated[Value[T], Constant] → T."""
+    origin = get_origin(hint)
+    assert origin is Annotated
+    args = get_args(hint)
+    wrapped_type = args[0]
+    inner_args = get_args(wrapped_type)
+    result = inner_args[0]
+    assert isinstance(result, type) and issubclass(result, Type)
+    return result
+
+
+def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, object]:
     """Parse comma-separated exprs and map them to dataclass fields.
 
-    For type dataclasses, if a field's annotation has a `for_value` classmethod,
-    the parsed value is wrapped in Memory (annotation-aware type reconstruction).
+    For type dataclasses, if a field's annotation involves Constant or Memory,
+    the parsed value is wrapped appropriately (annotation-aware type reconstruction).
     """
-    fields = dataclasses.fields(cls)
-    hints = _class_hints(cls)
     kwargs = {}
-    for i, f in enumerate(fields):
+    for i, (name, field, is_constant) in enumerate(cls.fields()):
         if i > 0:
             parser.expect(",")
             parser.skip_whitespace()
         raw_value = parse_expr(parser)
-        hint = hints.get(f.name)
-        if (
-            hint is not None
-            and get_origin(hint) is Memory
-            and not isinstance(raw_value, Value)
-        ):
-            inner_cls = get_args(hint)[0]
-            concrete_type = inner_cls.for_value(raw_value)
-            raw_value = Memory.from_value(concrete_type, raw_value)
-        kwargs[f.name] = raw_value
+        if is_constant and not isinstance(raw_value, Value):
+            raw_value = field.for_value(raw_value).constant(raw_value)
+        kwargs[name] = raw_value
         parser.skip_whitespace()
     return kwargs
 
@@ -118,7 +124,7 @@ def parse_op_fields(
     parser: IRParser, cls: type, name: str | None = None, pre_type: Type | None = None
 ) -> Op:
     """Generic op field parser. Introspects field types to parse args."""
-    hints = get_type_hints(cls, include_extras=True)
+    hints = _class_hints(cls)
     fields = dataclasses.fields(cls)
 
     kwargs = {}
@@ -523,7 +529,11 @@ class IRParser:
         if self.peek() in "[-0123456789":
             value = parse_expr(self)
             assert pre_type is not None
-            op = builtin.ConstantOp(name=op_name_str, value=value, type=pre_type)
+            op = builtin.ConstantOp(
+                name=op_name_str,
+                value=Memory.from_value(pre_type, value),
+                type=pre_type,
+            )
             self.name_table[op_name_str] = op
             return op
         name = self.parse_qualified_name()

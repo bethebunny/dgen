@@ -31,14 +31,14 @@ def run(source: str, *, args: list | None = None) -> object:
     ir = lower(ast)
     # Parse string args (from CLI) to Python values, set parameter types
     if args:
-        from toy.dialects.affine import shape_memory
+        from toy.dialects.affine import shape_constant
         from toy.dialects.toy import TensorType
 
         args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
         func = ir.functions[0]
         for arg, param in zip(args, func.body.args):
             if isinstance(arg, list):
-                param.type = TensorType(shape=shape_memory([len(arg)]))
+                param.type = TensorType(shape=shape_constant([len(arg)]))
     opt = optimize(ir)
     return compile_and_run_staged(
         opt,

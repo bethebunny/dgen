@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from dgen import Block, Dialect, Op, Type, Value, asm
+from dgen import Block, Constant, Dialect, Op, Type, Value, asm
 from dgen.asm.formatting import SlotTracker, format_expr, op_asm
 from dgen.layout import BYTE, FLOAT64, INT, VOID, FatPointer
-
+from dgen.type import Memory
 
 # ===----------------------------------------------------------------------=== #
 # Builtin ReturnOp
@@ -19,26 +19,26 @@ builtin = Dialect("builtin")
 
 @builtin.type("index")
 @dataclass(frozen=True)
-class IndexType:
+class IndexType(Type):
     __layout__ = INT
 
 
 @builtin.type("f64")
 @dataclass(frozen=True)
-class F64Type:
+class F64Type(Type):
     __layout__ = FLOAT64
 
 
 @builtin.type("Nil")
 @dataclass(frozen=True)
-class Nil:
+class Nil(Type):
     """Represents a void/empty return type."""
 
     __layout__ = VOID
 
 
 @dataclass
-class Function:
+class Function(Type):
     """A function signature."""
 
     __layout__ = VOID
@@ -47,22 +47,35 @@ class Function:
 
 @builtin.type("String")
 @dataclass(frozen=True)
-class String:
+class String(Type):
     __layout__ = FatPointer(BYTE)
 
 
 @builtin.type("List")
 @dataclass
-class List:
+class List(Type):
     __layout__ = FatPointer(BYTE)
     element_type: Type
 
 
 @builtin.op("constant")
-@dataclass(eq=False, kw_only=True)
-class ConstantOp(Op):
-    value: object
+@dataclass(eq=False, kw_only=True, init=False)
+class ConstantOp(Op, Constant):
+    value: Memory
     type: Type
+
+    def __init__(self, *, value: object, type: Type, name: str | None = None) -> None:
+        self.name = name
+        self.type = type
+        self.value = (
+            value if isinstance(value, Memory) else Memory.from_value(type, value)
+        )
+
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    def __hash__(self) -> int:
+        return id(self)
 
 
 @builtin.op("add_index")

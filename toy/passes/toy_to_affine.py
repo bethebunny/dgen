@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterator
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.type import Memory
+from dgen.layout import Array
 from toy.dialects import affine, toy
 
 
@@ -36,7 +36,7 @@ class ToyToAffineLowering:
         )
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
-        if isinstance(op, builtin.ConstantOp) and isinstance(op.value, list):
+        if isinstance(op, builtin.ConstantOp) and isinstance(op.value.layout, Array):
             yield from self._lower_constant(op)
         elif isinstance(op, builtin.ConstantOp):
             yield op
@@ -68,11 +68,11 @@ class ToyToAffineLowering:
         elif isinstance(op, builtin.ReturnOp):
             yield from self._lower_return(op)
 
-    def _make_alloc(self, shape_mem: Memory[affine.ShapeType]) -> affine.AllocOp:
-        """Create an AllocOp from a Memory shape."""
+    def _make_alloc(self, shape: dgen.Value) -> affine.AllocOp:
+        """Create an AllocOp from a shape Constant."""
         return affine.AllocOp(
-            shape=list(shape_mem.unpack()),
-            type=affine.MemRefType(shape=shape_mem),
+            shape=shape,
+            type=affine.MemRefType(shape=shape),
         )
 
     def _nested_for(
@@ -98,7 +98,7 @@ class ToyToAffineLowering:
     def _lower_transpose(self, op: toy.TransposeOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, toy.TensorType)
         assert isinstance(op.input.type, toy.TensorType)
-        in_shape = list(op.input.type.shape.unpack())
+        in_shape = list(op.input.type.shape.__constant__.unpack())
 
         alloc_op = self._make_alloc(op.type.shape)
         yield alloc_op
@@ -119,9 +119,9 @@ class ToyToAffineLowering:
         self, result_op: dgen.Op, lhs_val: dgen.Value, rhs_val: dgen.Value
     ) -> Iterator[dgen.Op]:
         assert isinstance(lhs_val.type, toy.TensorType)
-        shape_mem = lhs_val.type.shape
-        shape = list(shape_mem.unpack())
-        alloc_op = self._make_alloc(shape_mem)
+        shape_const = lhs_val.type.shape
+        shape = list(shape_const.__constant__.unpack())
+        alloc_op = self._make_alloc(shape_const)
         yield alloc_op
         self.live_allocs.append(alloc_op)
         lhs_alloc = self.alloc_map.get(lhs_val, lhs_val)
@@ -144,13 +144,13 @@ class ToyToAffineLowering:
 
     def _lower_tile(self, op: toy.TileOp) -> Iterator[dgen.Op]:
         assert isinstance(op.count, builtin.ConstantOp)
-        count = op.count.value
+        count = op.count.__constant__.unpack()[0]
         assert isinstance(count, int)
         assert isinstance(op.input.type, toy.TensorType)
-        input_shape = list(op.input.type.shape.unpack())
+        input_shape = list(op.input.type.shape.__constant__.unpack())
         output_shape: list[int] = [count] + input_shape
 
-        alloc_op = self._make_alloc(affine.shape_memory(output_shape))
+        alloc_op = self._make_alloc(affine.shape_constant(output_shape))
         yield alloc_op
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
@@ -167,14 +167,14 @@ class ToyToAffineLowering:
     def _lower_concat(self, op: toy.ConcatOp) -> Iterator[dgen.Op]:
         assert isinstance(op.lhs.type, toy.TensorType)
         assert isinstance(op.rhs.type, toy.TensorType)
-        lhs_shape = list(op.lhs.type.shape.unpack())
-        rhs_shape = list(op.rhs.type.shape.unpack())
+        lhs_shape = list(op.lhs.type.shape.__constant__.unpack())
+        rhs_shape = list(op.rhs.type.shape.__constant__.unpack())
         axis = op.axis
 
         output_shape = list(lhs_shape)
         output_shape[axis] = lhs_shape[axis] + rhs_shape[axis]
 
-        alloc_op = self._make_alloc(affine.shape_memory(output_shape))
+        alloc_op = self._make_alloc(affine.shape_constant(output_shape))
         yield alloc_op
         self.live_allocs.append(alloc_op)
         lhs_alloc = self.alloc_map.get(op.lhs, op.lhs)

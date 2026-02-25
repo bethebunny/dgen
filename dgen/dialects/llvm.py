@@ -15,7 +15,7 @@ from dgen.layout import FLOAT64, INT, VOID, Pointer
 
 
 @dataclass
-class PtrType:
+class PtrType(Type):
     __layout__ = Pointer(VOID)
 
     @property
@@ -24,7 +24,7 @@ class PtrType:
 
 
 @dataclass
-class IntType:
+class IntType(Type):
     __layout__ = INT
     bits: int
 
@@ -34,7 +34,7 @@ class IntType:
 
 
 @dataclass
-class FloatType:
+class FloatType(Type):
     __layout__ = FLOAT64
 
     @property
@@ -43,7 +43,7 @@ class FloatType:
 
 
 @dataclass
-class VoidType:
+class VoidType(Type):
     __layout__ = VOID
 
     @property

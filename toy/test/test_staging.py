@@ -1,6 +1,6 @@
 """Staging tests: dependent types that require compile-time evaluation.
 
-These tests verify that the staging evaluator resolves Comptime fields
+These tests verify that the staging evaluator resolves Constant fields
 so that shape inference and lowering can proceed. All tests exercise
 the full pipeline (source → CLI → staging → shape inference → lowering → JIT).
 """

@@ -11,7 +11,7 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
-from dgen.layout import Layout
+from dgen.layout import Array, Layout
 from dgen.type import Memory
 
 # ---------------------------------------------------------------------------
@@ -100,19 +100,14 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         vid = id(op)
         if isinstance(op, builtin.ConstantOp):
             layout = op.type.__layout__
-            if isinstance(op.value, list):
-                mem = Memory(op.type)
-                mem.pack(*op.value)
-                host_buffers.append(mem)
-                constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
+            if isinstance(layout, Array):
+                host_buffers.append(op.value)
+                constants[vid] = f"ptr inttoptr (i64 {op.value.address} to ptr)"
                 types[vid] = "ptr"
             else:
                 lt = _llvm_type(layout)
-                val_str = (
-                    format_float(op.value)
-                    if isinstance(op.value, float)
-                    else str(op.value)
-                )
+                raw = op.value.unpack()[0]
+                val_str = format_float(raw) if isinstance(raw, float) else str(raw)
                 constants[vid] = f"{lt} {val_str}"
                 types[vid] = lt
         elif isinstance(op, llvm.AllocaOp):

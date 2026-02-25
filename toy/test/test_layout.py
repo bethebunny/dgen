@@ -40,10 +40,10 @@ def test_index_type_layout():
 
 
 def test_tensor_type_layout():
-    from toy.dialects.affine import shape_memory
+    from toy.dialects.affine import shape_constant
     from toy.dialects.toy import TensorType
 
-    t = TensorType(shape=shape_memory([2, 3]))
+    t = TensorType(shape=shape_constant([2, 3]))
     layout = t.__layout__
     assert layout.byte_size == 48  # 6 * 8 bytes
     assert cast(Array, layout).count == 6

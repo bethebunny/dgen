@@ -2,28 +2,36 @@
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Annotated, get_args, get_origin, get_type_hints
+from typing import Annotated, get_args, get_origin
 
 import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.type import Memory
-from dgen.value import _ComptimeMarker
+from dgen.value import Constant
 
 
+@functools.cache
 def _comptime_fields(cls: type) -> list[str]:
-    """Return field names whose type hint is Comptime (Annotated with _ComptimeMarker)."""
+    """Return field names whose type hint involves Constant."""
+    from dgen.asm.formatting import _class_hints
+
     try:
-        hints = get_type_hints(cls, include_extras=True)
+        hints = _class_hints(cls)
     except Exception:
         return []
     result = []
     for name, hint in hints.items():
-        if get_origin(hint) is Annotated:
-            if any(isinstance(a, _ComptimeMarker) for a in get_args(hint)[1:]):
+        # Direct: field: Constant[SomeType]
+        if get_origin(hint) is Constant:
+            result.append(name)
+        # Annotated: field: Annotated[Value[SomeType], Constant]
+        elif get_origin(hint) is Annotated:
+            if any(a is Constant for a in get_args(hint)[1:]):
                 result.append(name)
     return result
 
@@ -104,7 +112,7 @@ def _resolve_comptime_field(
     lower: Callable[[builtin.Module], builtin.Module],
     args: list | None = None,
 ) -> None:
-    """Resolve a single Comptime field: JIT the dependency subgraph, patch with ConstantOp."""
+    """Resolve a single Constant field: JIT the dependency subgraph, patch with ConstantOp."""
     subgraph = _trace_dependencies(value, func)
     stage1 = not _is_stage0_evaluable(value)
     result = _jit_evaluate(
@@ -129,7 +137,7 @@ def _resolve_constant_ops(func: builtin.FuncOp) -> None:
 
     After shape inference runs, ops like DimSizeOp may be resolvable to
     constants because their input types are now concrete. This function
-    finds such ops and replaces them, patching any Comptime field references.
+    finds such ops and replaces them, patching any Constant field references.
     """
     for i, op in enumerate(func.body.ops):
         resolver = getattr(op, "resolve_constant", None)
@@ -158,7 +166,7 @@ def _resolve_all_comptime(
     lower: Callable[[builtin.Module], builtin.Module],
     args: list | None = None,
 ) -> builtin.Module:
-    """Deepcopy + resolve all Comptime fields. Returns pre-lowered module."""
+    """Deepcopy + resolve all Constant fields. Returns pre-lowered module."""
     module = deepcopy(module)
     changed = True
     while changed:

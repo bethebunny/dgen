@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterator
 from math import prod
-from typing import Any, cast
-
 import dgen
 from dgen.dialects import builtin, llvm
-from dgen.type import Memory
+from dgen.layout import Array
 from toy.dialects import affine, toy
 
 
@@ -33,10 +31,9 @@ class AffineToLLVMLowering:
         # Register block args (function parameters)
         for arg in f.body.args:
             self.value_map[arg] = arg
-            if hasattr(arg.type, "shape") and isinstance(
-                cast(Any, arg.type).shape, Memory
-            ):
-                shape = list(cast(Any, arg.type).shape.unpack())
+            shape_val = getattr(arg.type, "shape", None)
+            if shape_val is not None and getattr(shape_val, "ready", False):
+                shape = list(shape_val.__constant__.unpack())
                 self.alloc_shapes[arg] = shape
                 self.alloc_sizes[arg] = prod(shape)
         ops = []
@@ -67,10 +64,10 @@ class AffineToLLVMLowering:
             new_op = builtin.ConstantOp(value=op.value, type=op.type)
             yield new_op
             self.value_map[op] = new_op
-            if isinstance(op.value, list) and hasattr(op.type, "shape"):
+            if isinstance(op.value.layout, Array) and hasattr(op.type, "shape"):
                 shape_val = getattr(op.type, "shape")
-                if isinstance(shape_val, Memory):
-                    shape = list(shape_val.unpack())
+                if getattr(shape_val, "ready", False):
+                    shape = list(shape_val.__constant__.unpack())
                     self.alloc_shapes[new_op] = shape
                     self.alloc_sizes[new_op] = prod(shape)
         elif isinstance(op, affine.ArithMulFOp):
@@ -95,7 +92,7 @@ class AffineToLLVMLowering:
 
     def _lower_alloc(self, op: affine.AllocOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, affine.MemRefType)
-        shape = list(op.type.shape.unpack())
+        shape = list(op.type.shape.__constant__.unpack())
         total = prod(shape)
         alloca_op = llvm.AllocaOp(elem_count=total)
         yield alloca_op
@@ -219,7 +216,7 @@ class AffineToLLVMLowering:
         """Unrolled nonzero_count: count non-zero elements in a tensor."""
         input_val = self._map(op.input)
         assert isinstance(op.input.type, toy.TensorType)
-        total = prod(op.input.type.shape.unpack())
+        total = prod(op.input.type.shape.__constant__.unpack())
 
         zero_f = builtin.ConstantOp(value=0.0, type=builtin.F64Type())
         yield zero_f
