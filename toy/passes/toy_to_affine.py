@@ -98,7 +98,7 @@ class ToyToAffineLowering:
     def _lower_transpose(self, op: toy.TransposeOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, toy.TensorType)
         assert isinstance(op.input.type, toy.TensorType)
-        in_shape = list(op.input.type.shape.__constant__.unpack())
+        in_shape = op.input.type.unpack_shape()
 
         alloc_op = self._make_alloc(op.type.shape)
         yield alloc_op
@@ -119,9 +119,8 @@ class ToyToAffineLowering:
         self, result_op: dgen.Op, lhs_val: dgen.Value, rhs_val: dgen.Value
     ) -> Iterator[dgen.Op]:
         assert isinstance(lhs_val.type, toy.TensorType)
-        shape_const = lhs_val.type.shape
-        shape = list(shape_const.__constant__.unpack())
-        alloc_op = self._make_alloc(shape_const)
+        shape = lhs_val.type.unpack_shape()
+        alloc_op = self._make_alloc(lhs_val.type.shape)
         yield alloc_op
         self.live_allocs.append(alloc_op)
         lhs_alloc = self.alloc_map.get(lhs_val, lhs_val)
@@ -147,7 +146,7 @@ class ToyToAffineLowering:
         count = op.count.__constant__.unpack()[0]
         assert isinstance(count, int)
         assert isinstance(op.input.type, toy.TensorType)
-        input_shape = list(op.input.type.shape.__constant__.unpack())
+        input_shape = op.input.type.unpack_shape()
         output_shape: list[int] = [count] + input_shape
 
         alloc_op = self._make_alloc(affine.shape_constant(output_shape))
@@ -167,8 +166,8 @@ class ToyToAffineLowering:
     def _lower_concat(self, op: toy.ConcatOp) -> Iterator[dgen.Op]:
         assert isinstance(op.lhs.type, toy.TensorType)
         assert isinstance(op.rhs.type, toy.TensorType)
-        lhs_shape = list(op.lhs.type.shape.__constant__.unpack())
-        rhs_shape = list(op.rhs.type.shape.__constant__.unpack())
+        lhs_shape = op.lhs.type.unpack_shape()
+        rhs_shape = op.rhs.type.unpack_shape()
         axis = op.axis
 
         output_shape = list(lhs_shape)

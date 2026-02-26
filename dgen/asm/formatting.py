@@ -123,13 +123,16 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     return str(value)
 
 
+def _dialect_prefix(dialect_name: str) -> str:
+    """Return 'dialect.' prefix, or '' for builtin."""
+    return "" if dialect_name == "builtin" else f"{dialect_name}."
+
+
 def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
     """Generic type formatter via field introspection."""
     cls = type(type_obj)
     dialect = getattr(cls, "dialect", None)
-    prefix = (
-        f"{dialect.name}." if dialect is not None and dialect.name != "builtin" else ""
-    )
+    prefix = _dialect_prefix(dialect.name if dialect is not None else "builtin")
     name = f"{prefix}{getattr(cls, '_asm_name', '')}"
     if dataclasses.is_dataclass(cls):
         fields = dataclasses.fields(cls)
@@ -187,7 +190,7 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     # Build the line
     result_name = tracker.get_name(op)
     parts = [f"%{result_name} : {format_expr(op.type, tracker)} = "]
-    prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
+    prefix = _dialect_prefix(dialect_name)
     if asm_name == "constant" and dialect_name == "builtin":
         parts.append(args_str)
     else:

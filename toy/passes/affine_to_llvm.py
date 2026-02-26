@@ -31,9 +31,8 @@ class AffineToLLVMLowering:
         # Register block args (function parameters)
         for arg in f.body.args:
             self.value_map[arg] = arg
-            shape_val = getattr(arg.type, "shape", None)
-            if shape_val is not None and getattr(shape_val, "ready", False):
-                shape = list(shape_val.__constant__.unpack())
+            if isinstance(arg.type, toy.TensorType):
+                shape = arg.type.unpack_shape()
                 self.alloc_shapes[arg] = shape
                 self.alloc_sizes[arg] = prod(shape)
         ops = []
@@ -64,12 +63,12 @@ class AffineToLLVMLowering:
             new_op = builtin.ConstantOp(value=op.value, type=op.type)
             yield new_op
             self.value_map[op] = new_op
-            if isinstance(op.value.layout, Array) and hasattr(op.type, "shape"):
-                shape_val = getattr(op.type, "shape")
-                if getattr(shape_val, "ready", False):
-                    shape = list(shape_val.__constant__.unpack())
-                    self.alloc_shapes[new_op] = shape
-                    self.alloc_sizes[new_op] = prod(shape)
+            if isinstance(op.value.layout, Array) and isinstance(
+                op.type, toy.TensorType
+            ):
+                shape = op.type.unpack_shape()
+                self.alloc_shapes[new_op] = shape
+                self.alloc_sizes[new_op] = prod(shape)
         elif isinstance(op, affine.ArithMulFOp):
             llvm_op = llvm.FMulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
@@ -92,7 +91,7 @@ class AffineToLLVMLowering:
 
     def _lower_alloc(self, op: affine.AllocOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, affine.MemRefType)
-        shape = list(op.type.shape.__constant__.unpack())
+        shape = list(op.type.shape.__constant__.unpack())  # MemRefType, not TensorType
         total = prod(shape)
         alloca_op = llvm.AllocaOp(elem_count=total)
         yield alloca_op
@@ -173,8 +172,9 @@ class AffineToLLVMLowering:
         self.current_label = header_label
 
         # Phi node for loop variable (back-edge value patched after body)
+        back_edge = dgen.Value(type=builtin.IndexType())  # placeholder, patched below
         phi_op = llvm.PhiOp(
-            values=[init_op, None],  # type: ignore[list-item]  # patched after body
+            values=[init_op, back_edge],
             labels=[prev_label, body_label],
         )
         yield phi_op
@@ -216,7 +216,7 @@ class AffineToLLVMLowering:
         """Unrolled nonzero_count: count non-zero elements in a tensor."""
         input_val = self._map(op.input)
         assert isinstance(op.input.type, toy.TensorType)
-        total = prod(op.input.type.shape.__constant__.unpack())
+        total = prod(op.input.type.unpack_shape())
 
         zero_f = builtin.ConstantOp(value=0.0, type=builtin.F64Type())
         yield zero_f

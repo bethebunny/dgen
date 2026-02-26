@@ -10,12 +10,6 @@ from toy.dialects import toy
 from toy.dialects.affine import shape_constant
 
 
-def _resolve(
-    type_of: dict[int, toy.TensorType], val: dgen.Value
-) -> toy.TensorType | None:
-    return type_of.get(id(val))
-
-
 def _resolve_index_value(val: dgen.Value) -> int | None:
     """Try to resolve an index Value to a concrete int.
 
@@ -47,31 +41,27 @@ def _infer_function(
             type_of[id(op)] = op.type
 
         elif isinstance(op, toy.TransposeOp):
-            src = _resolve(type_of, op.input)
+            src = type_of.get(id(op.input))
             if src is not None:
                 t = toy.TensorType(
-                    shape=shape_constant(
-                        list(reversed(src.shape.__constant__.unpack()))
-                    )
+                    shape=shape_constant(list(reversed(src.unpack_shape())))
                 )
                 op.type = t
                 type_of[id(op)] = t
 
         elif isinstance(op, (toy.MulOp, toy.AddOp)):
-            src = _resolve(type_of, op.lhs)
+            src = type_of.get(id(op.lhs))
             if src is not None:
-                t = toy.TensorType(
-                    shape=shape_constant(list(src.shape.__constant__.unpack()))
-                )
+                t = toy.TensorType(shape=shape_constant(src.unpack_shape()))
                 op.type = t
                 type_of[id(op)] = t
 
         elif isinstance(op, toy.ConcatOp):
-            lhs = _resolve(type_of, op.lhs)
-            rhs = _resolve(type_of, op.rhs)
+            lhs = type_of.get(id(op.lhs))
+            rhs = type_of.get(id(op.rhs))
             if lhs is not None and rhs is not None:
-                lhs_dims = list(lhs.shape.__constant__.unpack())
-                rhs_dims = list(rhs.shape.__constant__.unpack())
+                lhs_dims = lhs.unpack_shape()
+                rhs_dims = rhs.unpack_shape()
                 shape = list(lhs_dims)
                 shape[op.axis] = lhs_dims[op.axis] + rhs_dims[op.axis]
                 t = toy.TensorType(shape=shape_constant(shape))
@@ -79,7 +69,7 @@ def _infer_function(
                 type_of[id(op)] = t
 
         elif isinstance(op, toy.TileOp):
-            src = _resolve(type_of, op.input)
+            src = type_of.get(id(op.input))
             if src is not None:
                 # Try to resolve count by peeking through a constant op
                 count_val = (
@@ -89,15 +79,13 @@ def _infer_function(
                 )
                 if count_val is not None:
                     t = toy.TensorType(
-                        shape=shape_constant(
-                            [count_val] + list(src.shape.__constant__.unpack())
-                        )
+                        shape=shape_constant([count_val] + src.unpack_shape())
                     )
                     op.type = t
                     type_of[id(op)] = t
 
         elif isinstance(op, toy.GenericCallOp):
-            resolved = [_resolve(type_of, a) for a in op.args]
+            resolved = [type_of.get(id(a)) for a in op.args]
             arg_types = [t for t in resolved if t is not None]
             if len(arg_types) == len(resolved):
                 callee = func_map.get(op.callee)
@@ -114,16 +102,14 @@ def _infer_function(
                         isinstance(ret_op, builtin.ReturnOp)
                         and ret_op.value is not None
                     ):
-                        ret_type = _resolve(type_of, ret_op.value)
+                        ret_type = type_of.get(id(ret_op.value))
                         if ret_type is not None:
                             callee.type = toy.FunctionType(
                                 inputs=arg_types,
                                 result=ret_type,
                             )
                             op.type = toy.TensorType(
-                                shape=shape_constant(
-                                    list(ret_type.shape.__constant__.unpack())
-                                )
+                                shape=shape_constant(ret_type.unpack_shape())
                             )
                             type_of[id(op)] = op.type
 

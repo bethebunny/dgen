@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
-from typing import Annotated, TypeVar, cast, get_args, get_origin
+from typing import Annotated, TypeVar, get_args, get_origin
 
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
@@ -319,7 +319,9 @@ class IRParser:
         if self.peek() == "(":
             self.expect("()")
             return builtin.Nil()
-        return cast(Type, parse_expr(self))
+        result = parse_expr(self)
+        assert isinstance(result, Type)
+        return result
 
     def skip_line(self) -> None:
         """Skip to the next line."""
@@ -452,7 +454,8 @@ class IRParser:
             self.expect(":")
             self.skip_whitespace()
             type_ = self.parse_type()
-        assert type_ is not None, f"parameter %{param_name} missing type annotation"
+        if type_ is None:
+            raise RuntimeError(f"parameter %{param_name} missing type annotation")
         arg = BlockArgument(name=param_name, type=type_)
         self.name_table[param_name] = arg
         return arg
@@ -528,7 +531,8 @@ class IRParser:
         # Implicit constant: value starts with '[' or digit/minus
         if self.peek() in "[-0123456789":
             value = parse_expr(self)
-            assert pre_type is not None
+            if pre_type is None:
+                raise RuntimeError(f"constant %{op_name_str} missing type annotation")
             op = builtin.ConstantOp(
                 name=op_name_str,
                 value=Memory.from_value(pre_type, value),

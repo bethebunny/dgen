@@ -25,14 +25,6 @@ from toy.parser.ast import (
 )
 
 
-def _inferred() -> dgen.Type:
-    return toy.InferredShapeTensor()
-
-
-def _ranked(shape: list[int]) -> dgen.Type:
-    return toy.TensorType(shape=shape_constant(shape))
-
-
 class Lowering:
     def __init__(self) -> None:
         self.scope: dict[str, dgen.Value] = {}
@@ -48,10 +40,10 @@ class Lowering:
         args: list[BlockArgument] = []
         input_types: list[dgen.Type] = []
         for param_name in f.proto.params:
-            arg = BlockArgument(name=param_name, type=_inferred())
+            arg = BlockArgument(name=param_name, type=toy.InferredShapeTensor())
             self.scope[param_name] = arg
             args.append(arg)
-            input_types.append(_inferred())
+            input_types.append(toy.InferredShapeTensor())
 
         # Lower body statements
         ops = []
@@ -63,7 +55,7 @@ class Lowering:
         if ops:
             last_op = ops[-1]
             if isinstance(last_op, builtin.ReturnOp) and last_op.value is not None:
-                result = _inferred()
+                result = toy.InferredShapeTensor()
 
         func_type = toy.FunctionType(inputs=input_types, result=result)
         return builtin.FuncOp(
@@ -87,7 +79,7 @@ class Lowering:
         if decl.shape is not None:
             op = toy.ReshapeOp(
                 input=expr_val,
-                type=_ranked(list(decl.shape)),
+                type=toy.TensorType(shape=shape_constant(list(decl.shape))),
             )
             yield op
             self.scope[decl.name] = op
@@ -106,14 +98,14 @@ class Lowering:
         if isinstance(expr, NumberLiteral):
             op = builtin.ConstantOp(
                 value=[expr.value],
-                type=_ranked([1]),
+                type=toy.TensorType(shape=shape_constant([1])),
             )
             yield op
             return op
         if isinstance(expr, TensorLiteral):
             op = builtin.ConstantOp(
                 value=list(expr.values),
-                type=_ranked(list(expr.shape)),
+                type=toy.TensorType(shape=shape_constant(list(expr.shape))),
             )
             yield op
             return op
@@ -125,9 +117,9 @@ class Lowering:
             lhs = yield from self.lower_expr(expr.lhs)
             rhs = yield from self.lower_expr(expr.rhs)
             if expr.op == "*":
-                result_op = toy.MulOp(lhs=lhs, rhs=rhs, type=_inferred())
+                result_op = toy.MulOp(lhs=lhs, rhs=rhs, type=toy.InferredShapeTensor())
             elif expr.op == "+":
-                result_op = toy.AddOp(lhs=lhs, rhs=rhs, type=_inferred())
+                result_op = toy.AddOp(lhs=lhs, rhs=rhs, type=toy.InferredShapeTensor())
             else:
                 raise RuntimeError(f"Unknown binary operator: {expr.op}")
             yield result_op
@@ -154,7 +146,7 @@ class Lowering:
             if len(call.args) != 1:
                 raise RuntimeError("transpose takes exactly 1 argument")
             arg = yield from self.lower_expr(call.args[0])
-            op = toy.TransposeOp(input=arg, type=_inferred())
+            op = toy.TransposeOp(input=arg, type=toy.InferredShapeTensor())
             yield op
             return op
 
@@ -164,7 +156,9 @@ class Lowering:
                 raise RuntimeError("tile takes exactly 2 arguments")
             input_val = yield from self.lower_expr(call.args[0])
             count_val = yield from self._lower_index_expr(call.args[1])
-            op = toy.TileOp(input=input_val, count=count_val, type=_inferred())
+            op = toy.TileOp(
+                input=input_val, count=count_val, type=toy.InferredShapeTensor()
+            )
             yield op
             return op
 
@@ -186,7 +180,9 @@ class Lowering:
             if not isinstance(call.args[2], NumberLiteral):
                 raise RuntimeError("concat axis must be a literal")
             axis = int(call.args[2].value)
-            op = toy.ConcatOp(lhs=lhs, rhs=rhs, axis=axis, type=_inferred())
+            op = toy.ConcatOp(
+                lhs=lhs, rhs=rhs, axis=axis, type=toy.InferredShapeTensor()
+            )
             yield op
             return op
 
@@ -219,7 +215,7 @@ class Lowering:
         op = toy.GenericCallOp(
             callee=call.callee,
             args=args,
-            type=_inferred(),
+            type=toy.InferredShapeTensor(),
         )
         yield op
         return op

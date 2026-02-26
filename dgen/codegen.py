@@ -12,6 +12,7 @@ from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 from dgen.layout import Array, Layout
+from dgen.op import Op
 from dgen.type import Memory
 
 # ---------------------------------------------------------------------------
@@ -70,14 +71,32 @@ def _ensure_initialized() -> None:
 # ---------------------------------------------------------------------------
 
 
-def emit_llvm_ir(module: builtin.Module, host_buffers: list | None = None) -> str:
-    """Emit valid LLVM IR text that llvmlite can parse."""
-    if host_buffers is None:
-        host_buffers = []
+def emit_llvm_ir(module: builtin.Module) -> tuple[str, list]:
+    """Emit valid LLVM IR text that llvmlite can parse.
+
+    Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
+    alive for the lifetime of the JIT.
+    """
+    host_buffers: list = []
     lines: list[str] = ["declare void @print_memref(ptr, i64)", ""]
     for func in module.functions:
         lines.extend(_emit_func(func, host_buffers))
-    return "\n".join(lines)
+    return "\n".join(lines), host_buffers
+
+
+# Op type → LLVM result type for the prescan
+_OP_RESULT_TYPE: dict[type[Op], str] = {
+    llvm.AllocaOp: "ptr",
+    llvm.GepOp: "ptr",
+    llvm.LoadOp: "double",
+    llvm.FAddOp: "double",
+    llvm.FMulOp: "double",
+    llvm.AddOp: "i64",
+    llvm.MulOp: "i64",
+    llvm.FcmpOp: "i1",
+    llvm.IcmpOp: "i1",
+    llvm.ZextOp: "i64",
+}
 
 
 def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
@@ -110,25 +129,11 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
                 val_str = format_float(raw) if isinstance(raw, float) else str(raw)
                 constants[vid] = f"{lt} {val_str}"
                 types[vid] = lt
-        elif isinstance(op, llvm.AllocaOp):
-            types[vid] = "ptr"
-        elif isinstance(op, llvm.GepOp):
-            types[vid] = "ptr"
-        elif isinstance(op, llvm.LoadOp):
-            types[vid] = "double"
-        elif isinstance(op, (llvm.FAddOp, llvm.FMulOp)):
-            types[vid] = "double"
-        elif isinstance(op, (llvm.AddOp, llvm.MulOp)):
-            types[vid] = "i64"
-        elif isinstance(op, llvm.FcmpOp):
-            types[vid] = "i1"
-        elif isinstance(op, llvm.ZextOp):
-            types[vid] = "i64"
-        elif isinstance(op, llvm.IcmpOp):
-            types[vid] = "i1"
         elif isinstance(op, llvm.PhiOp):
             first_val = op.values[0]
             types[vid] = types.get(id(first_val), "i64")
+        elif (result_type := _OP_RESULT_TYPE.get(type(op))) is not None:
+            types[vid] = result_type
 
     def typed_ref(val: dgen.Value) -> str:
         """'type value' — e.g. 'double 1.0' or 'ptr %v3'."""
@@ -266,8 +271,7 @@ class Executable:
 
 def compile(module: builtin.Module) -> Executable:
     """Emit LLVM IR and bundle with execution metadata."""
-    host_buffers: list = []
-    ir = emit_llvm_ir(module, host_buffers)
+    ir, host_buffers = emit_llvm_ir(module)
     main = module.functions[0]
     assert main.name is not None
     return Executable(
