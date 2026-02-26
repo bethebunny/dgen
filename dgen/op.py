@@ -5,6 +5,7 @@ from typing import ClassVar, Iterable
 
 from .block import Block
 from .dialect import Dialect
+from .type import Fields
 from .value import Value
 
 
@@ -14,15 +15,17 @@ class Op(Value):
 
     _asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
-    __arg_fields__: ClassVar[tuple[str, ...]] = ()
+    __constant_fields__: ClassVar[Fields] = ()
+    __runtime_fields__: ClassVar[tuple[str, ...]] = ()
     __has_body__: ClassVar[bool] = False
 
     @property
     def operands(self) -> Iterable[tuple[str, Value]]:
-        """All Value-typed arg fields."""
-        for name in self.__arg_fields__:
-            if isinstance(attr := getattr(self, name), Value):
-                yield name, attr
+        """All Value-typed fields (constant and runtime)."""
+        for name, _ in self.__constant_fields__:
+            yield name, getattr(self, name)
+        for name in self.__runtime_fields__:
+            yield name, getattr(self, name)
 
     @property
     def blocks(self) -> Iterable[tuple[str, Block]]:

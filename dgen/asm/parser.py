@@ -118,21 +118,34 @@ def parse_op_fields(
     name: str | None = None,
     pre_type: Type | None = None,
 ) -> Op:
-    """Generic op field parser driven by __arg_fields__ declarations."""
+    """Generic op field parser driven by field declarations."""
     kwargs: dict[str, Any] = {"name": name}  # noqa: ANN401
 
     # Expect opening paren
     parser.expect("(")
     parser.skip_whitespace()
 
-    # Parse declared arg fields
-    for i, f_name in enumerate(cls.__arg_fields__):
-        if i > 0:
+    # Parse constant fields first (with staging/wrapping)
+    field_idx = 0
+    for f_name, f_type in cls.__constant_fields__:
+        if field_idx > 0:
             parser.expect(",")
             parser.skip_whitespace()
+        raw_value = parse_expr(parser)
+        if not isinstance(raw_value, (Value, Type)):
+            raw_value = f_type.for_value(raw_value).constant(raw_value)
+        kwargs[f_name] = raw_value
+        parser.skip_whitespace()
+        field_idx += 1
 
+    # Then parse runtime fields (pass-through)
+    for f_name in cls.__runtime_fields__:
+        if field_idx > 0:
+            parser.expect(",")
+            parser.skip_whitespace()
         kwargs[f_name] = parse_expr(parser)
         parser.skip_whitespace()
+        field_idx += 1
 
     parser.expect(")")
 

@@ -7,6 +7,7 @@ from typing import Annotated
 
 from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.dialects import builtin
+from dgen.dialects.builtin import IndexType
 from dgen.layout import INT, VOID, Array, Layout, Pointer
 
 # ===----------------------------------------------------------------------=== #
@@ -19,9 +20,9 @@ affine = Dialect("affine")
 @affine.type("Shape")
 @dataclass(frozen=True)
 class ShapeType(Type):
-    rank: Annotated[Value[builtin.IndexType], Constant]
+    rank: Annotated[Value[IndexType], Constant]
 
-    __constant_fields__ = (("rank", builtin.IndexType),)
+    __constant_fields__ = (("rank", IndexType),)
 
     @property
     def __layout__(self) -> Layout:
@@ -31,15 +32,15 @@ class ShapeType(Type):
     @classmethod
     def for_value(cls, value: object) -> ShapeType:
         if isinstance(value, Constant):
-            assert isinstance(value.type, builtin.IndexType)
+            assert isinstance(value.type, IndexType)
             return cls(rank=value.type.constant(value.__constant__.unpack()[0]))
         assert isinstance(value, list)
-        return cls(rank=builtin.IndexType().constant(len(value)))
+        return cls(rank=IndexType().constant(len(value)))
 
 
 def shape_constant(dims: list[int]) -> Constant:
     """Create a Constant[ShapeType] from a list of dims."""
-    rank = builtin.IndexType().constant(len(dims))
+    rank = IndexType().constant(len(dims))
     return ShapeType(rank=rank).constant(dims)
 
 
@@ -64,7 +65,7 @@ class MemRefType(Type):
 class AllocOp(Op):
     shape: Annotated[Value[ShapeType], Constant]
 
-    __arg_fields__ = ("shape",)
+    __runtime_fields__ = ("shape",)
 
 
 @affine.op("dealloc")
@@ -73,7 +74,7 @@ class DeallocOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __arg_fields__ = ("input",)
+    __runtime_fields__ = ("input",)
 
 
 @affine.op("load")
@@ -83,7 +84,7 @@ class LoadOp(Op):
     indices: list[Value]
     type: Type = builtin.Nil()
 
-    __arg_fields__ = ("memref", "indices")
+    __runtime_fields__ = ("memref", "indices")
 
 
 @affine.op("store")
@@ -94,7 +95,7 @@ class StoreOp(Op):
     indices: list[Value]
     type: Type = builtin.Nil()
 
-    __arg_fields__ = ("value", "memref", "indices")
+    __runtime_fields__ = ("value", "memref", "indices")
 
 
 @affine.op("mul_f")
@@ -104,7 +105,7 @@ class ArithMulFOp(Op):
     rhs: Value
     type: Type = builtin.Nil()
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @affine.op("add_f")
@@ -114,7 +115,7 @@ class ArithAddFOp(Op):
     rhs: Value
     type: Type = builtin.Nil()
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @affine.op("print_memref")
@@ -123,16 +124,16 @@ class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __arg_fields__ = ("input",)
+    __runtime_fields__ = ("input",)
 
 
 @affine.op("for")
 @dataclass(eq=False, kw_only=True)
 class ForOp(Op):
-    lo: int
-    hi: int
+    lo: Annotated[Value[IndexType], Constant]
+    hi: Annotated[Value[IndexType], Constant]
     body: Block
     type: Type = builtin.Nil()
 
-    __arg_fields__ = ("lo", "hi")
+    __constant_fields__ = (("lo", IndexType), ("hi", IndexType))
     __has_body__ = True

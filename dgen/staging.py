@@ -177,8 +177,8 @@ def _resolve_all_comptime(
                 value = getattr(op, field_name)
                 if not isinstance(value, dgen.Value):
                     continue  # already a literal constant, no resolution needed
-                if isinstance(value, builtin.ConstantOp):
-                    continue
+                if isinstance(value, Constant):
+                    continue  # already a resolved Constant (ConstantOp or inline)
                 _resolve_comptime_field(func, op, field_name, value, lower, args)
                 module = infer(module)
                 _resolve_constant_ops(module.functions[0])

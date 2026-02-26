@@ -63,7 +63,8 @@ def _infer_function(
                 lhs_dims = lhs.unpack_shape()
                 rhs_dims = rhs.unpack_shape()
                 shape = list(lhs_dims)
-                shape[op.axis] = lhs_dims[op.axis] + rhs_dims[op.axis]
+                axis = op.axis.__constant__.unpack()[0]
+                shape[axis] = lhs_dims[axis] + rhs_dims[axis]
                 t = toy.TensorType(shape=shape_constant(shape))
                 op.type = t
                 type_of[id(op)] = t

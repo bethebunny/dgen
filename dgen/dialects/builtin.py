@@ -66,7 +66,7 @@ class ConstantOp(Op, Constant):
     value: Memory
     type: Type
 
-    __arg_fields__ = ("value",)
+    __runtime_fields__ = ("value",)
 
     def __init__(self, *, value: object, type: Type, name: str | None = None) -> None:
         self.name = name
@@ -89,7 +89,7 @@ class AddIndexOp(Op):
     rhs: Value
     type: Type = IndexType()
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @builtin.op("return")
@@ -98,7 +98,7 @@ class ReturnOp(Op):
     value: Value | Nil = Nil()
     type: Type = Nil()
 
-    __arg_fields__ = ("value",)
+    __runtime_fields__ = ("value",)
 
 
 # ===----------------------------------------------------------------------=== #

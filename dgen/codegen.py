@@ -174,7 +174,10 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         if isinstance(op, llvm.LabelOp):
             lines.append(f"{op.label_name}:")
         elif isinstance(op, llvm.AllocaOp):
-            lines.append(f"  %{name} = alloca double, i64 {op.elem_count}")
+            lines.append(
+                f"  %{name} = alloca double, i64"
+                f" {op.elem_count.__constant__.unpack()[0]}"
+            )
         elif isinstance(op, llvm.GepOp):
             lines.append(
                 f"  %{name} = getelementptr double, ptr {bare_ref(op.base)},"

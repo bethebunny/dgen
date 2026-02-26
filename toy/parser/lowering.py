@@ -181,9 +181,9 @@ class Lowering:
             rhs = yield from self.lower_expr(call.args[1])
             if not isinstance(call.args[2], NumberLiteral):
                 raise RuntimeError("concat axis must be a literal")
-            axis = int(call.args[2].value)
+            axis = builtin.IndexType().constant(int(call.args[2].value))
             op = toy.ConcatOp(
-                lhs=lhs, rhs=rhs, axis=axis, type=toy.InferredShapeTensor()
+                axis=axis, lhs=lhs, rhs=rhs, type=toy.InferredShapeTensor()
             )
             yield op
             return op
@@ -195,8 +195,8 @@ class Lowering:
             input_val = yield from self.lower_expr(call.args[0])
             if not isinstance(call.args[1], NumberLiteral):
                 raise RuntimeError("dim_size axis must be a literal")
-            axis = int(call.args[1].value)
-            op = toy.DimSizeOp(input=input_val, axis=axis)
+            axis = builtin.IndexType().constant(int(call.args[1].value))
+            op = toy.DimSizeOp(axis=axis, input=input_val)
             yield op
             return op
 

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
-from dgen import Op, Type, Value
+from dgen import Constant, Op, Type, Value
 from dgen.dialect import Dialect
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import IndexType, Nil
 from dgen.layout import FLOAT64, INT, VOID, Pointer
 
 # ===----------------------------------------------------------------------=== #
@@ -61,10 +62,10 @@ llvm = Dialect("llvm")
 @llvm.op("alloca")
 @dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
-    elem_count: int
+    elem_count: Annotated[Value[IndexType], Constant]
     type: Type = Nil()
 
-    __arg_fields__ = ("elem_count",)
+    __constant_fields__ = (("elem_count", IndexType),)
 
 
 @llvm.op("gep")
@@ -74,7 +75,7 @@ class GepOp(Op):
     index: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("base", "index")
+    __runtime_fields__ = ("base", "index")
 
 
 @llvm.op("load")
@@ -83,7 +84,7 @@ class LoadOp(Op):
     ptr: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("ptr",)
+    __runtime_fields__ = ("ptr",)
 
 
 @llvm.op("store")
@@ -93,7 +94,7 @@ class StoreOp(Op):
     ptr: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("value", "ptr")
+    __runtime_fields__ = ("value", "ptr")
 
 
 @llvm.op("fadd")
@@ -103,7 +104,7 @@ class FAddOp(Op):
     rhs: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @llvm.op("fmul")
@@ -113,7 +114,7 @@ class FMulOp(Op):
     rhs: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @llvm.op("add")
@@ -123,7 +124,7 @@ class AddOp(Op):
     rhs: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @llvm.op("mul")
@@ -133,7 +134,7 @@ class MulOp(Op):
     rhs: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @llvm.op("icmp")
@@ -144,7 +145,7 @@ class IcmpOp(Op):
     rhs: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("pred", "lhs", "rhs")
+    __runtime_fields__ = ("pred", "lhs", "rhs")
 
 
 @llvm.op("br")
@@ -153,7 +154,7 @@ class BrOp(Op):
     dest: str
     type: Type = Nil()
 
-    __arg_fields__ = ("dest",)
+    __runtime_fields__ = ("dest",)
 
 
 @llvm.op("cond_br")
@@ -164,7 +165,7 @@ class CondBrOp(Op):
     false_dest: str
     type: Type = Nil()
 
-    __arg_fields__ = ("cond", "true_dest", "false_dest")
+    __runtime_fields__ = ("cond", "true_dest", "false_dest")
 
 
 @llvm.op("label")
@@ -173,7 +174,7 @@ class LabelOp(Op):
     label_name: str
     type: Type = Nil()
 
-    __arg_fields__ = ("label_name",)
+    __runtime_fields__ = ("label_name",)
 
 
 @llvm.op("phi")
@@ -183,7 +184,7 @@ class PhiOp(Op):
     labels: list[str]
     type: Type = Nil()
 
-    __arg_fields__ = ("values", "labels")
+    __runtime_fields__ = ("values", "labels")
 
 
 @llvm.op("fcmp")
@@ -194,7 +195,7 @@ class FcmpOp(Op):
     rhs: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("pred", "lhs", "rhs")
+    __runtime_fields__ = ("pred", "lhs", "rhs")
 
 
 @llvm.op("zext")
@@ -203,7 +204,7 @@ class ZextOp(Op):
     input: Value
     type: Type = Nil()
 
-    __arg_fields__ = ("input",)
+    __runtime_fields__ = ("input",)
 
 
 @llvm.op("call")
@@ -213,4 +214,4 @@ class CallOp(Op):
     args: list[Value]
     type: Type = Nil()
 
-    __arg_fields__ = ("callee", "args")
+    __runtime_fields__ = ("callee", "args")

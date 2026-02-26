@@ -141,7 +141,7 @@ def _class_hints(cls: type) -> dict[str, type]:
 
 
 def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
-    """Generic asm emitter driven by __arg_fields__ declarations."""
+    """Generic asm emitter driven by field declarations."""
     from dgen.dialects.builtin import _register_ops
 
     cls = type(op)
@@ -154,9 +154,11 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         tracker.get_name(op)
         _register_ops(tracker, [op])
 
-    # Build args from declared fields
+    # Build args from declared fields (constants first, then runtime)
     arg_parts = []
-    for f_name in cls.__arg_fields__:
+    for f_name, _ in cls.__constant_fields__:
+        arg_parts.append(format_expr(getattr(op, f_name), tracker))
+    for f_name in cls.__runtime_fields__:
         arg_parts.append(format_expr(getattr(op, f_name), tracker))
 
     args_str = ", ".join(arg_parts)

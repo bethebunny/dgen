@@ -91,8 +91,14 @@ def test_return_op_void():
 def test_concat_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     v1 = dgen.Value(name="1", type=builtin.Nil())
-    op = toy.ConcatOp(name="2", lhs=v0, rhs=v1, axis=0, type=inferred())
-    assert asm.format(op) == "%2 : toy.InferredShapeTensor(f64) = toy.concat(%0, %1, 0)"
+    op = toy.ConcatOp(
+        name="2",
+        axis=builtin.IndexType().constant(0),
+        lhs=v0,
+        rhs=v1,
+        type=inferred(),
+    )
+    assert asm.format(op) == "%2 : toy.InferredShapeTensor(f64) = toy.concat(0, %0, %1)"
 
 
 def test_tile_op():

@@ -123,7 +123,7 @@ def test_roundtrip_concat():
         | import toy
         |
         | %f = function (%a: toy.Tensor([2, 3], f64), %b: toy.Tensor([2, 5], f64)) -> toy.Tensor([2, 8], f64):
-        |     %0 : toy.Tensor([2, 8], f64) = toy.concat(%a, %b, 1)
+        |     %0 : toy.Tensor([2, 8], f64) = toy.concat(1, %a, %b)
         |     %_ : () = return(%0)
     """)
     module = parse_module(ir)

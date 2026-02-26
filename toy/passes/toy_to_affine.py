@@ -87,7 +87,13 @@ class ToyToAffineLowering:
         ]
         ops = list(body_fn(ivars))
         for dim, var in reversed(list(zip(shape, ivars))):
-            ops = [affine.ForOp(lo=0, hi=dim, body=dgen.Block(ops=ops, args=[var]))]
+            ops = [
+                affine.ForOp(
+                    lo=builtin.IndexType().constant(0),
+                    hi=builtin.IndexType().constant(dim),
+                    body=dgen.Block(ops=ops, args=[var]),
+                )
+            ]
         yield ops[0]
 
     def _lower_constant(self, op: builtin.ConstantOp) -> Iterator[dgen.Op]:
@@ -169,7 +175,7 @@ class ToyToAffineLowering:
         assert isinstance(op.rhs.type, toy.TensorType)
         lhs_shape = op.lhs.type.unpack_shape()
         rhs_shape = op.rhs.type.unpack_shape()
-        axis = op.axis
+        axis = op.axis.__constant__.unpack()[0]
 
         output_shape = list(lhs_shape)
         output_shape[axis] = lhs_shape[axis] + rhs_shape[axis]

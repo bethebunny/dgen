@@ -70,7 +70,7 @@ class TransposeOp(Op):
     input: Value
     type: Type
 
-    __arg_fields__ = ("input",)
+    __runtime_fields__ = ("input",)
 
 
 @toy.op("reshape")
@@ -79,7 +79,7 @@ class ReshapeOp(Op):
     input: Value
     type: Type
 
-    __arg_fields__ = ("input",)
+    __runtime_fields__ = ("input",)
 
 
 @toy.op("mul")
@@ -89,7 +89,7 @@ class MulOp(Op):
     rhs: Value
     type: Type
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @toy.op("add")
@@ -99,7 +99,7 @@ class AddOp(Op):
     rhs: Value
     type: Type
 
-    __arg_fields__ = ("lhs", "rhs")
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @toy.op("generic_call")
@@ -109,18 +109,19 @@ class GenericCallOp(Op):
     args: list[Value]
     type: Type
 
-    __arg_fields__ = ("callee", "args")
+    __runtime_fields__ = ("callee", "args")
 
 
 @toy.op("concat")
 @dataclass(eq=False, kw_only=True)
 class ConcatOp(Op):
+    axis: Annotated[Value[IndexType], Constant]
     lhs: Value
     rhs: Value
-    axis: int
     type: Type
 
-    __arg_fields__ = ("lhs", "rhs", "axis")
+    __constant_fields__ = (("axis", IndexType),)
+    __runtime_fields__ = ("lhs", "rhs")
 
 
 @toy.op("tile")
@@ -130,7 +131,7 @@ class TileOp(Op):
     count: Annotated[Value[IndexType], Constant]
     type: Type
 
-    __arg_fields__ = ("input", "count")
+    __runtime_fields__ = ("input", "count")
 
 
 @toy.op("nonzero_count")
@@ -139,23 +140,24 @@ class NonzeroCountOp(Op):
     input: Value
     type: Type = builtin.IndexType()
 
-    __arg_fields__ = ("input",)
+    __runtime_fields__ = ("input",)
 
 
 @toy.op("dim_size")
 @dataclass(eq=False, kw_only=True)
 class DimSizeOp(Op):
+    axis: Annotated[Value[IndexType], Constant]
     input: Value
-    axis: int
     type: Type = builtin.IndexType()
 
-    __arg_fields__ = ("input", "axis")
+    __constant_fields__ = (("axis", IndexType),)
+    __runtime_fields__ = ("input",)
 
     def resolve_constant(self) -> int | None:
         """Return constant value if input type has a resolved shape."""
         shape = getattr(self.input.type, "shape", None)
         if shape is not None and getattr(shape, "ready", False):
-            return shape.__constant__.unpack()[self.axis]
+            return shape.__constant__.unpack()[self.axis.__constant__.unpack()[0]]
         return None
 
 
@@ -165,4 +167,4 @@ class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __arg_fields__ = ("input",)
+    __runtime_fields__ = ("input",)

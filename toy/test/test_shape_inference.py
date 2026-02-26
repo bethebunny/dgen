@@ -151,7 +151,7 @@ def test_concat():
         | %f = function () -> ():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor([3, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.InferredShapeTensor(f64) = toy.concat(%0, %1, 0)
+        |     %2 : toy.InferredShapeTensor(f64) = toy.concat(0, %0, %1)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -164,7 +164,7 @@ def test_concat():
         | %f = function () -> ():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor([3, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor([5, 3], f64) = toy.concat(%0, %1, 0)
+        |     %2 : toy.Tensor([5, 3], f64) = toy.concat(0, %0, %1)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -179,7 +179,7 @@ def test_concat_axis1():
         | %f = function () -> ():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor([2, 5], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-        |     %2 : toy.InferredShapeTensor(f64) = toy.concat(%0, %1, 1)
+        |     %2 : toy.InferredShapeTensor(f64) = toy.concat(1, %0, %1)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -192,7 +192,7 @@ def test_concat_axis1():
         | %f = function () -> ():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor([2, 5], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-        |     %2 : toy.Tensor([2, 8], f64) = toy.concat(%0, %1, 1)
+        |     %2 : toy.Tensor([2, 8], f64) = toy.concat(1, %0, %1)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
