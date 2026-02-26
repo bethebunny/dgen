@@ -22,7 +22,7 @@ affine = Dialect("affine")
 class ShapeType(Type):
     rank: Annotated[Value[IndexType], Constant]
 
-    __constant_fields__ = (("rank", IndexType),)
+    __params__ = (("rank", IndexType),)
 
     @property
     def __layout__(self) -> Layout:
@@ -52,7 +52,7 @@ class MemRefType(Type):
     shape: Annotated[Value[ShapeType], Constant]
     dtype: Type = builtin.F64Type()
 
-    __constant_fields__ = (("shape", ShapeType), ("dtype", Type))
+    __params__ = (("shape", ShapeType), ("dtype", Type))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -65,7 +65,7 @@ class MemRefType(Type):
 class AllocOp(Op):
     shape: Annotated[Value[ShapeType], Constant]
 
-    __runtime_fields__ = ("shape",)
+    __operands__ = ("shape",)
 
 
 @affine.op("dealloc")
@@ -74,7 +74,7 @@ class DeallocOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __runtime_fields__ = ("input",)
+    __operands__ = ("input",)
 
 
 @affine.op("load")
@@ -84,7 +84,7 @@ class LoadOp(Op):
     indices: list[Value]
     type: Type = builtin.Nil()
 
-    __runtime_fields__ = ("memref", "indices")
+    __operands__ = ("memref", "indices")
 
 
 @affine.op("store")
@@ -95,7 +95,7 @@ class StoreOp(Op):
     indices: list[Value]
     type: Type = builtin.Nil()
 
-    __runtime_fields__ = ("value", "memref", "indices")
+    __operands__ = ("value", "memref", "indices")
 
 
 @affine.op("mul_f")
@@ -105,7 +105,7 @@ class ArithMulFOp(Op):
     rhs: Value
     type: Type = builtin.Nil()
 
-    __runtime_fields__ = ("lhs", "rhs")
+    __operands__ = ("lhs", "rhs")
 
 
 @affine.op("add_f")
@@ -115,7 +115,7 @@ class ArithAddFOp(Op):
     rhs: Value
     type: Type = builtin.Nil()
 
-    __runtime_fields__ = ("lhs", "rhs")
+    __operands__ = ("lhs", "rhs")
 
 
 @affine.op("print_memref")
@@ -124,7 +124,7 @@ class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __runtime_fields__ = ("input",)
+    __operands__ = ("input",)
 
 
 @affine.op("for")
@@ -135,5 +135,5 @@ class ForOp(Op):
     body: Block
     type: Type = builtin.Nil()
 
-    __constant_fields__ = (("lo", IndexType), ("hi", IndexType))
+    __params__ = (("lo", IndexType), ("hi", IndexType))
     __has_body__ = True

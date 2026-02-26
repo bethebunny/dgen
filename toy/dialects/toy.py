@@ -28,7 +28,7 @@ class TensorType(Type):
     shape: Annotated[Value[ShapeType], Constant]
     dtype: Type = builtin.F64Type()
 
-    __constant_fields__ = (("shape", ShapeType), ("dtype", Type))
+    __params__ = (("shape", ShapeType), ("dtype", Type))
 
     def unpack_shape(self) -> list[int]:
         """Extract concrete shape dimensions as a list of ints."""
@@ -49,7 +49,7 @@ class InferredShapeTensor(Type):
     __layout__ = VOID
     dtype: Type = builtin.F64Type()
 
-    __constant_fields__ = (("dtype", Type),)
+    __params__ = (("dtype", Type),)
 
 
 @dataclass
@@ -70,7 +70,7 @@ class TransposeOp(Op):
     input: Value
     type: Type
 
-    __runtime_fields__ = ("input",)
+    __operands__ = ("input",)
 
 
 @toy.op("reshape")
@@ -79,7 +79,7 @@ class ReshapeOp(Op):
     input: Value
     type: Type
 
-    __runtime_fields__ = ("input",)
+    __operands__ = ("input",)
 
 
 @toy.op("mul")
@@ -89,7 +89,7 @@ class MulOp(Op):
     rhs: Value
     type: Type
 
-    __runtime_fields__ = ("lhs", "rhs")
+    __operands__ = ("lhs", "rhs")
 
 
 @toy.op("add")
@@ -99,7 +99,7 @@ class AddOp(Op):
     rhs: Value
     type: Type
 
-    __runtime_fields__ = ("lhs", "rhs")
+    __operands__ = ("lhs", "rhs")
 
 
 @toy.op("generic_call")
@@ -109,7 +109,7 @@ class GenericCallOp(Op):
     args: list[Value]
     type: Type
 
-    __runtime_fields__ = ("callee", "args")
+    __operands__ = ("callee", "args")
 
 
 @toy.op("concat")
@@ -120,8 +120,8 @@ class ConcatOp(Op):
     rhs: Value
     type: Type
 
-    __constant_fields__ = (("axis", IndexType),)
-    __runtime_fields__ = ("lhs", "rhs")
+    __params__ = (("axis", IndexType),)
+    __operands__ = ("lhs", "rhs")
 
 
 @toy.op("tile")
@@ -131,7 +131,7 @@ class TileOp(Op):
     count: Annotated[Value[IndexType], Constant]
     type: Type
 
-    __runtime_fields__ = ("input", "count")
+    __operands__ = ("input", "count")
 
 
 @toy.op("nonzero_count")
@@ -140,7 +140,7 @@ class NonzeroCountOp(Op):
     input: Value
     type: Type = builtin.IndexType()
 
-    __runtime_fields__ = ("input",)
+    __operands__ = ("input",)
 
 
 @toy.op("dim_size")
@@ -150,8 +150,8 @@ class DimSizeOp(Op):
     input: Value
     type: Type = builtin.IndexType()
 
-    __constant_fields__ = (("axis", IndexType),)
-    __runtime_fields__ = ("input",)
+    __params__ = (("axis", IndexType),)
+    __operands__ = ("input",)
 
     def resolve_constant(self) -> int | None:
         """Return constant value if input type has a resolved shape."""
@@ -167,4 +167,4 @@ class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __runtime_fields__ = ("input",)
+    __operands__ = ("input",)

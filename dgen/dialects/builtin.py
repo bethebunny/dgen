@@ -57,7 +57,7 @@ class List(Type):
     __layout__ = FatPointer(BYTE)
     element_type: Type
 
-    __constant_fields__ = (("element_type", Type),)
+    __params__ = (("element_type", Type),)
 
 
 @builtin.op("constant")
@@ -66,7 +66,7 @@ class ConstantOp(Op, Constant):
     value: Memory
     type: Type
 
-    __runtime_fields__ = ("value",)
+    __operands__ = ("value",)
 
     def __init__(self, *, value: object, type: Type, name: str | None = None) -> None:
         self.name = name
@@ -89,7 +89,7 @@ class AddIndexOp(Op):
     rhs: Value
     type: Type = IndexType()
 
-    __runtime_fields__ = ("lhs", "rhs")
+    __operands__ = ("lhs", "rhs")
 
 
 @builtin.op("return")
@@ -98,7 +98,7 @@ class ReturnOp(Op):
     value: Value | Nil = Nil()
     type: Type = Nil()
 
-    __runtime_fields__ = ("value",)
+    __operands__ = ("value",)
 
 
 # ===----------------------------------------------------------------------=== #

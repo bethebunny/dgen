@@ -94,12 +94,12 @@ def parse_expr(parser: IRParser) -> object:
 def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, object]:
     """Parse comma-separated exprs and map them to the type's declared fields.
 
-    Iterates __constant_fields__ (and __runtime_fields__ if any). For constant
-    fields, raw Python values are wrapped via field_type.for_value().constant();
-    values that are already Value or Type instances are kept as-is.
+    Iterates __params__. Raw Python values are wrapped via
+    field_type.for_value().constant(); values that are already Value or Type
+    instances are kept as-is.
     """
     kwargs = {}
-    all_fields = list(cls.__constant_fields__) + list(cls.__runtime_fields__)
+    all_fields = cls.__params__
     for i, (name, field_type) in enumerate(all_fields):
         if i > 0:
             parser.expect(",")
@@ -127,7 +127,7 @@ def parse_op_fields(
 
     # Parse constant fields first (with staging/wrapping)
     field_idx = 0
-    for f_name, f_type in cls.__constant_fields__:
+    for f_name, f_type in cls.__params__:
         if field_idx > 0:
             parser.expect(",")
             parser.skip_whitespace()
@@ -139,7 +139,7 @@ def parse_op_fields(
         field_idx += 1
 
     # Then parse runtime fields (pass-through)
-    for f_name in cls.__runtime_fields__:
+    for f_name in cls.__operands__:
         if field_idx > 0:
             parser.expect(",")
             parser.skip_whitespace()

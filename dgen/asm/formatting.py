@@ -156,9 +156,9 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
 
     # Build args from declared fields (constants first, then runtime)
     arg_parts = []
-    for f_name, _ in cls.__constant_fields__:
+    for f_name, _ in cls.__params__:
         arg_parts.append(format_expr(getattr(op, f_name), tracker))
-    for f_name in cls.__runtime_fields__:
+    for f_name in cls.__operands__:
         arg_parts.append(format_expr(getattr(op, f_name), tracker))
 
     args_str = ", ".join(arg_parts)

@@ -1,13 +1,12 @@
 ## Make the JIT work in the general case
 - `__has_body__` -> `__blocks__`
-- Remove `__runtime_fields__` from `Type`s
 - Update asm to use `<>` for constant fields
 - Remove any `Annotated[..., Constant]`s, old pattern
 - str fields to constant strings
 - Do less packing and unpacking
 - Memory layout for types
   - Define a memory layout for types
-  - Make `type: Type` an honorary `__constant_fields__` on `Op`
+  - Make `type: Type` an honorary `__params__` on `Op`
   - SSA types via JIT
   - Add tests for types
       - Round trip through ASM literals

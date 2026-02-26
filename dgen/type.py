@@ -19,8 +19,7 @@ class Type:
     """
 
     __layout__: ClassVar[Layout]
-    __runtime_fields__: ClassVar[Fields] = ()
-    __constant_fields__: ClassVar[Fields] = ()
+    __params__: ClassVar[Fields] = ()
 
     def constant(self, value: object) -> Constant[Self]:
         """Create a Constant wrapping this type and a Python value."""

@@ -15,16 +15,16 @@ class Op(Value):
 
     _asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
-    __constant_fields__: ClassVar[Fields] = ()
-    __runtime_fields__: ClassVar[tuple[str, ...]] = ()
+    __params__: ClassVar[Fields] = ()
+    __operands__: ClassVar[tuple[str, ...]] = ()
     __has_body__: ClassVar[bool] = False
 
     @property
     def operands(self) -> Iterable[tuple[str, Value]]:
         """All Value-typed fields (constant and runtime)."""
-        for name, _ in self.__constant_fields__:
+        for name, _ in self.__params__:
             yield name, getattr(self, name)
-        for name in self.__runtime_fields__:
+        for name in self.__operands__:
             yield name, getattr(self, name)
 
     @property
