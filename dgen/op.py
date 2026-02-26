@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 from typing import ClassVar, Iterable
 
@@ -15,20 +14,21 @@ class Op(Value):
 
     _asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
+    __arg_fields__: ClassVar[tuple[str, ...]] = ()
+    __has_body__: ClassVar[bool] = False
 
     @property
     def operands(self) -> Iterable[tuple[str, Value]]:
-        """All Value-typed fields."""
-        for f in dataclasses.fields(self):
-            if isinstance(attr := getattr(self, f.name), Value):
-                yield f.name, attr
+        """All Value-typed arg fields."""
+        for name in self.__arg_fields__:
+            if isinstance(attr := getattr(self, name), Value):
+                yield name, attr
 
     @property
     def blocks(self) -> Iterable[tuple[str, Block]]:
         """All Block-typed fields."""
-        for f in dataclasses.fields(self):
-            if isinstance(attr := getattr(self, f.name), Block):
-                yield f.name, attr
+        if self.__has_body__:
+            yield "body", getattr(self, "body")
 
     @property
     def asm(self) -> Iterable[str]:

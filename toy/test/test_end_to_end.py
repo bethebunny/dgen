@@ -38,7 +38,7 @@ def test_constant_print():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : index = 6
         |     %2 : () = llvm.call("print_memref", [%0, %1])
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -97,7 +97,7 @@ def test_transpose():
         |     %35 : () = llvm.label("loop_exit0")
         |     %36 : index = 6
         |     %37 : () = llvm.call("print_memref", [%1, %36])
-        |     %38 : () = return()
+        |     %38 : () = return(())
     """)
     assert result == expected
 
@@ -164,7 +164,7 @@ def test_element_wise_mul():
         |     %42 : () = llvm.label("loop_exit0")
         |     %43 : index = 4
         |     %44 : () = llvm.call("print_memref", [%2, %43])
-        |     %45 : () = return()
+        |     %45 : () = return(())
     """)
     assert result == expected
 
@@ -231,7 +231,7 @@ def test_element_wise_add():
         |     %42 : () = llvm.label("loop_exit0")
         |     %43 : index = 4
         |     %44 : () = llvm.call("print_memref", [%2, %43])
-        |     %45 : () = return()
+        |     %45 : () = return(())
     """)
     assert result == expected
 
@@ -254,7 +254,7 @@ def test_3d_constant_print():
         |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : index = 8
         |     %2 : () = llvm.call("print_memref", [%0, %1])
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -342,7 +342,7 @@ def test_3d_element_wise_add():
         |     %63 : () = llvm.label("loop_exit0")
         |     %64 : index = 8
         |     %65 : () = llvm.call("print_memref", [%2, %64])
-        |     %66 : () = return()
+        |     %66 : () = return(())
     """)
     assert result == expected
 
@@ -430,7 +430,7 @@ def test_3d_element_wise_mul():
         |     %63 : () = llvm.label("loop_exit0")
         |     %64 : index = 8
         |     %65 : () = llvm.call("print_memref", [%2, %64])
-        |     %66 : () = return()
+        |     %66 : () = return(())
     """)
     assert result == expected
 
@@ -453,7 +453,7 @@ def test_reshape_folds_away():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : index = 6
         |     %2 : () = llvm.call("print_memref", [%0, %1])
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -477,7 +477,7 @@ def test_double_transpose_optimized():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : index = 6
         |     %2 : () = llvm.call("print_memref", [%0, %1])
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -614,6 +614,6 @@ def test_multiply_transpose_inlined():
         |     %112 : () = llvm.label("loop_exit4")
         |     %113 : index = 6
         |     %114 : () = llvm.call("print_memref", [%72, %113])
-        |     %115 : () = return()
+        |     %115 : () = return(())
     """)
     assert result == expected

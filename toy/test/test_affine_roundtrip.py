@@ -12,7 +12,7 @@ def test_roundtrip_alloc():
         | %f = function () -> ():
         |     %0 : affine.MemRef([2, 3], f64) = affine.alloc([2, 3])
         |     %_ : () = affine.dealloc(%0)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -28,7 +28,7 @@ def test_roundtrip_store_load():
         |     %2 : index = 0
         |     %_ : () = affine.store(%1, %0, [%2])
         |     %3 : () = affine.load(%0, [%2])
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -43,7 +43,7 @@ def test_roundtrip_arith():
         |     %1 : f64 = 3.0
         |     %2 : () = affine.mul_f(%0, %1)
         |     %3 : () = affine.add_f(%0, %1)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -53,7 +53,7 @@ def test_roundtrip_index_constant():
     ir = strip_prefix("""
         | %f = function () -> ():
         |     %0 : index = 42
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -66,7 +66,7 @@ def test_roundtrip_print_memref():
         | %f = function () -> ():
         |     %0 : affine.MemRef([3], f64) = affine.alloc([3])
         |     %_ : () = affine.print_memref(%0)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -83,7 +83,7 @@ def test_roundtrip_for_op():
         |         %2 : index = 0
         |         %_ : () = affine.store(%1, %0, [%2])
         |     %_ : () = affine.print_memref(%0)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -100,7 +100,7 @@ def test_roundtrip_nested_for():
         |             %1 : f64 = 1.0
         |             %2 : index = 0
         |             %_ : () = affine.store(%1, %0, [%2, %2])
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -127,7 +127,7 @@ def test_roundtrip_multi_index_load_store():
         |     %3 : index = 1
         |     %_ : () = affine.store(%1, %0, [%2, %3])
         |     %4 : () = affine.load(%0, [%2, %3])
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -141,7 +141,7 @@ def test_roundtrip_ssa_in_op_arg():
         | %f = function () -> ():
         |     %shape : affine.Shape(2) = [2, 3]
         |     %0 : affine.MemRef([2, 3], f64) = affine.alloc(%shape)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -155,7 +155,7 @@ def test_roundtrip_ssa_in_type_param():
         | %f = function () -> ():
         |     %shape : affine.Shape(2) = [2, 3]
         |     %0 : affine.MemRef(%shape, f64) = affine.alloc(%shape)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -174,7 +174,7 @@ def test_ssa_shape_through_lowering():
         |     %_ : () = affine.store(%1, %0, [%2, %2])
         |     %3 : () = affine.load(%0, [%2, %2])
         |     %_ : () = affine.dealloc(%0)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir

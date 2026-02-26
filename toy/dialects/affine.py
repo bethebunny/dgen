@@ -64,12 +64,16 @@ class MemRefType(Type):
 class AllocOp(Op):
     shape: Annotated[Value[ShapeType], Constant]
 
+    __arg_fields__ = ("shape",)
+
 
 @affine.op("dealloc")
 @dataclass(eq=False, kw_only=True)
 class DeallocOp(Op):
     input: Value
     type: Type = builtin.Nil()
+
+    __arg_fields__ = ("input",)
 
 
 @affine.op("load")
@@ -78,6 +82,8 @@ class LoadOp(Op):
     memref: Value
     indices: list[Value]
     type: Type = builtin.Nil()
+
+    __arg_fields__ = ("memref", "indices")
 
 
 @affine.op("store")
@@ -88,6 +94,8 @@ class StoreOp(Op):
     indices: list[Value]
     type: Type = builtin.Nil()
 
+    __arg_fields__ = ("value", "memref", "indices")
+
 
 @affine.op("mul_f")
 @dataclass(eq=False, kw_only=True)
@@ -95,6 +103,8 @@ class ArithMulFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = builtin.Nil()
+
+    __arg_fields__ = ("lhs", "rhs")
 
 
 @affine.op("add_f")
@@ -104,12 +114,16 @@ class ArithAddFOp(Op):
     rhs: Value
     type: Type = builtin.Nil()
 
+    __arg_fields__ = ("lhs", "rhs")
+
 
 @affine.op("print_memref")
 @dataclass(eq=False, kw_only=True)
 class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
+
+    __arg_fields__ = ("input",)
 
 
 @affine.op("for")
@@ -119,3 +133,6 @@ class ForOp(Op):
     hi: int
     body: Block
     type: Type = builtin.Nil()
+
+    __arg_fields__ = ("lo", "hi")
+    __has_body__ = True

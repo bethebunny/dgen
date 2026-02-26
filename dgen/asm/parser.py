@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+from typing import Any
 
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.type import Memory
-
-from .formatting import _SPECIAL_FIELDS, _class_hints, _is_optional
 
 
 def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
@@ -30,6 +29,11 @@ def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
 def parse_expr(parser: IRParser) -> object:
     """Parse a single expression, dispatching on syntax."""
     c = parser.peek()
+
+    if c == "(":
+        # Nil literal: ()
+        parser.expect("()")
+        return None
 
     if c == "[":
         # List: [expr, expr, ...]
@@ -107,72 +111,54 @@ def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, obj
 
 
 def parse_op_fields(
-    parser: IRParser, cls: type, name: str | None = None, pre_type: Type | None = None
+    parser: IRParser,
+    cls: type[Op],
+    name: str | None = None,
+    pre_type: Type | None = None,
 ) -> Op:
-    """Generic op field parser. Introspects field types to parse args."""
-    hints = _class_hints(cls)
-    fields = dataclasses.fields(cls)
-
-    kwargs = {}
-    if "name" in hints:
-        kwargs["name"] = name
+    """Generic op field parser driven by __arg_fields__ declarations."""
+    kwargs: dict[str, Any] = {"name": name}  # noqa: ANN401
 
     # Expect opening paren
     parser.expect("(")
     parser.skip_whitespace()
 
-    # Parse non-special fields
-    arg_fields = [f for f in fields if f.name not in _SPECIAL_FIELDS]
-    for i, f in enumerate(arg_fields):
-        hint = hints[f.name]
-        inner = _is_optional(hint)
-
-        # Check for optional field (at end of args) — if we see ')' it's None
-        if inner is not None:
-            parser.skip_whitespace()
-            if parser.peek() == ")":
-                kwargs[f.name] = None
-                continue
-
+    # Parse declared arg fields
+    for i, f_name in enumerate(cls.__arg_fields__):
         if i > 0:
             parser.expect(",")
             parser.skip_whitespace()
 
-        kwargs[f.name] = parse_expr(parser)
+        kwargs[f_name] = parse_expr(parser)
         parser.skip_whitespace()
 
     parser.expect(")")
 
     # Type annotation (already parsed before '=' if present)
-    if "type" in hints and pre_type is not None:
+    if pre_type is not None:
         kwargs["type"] = pre_type
 
     # Body (indented block)
-    if "body" in hints:
-        body_hint = hints["body"]
+    if cls.__has_body__:
         parser.skip_whitespace()
-        if body_hint is Block:
-            # Parse optional block args: (%name: type, ...)
-            args = []
-            if parser.peek() == "(":
-                parser.expect("(")
+        # Parse optional block args: (%name: type, ...)
+        args = []
+        if parser.peek() == "(":
+            parser.expect("(")
+            parser.skip_whitespace()
+            if parser.peek() != ")":
+                args.append(parser._parse_param())
                 parser.skip_whitespace()
-                if parser.peek() != ")":
+                while parser.peek() == ",":
+                    parser.expect(",")
+                    parser.skip_whitespace()
                     args.append(parser._parse_param())
                     parser.skip_whitespace()
-                    while parser.peek() == ",":
-                        parser.expect(",")
-                        parser.skip_whitespace()
-                        args.append(parser._parse_param())
-                        parser.skip_whitespace()
-                parser.expect(")")
-            parser.skip_whitespace()
-            parser.expect(":")
-            ops = parser.parse_indented_block()
-            kwargs["body"] = Block(ops=ops, args=args)
-        else:
-            parser.expect(":")
-            kwargs["body"] = parser.parse_indented_block()
+            parser.expect(")")
+        parser.skip_whitespace()
+        parser.expect(":")
+        ops = parser.parse_indented_block()
+        kwargs["body"] = Block(ops=ops, args=args)
 
     op = cls(**kwargs)
 
@@ -187,7 +173,7 @@ class IRParser:
     def __init__(self, text: str) -> None:
         self.text = text
         self.pos = 0
-        self._ops: dict[str, type] = {}
+        self._ops: dict[str, type[Op]] = {}
         self._types: dict = {}
         self.name_table: dict[str, Value] = {}
 

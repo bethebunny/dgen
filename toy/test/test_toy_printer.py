@@ -85,7 +85,7 @@ def test_return_op_with_value():
 
 def test_return_op_void():
     op = builtin.ReturnOp()
-    assert asm.format(op) == "%0 : () = return()"
+    assert asm.format(op) == "%0 : () = return(())"
 
 
 def test_concat_op():
@@ -178,6 +178,6 @@ def test_full_module():
         |     %4 : toy.InferredShapeTensor(f64) = toy.generic_call("multiply_transpose", [%1, %3])
         |     %5 : toy.InferredShapeTensor(f64) = toy.generic_call("multiply_transpose", [%3, %1])
         |     %6 : () = toy.print(%5)
-        |     %7 : () = return()
+        |     %7 : () = return(())
     """)
     assert asm.format(module) == expected

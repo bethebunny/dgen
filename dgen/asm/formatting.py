@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-import types
 from collections.abc import Iterable
-from typing import Union, get_args, get_origin, get_type_hints
+from typing import get_type_hints
 
 from .. import Block
 from ..op import Op
@@ -27,25 +26,12 @@ def indent(it: Iterable[str], prefix: str = "    ") -> Iterable[str]:
 # Helpers
 # ===----------------------------------------------------------------------=== #
 
-# Fields with special handling (not serialized as args)
-_SPECIAL_FIELDS = {"name", "type", "body"}
-
 
 def format_float(v: float) -> str:
     iv = int(v)
     if float(iv) == v:
         return f"{iv}.0"
     return str(v)
-
-
-def _is_optional(hint: type) -> type | None:
-    """Check if hint is X | None, return X if so, else None."""
-    origin = get_origin(hint)
-    if origin is Union or isinstance(hint, types.UnionType):
-        args = get_args(hint)
-        if len(args) == 2 and type(None) in args:
-            return args[0] if args[1] is type(None) else args[1]
-    return None
 
 
 # ===----------------------------------------------------------------------=== #
@@ -85,7 +71,7 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     """Format a value as an expression string, dispatching on runtime type."""
     from dgen.dialects.builtin import Nil, Value
 
-    if isinstance(value, Nil):
+    if value is None or isinstance(value, Nil):
         return "()"
     if isinstance(value, Constant) and not isinstance(value, Op):
         from ..layout import Array
@@ -155,14 +141,12 @@ def _class_hints(cls: type) -> dict[str, type]:
 
 
 def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
-    """Generic asm emitter. Introspects _asm_name and field types."""
+    """Generic asm emitter driven by __arg_fields__ declarations."""
     from dgen.dialects.builtin import _register_ops
 
     cls = type(op)
     asm_name = cls._asm_name
     dialect_name = op.dialect.name
-    hints = _class_hints(cls)
-    fields = dataclasses.fields(cls)
 
     # If no tracker provided, create one and register this op
     if tracker is None:
@@ -170,20 +154,10 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         tracker.get_name(op)
         _register_ops(tracker, [op])
 
-    has_body = "body" in hints
-
-    # Build args
+    # Build args from declared fields
     arg_parts = []
-    for f in fields:
-        if f.name in _SPECIAL_FIELDS:
-            continue
-        hint = hints[f.name]
-        value = getattr(op, f.name)
-        # Optional field at end: skip if None
-        inner = _is_optional(hint)
-        if inner is not None and value is None:
-            continue
-        arg_parts.append(format_expr(value, tracker))
+    for f_name in cls.__arg_fields__:
+        arg_parts.append(format_expr(getattr(op, f_name), tracker))
 
     args_str = ", ".join(arg_parts)
 
@@ -195,9 +169,9 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         parts.append(args_str)
     else:
         parts.append(f"{prefix}{asm_name}({args_str})")
-    body = getattr(op, "body", None)
-    if has_body:
-        if isinstance(body, Block) and body.args:
+    if cls.__has_body__:
+        body: Block = getattr(op, "body")
+        if body.args:
             block_args = ", ".join(
                 f"%{tracker.get_name(a)}: {format_expr(a.type)}" for a in body.args
             )
@@ -207,7 +181,7 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     line = "".join(parts)
     yield line
 
-    if has_body and body is not None:
-        body_ops: Iterable[Op] = body.ops if isinstance(body, Block) else body
-        for child_op in body_ops:
+    if cls.__has_body__:
+        body = getattr(op, "body")
+        for child_op in body.ops:
             yield from indent(op_asm(child_op, tracker))

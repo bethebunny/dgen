@@ -70,12 +70,16 @@ class TransposeOp(Op):
     input: Value
     type: Type
 
+    __arg_fields__ = ("input",)
+
 
 @toy.op("reshape")
 @dataclass(eq=False, kw_only=True)
 class ReshapeOp(Op):
     input: Value
     type: Type
+
+    __arg_fields__ = ("input",)
 
 
 @toy.op("mul")
@@ -85,6 +89,8 @@ class MulOp(Op):
     rhs: Value
     type: Type
 
+    __arg_fields__ = ("lhs", "rhs")
+
 
 @toy.op("add")
 @dataclass(eq=False, kw_only=True)
@@ -93,6 +99,8 @@ class AddOp(Op):
     rhs: Value
     type: Type
 
+    __arg_fields__ = ("lhs", "rhs")
+
 
 @toy.op("generic_call")
 @dataclass(eq=False, kw_only=True)
@@ -100,6 +108,8 @@ class GenericCallOp(Op):
     callee: str
     args: list[Value]
     type: Type
+
+    __arg_fields__ = ("callee", "args")
 
 
 @toy.op("concat")
@@ -110,6 +120,8 @@ class ConcatOp(Op):
     axis: int
     type: Type
 
+    __arg_fields__ = ("lhs", "rhs", "axis")
+
 
 @toy.op("tile")
 @dataclass(eq=False, kw_only=True)
@@ -118,12 +130,16 @@ class TileOp(Op):
     count: Annotated[Value[IndexType], Constant]
     type: Type
 
+    __arg_fields__ = ("input", "count")
+
 
 @toy.op("nonzero_count")
 @dataclass(eq=False, kw_only=True)
 class NonzeroCountOp(Op):
     input: Value
     type: Type = builtin.IndexType()
+
+    __arg_fields__ = ("input",)
 
 
 @toy.op("dim_size")
@@ -132,6 +148,8 @@ class DimSizeOp(Op):
     input: Value
     axis: int
     type: Type = builtin.IndexType()
+
+    __arg_fields__ = ("input", "axis")
 
     def resolve_constant(self) -> int | None:
         """Return constant value if input type has a resolved shape."""
@@ -146,3 +164,5 @@ class DimSizeOp(Op):
 class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
+
+    __arg_fields__ = ("input",)

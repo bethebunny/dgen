@@ -64,6 +64,8 @@ class AllocaOp(Op):
     elem_count: int
     type: Type = Nil()
 
+    __arg_fields__ = ("elem_count",)
+
 
 @llvm.op("gep")
 @dataclass(eq=False, kw_only=True)
@@ -72,12 +74,16 @@ class GepOp(Op):
     index: Value
     type: Type = Nil()
 
+    __arg_fields__ = ("base", "index")
+
 
 @llvm.op("load")
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
     ptr: Value
     type: Type = Nil()
+
+    __arg_fields__ = ("ptr",)
 
 
 @llvm.op("store")
@@ -87,6 +93,8 @@ class StoreOp(Op):
     ptr: Value
     type: Type = Nil()
 
+    __arg_fields__ = ("value", "ptr")
+
 
 @llvm.op("fadd")
 @dataclass(eq=False, kw_only=True)
@@ -94,6 +102,8 @@ class FAddOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Nil()
+
+    __arg_fields__ = ("lhs", "rhs")
 
 
 @llvm.op("fmul")
@@ -103,6 +113,8 @@ class FMulOp(Op):
     rhs: Value
     type: Type = Nil()
 
+    __arg_fields__ = ("lhs", "rhs")
+
 
 @llvm.op("add")
 @dataclass(eq=False, kw_only=True)
@@ -111,6 +123,8 @@ class AddOp(Op):
     rhs: Value
     type: Type = Nil()
 
+    __arg_fields__ = ("lhs", "rhs")
+
 
 @llvm.op("mul")
 @dataclass(eq=False, kw_only=True)
@@ -118,6 +132,8 @@ class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Nil()
+
+    __arg_fields__ = ("lhs", "rhs")
 
 
 @llvm.op("icmp")
@@ -128,12 +144,16 @@ class IcmpOp(Op):
     rhs: Value
     type: Type = Nil()
 
+    __arg_fields__ = ("pred", "lhs", "rhs")
+
 
 @llvm.op("br")
 @dataclass(eq=False, kw_only=True)
 class BrOp(Op):
     dest: str
     type: Type = Nil()
+
+    __arg_fields__ = ("dest",)
 
 
 @llvm.op("cond_br")
@@ -144,12 +164,16 @@ class CondBrOp(Op):
     false_dest: str
     type: Type = Nil()
 
+    __arg_fields__ = ("cond", "true_dest", "false_dest")
+
 
 @llvm.op("label")
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
     label_name: str
     type: Type = Nil()
+
+    __arg_fields__ = ("label_name",)
 
 
 @llvm.op("phi")
@@ -158,6 +182,8 @@ class PhiOp(Op):
     values: list[Value]
     labels: list[str]
     type: Type = Nil()
+
+    __arg_fields__ = ("values", "labels")
 
 
 @llvm.op("fcmp")
@@ -168,12 +194,16 @@ class FcmpOp(Op):
     rhs: Value
     type: Type = Nil()
 
+    __arg_fields__ = ("pred", "lhs", "rhs")
+
 
 @llvm.op("zext")
 @dataclass(eq=False, kw_only=True)
 class ZextOp(Op):
     input: Value
     type: Type = Nil()
+
+    __arg_fields__ = ("input",)
 
 
 @llvm.op("call")
@@ -182,3 +212,5 @@ class CallOp(Op):
     callee: str
     args: list[Value]
     type: Type = Nil()
+
+    __arg_fields__ = ("callee", "args")

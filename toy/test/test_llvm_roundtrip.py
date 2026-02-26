@@ -11,7 +11,7 @@ def test_roundtrip_alloca():
         |
         | %f = function () -> ():
         |     %0 : () = llvm.alloca(3)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -28,7 +28,7 @@ def test_roundtrip_gep_load_store():
         |     %3 : f64 = 1.0
         |     %_ : () = llvm.store(%3, %2)
         |     %4 : () = llvm.load(%2)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -43,7 +43,7 @@ def test_roundtrip_fadd_fmul():
         |     %1 : f64 = 2.0
         |     %2 : () = llvm.fadd(%0, %1)
         |     %3 : () = llvm.fmul(%0, %1)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -58,7 +58,7 @@ def test_roundtrip_add_mul_int():
         |     %1 : index = 4
         |     %2 : () = llvm.add(%0, %1)
         |     %3 : () = llvm.mul(%0, %1)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -73,7 +73,7 @@ def test_roundtrip_icmp_condbr():
         |     %1 : index = 10
         |     %cmp : () = llvm.icmp("slt", %0, %1)
         |     %_ : () = llvm.cond_br(%cmp, "loop_body", "loop_exit")
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -86,7 +86,7 @@ def test_roundtrip_label_br():
         | %f = function () -> ():
         |     %_ : () = llvm.br("loop_header")
         |     %_ : () = llvm.label("loop_header")
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -98,7 +98,7 @@ def test_roundtrip_phi():
         |
         | %f = function () -> ():
         |     %i0 : () = llvm.phi([%init, %next], ["entry", "loop_body"])
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -110,7 +110,7 @@ def test_roundtrip_call_with_result():
         |
         | %f = function () -> ():
         |     %0 : () = llvm.call("foo", [%a, %b])
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -122,7 +122,7 @@ def test_roundtrip_call_void():
         |
         | %f = function () -> ():
         |     %_ : () = llvm.call("print_memref", [%ptr, %size])
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -160,7 +160,7 @@ def test_roundtrip_loop_pattern():
         |     %next0 : () = llvm.add(%i0, %one)
         |     %_ : () = llvm.br("loop_header0")
         |     %_ : () = llvm.label("loop_exit0")
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir

@@ -14,7 +14,7 @@ def test_llvm_via_imports():
         |     %0 : () = llvm.alloca(6)
         |     %1 : f64 = 1.0
         |     %_ : () = llvm.store(%1, %0)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -39,7 +39,7 @@ def test_llvm_full_loop():
         |     %next : () = llvm.add(%i0, %one)
         |     %_ : () = llvm.br("loop_header")
         |     %_ : () = llvm.label("loop_exit")
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir

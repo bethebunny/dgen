@@ -103,7 +103,7 @@ def test_roundtrip_print():
         |
         | %f = function (%a: toy.Tensor([2, 3], f64)) -> ():
         |     %_ : () = toy.print(%a)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -112,7 +112,7 @@ def test_roundtrip_print():
 def test_roundtrip_void_return():
     ir = strip_prefix("""
         | %f = function () -> ():
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -200,7 +200,7 @@ def test_roundtrip_full_program():
         |     %4 : toy.InferredShapeTensor(f64) = toy.generic_call("multiply_transpose", [%1, %3])
         |     %5 : toy.InferredShapeTensor(f64) = toy.generic_call("multiply_transpose", [%3, %1])
         |     %_ : () = toy.print(%5)
-        |     %_ : () = return()
+        |     %_ : () = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir

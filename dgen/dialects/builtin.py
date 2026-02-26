@@ -66,6 +66,8 @@ class ConstantOp(Op, Constant):
     value: Memory
     type: Type
 
+    __arg_fields__ = ("value",)
+
     def __init__(self, *, value: object, type: Type, name: str | None = None) -> None:
         self.name = name
         self.type = type
@@ -87,12 +89,16 @@ class AddIndexOp(Op):
     rhs: Value
     type: Type = IndexType()
 
+    __arg_fields__ = ("lhs", "rhs")
+
 
 @builtin.op("return")
 @dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):
     value: Value | None = None
     type: Type = Nil()
+
+    __arg_fields__ = ("value",)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -105,6 +111,8 @@ class ReturnOp(Op):
 class FuncOp(Op):
     body: Block
     type: Function
+
+    __has_body__ = True
 
     @property
     def asm(self) -> Iterable[str]:

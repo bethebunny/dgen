@@ -22,7 +22,7 @@ def test_simple_constant():
         | %main = function () -> ():
         |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
         |     %_ = toy.print(%0)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     result = compile_to_llvm(ir_text)
     expected = strip_prefix("""
@@ -33,7 +33,7 @@ def test_simple_constant():
         |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
         |     %1 : index = 3
         |     %2 : () = llvm.call("print_memref", [%0, %1])
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -46,7 +46,7 @@ def test_constant_preserved():
         | %main = function () -> ():
         |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
         |     %_ = toy.print(%0)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     result = compile_to_llvm(ir_text)
     expected = strip_prefix("""
@@ -57,7 +57,7 @@ def test_constant_preserved():
         |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
         |     %1 : index = 3
         |     %2 : () = llvm.call("print_memref", [%0, %1])
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -70,7 +70,7 @@ def test_2d_constant_preserved():
         | %main = function () -> ():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     result = compile_to_llvm(ir_text)
     expected = strip_prefix("""
@@ -81,7 +81,7 @@ def test_2d_constant_preserved():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : index = 6
         |     %2 : () = llvm.call("print_memref", [%0, %1])
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -95,7 +95,7 @@ def test_load_store_linearization():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor([3, 2], f64) = toy.transpose(%0)
         |     %_ = toy.print(%1)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     result = compile_to_llvm(ir_text)
     expected = strip_prefix("""
@@ -141,7 +141,7 @@ def test_load_store_linearization():
         |     %35 : () = llvm.label("loop_exit0")
         |     %36 : index = 6
         |     %37 : () = llvm.call("print_memref", [%1, %36])
-        |     %38 : () = return()
+        |     %38 : () = return(())
     """)
     assert result == expected
 
@@ -154,7 +154,7 @@ def test_3d_constant_preserved():
         | %main = function () -> ():
         |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %_ = toy.print(%0)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     result = compile_to_llvm(ir_text)
     expected = strip_prefix("""
@@ -165,7 +165,7 @@ def test_3d_constant_preserved():
         |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : index = 8
         |     %2 : () = llvm.call("print_memref", [%0, %1])
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -180,7 +180,7 @@ def test_3d_load_store_linearization():
         |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor([2, 2, 2], f64) = toy.add(%0, %1)
         |     %_ = toy.print(%2)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     result = compile_to_llvm(ir_text)
     expected = strip_prefix("""
@@ -254,7 +254,7 @@ def test_3d_load_store_linearization():
         |     %63 : () = llvm.label("loop_exit0")
         |     %64 : index = 8
         |     %65 : () = llvm.call("print_memref", [%2, %64])
-        |     %66 : () = return()
+        |     %66 : () = return(())
     """)
     assert result == expected
 
@@ -271,7 +271,7 @@ def test_full_example():
         |     %3 : toy.Tensor([3, 2], f64) = toy.transpose(%2)
         |     %4 : toy.Tensor([3, 2], f64) = toy.mul(%1, %3)
         |     %_ = toy.print(%4)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     result = compile_to_llvm(ir_text)
     expected = strip_prefix("""
@@ -394,6 +394,6 @@ def test_full_example():
         |     %112 : () = llvm.label("loop_exit4")
         |     %113 : index = 6
         |     %114 : () = llvm.call("print_memref", [%72, %113])
-        |     %115 : () = return()
+        |     %115 : () = return(())
     """)
     assert result == expected

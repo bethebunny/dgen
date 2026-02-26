@@ -14,7 +14,7 @@ def test_simple_constant():
         | %main = function () -> ():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -27,7 +27,7 @@ def test_simple_constant():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : () = affine.print_memref(%0)
         |     %2 : () = affine.dealloc(%0)
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -41,7 +41,7 @@ def test_transpose():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor([3, 2], f64) = toy.transpose(%0)
         |     %_ = toy.print(%1)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -60,7 +60,7 @@ def test_transpose():
         |     %8 : () = affine.print_memref(%1)
         |     %9 : () = affine.dealloc(%0)
         |     %10 : () = affine.dealloc(%1)
-        |     %11 : () = return()
+        |     %11 : () = return(())
     """)
     assert result == expected
 
@@ -75,7 +75,7 @@ def test_mul():
         |     %1 : toy.Tensor([2, 2], f64) = [5.0, 6.0, 7.0, 8.0]
         |     %2 : toy.Tensor([2, 2], f64) = toy.mul(%0, %1)
         |     %_ = toy.print(%2)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -98,7 +98,7 @@ def test_mul():
         |     %12 : () = affine.dealloc(%0)
         |     %13 : () = affine.dealloc(%1)
         |     %14 : () = affine.dealloc(%2)
-        |     %15 : () = return()
+        |     %15 : () = return(())
     """)
     assert result == expected
 
@@ -113,7 +113,7 @@ def test_add():
         |     %1 : toy.Tensor([2, 2], f64) = [5.0, 6.0, 7.0, 8.0]
         |     %2 : toy.Tensor([2, 2], f64) = toy.add(%0, %1)
         |     %_ = toy.print(%2)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -136,7 +136,7 @@ def test_add():
         |     %12 : () = affine.dealloc(%0)
         |     %13 : () = affine.dealloc(%1)
         |     %14 : () = affine.dealloc(%2)
-        |     %15 : () = return()
+        |     %15 : () = return(())
     """)
     assert result == expected
 
@@ -149,7 +149,7 @@ def test_print():
         | %main = function () -> ():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -162,7 +162,7 @@ def test_print():
         |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : () = affine.print_memref(%0)
         |     %2 : () = affine.dealloc(%0)
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -175,7 +175,7 @@ def test_3d_constant():
         | %main = function () -> ():
         |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %_ = toy.print(%0)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -188,7 +188,7 @@ def test_3d_constant():
         |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : () = affine.print_memref(%0)
         |     %2 : () = affine.dealloc(%0)
-        |     %3 : () = return()
+        |     %3 : () = return(())
     """)
     assert result == expected
 
@@ -203,7 +203,7 @@ def test_3d_add():
         |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor([2, 2, 2], f64) = toy.add(%0, %1)
         |     %_ = toy.print(%2)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -227,7 +227,7 @@ def test_3d_add():
         |     %14 : () = affine.dealloc(%0)
         |     %15 : () = affine.dealloc(%1)
         |     %16 : () = affine.dealloc(%2)
-        |     %17 : () = return()
+        |     %17 : () = return(())
     """)
     assert result == expected
 
@@ -242,7 +242,7 @@ def test_3d_mul():
         |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor([2, 2, 2], f64) = toy.mul(%0, %1)
         |     %_ = toy.print(%2)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -266,7 +266,7 @@ def test_3d_mul():
         |     %14 : () = affine.dealloc(%0)
         |     %15 : () = affine.dealloc(%1)
         |     %16 : () = affine.dealloc(%2)
-        |     %17 : () = return()
+        |     %17 : () = return(())
     """)
     assert result == expected
 
@@ -283,7 +283,7 @@ def test_full_example():
         |     %3 : toy.Tensor([3, 2], f64) = toy.transpose(%2)
         |     %4 : toy.Tensor([3, 2], f64) = toy.mul(%1, %3)
         |     %_ = toy.print(%4)
-        |     %_ = return()
+        |     %_ = return(())
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
@@ -318,6 +318,6 @@ def test_full_example():
         |     %28 : () = affine.dealloc(%8)
         |     %29 : () = affine.dealloc(%9)
         |     %30 : () = affine.dealloc(%16)
-        |     %31 : () = return()
+        |     %31 : () = return(())
     """)
     assert result == expected
