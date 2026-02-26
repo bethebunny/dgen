@@ -28,6 +28,8 @@ class TensorType(Type):
     shape: Annotated[Value[ShapeType], Constant]
     dtype: Type = builtin.F64Type()
 
+    __constant_fields__ = (("shape", ShapeType), ("dtype", Type))
+
     def unpack_shape(self) -> list[int]:
         """Extract concrete shape dimensions as a list of ints."""
         return list(self.shape.__constant__.unpack())
@@ -46,6 +48,8 @@ class InferredShapeTensor(Type):
 
     __layout__ = VOID
     dtype: Type = builtin.F64Type()
+
+    __constant_fields__ = (("dtype", Type),)
 
 
 @dataclass

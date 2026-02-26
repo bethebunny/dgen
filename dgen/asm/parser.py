@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
-from typing import Annotated, TypeVar, get_args, get_origin
 
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
@@ -86,35 +85,22 @@ def parse_expr(parser: IRParser) -> object:
     return cls(**kwargs)
 
 
-T = TypeVar("T", bound=Type)
-
-
-def _constant_inner_type(hint: type) -> type[Type]:
-    """Extract inner type class from Annotated[Value[T], Constant] → T."""
-    origin = get_origin(hint)
-    assert origin is Annotated
-    args = get_args(hint)
-    wrapped_type = args[0]
-    inner_args = get_args(wrapped_type)
-    result = inner_args[0]
-    assert isinstance(result, type) and issubclass(result, Type)
-    return result
-
-
 def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, object]:
-    """Parse comma-separated exprs and map them to dataclass fields.
+    """Parse comma-separated exprs and map them to the type's declared fields.
 
-    For type dataclasses, if a field's annotation involves Constant or Memory,
-    the parsed value is wrapped appropriately (annotation-aware type reconstruction).
+    Iterates __constant_fields__ (and __runtime_fields__ if any). For constant
+    fields, raw Python values are wrapped via field_type.for_value().constant();
+    values that are already Value or Type instances are kept as-is.
     """
     kwargs = {}
-    for i, (name, field, is_constant) in enumerate(cls.fields()):
+    all_fields = list(cls.__constant_fields__) + list(cls.__runtime_fields__)
+    for i, (name, field_type) in enumerate(all_fields):
         if i > 0:
             parser.expect(",")
             parser.skip_whitespace()
         raw_value = parse_expr(parser)
-        if is_constant and not isinstance(raw_value, Value):
-            raw_value = field.for_value(raw_value).constant(raw_value)
+        if not isinstance(raw_value, (Value, Type)):
+            raw_value = field_type.for_value(raw_value).constant(raw_value)
         kwargs[name] = raw_value
         parser.skip_whitespace()
     return kwargs

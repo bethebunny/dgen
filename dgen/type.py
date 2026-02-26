@@ -1,18 +1,7 @@
 from __future__ import annotations
 
 import ctypes
-from typing import (
-    TYPE_CHECKING,
-    Annotated,
-    Any,
-    ClassVar,
-    Generic,
-    Iterator,
-    Self,
-    TypeVar,
-    get_args,
-    get_origin,
-)
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Self, TypeVar
 
 from .layout import Layout
 
@@ -30,6 +19,8 @@ class Type:
     """
 
     __layout__: ClassVar[Layout]
+    __runtime_fields__: ClassVar[Fields] = ()
+    __constant_fields__: ClassVar[Fields] = ()
 
     def constant(self, value: object) -> Constant[Self]:
         """Create a Constant wrapping this type and a Python value."""
@@ -41,23 +32,9 @@ class Type:
     def for_value(cls, value: object) -> Type:
         return cls()
 
-    @classmethod
-    def fields(cls) -> Iterator[tuple[str, type[Type], bool]]:
-        from .asm.formatting import _class_hints
-        from .value import Constant, Value
 
-        for name, hint in _class_hints(cls).items():
-            if get_origin(hint) is Annotated:
-                args = get_args(hint)
-                if Constant in args[1:]:
-                    wrapped_type = args[0]
-                    assert get_origin(wrapped_type) is Value
-                    yield name, get_args(wrapped_type)[0], True
-                    continue
-            elif get_origin(hint) is Value:
-                yield name, get_args(hint)[0], False
-            elif get_origin(hint) is not ClassVar:
-                yield name, None, False
+Field = tuple[str, type[Type]]
+Fields = tuple[Field, ...]
 
 
 T = TypeVar("T", bound=Type)

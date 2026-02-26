@@ -21,6 +21,8 @@ affine = Dialect("affine")
 class ShapeType(Type):
     rank: Annotated[Value[builtin.IndexType], Constant]
 
+    __constant_fields__ = (("rank", builtin.IndexType),)
+
     @property
     def __layout__(self) -> Layout:
         assert self.rank.ready
@@ -48,6 +50,8 @@ class MemRefType(Type):
 
     shape: Annotated[Value[ShapeType], Constant]
     dtype: Type = builtin.F64Type()
+
+    __constant_fields__ = (("shape", ShapeType), ("dtype", Type))
 
 
 # ===----------------------------------------------------------------------=== #

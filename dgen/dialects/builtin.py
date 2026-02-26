@@ -57,6 +57,8 @@ class List(Type):
     __layout__ = FatPointer(BYTE)
     element_type: Type
 
+    __constant_fields__ = (("element_type", Type),)
+
 
 @builtin.op("constant")
 @dataclass(eq=False, kw_only=True, init=False)
