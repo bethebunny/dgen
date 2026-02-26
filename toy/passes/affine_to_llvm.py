@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator, Iterator
 from math import prod
 import dgen
+from dgen.dialects.builtin import Nil
 from dgen.dialects import builtin, llvm
 from dgen.layout import Array
 from toy.dialects import affine, toy
@@ -86,8 +87,10 @@ class AffineToLLVMLowering:
         elif isinstance(op, toy.NonzeroCountOp):
             yield from self._lower_nonzero_count(op)
         elif isinstance(op, builtin.ReturnOp):
-            val = self._map(op.value) if op.value is not None else None
-            yield builtin.ReturnOp(value=val)
+            if isinstance(op.value, Nil):
+                yield builtin.ReturnOp()
+            else:
+                yield builtin.ReturnOp(value=self._map(op.value))
 
     def _lower_alloc(self, op: affine.AllocOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, affine.MemRefType)

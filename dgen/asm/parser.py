@@ -32,8 +32,10 @@ def parse_expr(parser: IRParser) -> object:
 
     if c == "(":
         # Nil literal: ()
+        from dgen.dialects.builtin import Nil
+
         parser.expect("()")
-        return None
+        return Nil()
 
     if c == "[":
         # List: [expr, expr, ...]

@@ -226,10 +226,10 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
                 a = ", ".join(typed_ref(arg) for arg in op.args)
                 lines.append(f"  call void @{op.callee}({a})")
         elif isinstance(op, builtin.ReturnOp):
-            if op.value is not None:
-                lines.append(f"  ret {typed_ref(op.value)}")
-            else:
+            if isinstance(op.value, builtin.Nil):
                 lines.append("  ret void")
+            else:
+                lines.append(f"  ret {typed_ref(op.value)}")
 
     lines.append("}")
     return lines

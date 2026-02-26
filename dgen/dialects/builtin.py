@@ -95,7 +95,7 @@ class AddIndexOp(Op):
 @builtin.op("return")
 @dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):
-    value: Value | None = None
+    value: Value | Nil = Nil()
     type: Type = Nil()
 
     __arg_fields__ = ("value",)

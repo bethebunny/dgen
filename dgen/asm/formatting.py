@@ -71,7 +71,7 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     """Format a value as an expression string, dispatching on runtime type."""
     from dgen.dialects.builtin import Nil, Value
 
-    if value is None or isinstance(value, Nil):
+    if isinstance(value, Nil):
         return "()"
     if isinstance(value, Constant) and not isinstance(value, Op):
         from ..layout import Array

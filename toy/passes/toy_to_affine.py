@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterator
 
 import dgen
 from dgen.block import BlockArgument
+from dgen.dialects.builtin import Nil
 from dgen.dialects import builtin
 from dgen.layout import Array
 from toy.dialects import affine, toy
@@ -214,8 +215,10 @@ class ToyToAffineLowering:
     def _lower_return(self, op: builtin.ReturnOp) -> Iterator[dgen.Op]:
         for alloc_val in self.live_allocs:
             yield affine.DeallocOp(input=alloc_val)
-        val = self.alloc_map.get(op.value, op.value) if op.value is not None else None
-        yield builtin.ReturnOp(value=val)
+        if isinstance(op.value, Nil):
+            yield builtin.ReturnOp()
+        else:
+            yield builtin.ReturnOp(value=self.alloc_map.get(op.value, op.value))
 
 
 def lower_to_affine(m: builtin.Module) -> builtin.Module:

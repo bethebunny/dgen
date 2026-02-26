@@ -98,9 +98,8 @@ def _infer_function(
                     _infer_function(callee, func_map, type_of)
                     # Update callee signature
                     ret_op = callee.body.ops[-1]
-                    if (
-                        isinstance(ret_op, builtin.ReturnOp)
-                        and ret_op.value is not None
+                    if isinstance(ret_op, builtin.ReturnOp) and not isinstance(
+                        ret_op.value, builtin.Nil
                     ):
                         ret_type = type_of.get(id(ret_op.value))
                         if ret_type is not None:

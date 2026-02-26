@@ -54,7 +54,9 @@ class Lowering:
         result: dgen.Type = builtin.Nil()
         if ops:
             last_op = ops[-1]
-            if isinstance(last_op, builtin.ReturnOp) and last_op.value is not None:
+            if isinstance(last_op, builtin.ReturnOp) and not isinstance(
+                last_op.value, builtin.Nil
+            ):
                 result = toy.InferredShapeTensor()
 
         func_type = toy.FunctionType(inputs=input_types, result=result)
