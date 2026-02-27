@@ -207,7 +207,7 @@ def test_tile_with_constant_count():
         | %f = function () -> ():
         |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
         |     %1 : index = 4
-        |     %2 : toy.InferredShapeTensor(f64) = toy.tile(%0, %1)
+        |     %2 : toy.InferredShapeTensor(f64) = toy.tile(%1, %0)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -220,7 +220,7 @@ def test_tile_with_constant_count():
         | %f = function () -> ():
         |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
         |     %1 : index = 4
-        |     %2 : toy.Tensor([4, 3], f64) = toy.tile(%0, %1)
+        |     %2 : toy.Tensor([4, 3], f64) = toy.tile(%1, %0)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)

@@ -139,7 +139,7 @@ def parse_op_fields(
         field_idx += 1
 
     # Then parse runtime fields (pass-through)
-    for f_name in cls.__operands__:
+    for f_name, _ in cls.__operands__:
         if field_idx > 0:
             parser.expect(",")
             parser.skip_whitespace()

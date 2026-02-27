@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import prod
-from typing import Annotated
 
-from dgen import Constant, Dialect, Op, Type, Value
+from dgen import Dialect, Op, Type, Value
 from dgen.dialects import builtin
 from dgen.dialects.builtin import IndexType
 from dgen.layout import FLOAT64, VOID, Array, Layout
@@ -25,7 +24,7 @@ toy = Dialect("toy")
 class TensorType(Type):
     """toy.Tensor([2, 3], f64)."""
 
-    shape: Annotated[Value[ShapeType], Constant]
+    shape: Value[ShapeType]
     dtype: Type = builtin.F64Type()
 
     __params__ = (("shape", ShapeType), ("dtype", Type))
@@ -70,7 +69,7 @@ class TransposeOp(Op):
     input: Value
     type: Type
 
-    __operands__ = ("input",)
+    __operands__ = (("input", Type),)
 
 
 @toy.op("reshape")
@@ -79,7 +78,7 @@ class ReshapeOp(Op):
     input: Value
     type: Type
 
-    __operands__ = ("input",)
+    __operands__ = (("input", Type),)
 
 
 @toy.op("mul")
@@ -89,7 +88,7 @@ class MulOp(Op):
     rhs: Value
     type: Type
 
-    __operands__ = ("lhs", "rhs")
+    __operands__ = (("lhs", Type), ("rhs", Type))
 
 
 @toy.op("add")
@@ -99,7 +98,7 @@ class AddOp(Op):
     rhs: Value
     type: Type
 
-    __operands__ = ("lhs", "rhs")
+    __operands__ = (("lhs", Type), ("rhs", Type))
 
 
 @toy.op("generic_call")
@@ -109,29 +108,30 @@ class GenericCallOp(Op):
     args: list[Value]
     type: Type
 
-    __operands__ = ("callee", "args")
+    __operands__ = (("callee", builtin.String), ("args", Type))
 
 
 @toy.op("concat")
 @dataclass(eq=False, kw_only=True)
 class ConcatOp(Op):
-    axis: Annotated[Value[IndexType], Constant]
+    axis: Value[IndexType]
     lhs: Value
     rhs: Value
     type: Type
 
     __params__ = (("axis", IndexType),)
-    __operands__ = ("lhs", "rhs")
+    __operands__ = (("lhs", Type), ("rhs", Type))
 
 
 @toy.op("tile")
 @dataclass(eq=False, kw_only=True)
 class TileOp(Op):
+    count: Value[IndexType]
     input: Value
-    count: Annotated[Value[IndexType], Constant]
     type: Type
 
-    __operands__ = ("input", "count")
+    __params__ = (("count", IndexType),)
+    __operands__ = (("input", Type),)
 
 
 @toy.op("nonzero_count")
@@ -140,18 +140,18 @@ class NonzeroCountOp(Op):
     input: Value
     type: Type = builtin.IndexType()
 
-    __operands__ = ("input",)
+    __operands__ = (("input", Type),)
 
 
 @toy.op("dim_size")
 @dataclass(eq=False, kw_only=True)
 class DimSizeOp(Op):
-    axis: Annotated[Value[IndexType], Constant]
+    axis: Value[IndexType]
     input: Value
     type: Type = builtin.IndexType()
 
     __params__ = (("axis", IndexType),)
-    __operands__ = ("input",)
+    __operands__ = (("input", Type),)
 
     def resolve_constant(self) -> int | None:
         """Return constant value if input type has a resolved shape."""
@@ -167,4 +167,4 @@ class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __operands__ = ("input",)
+    __operands__ = (("input", Type),)

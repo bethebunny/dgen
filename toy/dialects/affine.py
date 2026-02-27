@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated
 
 from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.dialects import builtin
@@ -20,7 +19,7 @@ affine = Dialect("affine")
 @affine.type("Shape")
 @dataclass(frozen=True)
 class ShapeType(Type):
-    rank: Annotated[Value[IndexType], Constant]
+    rank: Value[IndexType]
 
     __params__ = (("rank", IndexType),)
 
@@ -49,7 +48,7 @@ def shape_constant(dims: list[int]) -> Constant:
 class MemRefType(Type):
     __layout__ = Pointer(VOID)
 
-    shape: Annotated[Value[ShapeType], Constant]
+    shape: Value[ShapeType]
     dtype: Type = builtin.F64Type()
 
     __params__ = (("shape", ShapeType), ("dtype", Type))
@@ -63,9 +62,9 @@ class MemRefType(Type):
 @affine.op("alloc")
 @dataclass(eq=False, kw_only=True)
 class AllocOp(Op):
-    shape: Annotated[Value[ShapeType], Constant]
+    shape: Value[ShapeType]
 
-    __operands__ = ("shape",)
+    __operands__ = (("shape", ShapeType),)
 
 
 @affine.op("dealloc")
@@ -74,7 +73,7 @@ class DeallocOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __operands__ = ("input",)
+    __operands__ = (("input", Type),)
 
 
 @affine.op("load")
@@ -84,7 +83,7 @@ class LoadOp(Op):
     indices: list[Value]
     type: Type = builtin.Nil()
 
-    __operands__ = ("memref", "indices")
+    __operands__ = (("memref", Type), ("indices", IndexType))
 
 
 @affine.op("store")
@@ -95,7 +94,7 @@ class StoreOp(Op):
     indices: list[Value]
     type: Type = builtin.Nil()
 
-    __operands__ = ("value", "memref", "indices")
+    __operands__ = (("value", Type), ("memref", Type), ("indices", IndexType))
 
 
 @affine.op("mul_f")
@@ -105,7 +104,7 @@ class ArithMulFOp(Op):
     rhs: Value
     type: Type = builtin.Nil()
 
-    __operands__ = ("lhs", "rhs")
+    __operands__ = (("lhs", Type), ("rhs", Type))
 
 
 @affine.op("add_f")
@@ -115,7 +114,7 @@ class ArithAddFOp(Op):
     rhs: Value
     type: Type = builtin.Nil()
 
-    __operands__ = ("lhs", "rhs")
+    __operands__ = (("lhs", Type), ("rhs", Type))
 
 
 @affine.op("print_memref")
@@ -124,14 +123,14 @@ class PrintOp(Op):
     input: Value
     type: Type = builtin.Nil()
 
-    __operands__ = ("input",)
+    __operands__ = (("input", Type),)
 
 
 @affine.op("for")
 @dataclass(eq=False, kw_only=True)
 class ForOp(Op):
-    lo: Annotated[Value[IndexType], Constant]
-    hi: Annotated[Value[IndexType], Constant]
+    lo: Value[IndexType]
+    hi: Value[IndexType]
     body: Block
     type: Type = builtin.Nil()
 

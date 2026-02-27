@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import functools
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Annotated, get_args, get_origin
 
 import dgen
 from dgen import codegen
@@ -13,27 +11,6 @@ from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.type import Memory
 from dgen.value import Constant
-
-
-@functools.cache
-def _comptime_fields(cls: type) -> list[str]:
-    """Return field names whose type hint involves Constant."""
-    from dgen.asm.formatting import _class_hints
-
-    try:
-        hints = _class_hints(cls)
-    except Exception:
-        return []
-    result = []
-    for name, hint in hints.items():
-        # Direct: field: Constant[SomeType]
-        if get_origin(hint) is Constant:
-            result.append(name)
-        # Annotated: field: Annotated[Value[SomeType], Constant]
-        elif get_origin(hint) is Annotated:
-            if any(a is Constant for a in get_args(hint)[1:]):
-                result.append(name)
-    return result
 
 
 def _trace_dependencies(target: dgen.Value, func: builtin.FuncOp) -> list[dgen.Op]:
@@ -149,9 +126,9 @@ def _resolve_constant_ops(func: builtin.FuncOp) -> None:
         const = builtin.ConstantOp(value=val, type=op.type)
         func.body.ops[i] = const
         for other in func.body.ops:
-            for fn in _comptime_fields(type(other)):
-                if getattr(other, fn) is op:
-                    setattr(other, fn, const)
+            for param, _ in other.__params__:
+                if getattr(other, param) is op:
+                    setattr(other, param, const)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +150,7 @@ def _resolve_all_comptime(
         changed = False
         func = module.functions[0]
         for op in list(func.body.ops):
-            for field_name in _comptime_fields(type(op)):
+            for field_name, _ in op.__params__:
                 value = getattr(op, field_name)
                 if not isinstance(value, dgen.Value):
                     continue  # already a literal constant, no resolution needed

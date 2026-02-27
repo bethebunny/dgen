@@ -66,7 +66,7 @@ class ConstantOp(Op, Constant):
     value: Memory
     type: Type
 
-    __operands__ = ("value",)
+    __operands__ = (("value", Type),)
 
     def __init__(self, *, value: object, type: Type, name: str | None = None) -> None:
         self.name = name
@@ -85,11 +85,11 @@ class ConstantOp(Op, Constant):
 @builtin.op("add_index")
 @dataclass(eq=False, kw_only=True)
 class AddIndexOp(Op):
-    lhs: Value
-    rhs: Value
+    lhs: Value[IndexType]
+    rhs: Value[IndexType]
     type: Type = IndexType()
 
-    __operands__ = ("lhs", "rhs")
+    __operands__ = (("lhs", IndexType), ("rhs", IndexType))
 
 
 @builtin.op("return")
@@ -98,7 +98,7 @@ class ReturnOp(Op):
     value: Value | Nil = Nil()
     type: Type = Nil()
 
-    __operands__ = ("value",)
+    __operands__ = (("value", Type),)
 
 
 # ===----------------------------------------------------------------------=== #

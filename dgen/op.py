@@ -16,7 +16,7 @@ class Op(Value):
     _asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
     __params__: ClassVar[Fields] = ()
-    __operands__: ClassVar[tuple[str, ...]] = ()
+    __operands__: ClassVar[Fields] = ()
     __has_body__: ClassVar[bool] = False
 
     @property
@@ -24,7 +24,7 @@ class Op(Value):
         """All Value-typed fields (constant and runtime)."""
         for name, _ in self.__params__:
             yield name, getattr(self, name)
-        for name in self.__operands__:
+        for name, _ in self.__operands__:
             yield name, getattr(self, name)
 
     @property

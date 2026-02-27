@@ -1,7 +1,6 @@
 ## Make the JIT work in the general case
 - `__has_body__` -> `__blocks__`
 - Update asm to use `<>` for constant fields
-- Remove any `Annotated[..., Constant]`s, old pattern
 - str fields to constant strings
 - Do less packing and unpacking
 - Memory layout for types

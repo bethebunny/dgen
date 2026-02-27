@@ -105,7 +105,7 @@ def test_tile_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     n = dgen.Value(name="n", type=builtin.IndexType())
     op = toy.TileOp(name="1", input=v0, count=n, type=inferred())
-    assert asm.format(op) == "%1 : toy.InferredShapeTensor(f64) = toy.tile(%0, %n)"
+    assert asm.format(op) == "%1 : toy.InferredShapeTensor(f64) = toy.tile(%n, %0)"
 
 
 def test_add_index_op():
