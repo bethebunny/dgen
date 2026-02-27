@@ -152,7 +152,7 @@ def parse_op_fields(
         kwargs["type"] = pre_type
 
     # Body (indented block)
-    if cls.__has_body__:
+    if cls.__blocks__:
         parser.skip_whitespace()
         # Parse optional block args: (%name: type, ...)
         args = []
@@ -171,7 +171,7 @@ def parse_op_fields(
         parser.skip_whitespace()
         parser.expect(":")
         ops = parser.parse_indented_block()
-        kwargs["body"] = Block(ops=ops, args=args)
+        kwargs[cls.__blocks__[0]] = Block(ops=ops, args=args)
 
     op = cls(**kwargs)
 

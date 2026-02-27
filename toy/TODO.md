@@ -1,5 +1,4 @@
 ## Make the JIT work in the general case
-- `__has_body__` -> `__blocks__`
 - str fields to constant strings
 - Do less packing and unpacking
 - Memory layout for types
@@ -25,6 +24,14 @@
 - See if we can make `Block` an op in a generic way.
 - Make `call` a generic op in builtin
 - Generalized notion of chains
+  - `builtin.chain(%lhs : A, %rhs : B) -> A` which just retuns `%lhs`
+  - no chain type! The following is fine:
+    ```
+      %0 : () = ...
+      %1 : () = ...
+      %2 : () = chain(%0, %1)
+      %_ : () = return(%2)
+    ```
 - Generalized dead code elimination (mutable ops _must_ be chained)
 - Try to generalize binary operations, eg. can we have a `builtin.add` op? Does it make sense to model types explicitly as being in a group/field/ring? There's certainly generic optimizations that can be done.
 - Pass input/output types, pre/post validation
@@ -52,6 +59,7 @@
 - Remove `type: ignore`s
 - Function calls and GOTOs should use the SSA name, not a string
 - Function definitions should use the normal block syntax
+- Update parser and formatter to support multi-block ops
 
 ## Misc
 - Write more down into design docs

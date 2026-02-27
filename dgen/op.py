@@ -17,7 +17,7 @@ class Op(Value):
     dialect: ClassVar[Dialect]
     __params__: ClassVar[Fields] = ()
     __operands__: ClassVar[Fields] = ()
-    __has_body__: ClassVar[bool] = False
+    __blocks__: ClassVar[tuple[str, ...]] = ()
 
     @property
     def operands(self) -> Iterable[tuple[str, Value]]:
@@ -30,8 +30,8 @@ class Op(Value):
     @property
     def blocks(self) -> Iterable[tuple[str, Block]]:
         """All Block-typed fields."""
-        if self.__has_body__:
-            yield "body", getattr(self, "body")
+        for name in self.__blocks__:
+            yield name, getattr(self, name)
 
     @property
     def asm(self) -> Iterable[str]:

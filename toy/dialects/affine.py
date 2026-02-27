@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.dialects import builtin
-from dgen.dialects.builtin import IndexType
+from dgen.dialects.builtin import HasSingleBlock, IndexType
 from dgen.layout import INT, VOID, Array, Layout, Pointer
 
 # ===----------------------------------------------------------------------=== #
@@ -128,11 +128,11 @@ class PrintOp(Op):
 
 @affine.op("for")
 @dataclass(eq=False, kw_only=True)
-class ForOp(Op):
+class ForOp(HasSingleBlock, Op):
     lo: Value[IndexType]
     hi: Value[IndexType]
     body: Block
     type: Type = builtin.Nil()
 
     __params__ = (("lo", IndexType), ("hi", IndexType))
-    __has_body__ = True
+    __blocks__ = ("body",)

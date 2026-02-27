@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import ClassVar
 
 from dgen import Block, Constant, Dialect, Op, Type, Value, asm
 from dgen.asm.formatting import SlotTracker, format_expr, op_asm
@@ -106,13 +107,23 @@ class ReturnOp(Op):
 # ===----------------------------------------------------------------------=== #
 
 
+class HasSingleBlock:
+    """Trait for ops with a single block region named."""
+
+    __blocks__: ClassVar[tuple[str, ...]]
+
+    @property
+    def __body__(self) -> Block:
+        return getattr(self, self.__blocks__[0])
+
+
 @builtin.op("function")
 @dataclass(eq=False, kw_only=True)
-class FuncOp(Op):
+class FuncOp(HasSingleBlock, Op):
     body: Block
     type: Function
 
-    __has_body__ = True
+    __blocks__ = ("body",)
 
     @property
     def asm(self) -> Iterable[str]:

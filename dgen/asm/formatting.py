@@ -174,8 +174,8 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
             op_str += f"<{', '.join(param_parts)}>"
         op_str += f"({', '.join(operand_parts)})"
         parts.append(op_str)
-    if cls.__has_body__:
-        body: Block = getattr(op, "body")
+    if cls.__blocks__:
+        body: Block = getattr(op, cls.__blocks__[0])
         if body.args:
             block_args = ", ".join(
                 f"%{tracker.get_name(a)}: {format_expr(a.type)}" for a in body.args
@@ -186,7 +186,7 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     line = "".join(parts)
     yield line
 
-    if cls.__has_body__:
-        body = getattr(op, "body")
+    if cls.__blocks__:
+        body = getattr(op, cls.__blocks__[0])
         for child_op in body.ops:
             yield from indent(op_asm(child_op, tracker))
