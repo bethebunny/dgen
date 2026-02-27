@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -168,7 +168,7 @@ class FuncOp(HasSingleBlock, Op):
             yield from asm.indent(op_asm(op, tracker))
 
 
-def _register_ops(tracker: SlotTracker, ops: list[Op]) -> None:
+def _register_ops(tracker: SlotTracker, ops: Sequence[Op]) -> None:
     """Pre-register all ops in a tracker so slot numbers are stable."""
     for op in ops:
         tracker.get_name(op)

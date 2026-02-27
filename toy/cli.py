@@ -1,5 +1,6 @@
 """CLI tool: compile and run .toy files."""
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import click
@@ -25,7 +26,7 @@ def _parse_arg(arg: str) -> object:
     return parse_expr(IRParser(arg))
 
 
-def run(source: str, *, args: list | None = None) -> object:
+def run(source: str, *, args: Sequence = ()) -> object:
     """Compile and run a .toy source string through the full pipeline."""
     ast = parse_toy(source)
     ir = lower(ast)
@@ -53,7 +54,7 @@ def run(source: str, *, args: list | None = None) -> object:
 @click.argument("args", nargs=-1)
 def main(source_file: str, args: tuple[str, ...]) -> None:
     """Compile and run a .toy source file."""
-    run(Path(source_file).read_text(), args=list(args) if args else None)
+    run(Path(source_file).read_text(), args=args)
 
 
 if __name__ == "__main__":

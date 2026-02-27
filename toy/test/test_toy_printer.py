@@ -1,5 +1,7 @@
 """Phase 1 tests: construct IR manually, print, verify output."""
 
+from collections.abc import Sequence
+
 import dgen
 from dgen import asm
 from dgen.block import BlockArgument
@@ -13,7 +15,7 @@ def inferred() -> dgen.Type:
     return toy.InferredShapeTensor()
 
 
-def ranked(shape: list[int]) -> dgen.Type:
+def ranked(shape: Sequence[int]) -> dgen.Type:
     return toy.TensorType(shape=shape_constant(shape))
 
 

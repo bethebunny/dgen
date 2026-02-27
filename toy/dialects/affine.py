@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from dgen import Block, Constant, Dialect, Op, Type, Value
@@ -37,7 +38,7 @@ class ShapeType(Type):
         return cls(rank=IndexType().constant(len(value)))
 
 
-def shape_constant(dims: list[int]) -> Constant:
+def shape_constant(dims: Sequence[int]) -> Constant:
     """Create a Constant[ShapeType] from a list of dims."""
     rank = IndexType().constant(len(dims))
     return ShapeType(rank=rank).constant(dims)

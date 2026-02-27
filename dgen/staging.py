@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Callable
 from copy import deepcopy
+from typing import Sequence
 
 import dgen
 from dgen import codegen
@@ -51,7 +52,9 @@ def _is_stage0_evaluable(target: dgen.Value) -> bool:
     return True
 
 
-def _make_memories(block_args: list[BlockArgument], python_args: list) -> list[Memory]:
+def _make_memories(
+    block_args: Sequence[BlockArgument], python_args: Sequence
+) -> list[Memory]:
     """Convert Python args to Memory objects using block argument types."""
     return [
         Memory.from_value(param.type, arg)
@@ -64,22 +67,20 @@ def _jit_evaluate(
     target: dgen.Value,
     lower: Callable[[builtin.Module], builtin.Module],
     *,
-    block_args: list[BlockArgument] | None = None,
-    args: list | None = None,
+    block_args: Sequence[BlockArgument] = (),
+    args: Sequence = (),
 ) -> object:
     """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
     ops = list(subgraph) + [builtin.ReturnOp(value=target)]
     func = builtin.FuncOp(
         name="main",
-        body=dgen.Block(ops=ops, args=list(block_args or [])),
+        body=dgen.Block(ops=ops, args=block_args),
         type=builtin.Function(result=target.type),
     )
     module = builtin.Module(functions=[func])
     lowered = lower(module)
     exe = codegen.compile(lowered)
-    memories: list[Memory] = []
-    if block_args and args:
-        memories = _make_memories(block_args, args)
+    memories = _make_memories(block_args, args)
     raw = exe.run(*memories)
 
     # For pointer-type results, copy data back while buffers are still alive
@@ -96,19 +97,20 @@ def _resolve_comptime_field(
     field_name: str,
     value: dgen.Value,
     lower: Callable[[builtin.Module], builtin.Module],
-    args: list | None = None,
+    *,
+    block_args: Sequence[BlockArgument] = (),
+    args: Sequence = (),
 ) -> None:
     """Resolve a single Constant field: JIT the dependency subgraph, patch with ConstantOp."""
     subgraph = _trace_dependencies(value, func)
-    stage1 = not _is_stage0_evaluable(value)
     result = _jit_evaluate(
         subgraph,
         value,
         lower,
-        block_args=func.body.args if stage1 else None,
+        block_args=block_args,
         args=args,
     )
-    if stage1:
+    if block_args:
         subgraph_ids = {id(o) for o in subgraph}
         func.body.ops[:] = [o for o in func.body.ops if id(o) not in subgraph_ids]
     const_op = builtin.ConstantOp(value=result, type=value.type)
@@ -149,7 +151,6 @@ def _resolve_all_comptime(
     *,
     infer: Callable[[builtin.Module], builtin.Module],
     lower: Callable[[builtin.Module], builtin.Module],
-    args: list | None = None,
 ) -> builtin.Module:
     """Deepcopy + resolve all Constant fields. Returns pre-lowered module."""
     module = deepcopy(module)
@@ -164,7 +165,9 @@ def _resolve_all_comptime(
                     continue  # already a literal constant, no resolution needed
                 if isinstance(value, Constant):
                     continue  # already a resolved Constant (ConstantOp or inline)
-                _resolve_comptime_field(func, op, field_name, value, lower, args)
+                if not _is_stage0_evaluable(value):
+                    continue  # stage-1: needs runtime args, skip
+                _resolve_comptime_field(func, op, field_name, value, lower)
                 module = infer(module)
                 _resolve_constant_ops(module.functions[0])
                 changed = True
@@ -179,17 +182,12 @@ def compile_staged(
     *,
     infer: Callable[[builtin.Module], builtin.Module],
     lower: Callable[[builtin.Module], builtin.Module],
-    args: list | None = None,
 ) -> codegen.Executable:
     """Stage-resolve, infer, lower, and compile to an Executable."""
-    resolved = _resolve_all_comptime(module, infer=infer, lower=lower, args=args)
-    func = resolved.functions[0]
+    resolved = _resolve_all_comptime(module, infer=infer, lower=lower)
     typed = infer(resolved)
     lowered = lower(typed)
     exe = codegen.compile(lowered)
-    # Override with pre-lowered types so Memory.from_value works correctly
-    if func.body.args:
-        exe.input_types = [arg.type for arg in func.body.args]
     return exe
 
 
@@ -198,9 +196,40 @@ def compile_and_run_staged(
     *,
     infer: Callable[[builtin.Module], builtin.Module],
     lower: Callable[[builtin.Module], builtin.Module],
-    args: list | None = None,
+    args: Sequence = (),
 ) -> object:
     """Full staged compilation pipeline: resolve, compile, and run."""
-    exe = compile_staged(module, infer=infer, lower=lower, args=args)
-    memories = [Memory.from_value(t, a) for t, a in zip(exe.input_types, args or [])]
+    resolved = _resolve_all_comptime(module, infer=infer, lower=lower)
+    # Stage-1: resolve comptime fields that depend on runtime args
+    if args:
+        changed = True
+        while changed:
+            changed = False
+            func = resolved.functions[0]
+            for op in list(func.body.ops):
+                for field_name, _ in op.__params__:
+                    value = getattr(op, field_name)
+                    if not isinstance(value, dgen.Value):
+                        continue
+                    if isinstance(value, Constant):
+                        continue
+                    _resolve_comptime_field(
+                        func,
+                        op,
+                        field_name,
+                        value,
+                        lower,
+                        block_args=func.body.args,
+                        args=args,
+                    )
+                    resolved = infer(resolved)
+                    _resolve_constant_ops(resolved.functions[0])
+                    changed = True
+                    break
+                if changed:
+                    break
+    typed = infer(resolved)
+    lowered = lower(typed)
+    exe = codegen.compile(lowered)
+    memories = [Memory.from_value(t, a) for t, a in zip(exe.input_types, args)]
     return exe.run(*memories)

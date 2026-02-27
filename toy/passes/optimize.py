@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from copy import deepcopy
 
 import dgen
@@ -14,7 +15,7 @@ from toy.dialects.affine import shape_constant
 # ===----------------------------------------------------------------------=== #
 
 
-def collect_uses(ops: list[dgen.Op]) -> set[int]:
+def collect_uses(ops: Sequence[dgen.Op]) -> set[int]:
     """Return set of id()s of Values referenced as operands."""
     used: set[int] = set()
     for op in ops:
@@ -24,7 +25,7 @@ def collect_uses(ops: list[dgen.Op]) -> set[int]:
 
 
 def rewrite_uses(
-    ops: list[dgen.Op], old_value: dgen.Value, new_value: dgen.Value
+    ops: Sequence[dgen.Op], old_value: dgen.Value, new_value: dgen.Value
 ) -> None:
     """Replace all operand references to old_value with new_value."""
     for op in ops:
@@ -125,7 +126,7 @@ def eliminate_dead_code(func: builtin.FuncOp) -> None:
         _remove_indices(func.body.ops, to_remove)
 
 
-def _remove_indices(ops: list[dgen.Op], indices: list[int]) -> None:
+def _remove_indices(ops: list[dgen.Op], indices: Sequence[int]) -> None:
     for idx in reversed(indices):
         ops.pop(idx)
 

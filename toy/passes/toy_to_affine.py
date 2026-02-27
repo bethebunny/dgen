@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 
 import dgen
 from dgen.block import BlockArgument
@@ -78,8 +78,8 @@ class ToyToAffineLowering:
 
     def _nested_for(
         self,
-        shape: list[int],
-        body_fn: Callable[[list[dgen.Value]], list[dgen.Op]],
+        shape: Sequence[int],
+        body_fn: Callable[[Sequence[dgen.Value]], list[dgen.Op]],
     ) -> Iterator[dgen.Op]:
         """Build nested ForOps for each dimension. body_fn(ivars) -> innermost ops."""
         ivars: list[dgen.Value] = [
@@ -112,7 +112,7 @@ class ToyToAffineLowering:
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
 
-        def body(ivars: list[dgen.Value]) -> list[dgen.Op]:
+        def body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=in_alloc, indices=ivars)
             store = affine.StoreOp(
                 value=load, memref=alloc_op, indices=list(reversed(ivars))
@@ -138,7 +138,7 @@ class ToyToAffineLowering:
             toy.AddOp: affine.ArithAddFOp,
         }
 
-        def body(ivars: list[dgen.Value]) -> list[dgen.Op]:
+        def body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             lv = affine.LoadOp(memref=lhs_alloc, indices=ivars)
             rv = affine.LoadOp(memref=rhs_alloc, indices=ivars)
             res = binop[type(result_op)](lhs=lv, rhs=rv)
@@ -161,7 +161,7 @@ class ToyToAffineLowering:
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
 
-        def body(ivars: list[dgen.Value]) -> list[dgen.Op]:
+        def body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             inner_ivars = ivars[1:]  # indices into input tensor
             load = affine.LoadOp(memref=in_alloc, indices=inner_ivars)
             store = affine.StoreOp(value=load, memref=alloc_op, indices=ivars)
@@ -187,7 +187,7 @@ class ToyToAffineLowering:
         rhs_alloc = self.alloc_map.get(op.rhs, op.rhs)
 
         # Copy lhs into output[0:lhs_shape[axis], ...]
-        def lhs_body(ivars: list[dgen.Value]) -> list[dgen.Op]:
+        def lhs_body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=lhs_alloc, indices=ivars)
             store = affine.StoreOp(value=load, memref=alloc_op, indices=ivars)
             return [load, store]
@@ -200,7 +200,7 @@ class ToyToAffineLowering:
         )
         yield offset_const
 
-        def rhs_body(ivars: list[dgen.Value]) -> list[dgen.Op]:
+        def rhs_body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             load = affine.LoadOp(memref=rhs_alloc, indices=ivars)
             offset_idx = builtin.AddIndexOp(lhs=ivars[axis], rhs=offset_const)
             out_indices: list[dgen.Value] = list(ivars)

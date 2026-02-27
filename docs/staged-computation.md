@@ -103,30 +103,27 @@ function () -> ():
 
 ### Execution Flow
 
-`compile_and_run_staged` orchestrates the two-phase execution:
+`compile_and_run_staged` orchestrates the two-phase execution. Compilation (`compile_staged`) only resolves stage-0 constants — runtime arg values are not required. Stage-1 resolution happens at the run boundary when args are available:
 
 ```
 compile_and_run_staged(module, infer, lower, args=[tensor])
 │
-├─ 1. Scan for Comptime fields
-│     If stage-0 evaluable → resolve in isolation (as before)
-│     If stage-1 needed → call _execute_stage1
+├─ 1. _resolve_all_comptime (stage-0 only, no args needed)
+│     Scan for Comptime fields
+│     If stage-0 evaluable → resolve in isolation
+│     If stage-1 needed → skip (needs runtime args)
 │
-└─ _execute_stage1(func, boundary_op, ...)
-    │
-    ├─ Build stage-1 module from comptime subgraph + function params
-    ├─ Lower through pipeline (toy → affine → LLVM)
-    ├─ JIT with runtime args → get comptime result (e.g., count=2)
-    │
-    ├─ Build stage-2 module:
-    │     Remove subgraph ops from original function
-    │     Insert ConstantOp(count=2) before the boundary op
-    │     Patch the Comptime field to point to it
-    │
-    ├─ Run stage-2 through full pipeline:
-    │     infer_shapes → lower_to_affine → lower_to_llvm
-    │
-    └─ compile_and_run(stage2) → output
+├─ 2. Stage-1 resolution (only if args provided)
+│     For each remaining unresolved Comptime field:
+│       Build stage-1 module from comptime subgraph + function params
+│       Lower through pipeline (toy → affine → LLVM)
+│       JIT with runtime args → get comptime result (e.g., count=2)
+│       Remove subgraph ops, insert ConstantOp, patch field
+│       Re-run infer + resolve_constant_ops
+│
+├─ 3. Compile: infer → lower → codegen
+│
+└─ 4. Run with args → output
 ```
 
 ### Argument Passing
@@ -175,11 +172,11 @@ The staging system supports three capabilities beyond the basic stage-0/stage-1 
 
 ### Pointer-crossing
 
-Stage-2 code can access the original function parameters (e.g., the tensor passed to the function). `compile_and_run_staged` preserves block args and ctypes args through to the final `compile_and_run` call.
+Stage-2 code can access the original function parameters (e.g., the tensor passed to the function). `compile_and_run_staged` preserves block args through compilation and passes runtime args at the run boundary.
 
 ### Multiple Comptime Fields
 
-`compile_and_run_staged` uses an iterative `while changed` loop that rescans after each resolution. Multiple independent stage-1 boundaries in the same function are resolved one at a time, with subgraph ops removed and replaced by constants after each step.
+Both `_resolve_all_comptime` (stage-0) and the stage-1 loop in `compile_and_run_staged` use an iterative `while changed` loop that rescans after each resolution. Multiple independent boundaries in the same function are resolved one at a time, with subgraph ops removed and replaced by constants after each step.
 
 ### Arbitrary Stages (Interleaved Shape Inference)
 
