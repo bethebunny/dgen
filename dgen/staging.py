@@ -10,8 +10,8 @@ from typing import Sequence
 import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
-from dgen.codegen import _ctype
-from dgen.dialects import builtin
+from dgen.codegen import _ctype, _llvm_type
+from dgen.dialects import builtin, llvm
 from dgen.type import Memory
 from dgen.value import Constant
 
@@ -74,7 +74,7 @@ def _jit_evaluate(
     ops = list(subgraph) + [builtin.ReturnOp(value=target)]
     func = builtin.FuncOp(
         name="main",
-        body=dgen.Block(ops=ops, args=block_args),
+        body=dgen.Block(ops=ops, args=list(block_args)),
         type=builtin.Function(result=target.type),
     )
     module = builtin.Module(functions=[func])
@@ -177,18 +177,173 @@ def _resolve_all_comptime(
     return module
 
 
+def _has_unresolved_params(func: builtin.FuncOp) -> bool:
+    """Check if any ops have unresolved __params__ fields."""
+    for op in func.body.ops:
+        for field_name, _ in op.__params__:
+            value = getattr(op, field_name)
+            if isinstance(value, dgen.Value) and not isinstance(value, Constant):
+                return True
+    return False
+
+
+def _raw_to_python(raw: object, ty: dgen.Type) -> object:
+    """Convert a raw ctypes callback value to a Python value for ConstantOp."""
+    layout = ty.__layout__
+    if _ctype(layout) is ctypes.c_void_p:
+        assert isinstance(raw, int)
+        buf = (ctypes.c_char * layout.byte_size).from_address(raw)
+        if isinstance(ty, builtin.String):
+            return bytes(buf).decode("utf-8")
+        return bytes(buf)
+    return raw
+
+
+def _compile_with_callbacks(
+    resolved: builtin.Module,
+    func: builtin.FuncOp,
+    *,
+    infer: Callable[[builtin.Module], builtin.Module],
+    lower: Callable[[builtin.Module], builtin.Module],
+) -> codegen.Executable:
+    """Build a stage-1 thunk that calls a host callback for stage-2 JIT.
+
+    The compiled function passes all its arguments to a host callback.
+    The callback resolves __params__ values, then JIT-compiles and executes
+    the stage-2 code with the remaining runtime arguments.
+    """
+    # Identify which block args are used as __params__ vs runtime operands
+    param_arg_ids: set[int] = set()
+    for op in func.body.ops:
+        for field_name, _ in op.__params__:
+            value = getattr(op, field_name)
+            if isinstance(value, BlockArgument) and not isinstance(value, Constant):
+                param_arg_ids.add(id(value))
+
+    param_indices: list[int] = []
+    runtime_indices: list[int] = []
+    for i, arg in enumerate(func.body.args):
+        if id(arg) in param_arg_ids:
+            param_indices.append(i)
+        else:
+            runtime_indices.append(i)
+
+    # Build mapping: param arg name → callback arg index
+    param_name_to_cb_idx: dict[str | None, int] = {
+        func.body.args[i].name: i for i in param_indices
+    }
+
+    # Build stage-2 template: remove param block args, keep ops as-is
+    stage2_template = deepcopy(resolved)
+    stage2_func = stage2_template.functions[0]
+    param_arg_names = set(param_name_to_cb_idx.keys())
+    stage2_func.body.args[:] = [
+        arg for arg in stage2_func.body.args if arg.name not in param_arg_names
+    ]
+
+    # Derive callback LLVM signature from original function
+    assert func.name is not None
+    callback_name = f"_stage2_{func.name}"
+    orig_param_types = [arg.type for arg in func.body.args]
+    orig_llvm_types = [_llvm_type(t.__layout__) for t in orig_param_types]
+    if isinstance(func.type.result, builtin.Nil):
+        ret_llvm = "void"
+        result_ctype: type[ctypes._CData] | None = None
+    else:
+        ret_llvm = _llvm_type(func.type.result.__layout__)
+        result_ctype = _ctype(func.type.result.__layout__)
+    extern_decl = f"declare {ret_llvm} @{callback_name}({', '.join(orig_llvm_types)})"
+
+    # Build ctypes callback type
+    param_ctypes = [_ctype(t.__layout__) for t in orig_param_types]
+    cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
+
+    # Capture template + pipeline in closure
+    def _callback(*raw_args: object) -> object:
+        template = deepcopy(stage2_template)
+        s2_func = template.functions[0]
+
+        # Patch __params__ fields with constants from callback args
+        for op in list(s2_func.body.ops):
+            for field_name, _ in op.__params__:
+                value = getattr(op, field_name)
+                if not isinstance(value, BlockArgument):
+                    continue
+                if isinstance(value, Constant):
+                    continue
+                if value.name not in param_name_to_cb_idx:
+                    continue
+                cb_idx = param_name_to_cb_idx[value.name]
+                raw = raw_args[cb_idx]
+                python_val = _raw_to_python(raw, value.type)
+                const = builtin.ConstantOp(value=python_val, type=value.type)
+                idx = s2_func.body.ops.index(op)
+                s2_func.body.ops.insert(idx, const)
+                setattr(op, field_name, const)
+
+        # Compile and run stage-2
+        typed = infer(template)
+        lowered = lower(typed)
+        exe = codegen.compile(lowered)
+        runtime_args = [raw_args[i] for i in runtime_indices]
+        return exe.run(*runtime_args)
+
+    callback_func = cb_type(_callback)
+
+    # Register callback with llvmlite
+    codegen._ensure_initialized()
+    import llvmlite.binding as _llvm_binding
+
+    _llvm_binding.add_symbol(
+        callback_name,
+        ctypes.cast(callback_func, ctypes.c_void_p).value,
+    )
+
+    # Build stage-1 thunk: call callback with all original params, return result
+    thunk_args = [BlockArgument(name=arg.name, type=arg.type) for arg in func.body.args]
+    call_op = llvm.CallOp(
+        callee=builtin.string_constant(callback_name),
+        args=thunk_args,
+        type=func.type.result,
+    )
+    if isinstance(func.type.result, builtin.Nil):
+        ret_op = builtin.ReturnOp()
+    else:
+        ret_op = builtin.ReturnOp(value=call_op)
+
+    thunk_func = builtin.FuncOp(
+        name=func.name,
+        body=dgen.Block(ops=[call_op, ret_op], args=thunk_args),
+        type=builtin.Function(result=func.type.result),
+    )
+    thunk_module = builtin.Module(functions=[thunk_func])
+
+    exe = codegen.compile(thunk_module, externs=[extern_decl])
+    exe.host_refs.append(callback_func)  # prevent GC
+    return exe
+
+
 def compile_staged(
     module: builtin.Module,
     *,
     infer: Callable[[builtin.Module], builtin.Module],
     lower: Callable[[builtin.Module], builtin.Module],
 ) -> codegen.Executable:
-    """Stage-resolve, infer, lower, and compile to an Executable."""
+    """Stage-resolve, infer, lower, and compile to an Executable.
+
+    If all __params__ are resolvable at compile time (stage-0), compiles directly.
+    If some __params__ depend on runtime values, builds a callback-based executable
+    that JIT-compiles stage-2 code when runtime values become available.
+    """
     resolved = _resolve_all_comptime(module, infer=infer, lower=lower)
+    func = resolved.functions[0]
+
+    if _has_unresolved_params(func):
+        return _compile_with_callbacks(resolved, func, infer=infer, lower=lower)
+
     typed = infer(resolved)
     lowered = lower(typed)
-    exe = codegen.compile(lowered)
-    return exe
+    return codegen.compile(lowered)
 
 
 def compile_and_run_staged(
@@ -231,5 +386,4 @@ def compile_and_run_staged(
     typed = infer(resolved)
     lowered = lower(typed)
     exe = codegen.compile(lowered)
-    memories = [Memory.from_value(t, a) for t, a in zip(exe.input_types, args)]
-    return exe.run(*memories)
+    return exe.run(*args)

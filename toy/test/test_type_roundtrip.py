@@ -369,3 +369,37 @@ def test_string_param_staging():
         )
         == 0
     )
+
+
+def test_compile_once_run_twice():
+    """Compile once with runtime-dependent __params__, run with different args.
+
+    The staging system builds a callback-based executable: the compiled code
+    calls a host callback that JIT-compiles stage-2 with the resolved values.
+    This enables compile-once, run-many with different runtime inputs.
+    """
+    from dgen.asm.parser import parse_module
+    from dgen.staging import compile_staged
+
+    from toy.test.helpers import strip_prefix
+
+    ir = strip_prefix("""
+        | import llvm
+        |
+        | %main = function (%pred : String<3>, %x : index, %y : index) -> index:
+        |     %cmp : () = llvm.icmp<%pred>(%x, %y)
+        |     %ext : () = llvm.zext(%cmp)
+        |     %_ : () = return(%ext)
+    """)
+    module = parse_module(ir)
+
+    identity = lambda m: m  # noqa: E731
+
+    exe = compile_staged(module, infer=identity, lower=identity)
+
+    # Same executable, different arguments — each run JITs a specialized stage-2
+    assert exe.run("slt", 5, 10) == 1  # 5 < 10 = true → 1
+    assert exe.run("sge", 5, 10) == 0  # 5 >= 10 = false → 0
+    assert exe.run("sgt", 10, 5) == 1  # 10 > 5 = true → 1
+    assert exe.run("sle", 7, 7) == 1  # 7 <= 7 = true → 1
+    assert exe.run("slt", 7, 7) == 0  # 7 < 7 = false → 0

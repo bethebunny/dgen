@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import _ctypes
 import ctypes
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -72,14 +73,18 @@ def _ensure_initialized() -> None:
 # ---------------------------------------------------------------------------
 
 
-def emit_llvm_ir(module: builtin.Module) -> tuple[str, list]:
+def emit_llvm_ir(
+    module: builtin.Module, *, externs: Sequence[str] = ()
+) -> tuple[str, list]:
     """Emit valid LLVM IR text that llvmlite can parse.
 
     Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
     alive for the lifetime of the JIT.
     """
     host_buffers: list = []
-    lines: list[str] = ["declare void @print_memref(ptr, i64)", ""]
+    lines: list[str] = ["declare void @print_memref(ptr, i64)"]
+    lines.extend(externs)
+    lines.append("")
     for func in module.functions:
         lines.extend(_emit_func(func, host_buffers))
     return "\n".join(lines), host_buffers
@@ -133,6 +138,8 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         elif isinstance(op, llvm.PhiOp):
             first_val = op.values[0]
             types[vid] = types.get(id(first_val), "i64")
+        elif isinstance(op, llvm.CallOp) and not isinstance(op.type, builtin.Nil):
+            types[vid] = _llvm_type(op.type.__layout__)
         elif (result_type := _OP_RESULT_TYPE.get(type(op))) is not None:
             types[vid] = result_type
 
@@ -225,12 +232,12 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
             lines.append(f"  %{name} = phi {ty} {pairs}")
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
-            if callee == "print_memref" and len(op.args) == 2:
-                a = f"{typed_ref(op.args[0])}, {typed_ref(op.args[1])}"
-                lines.append(f"  call void @print_memref({a})")
-            else:
-                a = ", ".join(typed_ref(arg) for arg in op.args)
+            a = ", ".join(typed_ref(arg) for arg in op.args)
+            if isinstance(op.type, builtin.Nil):
                 lines.append(f"  call void @{callee}({a})")
+            else:
+                ret_ty = types[id(op)]
+                lines.append(f"  %{name} = call {ret_ty} @{callee}({a})")
         elif isinstance(op, builtin.ReturnOp):
             if isinstance(op.value, builtin.Nil):
                 lines.append("  ret void")
@@ -263,21 +270,32 @@ class Executable:
         result_ctype = _ctype(self.result_type.__layout__)
         return ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
 
-    def run(self, *args: Memory) -> object:
-        """JIT and execute, returning the function's result."""
+    def run(self, *args: Memory | object) -> object:
+        """JIT and execute, returning the function's result.
+
+        Args can be Memory objects or raw Python values (str, int, float).
+        Raw values are converted to Memory via Memory.from_value.
+        """
+        memories: list[Memory] = []
+        for arg, ty in zip(args, self.input_types):
+            if isinstance(arg, Memory):
+                memories.append(arg)
+            else:
+                memories.append(Memory.from_value(ty, arg))
+
         engine = _jit_engine(self)
         func_ptr = engine.get_function_address(self.main_name)
         cfunc = self.ctype(func_ptr)
         ctypes_args = [
             m.address if ct is ctypes.c_void_p else m.unpack()[0]
-            for m, ct in zip(args, cfunc._argtypes_)  # type: ignore
+            for m, ct in zip(memories, cfunc._argtypes_)  # type: ignore
         ]
         return cfunc(*ctypes_args)
 
 
-def compile(module: builtin.Module) -> Executable:
+def compile(module: builtin.Module, *, externs: Sequence[str] = ()) -> Executable:
     """Emit LLVM IR and bundle with execution metadata."""
-    ir, host_buffers = emit_llvm_ir(module)
+    ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]
     assert main.name is not None
     return Executable(

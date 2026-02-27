@@ -103,28 +103,35 @@ function () -> ():
 
 ### Execution Flow
 
-`compile_and_run_staged` orchestrates the two-phase execution. Compilation (`compile_staged`) only resolves stage-0 constants — runtime arg values are not required. Stage-1 resolution happens at the run boundary when args are available:
+There are two compilation paths:
+
+**`compile_and_run_staged`** — one-shot: compiles and runs in one call. Stage-1 values are resolved Python-side with runtime args before final compilation.
+
+**`compile_staged`** — compile-once, run-many: returns an `Executable` that can be called multiple times with different arguments. When unresolved `__params__` remain after stage-0, builds a callback-based executable: the compiled code calls a host callback that JIT-compiles stage-2 with the resolved values at runtime.
 
 ```
-compile_and_run_staged(module, infer, lower, args=[tensor])
+compile_staged(module, infer, lower)
 │
 ├─ 1. _resolve_all_comptime (stage-0 only, no args needed)
-│     Scan for Comptime fields
+│     Scan for __params__ fields
 │     If stage-0 evaluable → resolve in isolation
-│     If stage-1 needed → skip (needs runtime args)
+│     If stage-1 needed → skip
 │
-├─ 2. Stage-1 resolution (only if args provided)
-│     For each remaining unresolved Comptime field:
-│       Build stage-1 module from comptime subgraph + function params
-│       Lower through pipeline (toy → affine → LLVM)
-│       JIT with runtime args → get comptime result (e.g., count=2)
-│       Remove subgraph ops, insert ConstantOp, patch field
-│       Re-run infer + resolve_constant_ops
+├─ 2. Check for remaining unresolved __params__
 │
-├─ 3. Compile: infer → lower → codegen
+├─ [if none] 3a. Compile directly: infer → lower → codegen
 │
-└─ 4. Run with args → output
+└─ [if some] 3b. Build callback-based executable:
+      ├─ Build stage-2 template (ops with __params__ as placeholders)
+      ├─ Create host callback (ctypes CFUNCTYPE):
+      │     Receives all function args at runtime
+      │     Patches __params__ with constants from args
+      │     JIT-compiles stage-2: infer → lower → codegen → run
+      ├─ Register callback with llvmlite (add_symbol)
+      └─ Compile stage-1 thunk: calls callback, returns result
 ```
+
+Each `exe.run(...)` call triggers the callback, which JIT-compiles a specialized stage-2 for the given runtime values.
 
 ### Argument Passing
 
@@ -182,9 +189,19 @@ Both `_resolve_all_comptime` (stage-0) and the stage-1 loop in `compile_and_run_
 
 After each comptime resolution, `infer()` is called to propagate types with the newly-known constants. Ops that implement `resolve_constant()` (e.g., `DimSizeOp`) are then replaced with `ConstantOp`s. This enables chained dependencies where a second comptime value depends on the *shape* resolved by the first.
 
+### Runtime JIT Callbacks (`compile_staged`)
+
+When `compile_staged` finds unresolved `__params__` that depend on runtime values (BlockArguments), it builds a callback-based executable. The compiled LLVM code calls a host callback (`ctypes.CFUNCTYPE`) that:
+
+1. Reads the runtime `__params__` values from the callback arguments
+2. Deep-copies the stage-2 template and patches the `__params__` fields with `ConstantOp`s
+3. Compiles and runs stage-2 through the full pipeline (infer → lower → codegen → JIT)
+
+This enables compile-once, run-many: the same `Executable` can be called with different arguments, each time JIT-compiling a specialized stage-2.
+
 ### Remaining Restrictions
 
-The current implementation has one key restriction: **only scalar values cross the stage boundary**. The comptime value (e.g., a tile count) is an integer that stage 1 returns and stage 2 receives as a constant. Tensor values crossing stages would require a callback approach where stage 1's stack frame stays alive while stage 2 executes.
+The current `compile_staged` callback path handles the case where unresolved `__params__` values are directly `BlockArgument`s (function parameters). The `compile_and_run_staged` path handles the general case (computed stage-1 values like `nonzero_count`). Unifying these — native stage-1 computation followed by a callback — is a future extension.
 
 ## File Map
 
