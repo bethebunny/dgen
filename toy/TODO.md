@@ -1,6 +1,5 @@
 ## Make the JIT work in the general case
 - `__has_body__` -> `__blocks__`
-- Update asm to use `<>` for constant fields
 - str fields to constant strings
 - Do less packing and unpacking
 - Memory layout for types
@@ -51,6 +50,8 @@
 - Remove `cast`s
 - Remove `Any`s
 - Remove `type: ignore`s
+- Function calls and GOTOs should use the SSA name, not a string
+- Function definitions should use the normal block syntax
 
 ## Misc
 - Write more down into design docs

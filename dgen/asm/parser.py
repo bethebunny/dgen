@@ -83,11 +83,11 @@ def parse_expr(parser: IRParser) -> object:
         fields = ()
     if not fields:
         return cls()
-    # Parameterized type: Name(expr, expr, ...)
-    parser.expect("(")
+    # Parameterized type: Name<expr, expr, ...>
+    parser.expect("<")
     parser.skip_whitespace()
     kwargs = _parse_fields_from_exprs(parser, cls)
-    parser.expect(")")
+    parser.expect(">")
     return cls(**kwargs)
 
 
@@ -121,32 +121,30 @@ def parse_op_fields(
     """Generic op field parser driven by field declarations."""
     kwargs: dict[str, Any] = {"name": name}  # noqa: ANN401
 
-    # Expect opening paren
+    # Parse constant fields in <...>
+    if cls.__params__:
+        parser.expect("<")
+        parser.skip_whitespace()
+        for i, (f_name, f_type) in enumerate(cls.__params__):
+            if i > 0:
+                parser.expect(",")
+                parser.skip_whitespace()
+            raw_value = parse_expr(parser)
+            if not isinstance(raw_value, (Value, Type)):
+                raw_value = f_type.for_value(raw_value).constant(raw_value)
+            kwargs[f_name] = raw_value
+            parser.skip_whitespace()
+        parser.expect(">")
+
+    # Parse runtime operand fields in (...)
     parser.expect("(")
     parser.skip_whitespace()
-
-    # Parse constant fields first (with staging/wrapping)
-    field_idx = 0
-    for f_name, f_type in cls.__params__:
-        if field_idx > 0:
-            parser.expect(",")
-            parser.skip_whitespace()
-        raw_value = parse_expr(parser)
-        if not isinstance(raw_value, (Value, Type)):
-            raw_value = f_type.for_value(raw_value).constant(raw_value)
-        kwargs[f_name] = raw_value
-        parser.skip_whitespace()
-        field_idx += 1
-
-    # Then parse runtime fields (pass-through)
-    for f_name, _ in cls.__operands__:
-        if field_idx > 0:
+    for i, (f_name, _) in enumerate(cls.__operands__):
+        if i > 0:
             parser.expect(",")
             parser.skip_whitespace()
         kwargs[f_name] = parse_expr(parser)
         parser.skip_whitespace()
-        field_idx += 1
-
     parser.expect(")")
 
     # Type annotation (already parsed before '=' if present)

@@ -22,7 +22,7 @@ toy = Dialect("toy")
 @toy.type("Tensor")
 @dataclass(frozen=True)
 class TensorType(Type):
-    """toy.Tensor([2, 3], f64)."""
+    """toy.Tensor<[2, 3], f64>."""
 
     shape: Value[ShapeType]
     dtype: Type = builtin.F64Type()
@@ -43,7 +43,7 @@ class TensorType(Type):
 @toy.type("InferredShapeTensor")
 @dataclass(frozen=True)
 class InferredShapeTensor(Type):
-    """toy.InferredShapeTensor[f64] — shape to be filled in by inference."""
+    """toy.InferredShapeTensor<f64> — shape to be filled in by inference."""
 
     __layout__ = VOID
     dtype: Type = builtin.F64Type()
@@ -53,7 +53,7 @@ class InferredShapeTensor(Type):
 
 @dataclass
 class FunctionType(builtin.Function):
-    """(toy.Tensor[(2, 3), f64]) -> ()"""
+    """(toy.Tensor<(2, 3), f64>) -> ()"""
 
     inputs: list[Type]
 

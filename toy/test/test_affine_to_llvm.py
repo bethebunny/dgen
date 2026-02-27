@@ -20,7 +20,7 @@ def test_simple_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
+        |     %0 : toy.Tensor<[3], f64> = [1.0, 2.0, 3.0]
         |     %_ = toy.print(%0)
         |     %_ = return(())
     """)
@@ -30,7 +30,7 @@ def test_simple_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
+        |     %0 : toy.Tensor<[3], f64> = [1.0, 2.0, 3.0]
         |     %1 : index = 3
         |     %2 : () = llvm.call("print_memref", [%0, %1])
         |     %3 : () = return(())
@@ -44,7 +44,7 @@ def test_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
+        |     %0 : toy.Tensor<[3], f64> = [1.0, 2.0, 3.0]
         |     %_ = toy.print(%0)
         |     %_ = return(())
     """)
@@ -54,7 +54,7 @@ def test_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([3], f64) = [1.0, 2.0, 3.0]
+        |     %0 : toy.Tensor<[3], f64> = [1.0, 2.0, 3.0]
         |     %1 : index = 3
         |     %2 : () = llvm.call("print_memref", [%0, %1])
         |     %3 : () = return(())
@@ -68,7 +68,7 @@ def test_2d_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
         |     %_ = return(())
     """)
@@ -78,7 +78,7 @@ def test_2d_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : index = 6
         |     %2 : () = llvm.call("print_memref", [%0, %1])
         |     %3 : () = return(())
@@ -92,8 +92,8 @@ def test_load_store_linearization():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor([3, 2], f64) = toy.transpose(%0)
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 2], f64> = toy.transpose(%0)
         |     %_ = toy.print(%1)
         |     %_ = return(())
     """)
@@ -103,8 +103,8 @@ def test_load_store_linearization():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : () = llvm.alloca(6)
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : () = llvm.alloca<6>()
         |     %2 : index = 0
         |     %3 : () = llvm.br("loop_header0")
         |     %4 : () = llvm.label("loop_header0")
@@ -152,7 +152,7 @@ def test_3d_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %_ = toy.print(%0)
         |     %_ = return(())
     """)
@@ -162,7 +162,7 @@ def test_3d_constant_preserved():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : index = 8
         |     %2 : () = llvm.call("print_memref", [%0, %1])
         |     %3 : () = return(())
@@ -176,9 +176,9 @@ def test_3d_load_store_linearization():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor([2, 2, 2], f64) = toy.add(%0, %1)
+        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor<[2, 2, 2], f64> = toy.add(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return(())
     """)
@@ -188,9 +188,9 @@ def test_3d_load_store_linearization():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : () = llvm.alloca(8)
+        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : () = llvm.alloca<8>()
         |     %3 : index = 0
         |     %4 : () = llvm.br("loop_header0")
         |     %5 : () = llvm.label("loop_header0")
@@ -265,11 +265,11 @@ def test_full_example():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor([3, 2], f64) = toy.transpose(%0)
-        |     %2 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor([3, 2], f64) = toy.transpose(%2)
-        |     %4 : toy.Tensor([3, 2], f64) = toy.mul(%1, %3)
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 2], f64> = toy.transpose(%0)
+        |     %2 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor<[3, 2], f64> = toy.transpose(%2)
+        |     %4 : toy.Tensor<[3, 2], f64> = toy.mul(%1, %3)
         |     %_ = toy.print(%4)
         |     %_ = return(())
     """)
@@ -279,8 +279,8 @@ def test_full_example():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : () = llvm.alloca(6)
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : () = llvm.alloca<6>()
         |     %2 : index = 0
         |     %3 : () = llvm.br("loop_header0")
         |     %4 : () = llvm.label("loop_header0")
@@ -315,8 +315,8 @@ def test_full_example():
         |     %33 : () = llvm.add(%5, %32)
         |     %34 : () = llvm.br("loop_header0")
         |     %35 : () = llvm.label("loop_exit0")
-        |     %36 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %37 : () = llvm.alloca(6)
+        |     %36 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %37 : () = llvm.alloca<6>()
         |     %38 : index = 0
         |     %39 : () = llvm.br("loop_header2")
         |     %40 : () = llvm.label("loop_header2")
@@ -351,7 +351,7 @@ def test_full_example():
         |     %69 : () = llvm.add(%41, %68)
         |     %70 : () = llvm.br("loop_header2")
         |     %71 : () = llvm.label("loop_exit2")
-        |     %72 : () = llvm.alloca(6)
+        |     %72 : () = llvm.alloca<6>()
         |     %73 : index = 0
         |     %74 : () = llvm.br("loop_header4")
         |     %75 : () = llvm.label("loop_header4")

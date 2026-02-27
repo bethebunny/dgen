@@ -10,7 +10,7 @@ def test_roundtrip_alloca():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 : () = llvm.alloca(3)
+        |     %0 : () = llvm.alloca<3>()
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -22,7 +22,7 @@ def test_roundtrip_gep_load_store():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 : () = llvm.alloca(6)
+        |     %0 : () = llvm.alloca<6>()
         |     %1 : index = 0
         |     %2 : () = llvm.gep(%0, %1)
         |     %3 : f64 = 1.0
@@ -144,7 +144,7 @@ def test_roundtrip_loop_pattern():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 : () = llvm.alloca(3)
+        |     %0 : () = llvm.alloca<3>()
         |     %init : index = 0
         |     %_ : () = llvm.br("loop_header0")
         |     %_ : () = llvm.label("loop_header0")

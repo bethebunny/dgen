@@ -11,7 +11,7 @@ def test_llvm_via_imports():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 : () = llvm.alloca(6)
+        |     %0 : () = llvm.alloca<6>()
         |     %1 : f64 = 1.0
         |     %_ : () = llvm.store(%1, %0)
         |     %_ : () = return(())
@@ -26,7 +26,7 @@ def test_llvm_full_loop():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 : () = llvm.alloca(3)
+        |     %0 : () = llvm.alloca<3>()
         |     %init : index = 0
         |     %_ : () = llvm.br("loop_header")
         |     %_ : () = llvm.label("loop_header")

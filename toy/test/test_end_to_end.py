@@ -35,7 +35,7 @@ def test_constant_print():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : index = 6
         |     %2 : () = llvm.call("print_memref", [%0, %1])
         |     %3 : () = return(())
@@ -59,8 +59,8 @@ def test_transpose():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : () = llvm.alloca(6)
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : () = llvm.alloca<6>()
         |     %2 : index = 0
         |     %3 : () = llvm.br("loop_header0")
         |     %4 : () = llvm.label("loop_header0")
@@ -119,9 +119,9 @@ def test_element_wise_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2], f64) = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor([2, 2], f64) = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : () = llvm.alloca(4)
+        |     %0 : toy.Tensor<[2, 2], f64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<[2, 2], f64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : () = llvm.alloca<4>()
         |     %3 : index = 0
         |     %4 : () = llvm.br("loop_header0")
         |     %5 : () = llvm.label("loop_header0")
@@ -186,9 +186,9 @@ def test_element_wise_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2], f64) = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor([2, 2], f64) = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : () = llvm.alloca(4)
+        |     %0 : toy.Tensor<[2, 2], f64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<[2, 2], f64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : () = llvm.alloca<4>()
         |     %3 : index = 0
         |     %4 : () = llvm.br("loop_header0")
         |     %5 : () = llvm.label("loop_header0")
@@ -251,7 +251,7 @@ def test_3d_constant_print():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : index = 8
         |     %2 : () = llvm.call("print_memref", [%0, %1])
         |     %3 : () = return(())
@@ -276,9 +276,9 @@ def test_3d_element_wise_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : () = llvm.alloca(8)
+        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : () = llvm.alloca<8>()
         |     %3 : index = 0
         |     %4 : () = llvm.br("loop_header0")
         |     %5 : () = llvm.label("loop_header0")
@@ -364,9 +364,9 @@ def test_3d_element_wise_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 2, 2], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor([2, 2, 2], f64) = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : () = llvm.alloca(8)
+        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : () = llvm.alloca<8>()
         |     %3 : index = 0
         |     %4 : () = llvm.br("loop_header0")
         |     %5 : () = llvm.label("loop_header0")
@@ -450,7 +450,7 @@ def test_reshape_folds_away():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : index = 6
         |     %2 : () = llvm.call("print_memref", [%0, %1])
         |     %3 : () = return(())
@@ -474,7 +474,7 @@ def test_double_transpose_optimized():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : index = 6
         |     %2 : () = llvm.call("print_memref", [%0, %1])
         |     %3 : () = return(())
@@ -499,9 +499,9 @@ def test_multiply_transpose_inlined():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor([2, 3], f64) = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %2 : () = llvm.alloca(6)
+        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %2 : () = llvm.alloca<6>()
         |     %3 : index = 0
         |     %4 : () = llvm.br("loop_header0")
         |     %5 : () = llvm.label("loop_header0")
@@ -536,7 +536,7 @@ def test_multiply_transpose_inlined():
         |     %34 : () = llvm.add(%6, %33)
         |     %35 : () = llvm.br("loop_header0")
         |     %36 : () = llvm.label("loop_exit0")
-        |     %37 : () = llvm.alloca(6)
+        |     %37 : () = llvm.alloca<6>()
         |     %38 : index = 0
         |     %39 : () = llvm.br("loop_header2")
         |     %40 : () = llvm.label("loop_header2")
@@ -571,7 +571,7 @@ def test_multiply_transpose_inlined():
         |     %69 : () = llvm.add(%41, %68)
         |     %70 : () = llvm.br("loop_header2")
         |     %71 : () = llvm.label("loop_exit2")
-        |     %72 : () = llvm.alloca(6)
+        |     %72 : () = llvm.alloca<6>()
         |     %73 : index = 0
         |     %74 : () = llvm.br("loop_header4")
         |     %75 : () = llvm.label("loop_header4")

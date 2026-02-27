@@ -127,7 +127,7 @@ def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
     if not fields:
         return name
     args = ", ".join(format_expr(getattr(type_obj, f.name), tracker) for f in fields)
-    return f"{name}({args})"
+    return f"{name}<{args}>"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -155,22 +155,25 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         _register_ops(tracker, [op])
 
     # Build args from declared fields (constants first, then runtime)
-    arg_parts = []
+    param_parts = []
     for f_name, _ in cls.__params__:
-        arg_parts.append(format_expr(getattr(op, f_name), tracker))
+        param_parts.append(format_expr(getattr(op, f_name), tracker))
+    operand_parts = []
     for f_name, _ in cls.__operands__:
-        arg_parts.append(format_expr(getattr(op, f_name), tracker))
-
-    args_str = ", ".join(arg_parts)
+        operand_parts.append(format_expr(getattr(op, f_name), tracker))
 
     # Build the line
     result_name = tracker.get_name(op)
     parts = [f"%{result_name} : {format_expr(op.type, tracker)} = "]
     prefix = _dialect_prefix(dialect_name)
     if asm_name == "constant" and dialect_name == "builtin":
-        parts.append(args_str)
+        parts.append(", ".join(param_parts + operand_parts))
     else:
-        parts.append(f"{prefix}{asm_name}({args_str})")
+        op_str = f"{prefix}{asm_name}"
+        if param_parts:
+            op_str += f"<{', '.join(param_parts)}>"
+        op_str += f"({', '.join(operand_parts)})"
+        parts.append(op_str)
     if cls.__has_body__:
         body: Block = getattr(op, "body")
         if body.args:
