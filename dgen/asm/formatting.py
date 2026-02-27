@@ -99,6 +99,8 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
         return format_float(value)
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, bytes):
+        return f'"{value.decode("utf-8")}"'
     if isinstance(value, str):
         return f'"{value}"'
     if hasattr(value, "_asm_name"):

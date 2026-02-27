@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import ctypes
 from collections.abc import Callable
 from copy import deepcopy
 
 import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
+from dgen.codegen import _ctype
 from dgen.dialects import builtin
 from dgen.type import Memory
 from dgen.value import Constant
@@ -78,7 +80,14 @@ def _jit_evaluate(
     memories: list[Memory] = []
     if block_args and args:
         memories = _make_memories(block_args, args)
-    return exe.run(*memories)
+    raw = exe.run(*memories)
+
+    # For pointer-type results, copy data back while buffers are still alive
+    layout = target.type.__layout__
+    if _ctype(layout) is ctypes.c_void_p and isinstance(raw, int) and raw != 0:
+        buf = (ctypes.c_char * layout.byte_size).from_address(raw)
+        return Memory(target.type, bytearray(buf))
+    return raw
 
 
 def _resolve_comptime_field(
@@ -100,7 +109,6 @@ def _resolve_comptime_field(
         args=args,
     )
     if stage1:
-        result = int(result)  # type: ignore[arg-type]
         subgraph_ids = {id(o) for o in subgraph}
         func.body.ops[:] = [o for o in func.body.ops if id(o) not in subgraph_ids]
     const_op = builtin.ConstantOp(value=result, type=value.type)

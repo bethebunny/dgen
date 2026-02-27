@@ -3,7 +3,7 @@
 from typing import cast
 
 from dgen.dialects import builtin
-from dgen.layout import BYTE, FLOAT64, INT, Array, FatPointer, Pointer
+from dgen.layout import BYTE, FLOAT64, INT, Array, Bytes, FatPointer, Pointer
 
 
 def test_primitive_sizes():
@@ -27,8 +27,15 @@ def test_fat_pointer():
     assert FatPointer(INT).byte_size == 16
 
 
+def test_bytes_layout():
+    b = Bytes(5)
+    assert b.byte_size == 5
+    assert b.parse("hello") == b"hello"
+
+
 def test_string_layout():
-    assert builtin.String.__layout__.byte_size == 16
+    s = builtin.String.for_value("hello")
+    assert s.__layout__.byte_size == 5
 
 
 def test_f64type_layout():

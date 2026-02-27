@@ -60,13 +60,13 @@ def test_generic_call_op():
     v3 = dgen.Value(name="3", type=builtin.Nil())
     op = toy.GenericCallOp(
         name="4",
-        callee="multiply_transpose",
+        callee=builtin.string_constant("multiply_transpose"),
         args=[v1, v3],
         type=inferred(),
     )
     assert (
         asm.format(op)
-        == '%4 : toy.InferredShapeTensor<f64> = toy.generic_call("multiply_transpose", [%1, %3])'
+        == '%4 : toy.InferredShapeTensor<f64> = toy.generic_call<"multiply_transpose">([%1, %3])'
     )
 
 
@@ -144,12 +144,12 @@ def test_full_module():
     )
     r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
     call4 = toy.GenericCallOp(
-        callee="multiply_transpose",
+        callee=builtin.string_constant("multiply_transpose"),
         args=[r1, r3],
         type=inferred(),
     )
     call5 = toy.GenericCallOp(
-        callee="multiply_transpose",
+        callee=builtin.string_constant("multiply_transpose"),
         args=[r3, r1],
         type=inferred(),
     )
@@ -181,8 +181,8 @@ def test_full_module():
         |     %1 : toy.Tensor<[2, 3], f64> = toy.reshape(%0)
         |     %2 : toy.Tensor<[6], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : toy.Tensor<[2, 3], f64> = toy.reshape(%2)
-        |     %4 : toy.InferredShapeTensor<f64> = toy.generic_call("multiply_transpose", [%1, %3])
-        |     %5 : toy.InferredShapeTensor<f64> = toy.generic_call("multiply_transpose", [%3, %1])
+        |     %4 : toy.InferredShapeTensor<f64> = toy.generic_call<"multiply_transpose">([%1, %3])
+        |     %5 : toy.InferredShapeTensor<f64> = toy.generic_call<"multiply_transpose">([%3, %1])
         |     %6 : () = toy.print(%5)
         |     %7 : () = return(())
     """)

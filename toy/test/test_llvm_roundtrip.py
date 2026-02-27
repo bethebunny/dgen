@@ -71,8 +71,8 @@ def test_roundtrip_icmp_condbr():
         | %f = function () -> ():
         |     %0 : index = 0
         |     %1 : index = 10
-        |     %cmp : () = llvm.icmp("slt", %0, %1)
-        |     %_ : () = llvm.cond_br(%cmp, "loop_body", "loop_exit")
+        |     %cmp : () = llvm.icmp<"slt">(%0, %1)
+        |     %_ : () = llvm.cond_br<"loop_body", "loop_exit">(%cmp)
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -84,8 +84,8 @@ def test_roundtrip_label_br():
         | import llvm
         |
         | %f = function () -> ():
-        |     %_ : () = llvm.br("loop_header")
-        |     %_ : () = llvm.label("loop_header")
+        |     %_ : () = llvm.br<"loop_header">()
+        |     %_ : () = llvm.label<"loop_header">()
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -97,7 +97,7 @@ def test_roundtrip_phi():
         | import llvm
         |
         | %f = function () -> ():
-        |     %i0 : () = llvm.phi([%init, %next], ["entry", "loop_body"])
+        |     %i0 : () = llvm.phi<["entry", "loop_body"]>([%init, %next])
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -109,7 +109,7 @@ def test_roundtrip_call_with_result():
         | import llvm
         |
         | %f = function () -> ():
-        |     %0 : () = llvm.call("foo", [%a, %b])
+        |     %0 : () = llvm.call<"foo">([%a, %b])
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -121,7 +121,7 @@ def test_roundtrip_call_void():
         | import llvm
         |
         | %f = function () -> ():
-        |     %_ : () = llvm.call("print_memref", [%ptr, %size])
+        |     %_ : () = llvm.call<"print_memref">([%ptr, %size])
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -146,20 +146,20 @@ def test_roundtrip_loop_pattern():
         | %f = function () -> ():
         |     %0 : () = llvm.alloca<3>()
         |     %init : index = 0
-        |     %_ : () = llvm.br("loop_header0")
-        |     %_ : () = llvm.label("loop_header0")
-        |     %i0 : () = llvm.phi([%init, %next0], ["entry", "loop_body0"])
+        |     %_ : () = llvm.br<"loop_header0">()
+        |     %_ : () = llvm.label<"loop_header0">()
+        |     %i0 : () = llvm.phi<["entry", "loop_body0"]>([%init, %next0])
         |     %hi : index = 3
-        |     %cmp : () = llvm.icmp("slt", %i0, %hi)
-        |     %_ : () = llvm.cond_br(%cmp, "loop_body0", "loop_exit0")
-        |     %_ : () = llvm.label("loop_body0")
+        |     %cmp : () = llvm.icmp<"slt">(%i0, %hi)
+        |     %_ : () = llvm.cond_br<"loop_body0", "loop_exit0">(%cmp)
+        |     %_ : () = llvm.label<"loop_body0">()
         |     %val : f64 = 1.0
         |     %ptr : () = llvm.gep(%0, %i0)
         |     %_ : () = llvm.store(%val, %ptr)
         |     %one : index = 1
         |     %next0 : () = llvm.add(%i0, %one)
-        |     %_ : () = llvm.br("loop_header0")
-        |     %_ : () = llvm.label("loop_exit0")
+        |     %_ : () = llvm.br<"loop_header0">()
+        |     %_ : () = llvm.label<"loop_exit0">()
         |     %_ : () = return(())
     """)
     module = parse_module(ir)

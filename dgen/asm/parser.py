@@ -131,7 +131,15 @@ def parse_op_fields(
                 parser.skip_whitespace()
             raw_value = parse_expr(parser)
             if not isinstance(raw_value, (Value, Type)):
-                raw_value = f_type.for_value(raw_value).constant(raw_value)
+                if isinstance(raw_value, list):
+                    raw_value = [
+                        f_type.for_value(v).constant(v)
+                        if not isinstance(v, (Value, Type))
+                        else v
+                        for v in raw_value
+                    ]
+                else:
+                    raw_value = f_type.for_value(raw_value).constant(raw_value)
             kwargs[f_name] = raw_value
             parser.skip_whitespace()
         parser.expect(">")

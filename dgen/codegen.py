@@ -11,6 +11,7 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
+from dgen.dialects.builtin import string_value
 from dgen.layout import Array, Layout
 from dgen.op import Op
 from dgen.type import Memory
@@ -172,7 +173,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         name = tracker.get_name(op)
 
         if isinstance(op, llvm.LabelOp):
-            lines.append(f"{op.label_name}:")
+            lines.append(f"{string_value(op.label_name)}:")
         elif isinstance(op, llvm.AllocaOp):
             lines.append(
                 f"  %{name} = alloca double, i64"
@@ -201,33 +202,35 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
             lines.append(f"  %{name} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
         elif isinstance(op, llvm.FcmpOp):
             lines.append(
-                f"  %{name} = fcmp {op.pred} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.ZextOp):
             lines.append(f"  %{name} = zext i1 {bare_ref(op.input)} to i64")
         elif isinstance(op, llvm.IcmpOp):
             lines.append(
-                f"  %{name} = icmp {op.pred} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.BrOp):
-            lines.append(f"  br label %{op.dest}")
+            lines.append(f"  br label %{string_value(op.dest)}")
         elif isinstance(op, llvm.CondBrOp):
             lines.append(
-                f"  br i1 %{tracker.get_name(op.cond)}, label %{op.true_dest}, label %{op.false_dest}"
+                f"  br i1 %{tracker.get_name(op.cond)}, label %{string_value(op.true_dest)}, label %{string_value(op.false_dest)}"
             )
         elif isinstance(op, llvm.PhiOp):
             ty = types.get(id(op), "i64")
             pairs = ", ".join(
-                f"[ {bare_ref(v)}, %{lab} ]" for v, lab in zip(op.values, op.labels)
+                f"[ {bare_ref(v)}, %{string_value(lab)} ]"
+                for v, lab in zip(op.values, op.labels)
             )
             lines.append(f"  %{name} = phi {ty} {pairs}")
         elif isinstance(op, llvm.CallOp):
-            if op.callee == "print_memref" and len(op.args) == 2:
+            callee = string_value(op.callee)
+            if callee == "print_memref" and len(op.args) == 2:
                 a = f"{typed_ref(op.args[0])}, {typed_ref(op.args[1])}"
                 lines.append(f"  call void @print_memref({a})")
             else:
                 a = ", ".join(typed_ref(arg) for arg in op.args)
-                lines.append(f"  call void @{op.callee}({a})")
+                lines.append(f"  call void @{callee}({a})")
         elif isinstance(op, builtin.ReturnOp):
             if isinstance(op.value, builtin.Nil):
                 lines.append("  ret void")

@@ -8,7 +8,7 @@ from typing import ClassVar
 
 from dgen import Block, Constant, Dialect, Op, Type, Value, asm
 from dgen.asm.formatting import SlotTracker, format_expr, op_asm
-from dgen.layout import BYTE, FLOAT64, INT, VOID, FatPointer
+from dgen.layout import BYTE, FLOAT64, INT, VOID, Bytes, FatPointer
 from dgen.type import Memory
 
 # ===----------------------------------------------------------------------=== #
@@ -49,7 +49,28 @@ class Function(Type):
 @builtin.type("String")
 @dataclass(frozen=True)
 class String(Type):
-    __layout__ = FatPointer(BYTE)
+    length: Value[IndexType]
+
+    __params__ = (("length", IndexType),)
+
+    @property
+    def __layout__(self) -> Bytes:
+        return Bytes(self.length.__constant__.unpack()[0])
+
+    @classmethod
+    def for_value(cls, value: object) -> String:
+        assert isinstance(value, str)
+        return cls(length=IndexType().constant(len(value)))
+
+
+def string_constant(s: str) -> Constant[String]:
+    """Create a Constant[String] from a Python str."""
+    return String.for_value(s).constant(s)
+
+
+def string_value(v: Value[String]) -> str:
+    """Extract the Python str from a string Value (must be Constant)."""
+    return v.__constant__.unpack()[0].decode("utf-8")
 
 
 @builtin.type("List")

@@ -71,6 +71,22 @@ class Array(Layout):
         return [self.element.parse(v) for v in obj]
 
 
+class Bytes(Layout):
+    """N raw bytes, stored as a single bytes object."""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        self.struct = Struct(f"{count}s")
+
+    def parse(self, obj: object) -> bytes:
+        assert isinstance(obj, str), f"expected str, got {type(obj).__name__}"
+        encoded = obj.encode("utf-8")
+        assert len(encoded) == self.count, (
+            f"expected {self.count} bytes, got {len(encoded)}"
+        )
+        return encoded
+
+
 class Pointer(Layout):
     """8-byte pointer to T."""
 

@@ -1,5 +1,5 @@
 ## Make the JIT work in the general case
-- str fields to constant strings
+- list fields to List
 - Do less packing and unpacking
 - Memory layout for types
   - Define a memory layout for types
@@ -60,6 +60,7 @@
 - Function calls and GOTOs should use the SSA name, not a string
 - Function definitions should use the normal block syntax
 - Update parser and formatter to support multi-block ops
+- `Bytes` layout currently does utf8 encoding. This is definitely wrong.
 
 ## Misc
 - Write more down into design docs

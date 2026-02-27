@@ -89,7 +89,7 @@ def _infer_function(
             resolved = [type_of.get(id(a)) for a in op.args]
             arg_types = [t for t in resolved if t is not None]
             if len(arg_types) == len(resolved):
-                callee = func_map.get(op.callee)
+                callee = func_map.get(builtin.string_value(op.callee))
                 if callee is not None:
                     # Set callee param types from call-site args
                     for param, atype in zip(callee.body.args, arg_types):

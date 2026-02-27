@@ -45,10 +45,10 @@ BUILTIN_TYPES = [
         id="builtin.f64",
     ),
     pytest.param(
-        builtin.String(),
-        ("hello", 5),
-        None,
-        None,
+        builtin.String.for_value("hello"),
+        "hello",
+        '"hello"',
+        (b"hello",),
         id="builtin.string",
     ),
     pytest.param(
@@ -183,7 +183,7 @@ _ASM_TYPES = [
     pytest.param(builtin.IndexType(), id="builtin.index"),
     pytest.param(builtin.F64Type(), id="builtin.f64"),
     pytest.param(builtin.Nil(), id="builtin.nil"),
-    pytest.param(builtin.String(), id="builtin.string"),
+    pytest.param(builtin.String.for_value("hi"), id="builtin.string"),
     pytest.param(builtin.List(element_type=builtin.F64Type()), id="builtin.list"),
     pytest.param(TensorType(shape=shape_constant([3])), id="toy.tensor_1d"),
     pytest.param(TensorType(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
@@ -209,6 +209,13 @@ def test_type_asm_roundtrip(ty):
 _PARSEABLE_TYPES = [
     pytest.param(builtin.IndexType(), 42, "42", (42,), id="builtin.index"),
     pytest.param(builtin.F64Type(), 3.14, "3.14", (3.14,), id="builtin.f64"),
+    pytest.param(
+        builtin.String.for_value("hello"),
+        "hello",
+        '"hello"',
+        (b"hello",),
+        id="builtin.string",
+    ),
     pytest.param(llvm.IntType(bits=64), 42, "42", (42,), id="llvm.i64"),
     pytest.param(llvm.FloatType(), 3.14, "3.14", (3.14,), id="llvm.f64"),
     pytest.param(
@@ -268,3 +275,97 @@ def test_jit_identity_roundtrip(ty, value, _asm, expected):
     else:
         # Scalar type: verify the value survives
         assert result == expected[0]
+
+
+# ---------------------------------------------------------------------------
+# 5. String staging tests
+# ---------------------------------------------------------------------------
+
+
+def test_string_constant_roundtrip():
+    """string_constant creates a Constant[String], string_value extracts it."""
+    from dgen.dialects.builtin import string_constant, string_value
+
+    c = string_constant("hello")
+    assert string_value(c) == "hello"
+
+
+def test_string_constant_different_lengths():
+    """String types with different lengths are distinct."""
+    s3 = builtin.String.for_value("abc")
+    s5 = builtin.String.for_value("hello")
+    assert s3 != s5
+    assert s3.__layout__.byte_size == 3
+    assert s5.__layout__.byte_size == 5
+
+
+def test_string_as_op_param():
+    """String constants work as __params__ on ops — ASM round-trip."""
+    from dgen import asm
+    from dgen.asm.parser import parse_module
+
+    from toy.test.helpers import strip_prefix
+
+    ir = strip_prefix("""
+        | import llvm
+        |
+        | %main = function () -> ():
+        |     %_ : () = llvm.br<"target">()
+        |     %_ : () = llvm.label<"target">()
+        |     %_ : () = return(())
+    """)
+    parsed = parse_module(ir)
+    assert asm.format(parsed) == ir
+
+
+def test_string_jit_identity():
+    """String value survives JIT identity function as a pointer."""
+    ty = builtin.String.for_value("world")
+    mem = Memory.from_value(ty, "world")
+    exe = _identity_exe(ty)
+    result = exe.run(mem)
+    # String is passed as ptr, verify address round-trip
+    assert result == mem.address
+    # Verify the memory still holds the correct bytes
+    assert mem.unpack() == (b"world",)
+
+
+def test_string_param_staging():
+    """String function parameter used as IcmpOp predicate via staging.
+
+    The staging system JIT-evaluates the `pred` parameter to resolve it
+    from a BlockArgument to a Constant[String] before final codegen.
+    The String value directly controls the generated comparison.
+    """
+    from dgen.asm.parser import parse_module
+    from dgen.staging import compile_and_run_staged
+
+    from toy.test.helpers import strip_prefix
+
+    ir = strip_prefix("""
+        | import llvm
+        |
+        | %main = function (%pred : String<3>, %x : index, %y : index) -> index:
+        |     %cmp : () = llvm.icmp<%pred>(%x, %y)
+        |     %ext : () = llvm.zext(%cmp)
+        |     %_ : () = return(%ext)
+    """)
+    module = parse_module(ir)
+
+    identity = lambda m: m  # noqa: E731
+
+    # "slt": 5 < 10 = true → 1
+    assert (
+        compile_and_run_staged(
+            module, infer=identity, lower=identity, args=["slt", 5, 10]
+        )
+        == 1
+    )
+
+    # "sge": 5 >= 10 = false → 0
+    assert (
+        compile_and_run_staged(
+            module, infer=identity, lower=identity, args=["sge", 5, 10]
+        )
+        == 0
+    )

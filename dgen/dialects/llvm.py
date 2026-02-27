@@ -139,62 +139,66 @@ class MulOp(Op):
 @llvm.op("icmp")
 @dataclass(eq=False, kw_only=True)
 class IcmpOp(Op):
-    pred: str
+    pred: Value[String]
     lhs: Value
     rhs: Value
     type: Type = Nil()
 
-    __operands__ = (("pred", String), ("lhs", Type), ("rhs", Type))
+    __params__ = (("pred", String),)
+    __operands__ = (("lhs", Type), ("rhs", Type))
 
 
 @llvm.op("br")
 @dataclass(eq=False, kw_only=True)
 class BrOp(Op):
-    dest: str
+    dest: Value[String]
     type: Type = Nil()
 
-    __operands__ = (("dest", String),)
+    __params__ = (("dest", String),)
 
 
 @llvm.op("cond_br")
 @dataclass(eq=False, kw_only=True)
 class CondBrOp(Op):
     cond: Value
-    true_dest: str
-    false_dest: str
+    true_dest: Value[String]
+    false_dest: Value[String]
     type: Type = Nil()
 
-    __operands__ = (("cond", Type), ("true_dest", String), ("false_dest", String))
+    __params__ = (("true_dest", String), ("false_dest", String))
+    __operands__ = (("cond", Type),)
 
 
 @llvm.op("label")
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
-    label_name: str
+    label_name: Value[String]
     type: Type = Nil()
 
-    __operands__ = (("label_name", String),)
+    __params__ = (("label_name", String),)
 
 
 @llvm.op("phi")
 @dataclass(eq=False, kw_only=True)
 class PhiOp(Op):
     values: list[Value]
-    labels: list[str]
+    labels: list[Value[String]]
     type: Type = Nil()
 
-    __operands__ = (("values", Type), ("labels", String))
+    __params__ = (("labels", String),)
+    __operands__ = (("values", Type),)
 
 
 @llvm.op("fcmp")
 @dataclass(eq=False, kw_only=True)
 class FcmpOp(Op):
-    pred: str
+    pred: Value[String]
     lhs: Value
     rhs: Value
     type: Type = Nil()
 
-    __operands__ = (("pred", String), ("lhs", Type), ("rhs", Type))
+    __params__ = (("pred", String),)
+    __operands__ = (("lhs", Type), ("rhs", Type))
 
 
 @llvm.op("zext")
@@ -209,8 +213,9 @@ class ZextOp(Op):
 @llvm.op("call")
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):
-    callee: str
+    callee: Value[String]
     args: list[Value]
     type: Type = Nil()
 
-    __operands__ = (("callee", String), ("args", Type))
+    __params__ = (("callee", String),)
+    __operands__ = (("args", Type),)

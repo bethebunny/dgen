@@ -104,11 +104,12 @@ class AddOp(Op):
 @toy.op("generic_call")
 @dataclass(eq=False, kw_only=True)
 class GenericCallOp(Op):
-    callee: str
+    callee: Value[builtin.String]
     args: list[Value]
     type: Type
 
-    __operands__ = (("callee", builtin.String), ("args", Type))
+    __params__ = (("callee", builtin.String),)
+    __operands__ = (("args", Type),)
 
 
 @toy.op("concat")

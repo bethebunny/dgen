@@ -215,7 +215,7 @@ class Lowering:
         for a in call.args:
             args.append((yield from self.lower_expr(a)))
         op = toy.GenericCallOp(
-            callee=call.callee,
+            callee=builtin.string_constant(call.callee),
             args=args,
             type=toy.InferredShapeTensor(),
         )

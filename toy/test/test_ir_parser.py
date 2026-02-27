@@ -90,7 +90,7 @@ def test_roundtrip_generic_call():
         | import toy
         |
         | %f = function (%a: toy.InferredShapeTensor<f64>) -> toy.InferredShapeTensor<f64>:
-        |     %0 : toy.InferredShapeTensor<f64> = toy.generic_call("helper", [%a])
+        |     %0 : toy.InferredShapeTensor<f64> = toy.generic_call<"helper">([%a])
         |     %_ : () = return(%0)
     """)
     module = parse_module(ir)
@@ -197,8 +197,8 @@ def test_roundtrip_full_program():
         |     %1 : toy.Tensor<[2, 3], f64> = toy.reshape(%0)
         |     %2 : toy.Tensor<[6], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : toy.Tensor<[2, 3], f64> = toy.reshape(%2)
-        |     %4 : toy.InferredShapeTensor<f64> = toy.generic_call("multiply_transpose", [%1, %3])
-        |     %5 : toy.InferredShapeTensor<f64> = toy.generic_call("multiply_transpose", [%3, %1])
+        |     %4 : toy.InferredShapeTensor<f64> = toy.generic_call<"multiply_transpose">([%1, %3])
+        |     %5 : toy.InferredShapeTensor<f64> = toy.generic_call<"multiply_transpose">([%3, %1])
         |     %_ : () = toy.print(%5)
         |     %_ : () = return(())
     """)
