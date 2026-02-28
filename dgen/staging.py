@@ -188,14 +188,18 @@ def _has_unresolved_params(func: builtin.FuncOp) -> bool:
 
 
 def _raw_to_python(raw: object, ty: dgen.Type) -> object:
-    """Convert a raw ctypes callback value to a Python value for ConstantOp."""
+    """Convert a raw ctypes callback value to a Python value.
+
+    Scalars (int, float) pass through. Pointer types are read from memory:
+    strings are decoded to str, arrays are unpacked to lists.
+    """
     layout = ty.__layout__
     if _ctype(layout) is ctypes.c_void_p:
         assert isinstance(raw, int)
-        buf = (ctypes.c_char * layout.byte_size).from_address(raw)
+        raw_bytes = bytes((ctypes.c_char * layout.byte_size).from_address(raw))
         if isinstance(ty, builtin.String):
-            return bytes(buf).decode("utf-8")
-        return bytes(buf)
+            return raw_bytes.decode("utf-8")
+        return list(layout.struct.unpack(raw_bytes))
     return raw
 
 
@@ -209,43 +213,16 @@ def _compile_with_callbacks(
     """Build a stage-1 thunk that calls a host callback for stage-2 JIT.
 
     The compiled function passes all its arguments to a host callback.
-    The callback resolves __params__ values, then JIT-compiles and executes
-    the stage-2 code with the remaining runtime arguments.
+    The callback resolves all remaining __params__ values (using the full
+    stage-1 resolution loop), then JIT-compiles and executes stage-2.
     """
-    # Identify which block args are used as __params__ vs runtime operands
-    param_arg_ids: set[int] = set()
-    for op in func.body.ops:
-        for field_name, _ in op.__params__:
-            value = getattr(op, field_name)
-            if isinstance(value, BlockArgument) and not isinstance(value, Constant):
-                param_arg_ids.add(id(value))
-
-    param_indices: list[int] = []
-    runtime_indices: list[int] = []
-    for i, arg in enumerate(func.body.args):
-        if id(arg) in param_arg_ids:
-            param_indices.append(i)
-        else:
-            runtime_indices.append(i)
-
-    # Build mapping: param arg name → callback arg index
-    param_name_to_cb_idx: dict[str | None, int] = {
-        func.body.args[i].name: i for i in param_indices
-    }
-
-    # Build stage-2 template: remove param block args, keep ops as-is
-    stage2_template = deepcopy(resolved)
-    stage2_func = stage2_template.functions[0]
-    param_arg_names = set(param_name_to_cb_idx.keys())
-    stage2_func.body.args[:] = [
-        arg for arg in stage2_func.body.args if arg.name not in param_arg_names
-    ]
+    stage2_template = resolved
 
     # Derive callback LLVM signature from original function
     assert func.name is not None
     callback_name = f"_stage2_{func.name}"
-    orig_param_types = [arg.type for arg in func.body.args]
-    orig_llvm_types = [_llvm_type(t.__layout__) for t in orig_param_types]
+    orig_types = [arg.type for arg in func.body.args]
+    orig_llvm_types = [_llvm_type(t.__layout__) for t in orig_types]
     if isinstance(func.type.result, builtin.Nil):
         ret_llvm = "void"
         result_ctype: type[ctypes._CData] | None = None
@@ -255,38 +232,51 @@ def _compile_with_callbacks(
     extern_decl = f"declare {ret_llvm} @{callback_name}({', '.join(orig_llvm_types)})"
 
     # Build ctypes callback type
-    param_ctypes = [_ctype(t.__layout__) for t in orig_param_types]
+    param_ctypes = [_ctype(t.__layout__) for t in orig_types]
     cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
 
     # Capture template + pipeline in closure
     def _callback(*raw_args: object) -> object:
+        # Convert raw ctypes values to Python values
+        python_args = [
+            _raw_to_python(raw_args[i], orig_types[i]) for i in range(len(orig_types))
+        ]
+
+        # Deep-copy template and resolve all stage-1 __params__
         template = deepcopy(stage2_template)
         s2_func = template.functions[0]
-
-        # Patch __params__ fields with constants from callback args
-        for op in list(s2_func.body.ops):
-            for field_name, _ in op.__params__:
-                value = getattr(op, field_name)
-                if not isinstance(value, BlockArgument):
-                    continue
-                if isinstance(value, Constant):
-                    continue
-                if value.name not in param_name_to_cb_idx:
-                    continue
-                cb_idx = param_name_to_cb_idx[value.name]
-                raw = raw_args[cb_idx]
-                python_val = _raw_to_python(raw, value.type)
-                const = builtin.ConstantOp(value=python_val, type=value.type)
-                idx = s2_func.body.ops.index(op)
-                s2_func.body.ops.insert(idx, const)
-                setattr(op, field_name, const)
+        changed = True
+        while changed:
+            changed = False
+            for op in list(s2_func.body.ops):
+                for field_name, _ in op.__params__:
+                    value = getattr(op, field_name)
+                    if not isinstance(value, dgen.Value):
+                        continue
+                    if isinstance(value, Constant):
+                        continue
+                    _resolve_comptime_field(
+                        s2_func,
+                        op,
+                        field_name,
+                        value,
+                        lower,
+                        block_args=s2_func.body.args,
+                        args=python_args,
+                    )
+                    template = infer(template)
+                    _resolve_constant_ops(template.functions[0])
+                    s2_func = template.functions[0]
+                    changed = True
+                    break
+                if changed:
+                    break
 
         # Compile and run stage-2
         typed = infer(template)
         lowered = lower(typed)
         exe = codegen.compile(lowered)
-        runtime_args = [raw_args[i] for i in runtime_indices]
-        return exe.run(*runtime_args)
+        return exe.run(*python_args)
 
     callback_func = cb_type(_callback)
 
@@ -354,36 +344,5 @@ def compile_and_run_staged(
     args: Sequence = (),
 ) -> object:
     """Full staged compilation pipeline: resolve, compile, and run."""
-    resolved = _resolve_all_comptime(module, infer=infer, lower=lower)
-    # Stage-1: resolve comptime fields that depend on runtime args
-    if args:
-        changed = True
-        while changed:
-            changed = False
-            func = resolved.functions[0]
-            for op in list(func.body.ops):
-                for field_name, _ in op.__params__:
-                    value = getattr(op, field_name)
-                    if not isinstance(value, dgen.Value):
-                        continue
-                    if isinstance(value, Constant):
-                        continue
-                    _resolve_comptime_field(
-                        func,
-                        op,
-                        field_name,
-                        value,
-                        lower,
-                        block_args=func.body.args,
-                        args=args,
-                    )
-                    resolved = infer(resolved)
-                    _resolve_constant_ops(resolved.functions[0])
-                    changed = True
-                    break
-                if changed:
-                    break
-    typed = infer(resolved)
-    lowered = lower(typed)
-    exe = codegen.compile(lowered)
+    exe = compile_staged(module, infer=infer, lower=lower)
     return exe.run(*args)
