@@ -5,7 +5,7 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Sequence
+from collections.abc import Sequence
 
 import dgen
 from dgen import codegen

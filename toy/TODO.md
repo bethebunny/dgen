@@ -9,6 +9,7 @@
       - Round trip through ASM literals
       - Round trip through JIT
 - Generalize `compile_and_run_staged` to not need an `infer` stage
+- Move `List` and `String` back to `FatPointer` layouts, ie. not statically-known sizes
 - Remove any "if stage0/stage1" logic
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 - Figure out what `resolve_constant` does and whether we need it
@@ -20,6 +21,7 @@
 
 ## Experiments / scope creep
 - Struct literals
+- Tuple type
 - DTypes
 - See if we can make `Block` an op in a generic way.
 - Make `call` a generic op in builtin

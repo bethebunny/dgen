@@ -38,12 +38,10 @@ class Lowering:
 
         # Create block args for function params
         args: list[BlockArgument] = []
-        input_types: list[dgen.Type] = []
         for param_name in f.proto.params:
             arg = BlockArgument(name=param_name, type=toy.InferredShapeTensor())
             self.scope[param_name] = arg
             args.append(arg)
-            input_types.append(toy.InferredShapeTensor())
 
         # Lower body statements
         ops = []
@@ -59,7 +57,7 @@ class Lowering:
             ):
                 result = toy.InferredShapeTensor()
 
-        func_type = toy.FunctionType(inputs=input_types, result=result)
+        func_type = toy.FunctionType(inputs=[a.type for a in args], result=result)
         return builtin.FuncOp(
             name=f.proto.name,
             type=func_type,

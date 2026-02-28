@@ -170,10 +170,6 @@ class HasSingleBlock:
 
     __blocks__: ClassVar[tuple[str, ...]]
 
-    @property
-    def __body__(self) -> Block:
-        return getattr(self, self.__blocks__[0])
-
 
 @builtin.op("function")
 @dataclass(eq=False, kw_only=True)
@@ -215,15 +211,10 @@ def _walk_all_ops(op: Op) -> Iterable[Op]:
             yield from _walk_all_ops(child)
 
 
-def _collect_type_dialects(func: FuncOp, dialects: set[Dialect]) -> None:
-    """Collect non-builtin dialects referenced by types in a function.
+def _collect_dialects(func: FuncOp, dialects: set[Dialect]) -> None:
+    """Collect all non-builtin dialects referenced by ops and types in a function."""
 
-    Only collects dialects whose names appear in the ASM text output.
-    Memory objects format as their value (e.g. [2, 3]), not as their type
-    (e.g. affine.Shape(2)), so Memory's internal type dialect is NOT collected.
-    """
-
-    def _check(t: object) -> None:
+    def _check_type(t: object) -> None:
         if t is None:
             return
         d = getattr(t, "dialect", None)
@@ -231,10 +222,12 @@ def _collect_type_dialects(func: FuncOp, dialects: set[Dialect]) -> None:
             dialects.add(d)
 
     for op in _walk_all_ops(func):
-        _check(getattr(op, "type", None))
+        if op.dialect.name != "builtin":
+            dialects.add(op.dialect)
+        _check_type(getattr(op, "type", None))
     for arg in func.body.args:
-        _check(arg.type)
-    _check(func.type.result)
+        _check_type(arg.type)
+    _check_type(func.type.result)
 
 
 @dataclass
@@ -243,13 +236,10 @@ class Module:
 
     @property
     def asm(self) -> Iterable[str]:
-        # Collect non-builtin dialects used (from ops and types)
+        # Collect non-builtin dialects used (from ops and types) in one pass
         dialects: set[Dialect] = set()
         for func in self.functions:
-            for op in _walk_all_ops(func):
-                if op.dialect.name != "builtin":
-                    dialects.add(op.dialect)
-            _collect_type_dialects(func, dialects)
+            _collect_dialects(func, dialects)
 
         for d in sorted(dialects, key=lambda d: d.name):
             yield f"import {d.name}"

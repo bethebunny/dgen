@@ -1,20 +1,6 @@
 """Tests for codegen: full pipeline with JIT execution."""
 
-import tempfile
-
-from click.testing import CliRunner
-
-from toy.cli import main
-
-
-def _toy(source):
-    """Write .toy source to a temp file and run via CliRunner."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".toy") as f:
-        f.write(source)
-        f.flush()
-        r = CliRunner().invoke(main, [f.name])
-        assert r.exit_code == 0, r.output
-        return r.output.strip()
+from toy.test.helpers import run_toy as _toy
 
 
 def test_constant_print():

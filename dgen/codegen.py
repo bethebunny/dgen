@@ -157,7 +157,8 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
             return constants[vid].split(" ", 1)[1]
         return f"%{tracker.track_name(val)}"
 
-    func_name = tracker.track_name(f) if f.name is not None else f.name
+    assert f.name is not None
+    func_name = tracker.track_name(f)
     # Derive LLVM return type from function signature
     result_type = f.type.result
     if isinstance(result_type, builtin.Nil):

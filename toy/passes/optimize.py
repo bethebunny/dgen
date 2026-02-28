@@ -33,10 +33,10 @@ def rewrite_uses(
     for op in ops:
         for name, param in op.parameters:
             if param is old_value:
-                object.__setattr__(op, name, new_value)
+                setattr(op, name, new_value)
         for name, operand in op.operands:
             if operand is old_value:
-                object.__setattr__(op, name, new_value)
+                setattr(op, name, new_value)
 
 
 # ===----------------------------------------------------------------------=== #

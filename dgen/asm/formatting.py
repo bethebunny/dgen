@@ -7,9 +7,7 @@ from dataclass field declarations alone — no per-op asm/parse code needed.
 from __future__ import annotations
 
 import dataclasses
-import functools
 from collections.abc import Iterable, Sequence
-from typing import get_type_hints
 
 from ..op import Op
 from ..type import Memory
@@ -157,11 +155,6 @@ def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
 # ===----------------------------------------------------------------------=== #
 
 
-@functools.cache
-def _class_hints(cls: type) -> dict[str, type]:
-    return get_type_hints(cls, include_extras=True)
-
-
 def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     """Generic asm emitter driven by field declarations."""
     cls = type(op)
@@ -171,7 +164,6 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     # If no tracker provided, create one and register this op
     if tracker is None:
         tracker = SlotTracker()
-        tracker.track_name(op)
         tracker.register([op])
 
     # Build args from declared fields (constants first, then runtime)

@@ -5,24 +5,7 @@ so that shape inference and lowering can proceed. All tests exercise
 the full pipeline (source → CLI → staging → shape inference → lowering → JIT).
 """
 
-import tempfile
-
-from click.testing import CliRunner
-
-from toy.cli import main
-
-
-def _toy(source, *, args=None):
-    """Write .toy source to a temp file and run via CliRunner."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".toy") as f:
-        f.write(source)
-        f.flush()
-        cli_args = [f.name]
-        if args:
-            cli_args.extend(str(a) if not isinstance(a, str) else a for a in args)
-        r = CliRunner().invoke(main, cli_args)
-        assert r.exit_code == 0, r.output
-        return r.output.strip()
+from toy.test.helpers import run_toy as _toy
 
 
 # ===----------------------------------------------------------------------=== #
