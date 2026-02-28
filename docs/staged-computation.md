@@ -1,123 +1,123 @@
 # Staged Computation: Implementation Architecture
 
-This document describes the implementation of staged computation in DGEN — the mechanism by which compile-time (`Comptime`) values are resolved, including values that depend on runtime input.
+This document describes the implementation of staged computation in DGEN — the mechanism by which compile-time (`__params__`) values are resolved, including values that depend on runtime input.
 
 See `staging.md` for the conceptual model. This document covers the concrete implementation.
 
 ## Overview
 
-Some op fields are annotated `Comptime`, meaning their concrete value must be known before the next compilation phase can proceed (e.g., shape inference needs a tile count). There are two cases:
+Some op fields are declared in `__params__`, meaning their concrete value must be known before the next compilation phase can proceed (e.g., shape inference needs a tile count). The staging system assigns every value a **stage number** and resolves `__params__` boundaries in stage order.
 
-1. **Stage 0**: The comptime value depends only on constants. Extract the dependency subgraph, JIT it in isolation, replace the field with a `ConstantOp`.
+## Stage Numbers
 
-2. **Stage 1**: The comptime value depends on a function parameter (runtime input). The function must be split: stage 1 computes the comptime value at runtime, then stage 2 is compiled with that value baked in as a constant.
+Every value in a function is assigned a stage number via `compute_stages(func)`.
 
+**Base cases:**
+- `Constant` / `ConstantOp`: stage 0
+- `BlockArgument` (function input): stage 1
+
+**Ops:**
 ```
-             Stage 0                          Stage 1
-   ┌───────────────────────┐    ┌──────────────────────────────────┐
-   │ add_index(2, 3) → 5   │    │ nonzero_count(%param) → ???     │
-   │                       │    │                                  │
-   │ Self-contained.       │    │ Depends on runtime input.        │
-   │ JIT in isolation.     │    │ Must split function into two     │
-   │ Replace with const 5. │    │ stages and JIT stage 1 first.    │
-   └───────────────────────┘    └──────────────────────────────────┘
+stage = max((
+    *(1 + stage(p) for p in __params__),
+    *(stage(v) for v in __operands__),
+))
 ```
 
-## Key Types and Functions
+The `+1` applies only to `__params__` — these are stage boundaries where a compile-time value must be resolved before the op can proceed. `__operands__` (runtime SSA values) flow through without adding a stage.
+
+**Example:**
+```
+%0 = constant(2)            # stage 0
+%1 = constant([1,2,3])      # stage 0
+%2 = add_index(%0, %0)      # no __params__, max(0,0) = 0
+%x = block_arg              # stage 1
+%3 = tile<%2>(%1)           # has __params__, max(0, 0+1) = 1
+%n = nonzero_count(%x)      # no __params__, max(1) = 1
+%4 = tile<%n>(%1)           # has __params__, max(0, 1+1) = 2
+```
+
+### Op.ready
+
+`Op.ready` checks whether all `__params__` fields are resolved `Constant` instances:
+
+```python
+@property
+def ready(self) -> bool:
+    return all(isinstance(getattr(self, name), Constant) for name, _ in self.__params__)
+```
+
+An op's stage number tells you *when* it can become ready. `Op.ready` tells you whether it *is* ready right now.
+
+## Key Functions
 
 All staging logic lives in `dgen/staging.py`.
 
-### Comptime Annotation
+### Stage Computation
 
-`Comptime` (defined in `dgen/value.py`) is a type-level marker on op fields. It's a subclass of `Value` used purely as a type hint — at runtime the field holds a regular `Value`. The staging evaluator inspects field annotations to find which ops need resolution.
+`compute_stages(func)` returns `dict[int, int]` mapping `id(value) → stage_number` for every value in the function. Uses recursive memoization over the dataflow graph.
 
-```python
-@toy.op("tile")
-@dataclass(eq=False, kw_only=True)
-class TileOp(Op):
-    input: Value
-    count: Comptime      # ← must be resolved before shape inference
-    type: Type
-```
+`_unresolved_boundaries(func, stages)` finds ops with unresolved `__params__` (non-Constant Value fields), returns `(stage, op, field_name, param_value)` tuples sorted by stage number.
 
 ### Stage Classification
 
 `_is_stage0_evaluable(target)` walks the dependency tree of a `Value`. If any node is a `BlockArgument` (function parameter), the subgraph depends on runtime input and is NOT stage-0 evaluable.
 
-```python
-def _is_stage0_evaluable(target: Value) -> bool:
-    # Walk operands recursively
-    # Return False if any BlockArgument is found
-```
-
 ### Dependency Tracing
 
 `_trace_dependencies(target, func)` backward-walks from a target value through its operands, returning the ops from the function body in topological order. This gives the minimal subgraph needed to compute `target`.
 
-## Stage 0: Isolated JIT
+## Resolution: `_resolve_all_comptime`
 
-When a comptime subgraph is self-contained (all leaves are `ConstantOp`s), `compile_and_run_staged` resolves it in isolation:
+Resolves `__params__` fields in stage order:
+
+1. Compute stage numbers via `compute_stages`
+2. Find unresolved boundaries via `_unresolved_boundaries` (sorted by stage)
+3. Process the lowest-stage boundary:
+   - If stage-0 evaluable → extract subgraph, JIT in isolation, replace with `ConstantOp`
+   - If not stage-0 evaluable → stop (remaining boundaries need runtime args)
+4. After each resolution, run `infer()` to propagate types, then `_resolve_constant_ops` to replace ops like `DimSizeOp` with constants
+5. Re-compute stages (the graph has changed) and repeat
+
+This replaces an earlier fixpoint-scan approach with structured stage-ordered processing.
+
+### Isolated JIT (Stage-0 Boundaries)
+
+When a `__params__` subgraph is self-contained (all leaves are `ConstantOp`s):
 
 1. Extract the dependency subgraph
 2. Build a mini-module: the subgraph ops + `ReturnOp(target)`
 3. Lower through the pipeline (toy → affine → LLVM)
 4. JIT-compile and call — get the result as a Python value
-5. Create a `ConstantOp` with the result and patch the comptime field
+5. Create a `ConstantOp` with the result and patch the `__params__` field
 
 This handles cases like `tile(%data, add_index(2, 3))`.
 
-## Stage 1: Runtime-Dependent Comptime Values
+### Runtime-Dependent Boundaries
 
-When the comptime subgraph reaches a `BlockArgument`, isolated JIT is impossible — the value depends on runtime input. The solution: split the function at the stage boundary.
-
-### Function Splitting
+When the `__params__` subgraph reaches a `BlockArgument`, isolated JIT is impossible — the value depends on runtime input. The solution: build a callback-based executable.
 
 Given:
 ```
 function (%x: Tensor([4], f64)) -> ():
-    %1 = nonzero_count(%x)                        ← comptime subgraph
-    %2 = [7.0, 8.0, 9.0]                          ← stage 2
-    %3 = tile(%2, %1)      # count is Comptime     ← stage boundary
-    %4 = print(%3)                                 ← stage 2
+    %1 = nonzero_count(%x)                    ← stage 1 (depends on block arg)
+    %2 = [7.0, 8.0, 9.0]                      ← stage 0
+    %3 = tile<%1>(%2)    # count in __params__ ← stage 2 (boundary)
+    %4 = print(%3)                             ← stage 2
     return()
 ```
 
-The function is split into:
-
-**Stage 1** — computes the comptime value:
-```
-function (%x: Tensor([4], f64)) -> index:
-    %1 = nonzero_count(%x)
-    return(%1)
-```
-
-**Stage 2 template** — the rest of the function, with the comptime value as a placeholder:
-```
-function () -> ():
-    %2 = [7.0, 8.0, 9.0]
-    %count = <resolved at runtime>
-    %3 = tile(%2, %count)
-    %4 = print(%3)
-    return()
-```
-
-### Execution Flow
-
-There are two compilation paths:
-
-**`compile_and_run_staged`** — one-shot: compiles and runs in one call. Stage-1 values are resolved Python-side with runtime args before final compilation.
-
-**`compile_staged`** — compile-once, run-many: returns an `Executable` that can be called multiple times with different arguments. When unresolved `__params__` remain after stage-0, builds a callback-based executable: the compiled code calls a host callback that JIT-compiles stage-2 with the resolved values at runtime.
+## Compilation Paths
 
 ```
 compile_staged(module, infer, lower)
 │
-├─ 1. _resolve_all_comptime (stage-0 only, no args needed)
-│     Scan for __params__ fields
+├─ 1. _resolve_all_comptime (stage-ordered)
+│     Compute stages → find lowest unresolved boundary
 │     If stage-0 evaluable → resolve in isolation
-│     If stage-1 needed → skip
+│     If runtime-dependent → stop
 │
-├─ 2. Check for remaining unresolved __params__
+├─ 2. Check for remaining unresolved boundaries
 │
 ├─ [if none] 3a. Compile directly: infer → lower → codegen
 │
@@ -125,13 +125,15 @@ compile_staged(module, infer, lower)
       ├─ Build stage-2 template (ops with __params__ as placeholders)
       ├─ Create host callback (ctypes CFUNCTYPE):
       │     Receives all function args at runtime
-      │     Patches __params__ with constants from args
+      │     Resolves __params__ in stage order with runtime args
       │     JIT-compiles stage-2: infer → lower → codegen → run
       ├─ Register callback with llvmlite (add_symbol)
       └─ Compile stage-1 thunk: calls callback, returns result
 ```
 
 Each `exe.run(...)` call triggers the callback, which JIT-compiles a specialized stage-2 for the given runtime values.
+
+The callback closure uses the same `compute_stages` / `_unresolved_boundaries` loop, but without the stage-0-evaluable gate — runtime args are available, so all boundaries can be resolved.
 
 ### Argument Passing
 
@@ -175,29 +177,13 @@ The count must be a `ConstantOp` by the time lowering runs — staging has resol
 
 ## Resolved Extensions
 
-The staging system supports three capabilities beyond the basic stage-0/stage-1 split:
-
 ### Pointer-crossing
 
 Stage-2 code can access the original function parameters (e.g., the tensor passed to the function). `compile_and_run_staged` preserves block args through compilation and passes runtime args at the run boundary.
 
-### Multiple Comptime Fields
+### Chained Stage Boundaries
 
-Both `_resolve_all_comptime` (stage-0) and the stage-1 loop in `compile_and_run_staged` use an iterative `while changed` loop that rescans after each resolution. Multiple independent boundaries in the same function are resolved one at a time, with subgraph ops removed and replaced by constants after each step.
-
-### Arbitrary Stages (Interleaved Shape Inference)
-
-After each comptime resolution, `infer()` is called to propagate types with the newly-known constants. Ops that implement `resolve_constant()` (e.g., `DimSizeOp`) are then replaced with `ConstantOp`s. This enables chained dependencies where a second comptime value depends on the *shape* resolved by the first.
-
-### Runtime JIT Callbacks (`compile_staged`)
-
-When `compile_staged` finds unresolved `__params__` that depend on runtime values (BlockArguments), it builds a callback-based executable. The compiled LLVM code calls a host callback (`ctypes.CFUNCTYPE`) that:
-
-1. Reads the runtime `__params__` values from the callback arguments
-2. Deep-copies the stage-2 template and patches the `__params__` fields with `ConstantOp`s
-3. Compiles and runs stage-2 through the full pipeline (infer → lower → codegen → JIT)
-
-This enables compile-once, run-many: the same `Executable` can be called with different arguments, each time JIT-compiling a specialized stage-2.
+After each `__params__` resolution, `infer()` is called to propagate types with the newly-known constants. Ops that implement `resolve_constant()` (e.g., `DimSizeOp`) are then replaced with `ConstantOp`s. This enables chained dependencies where a second `__params__` value depends on the *shape* resolved by the first. Stage numbers are re-computed after each resolution step to account for these graph changes.
 
 ### Remaining Restrictions
 
@@ -207,9 +193,10 @@ The current `compile_staged` callback path handles the case where unresolved `__
 
 | File | Role |
 |------|------|
-| `dgen/staging.py` | Stage analysis, dependency tracing, function splitting, `compile_and_run_staged` |
+| `dgen/staging.py` | Stage computation, dependency tracing, staged resolution, `compile_staged` |
+| `dgen/op.py` | `Op.ready` property |
 | `dgen/codegen.py` | LLVM IR emission with function parameters, JIT with args |
-| `dgen/value.py` | `Comptime` type marker |
+| `dgen/value.py` | `Constant` / `Value` base classes |
 | `toy/passes/toy_to_affine.py` | Block arg propagation, TileOp lowering |
 | `toy/passes/affine_to_llvm.py` | Block arg propagation with shape tracking |
 | `toy/passes/shape_inference.py` | Resolves tile shapes after comptime fields are constants |
