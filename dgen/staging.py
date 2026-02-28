@@ -26,6 +26,8 @@ def _trace_dependencies(target: dgen.Value, func: builtin.FuncOp) -> list[dgen.O
             continue
         needed.add(id(val))
         if isinstance(val, dgen.Op):
+            for _, param in val.parameters:
+                worklist.append(param)
             for _, operand in val.operands:
                 worklist.append(operand)
     return [op for op in func.body.ops if id(op) in needed]
@@ -47,6 +49,8 @@ def _is_stage0_evaluable(target: dgen.Value) -> bool:
         if isinstance(val, BlockArgument):
             return False
         if isinstance(val, dgen.Op):
+            for _, param in val.parameters:
+                worklist.append(param)
             for _, operand in val.operands:
                 worklist.append(operand)
     return True
@@ -136,9 +140,9 @@ def _resolve_constant_ops(func: builtin.FuncOp) -> None:
         const = builtin.ConstantOp(value=val, type=op.type)
         func.body.ops[i] = const
         for other in func.body.ops:
-            for param, _ in other.__params__:
-                if getattr(other, param) is op:
-                    setattr(other, param, const)
+            for param_name, param_value in other.parameters:
+                if param_value is op:
+                    setattr(other, param_name, const)
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +218,7 @@ def _unresolved_boundaries(
     """
     boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
     for op in func.body.ops:
-        for field_name, _ in op.__params__:
-            value = getattr(op, field_name)
+        for field_name, value in op.parameters:
             if isinstance(value, dgen.Value) and not isinstance(value, Constant):
                 boundaries.append((stages.get(id(op), 0), op, field_name, value))
     boundaries.sort(key=lambda t: t[0])

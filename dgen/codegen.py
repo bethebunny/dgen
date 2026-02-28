@@ -110,8 +110,8 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
     tracker = SlotTracker()
     # Register block args (function parameters) first
     for arg in f.body.args:
-        tracker.get_name(arg)
-    builtin._register_ops(tracker, f.body.ops)
+        tracker.track_name(arg)
+    tracker.register(f.body.ops)
 
     # Pre-scan: build constants and types maps (keyed by id)
     constants: dict[int, str] = {}  # id(op) -> typed literal
@@ -148,16 +148,16 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         vid = id(val)
         if vid in constants:
             return constants[vid]
-        return f"{types.get(vid, 'i64')} %{tracker.get_name(val)}"
+        return f"{types.get(vid, 'i64')} %{tracker.track_name(val)}"
 
     def bare_ref(val: dgen.Value) -> str:
         """Just the value — e.g. '1.0' or '%v3'."""
         vid = id(val)
         if vid in constants:
             return constants[vid].split(" ", 1)[1]
-        return f"%{tracker.get_name(val)}"
+        return f"%{tracker.track_name(val)}"
 
-    func_name = tracker.get_name(f) if f.name is not None else f.name
+    func_name = tracker.track_name(f) if f.name is not None else f.name
     # Derive LLVM return type from function signature
     result_type = f.type.result
     if isinstance(result_type, builtin.Nil):
@@ -167,7 +167,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
     # Build parameter list from block args
     params = []
     for arg in f.body.args:
-        name = tracker.get_name(arg)
+        name = tracker.track_name(arg)
         ty = types.get(id(arg), "i64")
         params.append(f"{ty} %{name}")
     param_str = ", ".join(params)
@@ -177,7 +177,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         if isinstance(op, builtin.ConstantOp):
             continue
 
-        name = tracker.get_name(op)
+        name = tracker.track_name(op)
 
         if isinstance(op, llvm.LabelOp):
             lines.append(f"{string_value(op.label_name)}:")
@@ -221,7 +221,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
             lines.append(f"  br label %{string_value(op.dest)}")
         elif isinstance(op, llvm.CondBrOp):
             lines.append(
-                f"  br i1 %{tracker.get_name(op.cond)}, label %{string_value(op.true_dest)}, label %{string_value(op.false_dest)}"
+                f"  br i1 %{tracker.track_name(op.cond)}, label %{string_value(op.true_dest)}, label %{string_value(op.false_dest)}"
             )
         elif isinstance(op, llvm.PhiOp):
             ty = types.get(id(op), "i64")

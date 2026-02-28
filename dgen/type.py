@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ctypes
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
 
 from .layout import Layout
 
@@ -30,6 +30,11 @@ class Type:
     @classmethod
     def for_value(cls, value: object) -> Type:
         return cls()
+
+    @property
+    def parameters(self) -> Iterator[tuple[str, Type]]:
+        for name, field in self.__params__:
+            yield name, getattr(self, name)
 
 
 Field = tuple[str, type[Type]]

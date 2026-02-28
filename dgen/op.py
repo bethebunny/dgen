@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, Iterable
+from typing import ClassVar, Iterable, Iterator
 
 from .block import Block
 from .dialect import Dialect
-from .type import Fields
+from .type import Fields, Type
 from .value import Constant, Value
 
 
@@ -20,15 +20,18 @@ class Op(Value):
     __blocks__: ClassVar[tuple[str, ...]] = ()
 
     @property
-    def operands(self) -> Iterable[tuple[str, Value]]:
+    def operands(self) -> Iterator[tuple[str, Value]]:
         """All Value-typed fields (constant and runtime)."""
-        for name, _ in self.__params__:
-            yield name, getattr(self, name)
         for name, _ in self.__operands__:
             yield name, getattr(self, name)
 
     @property
-    def blocks(self) -> Iterable[tuple[str, Block]]:
+    def parameters(self) -> Iterator[tuple[str, Type]]:
+        for name, field in self.__params__:
+            yield name, getattr(self, name)
+
+    @property
+    def blocks(self) -> Iterator[tuple[str, Block]]:
         """All Block-typed fields."""
         for name in self.__blocks__:
             yield name, getattr(self, name)

@@ -16,9 +16,11 @@ from toy.dialects.affine import shape_constant
 
 
 def collect_uses(ops: Sequence[dgen.Op]) -> set[int]:
-    """Return set of id()s of Values referenced as operands."""
+    """Return set of id()s of Values referenced as parameters and operands."""
     used: set[int] = set()
     for op in ops:
+        for _, v in op.parameters:
+            used.add(id(v))
         for _, v in op.operands:
             used.add(id(v))
     return used
@@ -27,8 +29,11 @@ def collect_uses(ops: Sequence[dgen.Op]) -> set[int]:
 def rewrite_uses(
     ops: Sequence[dgen.Op], old_value: dgen.Value, new_value: dgen.Value
 ) -> None:
-    """Replace all operand references to old_value with new_value."""
+    """Replace all parameter and operand references to old_value with new_value."""
     for op in ops:
+        for name, param in op.parameters:
+            if param is old_value:
+                object.__setattr__(op, name, new_value)
         for name, operand in op.operands:
             if operand is old_value:
                 object.__setattr__(op, name, new_value)

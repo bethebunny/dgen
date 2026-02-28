@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -188,13 +188,13 @@ class FuncOp(HasSingleBlock, Op):
         tracker = SlotTracker()
         # Pre-register block args and all ops in this function
         for arg in self.body.args:
-            tracker.get_name(arg)
-        _register_ops(tracker, self.body.ops)
+            tracker.track_name(arg)
+        tracker.register(self.body.ops)
 
-        name = tracker.get_name(self)
+        name = tracker.track_name(self)
         arg_parts = []
         for a in self.body.args:
-            n = tracker.get_name(a)
+            n = tracker.track_name(a)
             if a.type is not None:
                 arg_parts.append(f"%{n}: {format_expr(a.type, tracker)}")
             else:
@@ -205,18 +205,6 @@ class FuncOp(HasSingleBlock, Op):
             if _is_sugar_op(op):
                 continue
             yield from asm.indent(op_asm(op, tracker))
-
-
-def _register_ops(tracker: SlotTracker, ops: Sequence[Op]) -> None:
-    """Pre-register all ops in a tracker so slot numbers are stable."""
-    for op in ops:
-        if _is_sugar_op(op):
-            continue
-        tracker.get_name(op)
-        for _, block in op.blocks:
-            for arg in block.args:
-                tracker.get_name(arg)
-            _register_ops(tracker, block.ops)
 
 
 def _walk_all_ops(op: Op) -> Iterable[Op]:
