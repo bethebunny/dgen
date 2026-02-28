@@ -5,10 +5,25 @@ from __future__ import annotations
 from collections.abc import Generator, Iterator
 from math import prod
 import dgen
-from dgen.dialects.builtin import Nil, string_constant
+from dgen.dialects.builtin import ListNewOp, ListSetOp, Nil, string_constant
 from dgen.dialects import builtin, llvm
 from dgen.layout import Array
 from toy.dialects import affine, toy
+
+
+def _extract_list_elements(
+    list_val: dgen.Value,
+    value_map: dict[dgen.Value, dgen.Value],
+) -> list[dgen.Value]:
+    """Walk list_set chain back to list_new, return elements in order."""
+    elements: dict[int, dgen.Value] = {}
+    cur = list_val
+    while isinstance(cur, ListSetOp):
+        idx = cur.index.__constant__.unpack()[0]
+        elements[idx] = value_map.get(cur.element, cur.element)
+        cur = cur.list
+    assert isinstance(cur, ListNewOp)
+    return [elements[i] for i in range(len(elements))]
 
 
 class AffineToLLVMLowering:
@@ -104,7 +119,7 @@ class AffineToLLVMLowering:
 
     def _lower_load(self, op: affine.LoadOp) -> Iterator[dgen.Op]:
         memref_val = self._map(op.memref)
-        index_vals = [self._map(v) for v in op.indices]
+        index_vals = _extract_list_elements(op.indices, self.value_map)
         linear = yield from self._linearize_indices(memref_val, index_vals)
         ptr_op = llvm.GepOp(base=memref_val, index=linear)
         yield ptr_op
@@ -114,7 +129,7 @@ class AffineToLLVMLowering:
 
     def _lower_store(self, op: affine.StoreOp) -> Iterator[dgen.Op]:
         memref_val = self._map(op.memref)
-        index_vals = [self._map(v) for v in op.indices]
+        index_vals = _extract_list_elements(op.indices, self.value_map)
         linear = yield from self._linearize_indices(memref_val, index_vals)
         ptr_op = llvm.GepOp(base=memref_val, index=linear)
         yield ptr_op

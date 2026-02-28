@@ -91,6 +91,33 @@ def parse_expr(parser: IRParser) -> object:
     return cls(**kwargs)
 
 
+def _expand_list_sugar(
+    parser: IRParser, elements: list[object], element_type_cls: type[Type]
+) -> Value:
+    """Expand [expr, expr, ...] into list_new + list_set chain."""
+    from dgen.dialects.builtin import IndexType, List, ListNewOp, ListSetOp
+
+    element_type = element_type_cls()
+    list_type = List(
+        element_type=element_type,
+        count=IndexType().constant(len(elements)),
+    )
+    new_op = ListNewOp(type=list_type)
+    parser.pending_ops.append(new_op)
+    cur: Value = new_op
+    for i, elem in enumerate(elements):
+        assert isinstance(elem, Value)
+        set_op = ListSetOp(
+            index=IndexType().constant(i),
+            list=cur,
+            element=elem,
+            type=list_type,
+        )
+        parser.pending_ops.append(set_op)
+        cur = set_op
+    return cur
+
+
 def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, object]:
     """Parse comma-separated exprs and map them to the type's declared fields.
 
@@ -147,11 +174,15 @@ def parse_op_fields(
     # Parse runtime operand fields in (...)
     parser.expect("(")
     parser.skip_whitespace()
-    for i, (f_name, _) in enumerate(cls.__operands__):
+    for i, (f_name, f_type) in enumerate(cls.__operands__):
         if i > 0:
             parser.expect(",")
             parser.skip_whitespace()
-        kwargs[f_name] = parse_expr(parser)
+        raw_value = parse_expr(parser)
+        if isinstance(raw_value, list) and all(isinstance(v, Value) for v in raw_value):
+            # [%ref, %ref, ...] sugar → list_new + list_set chain
+            raw_value = _expand_list_sugar(parser, list(raw_value), f_type)
+        kwargs[f_name] = raw_value
         parser.skip_whitespace()
     parser.expect(")")
 
@@ -197,6 +228,7 @@ class IRParser:
         self._ops: dict[str, type[Op]] = {}
         self._types: dict = {}
         self.name_table: dict[str, Value] = {}
+        self.pending_ops: list[Op] = []
 
         # Implicit: from builtin import *
         builtin_dialect = Dialect.get("builtin")
@@ -483,6 +515,9 @@ class IRParser:
             if eol == -1:
                 eol = len(self.text)
 
+            # Drain any pending ops (from list sugar expansion)
+            ops.extend(self.pending_ops)
+            self.pending_ops.clear()
             ops.append(self.parse_op())
 
             # If parse_op consumed past the original newline (body-bearing op),

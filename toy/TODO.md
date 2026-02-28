@@ -12,6 +12,7 @@
 - Remove any "if stage0/stage1" logic
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 - Figure out what `resolve_constant` does and whether we need it
+- Get rid of `for_value`
 
 ## dgen dialect definition files + generation
 - Create dialect files
@@ -49,17 +50,19 @@
 - `affine.load` / `affine.mul_f` / `affine.add_f` should return `f64` (not `()`)
 - Fix other ops which should return types but return `Nil` instead
 - Figure out why some ASM still doesn't have types, these should fail to parse
-- Go through and rename files
-- Read, understand, clean passes
 - Remove the janky `if args` stuff from `cli.run`
 - Remove `hasattr` checks
 - Remove `cast`s
 - Remove `Any`s
 - Remove `type: ignore`s
-- Function calls and GOTOs should use the SSA name, not a string
-- Function definitions should use the normal block syntax
 - Update parser and formatter to support multi-block ops
 - `Bytes` layout currently does utf8 encoding. This is definitely wrong.
+
+## Harder cleanup
+- Go through and rename files
+- Read, understand, clean passes
+- Function calls and GOTOs should use the SSA name, not a string
+- Function definitions should use the normal block syntax
 
 ## Misc
 - Write more down into design docs

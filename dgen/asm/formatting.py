@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import get_type_hints
 
 from .. import Block
@@ -45,6 +45,7 @@ class SlotTracker:
     def __init__(self) -> None:
         self._slots: dict[int, str] = {}  # id(value) -> name
         self._counter = 0
+        self.consumed: set[int] = set()  # ids of ops inlined as sugar
 
     def get_name(self, value: Value) -> str:
         vid = id(value)
@@ -67,12 +68,48 @@ class SlotTracker:
 # ===----------------------------------------------------------------------=== #
 
 
+def _find_list_sugar_ops(ops: Sequence[Op], consumed: set[int]) -> None:
+    """Recursively find list_new + list_set chains that can be inlined as [...]."""
+    from dgen.dialects.builtin import ListNewOp, ListSetOp
+
+    for op in ops:
+        if id(op) in consumed:
+            continue
+        for f_name, _ in op.__operands__:
+            val = getattr(op, f_name)
+            if isinstance(val, ListSetOp):
+                # Walk chain back to ListNewOp
+                chain: list[Op] = []
+                cur: object = val
+                while isinstance(cur, ListSetOp):
+                    chain.append(cur)
+                    cur = cur.list
+                if isinstance(cur, ListNewOp):
+                    chain.append(cur)
+                    consumed.update(id(o) for o in chain)
+        for _, block in op.blocks:
+            _find_list_sugar_ops(block.ops, consumed)
+
+
 def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     """Format a value as an expression string, dispatching on runtime type."""
-    from dgen.dialects.builtin import Nil, Value
+    from dgen.dialects.builtin import ListSetOp, Nil, Value
 
     if isinstance(value, Nil):
         return "()"
+    # Inline list sugar: list_set chain → [elem0, elem1, ...]
+    if (
+        isinstance(value, ListSetOp)
+        and tracker is not None
+        and id(value) in tracker.consumed
+    ):
+        elements: list[object] = []
+        cur: object = value
+        while isinstance(cur, ListSetOp):
+            elements.append(cur.element)
+            cur = cur.list
+        elements.reverse()
+        return "[" + ", ".join(format_expr(v, tracker) for v in elements) + "]"
     if isinstance(value, Constant) and not isinstance(value, Op):
         from ..layout import Array
 
@@ -191,4 +228,6 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     if cls.__blocks__:
         body = getattr(op, cls.__blocks__[0])
         for child_op in body.ops:
+            if tracker is not None and id(child_op) in tracker.consumed:
+                continue
             yield from indent(op_asm(child_op, tracker))

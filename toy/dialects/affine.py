@@ -81,7 +81,7 @@ class DeallocOp(Op):
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
     memref: Value
-    indices: list[Value]
+    indices: Value
     type: Type = builtin.Nil()
 
     __operands__ = (("memref", Type), ("indices", IndexType))
@@ -92,7 +92,7 @@ class LoadOp(Op):
 class StoreOp(Op):
     value: Value
     memref: Value
-    indices: list[Value]
+    indices: Value
     type: Type = builtin.Nil()
 
     __operands__ = (("value", Type), ("memref", Type), ("indices", IndexType))

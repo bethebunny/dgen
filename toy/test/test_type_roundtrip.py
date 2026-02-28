@@ -52,7 +52,9 @@ BUILTIN_TYPES = [
         id="builtin.string",
     ),
     pytest.param(
-        builtin.List(element_type=builtin.F64Type()),
+        builtin.List(
+            element_type=builtin.F64Type(), count=builtin.IndexType().constant(3)
+        ),
         None,
         None,
         None,
@@ -184,7 +186,12 @@ _ASM_TYPES = [
     pytest.param(builtin.F64Type(), id="builtin.f64"),
     pytest.param(builtin.Nil(), id="builtin.nil"),
     pytest.param(builtin.String.for_value("hi"), id="builtin.string"),
-    pytest.param(builtin.List(element_type=builtin.F64Type()), id="builtin.list"),
+    pytest.param(
+        builtin.List(
+            element_type=builtin.F64Type(), count=builtin.IndexType().constant(3)
+        ),
+        id="builtin.list",
+    ),
     pytest.param(TensorType(shape=shape_constant([3])), id="toy.tensor_1d"),
     pytest.param(TensorType(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
