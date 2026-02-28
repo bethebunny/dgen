@@ -10,7 +10,6 @@
       - Round trip through JIT
 - Generalize `compile_and_run_staged` to not need an `infer` stage
 - Remove any "if stage0/stage1" logic
-- Right now "_jit_evaluate" assumes the result is an int. Should be able to return any type according to `__format__`.
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 - Figure out what `resolve_constant` does and whether we need it
 

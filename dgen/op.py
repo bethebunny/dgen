@@ -38,3 +38,9 @@ class Op(Value):
         from .asm.formatting import op_asm
 
         return op_asm(self)
+
+    @property
+    def ready(self) -> bool:
+        return all(
+            isinstance(getattr(self, name), Constant) for name, _ in self.__params__
+        )

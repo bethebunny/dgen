@@ -57,7 +57,7 @@ Implementation language: **Python**.
 - **Ops are dataclasses**: All ops inherit from `Op` (which inherits from `Value`). Fields annotated as `Value` are operands; fields annotated as `Block` are regions; other fields are compile-time attributes
 - **ASM round-trip**: IR can be printed to text and parsed back; round-trip correctness is heavily tested
 - **Generic constant op**: `builtin.ConstantOp` replaces per-dialect constant ops; the type annotation determines serialization and materialization
-- **Staging model**: Types have compile-time and runtime faces; `constant` is the stage boundary (see `docs/staging.md`)
+- **Staging model**: Types have compile-time and runtime faces; `constant` is the stage boundary (see `docs/staging.md`, `docs/staged-computation.md`)
 
 ## Build & Test
 

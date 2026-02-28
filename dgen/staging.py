@@ -112,7 +112,7 @@ def _resolve_comptime_field(
     )
     if block_args:
         subgraph_ids = {id(o) for o in subgraph}
-        func.body.ops[:] = [o for o in func.body.ops if id(o) not in subgraph_ids]
+        func.body.ops = [o for o in func.body.ops if id(o) not in subgraph_ids]
     const_op = builtin.ConstantOp(value=result, type=value.type)
     idx = func.body.ops.index(op)
     func.body.ops.insert(idx, const_op)
@@ -142,6 +142,87 @@ def _resolve_constant_ops(func: builtin.FuncOp) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Stage computation
+# ---------------------------------------------------------------------------
+
+
+def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
+    """Get all Value inputs from a set of fields, flattening list-valued ones."""
+    result: list[dgen.Value] = []
+    for name, _ in fields:
+        val = getattr(op, name)
+        if isinstance(val, list):
+            result.extend(v for v in val if isinstance(v, dgen.Value))
+        elif isinstance(val, dgen.Value):
+            result.append(val)
+    return result
+
+
+def compute_stages(func: builtin.FuncOp) -> dict[int, int]:
+    """Assign a stage number to every Value in a function.
+
+    Base cases:
+      - Constant / ConstantOp: stage 0
+      - BlockArgument: stage 1
+
+    For ops::
+
+        stage = max((
+            *(1 + stage(p) for p in __params__),
+            *(stage(v) for v in __operands__),
+        ))
+
+    Returns a dict mapping ``id(value) → stage_number``.
+    """
+    stages: dict[int, int] = {}
+
+    def _stage(value: dgen.Value) -> int:
+        vid = id(value)
+        if vid in stages:
+            return stages[vid]
+        if isinstance(value, Constant):
+            stages[vid] = 0
+            return 0
+        if isinstance(value, BlockArgument):
+            stages[vid] = 1
+            return 1
+        assert isinstance(value, dgen.Op)
+        parts: list[int] = []
+        for pv in _field_values(value, value.__params__):
+            parts.append(1 + _stage(pv))
+        for ov in _field_values(value, value.__operands__):
+            parts.append(_stage(ov))
+        result = max(parts, default=0)
+        stages[vid] = result
+        return result
+
+    for arg in func.body.args:
+        stages[id(arg)] = 1
+    for op in func.body.ops:
+        _stage(op)
+    return stages
+
+
+def _unresolved_boundaries(
+    func: builtin.FuncOp,
+    stages: dict[int, int],
+) -> list[tuple[int, dgen.Op, str, dgen.Value]]:
+    """Find ops with unresolved __params__, sorted by stage number.
+
+    Returns ``(stage, op, field_name, param_value)`` tuples for every
+    ``__params__`` field that is a non-Constant Value.
+    """
+    boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
+    for op in func.body.ops:
+        for field_name, _ in op.__params__:
+            value = getattr(op, field_name)
+            if isinstance(value, dgen.Value) and not isinstance(value, Constant):
+                boundaries.append((stages.get(id(op), 0), op, field_name, value))
+    boundaries.sort(key=lambda t: t[0])
+    return boundaries
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -152,39 +233,26 @@ def _resolve_all_comptime(
     infer: Callable[[builtin.Module], builtin.Module],
     lower: Callable[[builtin.Module], builtin.Module],
 ) -> builtin.Module:
-    """Deepcopy + resolve all Constant fields. Returns pre-lowered module."""
+    """Deepcopy + resolve all Constant fields in stage order.
+
+    Computes stage numbers, then processes unresolved ``__params__``
+    boundaries from lowest stage first.  Stops when remaining boundaries
+    depend on runtime values (BlockArguments).
+    """
     module = deepcopy(module)
-    changed = True
-    while changed:
-        changed = False
+    while True:
         func = module.functions[0]
-        for op in list(func.body.ops):
-            for field_name, _ in op.__params__:
-                value = getattr(op, field_name)
-                if not isinstance(value, dgen.Value):
-                    continue  # already a literal constant, no resolution needed
-                if isinstance(value, Constant):
-                    continue  # already a resolved Constant (ConstantOp or inline)
-                if not _is_stage0_evaluable(value):
-                    continue  # stage-1: needs runtime args, skip
-                _resolve_comptime_field(func, op, field_name, value, lower)
-                module = infer(module)
-                _resolve_constant_ops(module.functions[0])
-                changed = True
-                break
-            if changed:
-                break
+        stages = compute_stages(func)
+        boundaries = _unresolved_boundaries(func, stages)
+        if not boundaries:
+            break
+        _stage_num, op, field_name, value = boundaries[0]
+        if not _is_stage0_evaluable(value):
+            break  # remaining boundaries need runtime args
+        _resolve_comptime_field(func, op, field_name, value, lower)
+        module = infer(module)
+        _resolve_constant_ops(module.functions[0])
     return module
-
-
-def _has_unresolved_params(func: builtin.FuncOp) -> bool:
-    """Check if any ops have unresolved __params__ fields."""
-    for op in func.body.ops:
-        for field_name, _ in op.__params__:
-            value = getattr(op, field_name)
-            if isinstance(value, dgen.Value) and not isinstance(value, Constant):
-                return True
-    return False
 
 
 def _raw_to_python(raw: object, ty: dgen.Type) -> object:
@@ -242,35 +310,26 @@ def _compile_with_callbacks(
             _raw_to_python(raw_args[i], orig_types[i]) for i in range(len(orig_types))
         ]
 
-        # Deep-copy template and resolve all stage-1 __params__
+        # Deep-copy template and resolve all __params__ in stage order
         template = deepcopy(stage2_template)
-        s2_func = template.functions[0]
-        changed = True
-        while changed:
-            changed = False
-            for op in list(s2_func.body.ops):
-                for field_name, _ in op.__params__:
-                    value = getattr(op, field_name)
-                    if not isinstance(value, dgen.Value):
-                        continue
-                    if isinstance(value, Constant):
-                        continue
-                    _resolve_comptime_field(
-                        s2_func,
-                        op,
-                        field_name,
-                        value,
-                        lower,
-                        block_args=s2_func.body.args,
-                        args=python_args,
-                    )
-                    template = infer(template)
-                    _resolve_constant_ops(template.functions[0])
-                    s2_func = template.functions[0]
-                    changed = True
-                    break
-                if changed:
-                    break
+        while True:
+            s2_func = template.functions[0]
+            stages = compute_stages(s2_func)
+            boundaries = _unresolved_boundaries(s2_func, stages)
+            if not boundaries:
+                break
+            _stage_num, op, field_name, value = boundaries[0]
+            _resolve_comptime_field(
+                s2_func,
+                op,
+                field_name,
+                value,
+                lower,
+                block_args=s2_func.body.args,
+                args=python_args,
+            )
+            template = infer(template)
+            _resolve_constant_ops(template.functions[0])
 
         # Compile and run stage-2
         typed = infer(template)
@@ -328,7 +387,8 @@ def compile_staged(
     resolved = _resolve_all_comptime(module, infer=infer, lower=lower)
     func = resolved.functions[0]
 
-    if _has_unresolved_params(func):
+    stages = compute_stages(func)
+    if _unresolved_boundaries(func, stages):
         return _compile_with_callbacks(resolved, func, infer=infer, lower=lower)
 
     typed = infer(resolved)
