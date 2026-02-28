@@ -94,28 +94,18 @@ def parse_expr(parser: IRParser) -> object:
 def _expand_list_sugar(
     parser: IRParser, elements: list[object], element_type_cls: type[Type]
 ) -> Value:
-    """Expand [expr, expr, ...] into list_new + list_set chain."""
-    from dgen.dialects.builtin import IndexType, List, ListNewOp, ListSetOp
+    """Expand [expr, expr, ...] into a PackOp."""
+    from dgen.dialects.builtin import IndexType, List, PackOp
 
     element_type = element_type_cls()
     list_type = List(
         element_type=element_type,
         count=IndexType().constant(len(elements)),
     )
-    new_op = ListNewOp(type=list_type)
-    parser.pending_ops.append(new_op)
-    cur: Value = new_op
-    for i, elem in enumerate(elements):
-        assert isinstance(elem, Value)
-        set_op = ListSetOp(
-            index=IndexType().constant(i),
-            list=cur,
-            element=elem,
-            type=list_type,
-        )
-        parser.pending_ops.append(set_op)
-        cur = set_op
-    return cur
+    values = [v for v in elements if isinstance(v, Value)]
+    pack_op = PackOp(values=values, type=list_type)
+    parser.pending_ops.append(pack_op)
+    return pack_op
 
 
 def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, object]:

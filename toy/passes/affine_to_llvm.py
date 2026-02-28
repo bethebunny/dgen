@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator, Iterator
 from math import prod
 import dgen
-from dgen.dialects.builtin import ListNewOp, ListSetOp, Nil, string_constant
+from dgen.dialects.builtin import Nil, PackOp, string_constant
 from dgen.dialects import builtin, llvm
 from dgen.layout import Array
 from toy.dialects import affine, toy
@@ -15,15 +15,9 @@ def _extract_list_elements(
     list_val: dgen.Value,
     value_map: dict[dgen.Value, dgen.Value],
 ) -> list[dgen.Value]:
-    """Walk list_set chain back to list_new, return elements in order."""
-    elements: dict[int, dgen.Value] = {}
-    cur = list_val
-    while isinstance(cur, ListSetOp):
-        idx = cur.index.__constant__.unpack()[0]
-        elements[idx] = value_map.get(cur.element, cur.element)
-        cur = cur.list
-    assert isinstance(cur, ListNewOp)
-    return [elements[i] for i in range(len(elements))]
+    """Extract elements from a PackOp, mapping values through value_map."""
+    assert isinstance(list_val, PackOp)
+    return [value_map.get(v, v) for v in list_val.values]
 
 
 class AffineToLLVMLowering:

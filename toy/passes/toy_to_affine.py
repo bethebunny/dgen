@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects.builtin import IndexType, List, ListNewOp, ListSetOp, Nil
+from dgen.dialects.builtin import IndexType, List, Nil, PackOp
 from dgen.dialects import builtin
 from dgen.layout import Array
 from toy.dialects import affine, toy
@@ -15,27 +15,16 @@ from toy.dialects import affine, toy
 def _make_index_list(
     values: Sequence[dgen.Value],
 ) -> tuple[list[dgen.Op], dgen.Value]:
-    """Create list_new + list_set ops for an index list.
+    """Create a PackOp for an index list.
 
-    Returns (ops_to_emit, final_list_value).
+    Returns (ops_to_emit, pack_value).
     """
     list_type = List(
         element_type=IndexType(),
         count=IndexType().constant(len(values)),
     )
-    new_op = ListNewOp(type=list_type)
-    ops: list[dgen.Op] = [new_op]
-    cur: dgen.Value = new_op
-    for i, val in enumerate(values):
-        set_op = ListSetOp(
-            index=IndexType().constant(i),
-            list=cur,
-            element=val,
-            type=list_type,
-        )
-        ops.append(set_op)
-        cur = set_op
-    return ops, cur
+    pack_op = PackOp(values=list(values), type=list_type)
+    return [pack_op], pack_op
 
 
 class ToyToAffineLowering:

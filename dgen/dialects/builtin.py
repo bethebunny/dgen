@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from dgen import Block, Constant, Dialect, Op, Type, Value, asm
-from dgen.asm.formatting import SlotTracker, _find_list_sugar_ops, format_expr, op_asm
+from dgen.asm.formatting import SlotTracker, _is_sugar_op, format_expr, op_asm
 from dgen.layout import FLOAT64, INT, VOID, Array, Bytes, Layout
 from dgen.type import Memory
 
@@ -95,26 +95,15 @@ class List(Type):
         )
 
 
-@builtin.op("list_new")
+@builtin.op("pack")
 @dataclass(eq=False, kw_only=True)
-class ListNewOp(Op):
-    """Create an uninitialized list of fixed size."""
+class PackOp(Op):
+    """Pack values into a List."""
 
+    values: list[Value]
     type: List
 
-
-@builtin.op("list_set")
-@dataclass(eq=False, kw_only=True)
-class ListSetOp(Op):
-    """Set one element, return the updated list (SSA threading)."""
-
-    index: Value[IndexType]
-    list: Value
-    element: Value
-    type: List
-
-    __params__ = (("index", IndexType),)
-    __operands__ = (("list", List), ("element", Type))
+    __operands__ = (("values", Type),)
 
 
 @builtin.op("list_get")
@@ -197,8 +186,6 @@ class FuncOp(HasSingleBlock, Op):
     @property
     def asm(self) -> Iterable[str]:
         tracker = SlotTracker()
-        # Pre-scan for list sugar (must run before _register_ops)
-        _find_list_sugar_ops(self.body.ops, tracker.consumed)
         # Pre-register block args and all ops in this function
         for arg in self.body.args:
             tracker.get_name(arg)
@@ -215,7 +202,7 @@ class FuncOp(HasSingleBlock, Op):
         args = ", ".join(arg_parts)
         yield f"%{name} = function ({args}) -> {format_expr(self.type.result, tracker)}:"
         for op in self.body.ops:
-            if id(op) in tracker.consumed:
+            if _is_sugar_op(op):
                 continue
             yield from asm.indent(op_asm(op, tracker))
 
@@ -223,7 +210,7 @@ class FuncOp(HasSingleBlock, Op):
 def _register_ops(tracker: SlotTracker, ops: Sequence[Op]) -> None:
     """Pre-register all ops in a tracker so slot numbers are stable."""
     for op in ops:
-        if id(op) in tracker.consumed:
+        if _is_sugar_op(op):
             continue
         tracker.get_name(op)
         for _, block in op.blocks:
