@@ -95,25 +95,14 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, PackOp):
         return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
     if isinstance(value, Constant) and not isinstance(value, Op):
-        from ..layout import Array
-
-        mem = value.__constant__
-        vals = mem.unpack()
-        if isinstance(mem.layout, Array):
-            return "[" + ", ".join(format_expr(v, tracker) for v in vals) + "]"
-        return format_expr(vals[0], tracker)
+        return format_expr(value.__constant__.to_python(), tracker)
     if isinstance(value, Value):
         if tracker is not None:
             return f"%{tracker.track_name(value)}"
         name = value.name if value.name is not None else "?"
         return f"%{name}"
     if isinstance(value, Memory):
-        from ..layout import Array
-
-        vals = value.unpack()
-        if isinstance(value.layout, Array):
-            return "[" + ", ".join(format_expr(v, tracker) for v in vals) + "]"
-        return format_expr(vals[0], tracker)
+        return format_expr(value.to_python(), tracker)
     if isinstance(value, list):
         return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
     if isinstance(value, float):

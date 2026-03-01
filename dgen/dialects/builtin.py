@@ -8,7 +8,7 @@ from typing import ClassVar
 
 from dgen import Block, Constant, Dialect, Op, Type, Value, asm
 from dgen.asm.formatting import SlotTracker, _is_sugar_op, format_expr, op_asm
-from dgen.layout import FLOAT64, INT, VOID, Array, Bytes, Layout
+from dgen.layout import BYTE, FLOAT64, INT, VOID, FatPointer
 from dgen.type import Memory
 
 # ===----------------------------------------------------------------------=== #
@@ -49,18 +49,12 @@ class Function(Type):
 @builtin.type("String")
 @dataclass(frozen=True)
 class String(Type):
-    length: Value[IndexType]
-
-    __params__ = (("length", IndexType),)
-
-    @property
-    def __layout__(self) -> Bytes:
-        return Bytes(self.length.__constant__.unpack()[0])
+    __layout__ = FatPointer(BYTE)
 
     @classmethod
     def for_value(cls, value: object) -> String:
         assert isinstance(value, str)
-        return cls(length=IndexType().constant(len(value)))
+        return cls()
 
 
 def string_constant(s: str) -> Constant[String]:
@@ -70,29 +64,26 @@ def string_constant(s: str) -> Constant[String]:
 
 def string_value(v: Value[String]) -> str:
     """Extract the Python str from a string Value (must be Constant)."""
-    return v.__constant__.unpack()[0].decode("utf-8")
+    result = v.__constant__.to_python()
+    assert isinstance(result, str)
+    return result
 
 
 @builtin.type("List")
 @dataclass
 class List(Type):
     element_type: Type
-    count: Value[IndexType]
 
-    __params__ = (("element_type", Type), ("count", IndexType))
+    __params__ = (("element_type", Type),)
 
     @property
-    def __layout__(self) -> Layout:
-        n = self.count.__constant__.unpack()[0]
-        return Array(self.element_type.__layout__, n)
+    def __layout__(self) -> FatPointer:
+        return FatPointer(self.element_type.__layout__)
 
     @classmethod
     def for_value(cls, value: object) -> List:
         assert isinstance(value, list)
-        return cls(
-            element_type=IndexType(),
-            count=IndexType().constant(len(value)),
-        )
+        return cls(element_type=IndexType())
 
 
 @builtin.op("pack")

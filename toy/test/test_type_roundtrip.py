@@ -44,22 +44,7 @@ BUILTIN_TYPES = [
         (3.14,),
         id="builtin.f64",
     ),
-    pytest.param(
-        builtin.String.for_value("hello"),
-        "hello",
-        '"hello"',
-        (b"hello",),
-        id="builtin.string",
-    ),
-    pytest.param(
-        builtin.List(
-            element_type=builtin.F64Type(), count=builtin.IndexType().constant(3)
-        ),
-        None,
-        None,
-        None,
-        id="builtin.list",
-    ),
+    # String and List use FatPointer — tested separately below (not in from_value tests)
 ]
 
 LLVM_TYPES = [
@@ -185,13 +170,11 @@ _ASM_TYPES = [
     pytest.param(builtin.IndexType(), id="builtin.index"),
     pytest.param(builtin.F64Type(), id="builtin.f64"),
     pytest.param(builtin.Nil(), id="builtin.nil"),
-    pytest.param(builtin.String.for_value("hi"), id="builtin.string"),
+    pytest.param(builtin.String(), id="builtin.string"),
     pytest.param(
-        builtin.List(
-            element_type=builtin.F64Type(), count=builtin.IndexType().constant(3)
-        ),
-        id="builtin.list",
+        builtin.List(element_type=builtin.IndexType()), id="builtin.list_index"
     ),
+    pytest.param(builtin.List(element_type=builtin.F64Type()), id="builtin.list_f64"),
     pytest.param(TensorType(shape=shape_constant([3])), id="toy.tensor_1d"),
     pytest.param(TensorType(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
@@ -216,13 +199,7 @@ def test_type_asm_roundtrip(ty):
 _PARSEABLE_TYPES = [
     pytest.param(builtin.IndexType(), 42, "42", (42,), id="builtin.index"),
     pytest.param(builtin.F64Type(), 3.14, "3.14", (3.14,), id="builtin.f64"),
-    pytest.param(
-        builtin.String.for_value("hello"),
-        "hello",
-        '"hello"',
-        (b"hello",),
-        id="builtin.string",
-    ),
+    # String uses FatPointer — tested separately (not via from_value)
     pytest.param(llvm.IntType(bits=64), 42, "42", (42,), id="llvm.i64"),
     pytest.param(llvm.FloatType(), 3.14, "3.14", (3.14,), id="llvm.f64"),
     pytest.param(
@@ -298,12 +275,11 @@ def test_string_constant_roundtrip():
 
 
 def test_string_constant_different_lengths():
-    """String types with different lengths are distinct."""
+    """String type is the same regardless of value length (FatPointer)."""
     s3 = builtin.String.for_value("abc")
     s5 = builtin.String.for_value("hello")
-    assert s3 != s5
-    assert s3.__layout__.byte_size == 3
-    assert s5.__layout__.byte_size == 5
+    assert s3 == s5  # Same type — length is in the value, not the type
+    assert s3.__layout__.byte_size == 16  # FatPointer is always 16 bytes
 
 
 def test_string_as_op_param():
@@ -327,14 +303,13 @@ def test_string_as_op_param():
 
 def test_string_jit_identity():
     """String value survives JIT identity function as a pointer."""
-    ty = builtin.String.for_value("world")
-    mem = Memory.from_value(ty, "world")
+    ty = builtin.String()
+    c = ty.constant("world")
+    mem = c.__constant__
     exe = _identity_exe(ty)
     result = exe.run(mem)
-    # String is passed as ptr, verify address round-trip
+    # String is passed as ptr (16-byte FatPointer), verify address round-trip
     assert result == mem.address
-    # Verify the memory still holds the correct bytes
-    assert mem.unpack() == (b"world",)
 
 
 def test_string_param_staging():
@@ -352,7 +327,7 @@ def test_string_param_staging():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main = function (%pred : String<3>, %x : index, %y : index) -> index:
+        | %main = function (%pred : String, %x : index, %y : index) -> index:
         |     %cmp : () = llvm.icmp<%pred>(%x, %y)
         |     %ext : () = llvm.zext(%cmp)
         |     %_ : () = return(%ext)
@@ -393,7 +368,7 @@ def test_compile_once_run_twice():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main = function (%pred : String<3>, %x : index, %y : index) -> index:
+        | %main = function (%pred : String, %x : index, %y : index) -> index:
         |     %cmp : () = llvm.icmp<%pred>(%x, %y)
         |     %ext : () = llvm.zext(%cmp)
         |     %_ : () = return(%ext)

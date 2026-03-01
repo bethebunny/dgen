@@ -19,10 +19,7 @@ def _make_index_list(
 
     Returns (ops_to_emit, pack_value).
     """
-    list_type = List(
-        element_type=IndexType(),
-        count=IndexType().constant(len(values)),
-    )
+    list_type = List(element_type=IndexType())
     pack_op = PackOp(values=list(values), type=list_type)
     return [pack_op], pack_op
 

@@ -33,7 +33,79 @@ def test_bytes_layout():
 
 def test_string_layout():
     s = builtin.String.for_value("hello")
-    assert s.__layout__.byte_size == 5
+    assert isinstance(s.__layout__, FatPointer)
+    assert s.__layout__.byte_size == 16
+
+
+def test_string_fatpointer_layout():
+    """String type uses FatPointer(BYTE) layout — 16 bytes, not inline."""
+    s = builtin.String()  # No params needed
+    layout = s.__layout__
+    assert isinstance(layout, FatPointer)
+    assert layout.byte_size == 16
+    assert layout.pointee is BYTE
+
+
+def test_string_constant_fatpointer():
+    """String constant via FatPointer: data in origin, pointer in Memory."""
+    import ctypes
+
+    c = builtin.string_constant("hello")
+    mem = c.__constant__
+    # Memory is 16 bytes (ptr + i64 length)
+    assert mem.layout.byte_size == 16
+    # Unpack gives (pointer, length)
+    ptr, length = mem.unpack()
+    assert length == 5
+    # Pointer dereferences to "hello"
+    data = bytes((ctypes.c_char * length).from_address(ptr))
+    assert data == b"hello"
+    # string_value still works
+    assert builtin.string_value(c) == "hello"
+
+
+def test_string_type_asm_no_params():
+    """String type formats as 'String' with no angle brackets."""
+    from dgen.asm.formatting import type_asm
+
+    s = builtin.String()
+    assert type_asm(s) == "String"
+
+
+def test_list_fatpointer_layout():
+    """List type uses FatPointer(element.__layout__) — 16 bytes, not inline."""
+    list_type = builtin.List(element_type=builtin.IndexType())
+    layout = list_type.__layout__
+    assert isinstance(layout, FatPointer)
+    assert layout.byte_size == 16
+    assert layout.pointee is INT
+
+
+def test_list_constant_fatpointer():
+    """List constant via FatPointer: data in origin, pointer in Memory."""
+    import ctypes
+
+    list_type = builtin.List(element_type=builtin.IndexType())
+    c = list_type.constant([10, 20, 30])
+    mem = c.__constant__
+    # Memory is 16 bytes (ptr + i64 length)
+    assert mem.layout.byte_size == 16
+    # Unpack gives (pointer, length)
+    ptr, length = mem.unpack()
+    assert length == 3
+    # Pointer dereferences to [10, 20, 30]
+    arr = (ctypes.c_int64 * length).from_address(ptr)
+    assert list(arr) == [10, 20, 30]
+    # to_python round-trip
+    assert mem.to_python() == [10, 20, 30]
+
+
+def test_list_type_asm_one_param():
+    """List type formats as 'List<index>' — just element_type, no count."""
+    from dgen.asm.formatting import type_asm
+
+    list_type = builtin.List(element_type=builtin.IndexType())
+    assert type_asm(list_type) == "List<index>"
 
 
 def test_f64type_layout():

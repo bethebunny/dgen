@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import ctypes
+from copy import deepcopy as _deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
 
-from .layout import Layout
+from .layout import BYTE, Array, FatPointer, Layout
 
 if TYPE_CHECKING:
     from .value import Constant
@@ -44,15 +45,28 @@ Fields = tuple[Field, ...]
 T = TypeVar("T", bound=Type)
 
 
+def _bytearray_address(buf: bytearray) -> int:
+    """Get the raw ctypes address of a bytearray."""
+    ct = (ctypes.c_char * len(buf)).from_buffer(buf)
+    return ctypes.addressof(ct)
+
+
 class Memory(Generic[T]):
-    """Typed memory buffer — the ABI for a type."""
+    """Typed memory buffer — the ABI for a type.
+
+    For pointer-based layouts (FatPointer, Pointer), the buffer contains
+    raw pointers into backing data stored in `origins`. Origins are shared
+    on deepcopy (immutable constant data) so packed pointers stay valid.
+    """
 
     type: T
     buffer: bytearray
+    origins: list[bytearray]
 
     def __init__(self, type: T, buffer: bytearray | None = None) -> None:
         self.type = type
         self.buffer = bytearray(self.layout.byte_size) if buffer is None else buffer
+        self.origins = []
 
     @property
     def layout(self) -> Layout:
@@ -66,16 +80,86 @@ class Memory(Generic[T]):
 
     @classmethod
     def from_value(cls, type: Type, value: object) -> Memory:
-        """Create Memory from a Type and a Python value."""
+        """Create Memory from a Type and a Python value.
+
+        Works for all layouts: inline scalars/arrays pack directly into the
+        buffer; FatPointer allocates a backing origin and packs {ptr, length}.
+        """
         if isinstance(value, str):
             value = value.encode("utf-8")
-        parsed = type.__layout__.parse(value)
+
+        layout = type.__layout__
+
+        if isinstance(layout, FatPointer):
+            return cls._from_fat_pointer(type, layout, value)
+
+        parsed = layout.parse(value)
         mem = cls(type)
         if isinstance(parsed, list):
             mem.pack(*parsed)
         else:
             mem.pack(parsed)
         return mem
+
+    @classmethod
+    def _from_fat_pointer(cls, type: Type, layout: FatPointer, value: object) -> Memory:
+        """Create Memory for a FatPointer layout with a backing origin."""
+        if isinstance(value, bytes):
+            origin = bytearray(value)
+            length = len(value)
+        elif isinstance(value, list):
+            pointee = layout.pointee
+            length = len(value)
+            origin = bytearray(pointee.struct.size * length)
+            for i, v in enumerate(value):
+                parsed = pointee.parse(v)
+                pointee.struct.pack_into(origin, i * pointee.struct.size, parsed)
+        else:
+            raise ValueError(
+                f"cannot create FatPointer from {value.__class__.__name__}"
+            )
+
+        mem = cls(type)
+        mem.origins.append(origin)
+        mem.pack(_bytearray_address(origin), length)
+        return mem
+
+    def to_python(self) -> object:
+        """Convert back to a Python value by reading from the buffer.
+
+        For pointer layouts, dereferences the packed pointer to read data.
+        """
+        layout = self.layout
+
+        if isinstance(layout, FatPointer):
+            ptr, length = self.unpack()
+            data_size = length * layout.pointee.struct.size
+            data = bytes((ctypes.c_char * data_size).from_address(ptr))
+            if layout.pointee is BYTE:
+                return data.decode("utf-8")
+            return [
+                layout.pointee.struct.unpack_from(data, i * layout.pointee.struct.size)[
+                    0
+                ]
+                for i in range(length)
+            ]
+
+        if isinstance(layout, Array):
+            return list(self.unpack())
+
+        vals = self.unpack()
+        return vals[0] if len(vals) == 1 else vals
+
+    @classmethod
+    def from_raw(cls, type: Type, address: int) -> Memory:
+        """Create Memory from a raw pointer address (e.g. a JIT result).
+
+        Copies layout.byte_size bytes from the address. No origins — the
+        caller's buffers must remain alive for any inner pointers.
+        """
+        layout = type.__layout__
+        buf = bytes((ctypes.c_char * layout.byte_size).from_address(address))
+        return cls(type, bytearray(buf))
 
     @classmethod
     def from_asm(cls, type: Type, text: str) -> Memory:
@@ -85,6 +169,15 @@ class Memory(Generic[T]):
         parser = IRParser(text)
         value = parse_expr(parser)
         return cls.from_value(type, value)
+
+    def __deepcopy__(self, memo: dict) -> Memory[T]:
+        """Copy buffer, share origins (immutable constant data)."""
+        new: Memory[T] = Memory.__new__(Memory)
+        memo[id(self)] = new
+        new.type = _deepcopy(self.type, memo)
+        new.buffer = bytearray(self.buffer)
+        new.origins = self.origins  # share, not copy
+        return new
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Memory):
@@ -100,5 +193,4 @@ class Memory(Generic[T]):
     @property
     def address(self) -> int:
         """Raw memory address of the buffer."""
-        ct = (ctypes.c_char * len(self.buffer)).from_buffer(self.buffer)
-        return ctypes.addressof(ct)
+        return _bytearray_address(self.buffer)

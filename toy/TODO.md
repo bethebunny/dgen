@@ -59,6 +59,8 @@
 - Remove `type: ignore`s
 - Update parser and formatter to support multi-block ops
 - `Bytes` layout currently does utf8 encoding. This is definitely wrong.
+- Move `type_asm` to `Type.asm`
+- Move `op_asm` to `Op.asm`
 
 ## Harder cleanup
 - Go through and rename files

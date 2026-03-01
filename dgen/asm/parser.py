@@ -95,13 +95,9 @@ def _expand_list_sugar(
     parser: IRParser, elements: list[object], element_type_cls: type[Type]
 ) -> Value:
     """Expand [expr, expr, ...] into a PackOp."""
-    from dgen.dialects.builtin import IndexType, List, PackOp
+    from dgen.dialects.builtin import List, PackOp
 
-    element_type = element_type_cls()
-    list_type = List(
-        element_type=element_type,
-        count=IndexType().constant(len(elements)),
-    )
+    list_type = List(element_type=element_type_cls())
     values = [v for v in elements if isinstance(v, Value)]
     pack_op = PackOp(values=values, type=list_type)
     parser.pending_ops.append(pack_op)

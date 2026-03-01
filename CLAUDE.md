@@ -90,7 +90,13 @@ _Always_ strive to add correct type annotations! If the type annotations are inc
 - Don't use `cast`, use `assert isinstance` or typeguards.
 - Don't use `type: ignore`.
 - Don't use `getattr` or `setattr` with a static string
+
+
+## Code style
+
 - Don't import within a function body, except in specific cases to avoid circular dependencies
+- Avoid `for ... in range()`
+- Avoid `isinstance` specialization, this is generally design smell
 
 ## Version Control
 

@@ -87,12 +87,8 @@ def _jit_evaluate(
     memories = _make_memories(block_args, args)
     raw = exe.run(*memories)
 
-    # For pointer-type results, copy data back while buffers are still alive
-    layout = target.type.__layout__
-    if _ctype(layout) is ctypes.c_void_p and isinstance(raw, int) and raw != 0:
-        buf = (ctypes.c_char * layout.byte_size).from_address(raw)
-        return Memory(target.type, bytearray(buf))
-    return raw
+    # Convert result back to Python while JIT buffers are still alive
+    return _raw_to_python(raw, target.type)
 
 
 def _resolve_comptime_field(
@@ -261,16 +257,13 @@ def _resolve_all_comptime(
 def _raw_to_python(raw: object, ty: dgen.Type) -> object:
     """Convert a raw ctypes callback value to a Python value.
 
-    Scalars (int, float) pass through. Pointer types are read from memory:
-    strings are decoded to str, arrays are unpacked to lists.
+    Scalars (int, float) pass through. Pointer types are read from memory
+    via Memory.from_raw().to_python().
     """
     layout = ty.__layout__
     if _ctype(layout) is ctypes.c_void_p:
         assert isinstance(raw, int)
-        raw_bytes = bytes((ctypes.c_char * layout.byte_size).from_address(raw))
-        if isinstance(ty, builtin.String):
-            return raw_bytes.decode("utf-8")
-        return list(layout.struct.unpack(raw_bytes))
+        return Memory.from_raw(ty, raw).to_python()
     return raw
 
 

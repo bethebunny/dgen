@@ -269,12 +269,10 @@ class Executable:
         Args can be Memory objects or raw Python values (str, int, float).
         Raw values are converted to Memory via Memory.from_value.
         """
-        memories: list[Memory] = []
-        for arg, ty in zip(args, self.input_types):
-            if isinstance(arg, Memory):
-                memories.append(arg)
-            else:
-                memories.append(Memory.from_value(ty, arg))
+        memories: list[Memory] = [
+            arg if isinstance(arg, Memory) else Memory.from_value(ty, arg)
+            for arg, ty in zip(args, self.input_types)
+        ]
 
         engine = _jit_engine(self)
         func_ptr = engine.get_function_address(self.main_name)
