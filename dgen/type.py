@@ -4,7 +4,7 @@ import ctypes
 from copy import deepcopy as _deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
 
-from .layout import BYTE, Array, FatPointer, Layout
+from .layout import BYTE, Array, FatPointer, Layout, Pointer
 
 if TYPE_CHECKING:
     from .value import Constant
@@ -111,9 +111,19 @@ class Memory(Generic[T]):
             pointee = layout.pointee
             length = len(value)
             origin = bytearray(pointee.struct.size * length)
-            for i, v in enumerate(value):
-                parsed = pointee.parse(v)
-                pointee.struct.pack_into(origin, i * pointee.struct.size, parsed)
+            inner_origins: list[bytearray] = []
+            if isinstance(pointee, (FatPointer, Pointer)):
+                # Nested pointer: recursively create Memory for each element
+                elem_type: Type = type.element_type  # type: ignore[attr-defined]
+                for i, v in enumerate(value):
+                    elem_mem = cls.from_value(elem_type, v)
+                    offset = i * pointee.struct.size
+                    origin[offset : offset + pointee.struct.size] = elem_mem.buffer
+                    inner_origins.extend(elem_mem.origins)
+            else:
+                for i, v in enumerate(value):
+                    parsed = pointee.parse(v)
+                    pointee.struct.pack_into(origin, i * pointee.struct.size, parsed)
         else:
             raise ValueError(
                 f"cannot create FatPointer from {value.__class__.__name__}"
@@ -121,6 +131,8 @@ class Memory(Generic[T]):
 
         mem = cls(type)
         mem.origins.append(origin)
+        if isinstance(value, list):
+            mem.origins.extend(inner_origins)
         mem.pack(_bytearray_address(origin), length)
         return mem
 
@@ -133,16 +145,21 @@ class Memory(Generic[T]):
 
         if isinstance(layout, FatPointer):
             ptr, length = self.unpack()
-            data_size = length * layout.pointee.struct.size
-            data = bytes((ctypes.c_char * data_size).from_address(ptr))
-            if layout.pointee is BYTE:
+            pointee = layout.pointee
+            ps = pointee.struct.size
+            data = bytes((ctypes.c_char * (length * ps)).from_address(ptr))
+            if pointee is BYTE:
                 return data.decode("utf-8")
-            return [
-                layout.pointee.struct.unpack_from(data, i * layout.pointee.struct.size)[
-                    0
+            if isinstance(pointee, (FatPointer, Pointer)):
+                # Nested pointer: recursively convert each element
+                elem_type: Type = self.type.element_type  # type: ignore[attr-defined]
+                return [
+                    Memory(
+                        elem_type, bytearray(data[i * ps : (i + 1) * ps])
+                    ).to_python()
+                    for i in range(length)
                 ]
-                for i in range(length)
-            ]
+            return [pointee.struct.unpack_from(data, i * ps)[0] for i in range(length)]
 
         if isinstance(layout, Array):
             return list(self.unpack())

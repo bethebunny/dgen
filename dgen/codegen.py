@@ -14,7 +14,7 @@ from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import string_value
 from dgen.dialects.llvm import IntType
-from dgen.layout import Array, Layout
+from dgen.layout import Layout
 from dgen.type import Memory
 
 # ---------------------------------------------------------------------------
@@ -119,7 +119,8 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         vid = id(op)
         if isinstance(op, builtin.ConstantOp):
             layout = op.type.__layout__
-            if isinstance(layout, Array):
+            if _ctype(layout) is ctypes.c_void_p:
+                # Pointer-passed layout (Array, FatPointer): emit buffer address
                 host_buffers.append(op.value)
                 constants[vid] = f"ptr inttoptr (i64 {op.value.address} to ptr)"
                 types[vid] = "ptr"

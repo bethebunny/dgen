@@ -94,11 +94,22 @@ def parse_expr(parser: IRParser) -> object:
 def _expand_list_sugar(
     parser: IRParser, elements: list[object], element_type_cls: type[Type]
 ) -> Value:
-    """Expand [expr, expr, ...] into a PackOp."""
-    from dgen.dialects.builtin import List, PackOp
+    """Expand [expr, expr, ...] into a PackOp.
 
-    list_type = List(element_type=element_type_cls())
-    values = [v for v in elements if isinstance(v, Value)]
+    Non-Value elements (raw ints, floats) are wrapped as ConstantOps.
+    """
+    from dgen.dialects.builtin import ConstantOp, List, PackOp
+
+    element_type = element_type_cls()
+    list_type = List(element_type=element_type)
+    values: list[Value] = []
+    for v in elements:
+        if isinstance(v, Value):
+            values.append(v)
+        else:
+            const_op = ConstantOp(value=v, type=element_type)
+            parser.pending_ops.append(const_op)
+            values.append(const_op)
     pack_op = PackOp(values=values, type=list_type)
     parser.pending_ops.append(pack_op)
     return pack_op
@@ -165,8 +176,7 @@ def parse_op_fields(
             parser.expect(",")
             parser.skip_whitespace()
         raw_value = parse_expr(parser)
-        if isinstance(raw_value, list) and all(isinstance(v, Value) for v in raw_value):
-            # [%ref, %ref, ...] sugar → list_new + list_set chain
+        if isinstance(raw_value, list) and any(isinstance(v, Value) for v in raw_value):
             raw_value = _expand_list_sugar(parser, list(raw_value), f_type)
         kwargs[f_name] = raw_value
         parser.skip_whitespace()
@@ -501,10 +511,12 @@ class IRParser:
             if eol == -1:
                 eol = len(self.text)
 
-            # Drain any pending ops (from list sugar expansion)
+            op = self.parse_op()
+            # Drain pending ops created during parsing (e.g. list sugar ConstantOps)
+            # — these must appear before the op that references them
             ops.extend(self.pending_ops)
             self.pending_ops.clear()
-            ops.append(self.parse_op())
+            ops.append(op)
 
             # If parse_op consumed past the original newline (body-bearing op),
             # the cursor is already at the next line's start — don't skip.

@@ -266,6 +266,98 @@ def test_jit_identity_roundtrip(ty, value, _asm, expected):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# 5. List JIT round-trips
+# ---------------------------------------------------------------------------
+
+
+def test_list_jit_identity():
+    """Pass List<index> through identity JIT function."""
+    ty = builtin.List(element_type=builtin.IndexType())
+    mem = Memory.from_value(ty, [10, 20, 30])
+    exe = _identity_exe(ty)
+    result = exe.run(mem)
+    # List is passed as ptr (16-byte FatPointer), verify address round-trip
+    assert result == mem.address
+
+
+def test_list_constant_jit_return():
+    """JIT function returns a list constant: main() -> List<index>."""
+    list_type = builtin.List(element_type=builtin.IndexType())
+    const = builtin.ConstantOp(value=[3, 5, 7], type=list_type)
+    ret = builtin.ReturnOp(value=const)
+    func = builtin.FuncOp(
+        name="main",
+        body=Block(ops=[const, ret], args=[]),
+        type=builtin.Function(result=list_type),
+    )
+    exe = compile_module(builtin.Module(functions=[func]))
+    raw = exe.run()
+    assert isinstance(raw, int)
+    result = Memory.from_raw(list_type, raw).to_python()
+    assert result == [3, 5, 7]
+
+
+# ---------------------------------------------------------------------------
+# 6. Nested type Memory round-trips
+# ---------------------------------------------------------------------------
+
+
+def test_list_of_lists_memory_roundtrip():
+    """List<List<index>> round-trips through Memory."""
+    inner = builtin.List(element_type=builtin.IndexType())
+    outer = builtin.List(element_type=inner)
+    mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
+    assert mem.to_python() == [[1, 2], [3, 4, 5]]
+
+
+def test_list_of_strings_memory_roundtrip():
+    """List<String> round-trips through Memory."""
+    ty = builtin.List(element_type=builtin.String())
+    mem = Memory.from_value(ty, ["hello", "world"])
+    assert mem.to_python() == ["hello", "world"]
+
+
+# ---------------------------------------------------------------------------
+# 7. Mixed literals and SSA values in list ASM
+# ---------------------------------------------------------------------------
+
+
+def test_packop_mixed_constants_and_refs():
+    """Parser handles [literal, %ref, literal] by creating ConstantOps."""
+    from dgen import asm
+    from dgen.asm.parser import parse_module
+
+    from toy.test.helpers import strip_prefix
+
+    # Input: mixed integer literals and SSA refs in list sugar
+    ir_input = strip_prefix("""
+        | import affine
+        |
+        | %main = function (%x: index) -> ():
+        |     %_ : () = affine.store(%x, %x, [3, %x, 5])
+        |     %_ : () = return(())
+    """)
+    parsed = parse_module(ir_input)
+
+    # After parsing, the literals become ConstantOps emitted before the store
+    ir_expected = strip_prefix("""
+        | import affine
+        |
+        | %main = function (%x: index) -> ():
+        |     %0 : index = 3
+        |     %1 : index = 5
+        |     %_ : () = affine.store(%x, %x, [%0, %x, %1])
+        |     %_ : () = return(())
+    """)
+    assert asm.format(parsed) == ir_expected
+
+
+# ---------------------------------------------------------------------------
+# 8. String tests
+# ---------------------------------------------------------------------------
+
+
 def test_string_constant_roundtrip():
     """string_constant creates a Constant[String], string_value extracts it."""
     from dgen.dialects.builtin import string_constant, string_value
