@@ -477,3 +477,190 @@ def test_compile_once_run_twice():
     assert exe.run("sgt", 10, 5) == 1  # 10 > 5 = true → 1
     assert exe.run("sle", 7, 7) == 1  # 7 <= 7 = true → 1
     assert exe.run("slt", 7, 7) == 0  # 7 < 7 = false → 0
+
+
+# ---------------------------------------------------------------------------
+# 10. Deepcopy correctness for pointer types
+# ---------------------------------------------------------------------------
+
+
+def test_deepcopy_string_constant():
+    """Deepcopy of a String constant produces a working copy.
+
+    Origins are shared (not deep-copied), so the copied buffer's pointers
+    still reference valid backing data.
+    """
+    from copy import deepcopy
+
+    ty = builtin.String()
+    mem = Memory.from_value(ty, "hello")
+    copied = deepcopy(mem)
+    assert copied.to_python() == "hello"
+    # Origins are shared, not copied
+    assert copied.origins is mem.origins
+
+
+def test_deepcopy_list_of_strings():
+    """Deepcopy of List<String> constant preserves nested pointer validity."""
+    from copy import deepcopy
+
+    ty = builtin.List(element_type=builtin.String())
+    mem = Memory.from_value(ty, ["hello", "world"])
+    copied = deepcopy(mem)
+    assert copied.to_python() == ["hello", "world"]
+
+
+def test_deepcopy_list_of_lists():
+    """Deepcopy of List<List<index>> constant preserves nested pointer validity."""
+    from copy import deepcopy
+
+    inner = builtin.List(element_type=builtin.IndexType())
+    outer = builtin.List(element_type=inner)
+    mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
+    copied = deepcopy(mem)
+    assert copied.to_python() == [[1, 2], [3, 4, 5]]
+
+
+def test_deepcopy_module_with_list_constant():
+    """Deepcopy an entire module containing a List constant.
+
+    This is what staging does — deepcopy the module, then JIT subgraphs.
+    The list constant's backing data must survive the copy.
+    """
+    from copy import deepcopy
+
+    list_type = builtin.List(element_type=builtin.IndexType())
+    const = builtin.ConstantOp(value=[3, 5, 7], type=list_type)
+    ret = builtin.ReturnOp(value=const)
+    func = builtin.FuncOp(
+        name="main",
+        body=Block(ops=[const, ret], args=[]),
+        type=builtin.Function(result=list_type),
+    )
+    module = builtin.Module(functions=[func])
+    copied = deepcopy(module)
+
+    # The copied module's constant should still be readable
+    copied_const = copied.functions[0].body.ops[0]
+    assert isinstance(copied_const, builtin.ConstantOp)
+    assert copied_const.value.to_python() == [3, 5, 7]
+
+
+# ---------------------------------------------------------------------------
+# 11. Value equality for pointer types
+#
+# TODO: Memory.__eq__ compares buffers byte-for-byte, which means two
+# FatPointer memories created from the same Python value compare as NOT
+# equal (different heap pointers in the buffer). This breaks constant
+# deduplication and makes equality checks unreliable for pointer types.
+# Options: (a) define equality via to_python() for pointer layouts,
+# (b) normalize pointer buffers, (c) content-hash the origins.
+# ---------------------------------------------------------------------------
+
+
+def test_memory_equality_scalars():
+    """Scalar Memory equality works — same value, same buffer."""
+    a = Memory.from_value(builtin.IndexType(), 42)
+    b = Memory.from_value(builtin.IndexType(), 42)
+    assert a == b
+
+
+@pytest.mark.xfail(
+    reason="FatPointer equality compares raw pointer values, not content"
+)
+def test_memory_equality_strings():
+    """Two String memories from the same Python value should be equal.
+
+    Currently FAILS: different heap allocations → different pointer bytes
+    in the buffer → not equal.
+    """
+    a = Memory.from_value(builtin.String(), "hello")
+    b = Memory.from_value(builtin.String(), "hello")
+    assert a == b
+
+
+@pytest.mark.xfail(
+    reason="FatPointer equality compares raw pointer values, not content"
+)
+def test_memory_equality_lists():
+    """Two List memories from the same Python value should be equal."""
+    ty = builtin.List(element_type=builtin.IndexType())
+    a = Memory.from_value(ty, [1, 2, 3])
+    b = Memory.from_value(ty, [1, 2, 3])
+    assert a == b
+
+
+# ---------------------------------------------------------------------------
+# 12. Edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_empty_list():
+    """Empty list round-trips through Memory."""
+    ty = builtin.List(element_type=builtin.IndexType())
+    mem = Memory.from_value(ty, [])
+    assert mem.to_python() == []
+
+
+def test_single_element_list():
+    """Single-element list round-trips through Memory."""
+    ty = builtin.List(element_type=builtin.IndexType())
+    mem = Memory.from_value(ty, [42])
+    assert mem.to_python() == [42]
+
+
+def test_list_of_f64():
+    """List<f64> round-trips through Memory (float variant of FatPointer)."""
+    ty = builtin.List(element_type=builtin.F64Type())
+    mem = Memory.from_value(ty, [1.5, 2.5, 3.5])
+    assert mem.to_python() == [1.5, 2.5, 3.5]
+
+
+def test_three_level_nesting():
+    """List<List<List<index>>> — 3 levels of FatPointer nesting."""
+    l1 = builtin.List(element_type=builtin.IndexType())
+    l2 = builtin.List(element_type=l1)
+    l3 = builtin.List(element_type=l2)
+    mem = Memory.from_value(l3, [[[1, 2], [3]], [[4, 5, 6]]])
+    assert mem.to_python() == [[[1, 2], [3]], [[4, 5, 6]]]
+
+
+def test_empty_string():
+    """Empty string round-trips through Memory."""
+    mem = Memory.from_value(builtin.String(), "")
+    assert mem.to_python() == ""
+
+
+def test_list_of_empty_lists():
+    """List of empty lists round-trips through Memory."""
+    inner = builtin.List(element_type=builtin.IndexType())
+    outer = builtin.List(element_type=inner)
+    mem = Memory.from_value(outer, [[], [], []])
+    assert mem.to_python() == [[], [], []]
+
+
+# ---------------------------------------------------------------------------
+# 13. Full pipeline: list value through JIT
+# ---------------------------------------------------------------------------
+
+
+def test_list_identity_jit_roundtrip_full():
+    """Pass List<index>, read back via from_raw — full data integrity check."""
+    list_type = builtin.List(element_type=builtin.IndexType())
+    mem = Memory.from_value(list_type, [10, 20, 30])
+    exe = _identity_exe(list_type)
+    raw = exe.run(mem)
+    assert isinstance(raw, int)
+    result = Memory.from_raw(list_type, raw).to_python()
+    assert result == [10, 20, 30]
+
+
+def test_list_f64_jit_roundtrip():
+    """Pass List<f64> through JIT identity and read back."""
+    list_type = builtin.List(element_type=builtin.F64Type())
+    mem = Memory.from_value(list_type, [1.1, 2.2, 3.3])
+    exe = _identity_exe(list_type)
+    raw = exe.run(mem)
+    assert isinstance(raw, int)
+    result = Memory.from_raw(list_type, raw).to_python()
+    assert result == [1.1, 2.2, 3.3]
