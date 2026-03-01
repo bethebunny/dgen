@@ -10,7 +10,7 @@ import dataclasses
 from collections.abc import Iterable, Sequence
 
 from ..op import Op
-from ..type import Memory
+from ..type import Memory, Type
 from ..value import Constant, Value
 
 
@@ -124,8 +124,12 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
         return f'"{value.decode("utf-8")}"'
     if isinstance(value, str):
         return f'"{value}"'
-    if hasattr(value, "_asm_name"):
-        return type_asm(value, tracker)
+    if isinstance(value, Type):
+        if getattr(type(value), "_asm_name", None) is not None:
+            return type_asm(value, tracker)
+        # Types with hand-written asm (e.g. LLVM dialect types)
+        asm: str = getattr(value, "asm")
+        return asm
     return str(value)
 
 

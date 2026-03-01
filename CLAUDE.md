@@ -89,6 +89,8 @@ _Always_ strive to add correct type annotations! If the type annotations are inc
 - Avoid `Any` or `object`. Use a protocol if necessary, prefer best-practices.
 - Don't use `cast`, use `assert isinstance` or typeguards.
 - Don't use `type: ignore`.
+- Don't use `getattr` or `setattr` with a static string
+- Don't import within a function body, except in specific cases to avoid circular dependencies
 
 ## Version Control
 

@@ -13,8 +13,8 @@ from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import string_value
+from dgen.dialects.llvm import IntType
 from dgen.layout import Array, Layout
-from dgen.op import Op
 from dgen.type import Memory
 
 # ---------------------------------------------------------------------------
@@ -90,19 +90,13 @@ def emit_llvm_ir(
     return "\n".join(lines), host_buffers
 
 
-# Op type → LLVM result type for the prescan
-_OP_RESULT_TYPE: dict[type[Op], str] = {
-    llvm.AllocaOp: "ptr",
-    llvm.GepOp: "ptr",
-    llvm.LoadOp: "double",
-    llvm.FAddOp: "double",
-    llvm.FMulOp: "double",
-    llvm.AddOp: "i64",
-    llvm.MulOp: "i64",
-    llvm.FcmpOp: "i1",
-    llvm.IcmpOp: "i1",
-    llvm.ZextOp: "i64",
-}
+def _result_type_str(ty: Type) -> str | None:
+    """Derive LLVM IR type string from an op's type, or None for void ops."""
+    if isinstance(ty, builtin.Nil):
+        return None
+    if isinstance(ty, IntType):
+        return f"i{ty.bits}"
+    return _llvm_type(ty.__layout__)
 
 
 def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
@@ -138,10 +132,8 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
         elif isinstance(op, llvm.PhiOp):
             first_val = op.values[0]
             types[vid] = types.get(id(first_val), "i64")
-        elif isinstance(op, llvm.CallOp) and not isinstance(op.type, builtin.Nil):
-            types[vid] = _llvm_type(op.type.__layout__)
-        elif (result_type := _OP_RESULT_TYPE.get(type(op))) is not None:
-            types[vid] = result_type
+        elif (rt := _result_type_str(op.type)) is not None:
+            types[vid] = rt
 
     def typed_ref(val: dgen.Value) -> str:
         """'type value' — e.g. 'double 1.0' or 'ptr %v3'."""
@@ -287,9 +279,10 @@ class Executable:
         engine = _jit_engine(self)
         func_ptr = engine.get_function_address(self.main_name)
         cfunc = self.ctype(func_ptr)
+        param_ctypes = [_ctype(t.__layout__) for t in self.input_types]
         ctypes_args = [
             m.address if ct is ctypes.c_void_p else m.unpack()[0]
-            for m, ct in zip(memories, cfunc._argtypes_)  # type: ignore
+            for m, ct in zip(memories, param_ctypes)
         ]
         return cfunc(*ctypes_args)
 

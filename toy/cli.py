@@ -7,6 +7,8 @@ import click
 
 from dgen.dialects import builtin
 from dgen.staging import compile_and_run_staged
+from toy.dialects.affine import shape_constant
+from toy.dialects.toy import TensorType
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.affine_to_llvm import lower_to_llvm
@@ -26,26 +28,31 @@ def _parse_arg(arg: str) -> object:
     return parse_expr(IRParser(arg))
 
 
-def run(source: str, *, args: Sequence = ()) -> object:
+def _set_param_types(ir: builtin.Module, args: Sequence[object]) -> None:
+    """Set function parameter types from runtime argument values.
+
+    For list arguments, sets the parameter type to a 1-D TensorType
+    with the list's length as the shape dimension.
+    """
+    func = ir.functions[0]
+    for arg, param in zip(args, func.body.args):
+        if isinstance(arg, list):
+            param.type = TensorType(shape=shape_constant([len(arg)]))
+
+
+def run(source: str, *, args: Sequence[object | str] = ()) -> object:
     """Compile and run a .toy source string through the full pipeline."""
     ast = parse_toy(source)
     ir = lower(ast)
-    # Parse string args (from CLI) to Python values, set parameter types
-    if args:
-        from toy.dialects.affine import shape_constant
-        from toy.dialects.toy import TensorType
-
-        args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
-        func = ir.functions[0]
-        for arg, param in zip(args, func.body.args):
-            if isinstance(arg, list):
-                param.type = TensorType(shape=shape_constant([len(arg)]))
+    parsed_args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
+    if parsed_args:
+        _set_param_types(ir, parsed_args)
     opt = optimize(ir)
     return compile_and_run_staged(
         opt,
         infer=infer_shapes,
         lower=_lower,
-        args=args,
+        args=parsed_args,
     )
 
 

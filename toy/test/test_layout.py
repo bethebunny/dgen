@@ -1,7 +1,5 @@
 """Tests for memory layout types."""
 
-from typing import cast
-
 from dgen.dialects import builtin
 from dgen.layout import BYTE, FLOAT64, INT, Array, Bytes, FatPointer, Pointer
 
@@ -30,7 +28,7 @@ def test_fat_pointer():
 def test_bytes_layout():
     b = Bytes(5)
     assert b.byte_size == 5
-    assert b.parse("hello") == b"hello"
+    assert b.parse(b"hello") == b"hello"
 
 
 def test_string_layout():
@@ -53,4 +51,5 @@ def test_tensor_type_layout():
     t = TensorType(shape=shape_constant([2, 3]))
     layout = t.__layout__
     assert layout.byte_size == 48  # 6 * 8 bytes
-    assert cast(Array, layout).count == 6
+    assert isinstance(layout, Array)
+    assert layout.count == 6

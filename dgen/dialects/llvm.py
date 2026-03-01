@@ -14,7 +14,7 @@ from dgen.layout import FLOAT64, INT, VOID, Pointer
 # ===----------------------------------------------------------------------=== #
 
 
-@dataclass
+@dataclass(frozen=True)
 class PtrType(Type):
     __layout__ = Pointer(VOID)
 
@@ -23,7 +23,7 @@ class PtrType(Type):
         return "ptr"
 
 
-@dataclass
+@dataclass(frozen=True)
 class IntType(Type):
     __layout__ = INT
     bits: int
@@ -33,7 +33,7 @@ class IntType(Type):
         return f"i{self.bits}"
 
 
-@dataclass
+@dataclass(frozen=True)
 class FloatType(Type):
     __layout__ = FLOAT64
 
@@ -42,7 +42,7 @@ class FloatType(Type):
         return "f64"
 
 
-@dataclass
+@dataclass(frozen=True)
 class VoidType(Type):
     __layout__ = VOID
 
@@ -62,7 +62,7 @@ llvm = Dialect("llvm")
 @dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
     elem_count: Value[IndexType]
-    type: Type = Nil()
+    type: Type = PtrType()
 
     __params__ = (("elem_count", IndexType),)
 
@@ -72,7 +72,7 @@ class AllocaOp(Op):
 class GepOp(Op):
     base: Value
     index: Value
-    type: Type = Nil()
+    type: Type = PtrType()
 
     __operands__ = (("base", Type), ("index", Type))
 
@@ -81,7 +81,7 @@ class GepOp(Op):
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
     ptr: Value
-    type: Type = Nil()
+    type: Type = FloatType()
 
     __operands__ = (("ptr", Type),)
 
@@ -101,7 +101,7 @@ class StoreOp(Op):
 class FAddOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = Nil()
+    type: Type = FloatType()
 
     __operands__ = (("lhs", Type), ("rhs", Type))
 
@@ -111,7 +111,7 @@ class FAddOp(Op):
 class FMulOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = Nil()
+    type: Type = FloatType()
 
     __operands__ = (("lhs", Type), ("rhs", Type))
 
@@ -121,7 +121,7 @@ class FMulOp(Op):
 class AddOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = Nil()
+    type: Type = IntType(bits=64)
 
     __operands__ = (("lhs", Type), ("rhs", Type))
 
@@ -131,7 +131,7 @@ class AddOp(Op):
 class MulOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = Nil()
+    type: Type = IntType(bits=64)
 
     __operands__ = (("lhs", Type), ("rhs", Type))
 
@@ -142,7 +142,7 @@ class IcmpOp(Op):
     pred: Value[String]
     lhs: Value
     rhs: Value
-    type: Type = Nil()
+    type: Type = IntType(bits=1)
 
     __params__ = (("pred", String),)
     __operands__ = (("lhs", Type), ("rhs", Type))
@@ -195,7 +195,7 @@ class FcmpOp(Op):
     pred: Value[String]
     lhs: Value
     rhs: Value
-    type: Type = Nil()
+    type: Type = IntType(bits=1)
 
     __params__ = (("pred", String),)
     __operands__ = (("lhs", Type), ("rhs", Type))
@@ -205,7 +205,7 @@ class FcmpOp(Op):
 @dataclass(eq=False, kw_only=True)
 class ZextOp(Op):
     input: Value
-    type: Type = Nil()
+    type: Type = IntType(bits=64)
 
     __operands__ = (("input", Type),)
 

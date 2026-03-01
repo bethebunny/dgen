@@ -67,6 +67,8 @@ class Memory(Generic[T]):
     @classmethod
     def from_value(cls, type: Type, value: object) -> Memory:
         """Create Memory from a Type and a Python value."""
+        if isinstance(value, str):
+            value = value.encode("utf-8")
         parsed = type.__layout__.parse(value)
         mem = cls(type)
         if isinstance(parsed, list):

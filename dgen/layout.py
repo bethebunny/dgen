@@ -79,12 +79,9 @@ class Bytes(Layout):
         self.struct = Struct(f"{count}s")
 
     def parse(self, obj: object) -> bytes:
-        assert isinstance(obj, str), f"expected str, got {type(obj).__name__}"
-        encoded = obj.encode("utf-8")
-        assert len(encoded) == self.count, (
-            f"expected {self.count} bytes, got {len(encoded)}"
-        )
-        return encoded
+        assert isinstance(obj, bytes), f"expected bytes, got {type(obj).__name__}"
+        assert len(obj) == self.count, f"expected {self.count} bytes, got {len(obj)}"
+        return obj
 
 
 class Pointer(Layout):

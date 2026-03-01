@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from .op import Op
+
+_T = TypeVar("_T")
 
 
 class Dialect:
@@ -22,20 +24,20 @@ class Dialect:
     def get(cls, name: str) -> Dialect:
         return cls._registry[name]
 
-    def op(self, asm_name: str) -> Callable[[Any], Any]:  # noqa: ANN401
-        def decorator(cls: Any) -> Any:  # noqa: ANN401
-            cls._asm_name = asm_name
-            cls.dialect = self
-            self.ops[asm_name] = cls
+    def op(self, asm_name: str) -> Callable[[_T], _T]:
+        def decorator(cls: _T) -> _T:
+            setattr(cls, "_asm_name", asm_name)
+            setattr(cls, "dialect", self)
+            self.ops[asm_name] = cls  # type: ignore[arg-type]
             return cls
 
         return decorator
 
-    def type(self, name: str) -> Callable[[Any], Any]:  # noqa: ANN401
-        def decorator(cls: Any) -> Any:  # noqa: ANN401
-            cls._asm_name = name
-            cls.dialect = self
-            self.types[name] = cls
+    def type(self, name: str) -> Callable[[_T], _T]:
+        def decorator(cls: _T) -> _T:
+            setattr(cls, "_asm_name", name)
+            setattr(cls, "dialect", self)
+            self.types[name] = cls  # type: ignore[arg-type]
             return cls
 
         return decorator

@@ -82,7 +82,7 @@ class DeallocOp(Op):
 class LoadOp(Op):
     memref: Value
     indices: Value
-    type: Type = builtin.Nil()
+    type: Type = builtin.F64Type()
 
     __operands__ = (("memref", Type), ("indices", IndexType))
 
@@ -103,7 +103,7 @@ class StoreOp(Op):
 class ArithMulFOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = builtin.Nil()
+    type: Type = builtin.F64Type()
 
     __operands__ = (("lhs", Type), ("rhs", Type))
 
@@ -113,7 +113,7 @@ class ArithMulFOp(Op):
 class ArithAddFOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = builtin.Nil()
+    type: Type = builtin.F64Type()
 
     __operands__ = (("lhs", Type), ("rhs", Type))
 
