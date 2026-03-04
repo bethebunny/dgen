@@ -8,4 +8,4 @@ description = "DGEN dialect specification language support"
 [grammars.dgen]
 repository = "https://github.com/bethebunny/dgen"
 path = "editors/tree-sitter-dgen"
-rev = "HEAD"
+rev = "735d085788e6734c8e548c3833c381b197f0e8a4"

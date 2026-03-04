@@ -59,4 +59,5 @@ cd editors/tree-sitter-dgen
 tree-sitter generate
 ```
 
-Then reinstall the dev extension in Zed.
+Then commit, push to GitHub, and update the `rev` in `editors/zed-dgen/extension.toml`
+to the new commit SHA. Then reinstall the dev extension in Zed.
