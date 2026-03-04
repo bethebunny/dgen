@@ -22,7 +22,7 @@ Add to your `~/.config/zed/settings.json`:
   "lsp": {
     "dgen-lsp": {
       "binary": {
-        "path": "/home/stef/dgen/editors/dgen-lsp/run.sh",
+        "path": "dgen/editors/dgen-lsp/run.sh",
         "arguments": []
       }
     }

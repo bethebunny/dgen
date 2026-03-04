@@ -6,5 +6,6 @@ authors = ["Stef"]
 description = "DGEN dialect specification language support"
 
 [grammars.dgen]
-repository = "file:///home/stef/dgen/editors/tree-sitter-dgen"
-rev = ""
+repository = "https://github.com/bethebunny/dgen"
+path = "editors/tree-sitter-dgen"
+rev = "HEAD"
