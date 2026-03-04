@@ -7,7 +7,7 @@ import click
 
 from dgen.dialects import builtin
 from dgen.staging import compile_and_run_staged
-from toy.dialects.affine import shape_constant
+from toy.dialects import shape_constant
 from toy.dialects.toy import TensorType
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy

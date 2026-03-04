@@ -18,7 +18,8 @@ from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
 from dgen.type import Memory
-from toy.dialects.affine import MemRefType, ShapeType, shape_constant
+from toy.dialects import shape_constant
+from toy.dialects.affine import MemRefType, ShapeType
 from toy.dialects.toy import InferredShapeTensor, TensorType
 
 

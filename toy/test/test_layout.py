@@ -117,7 +117,7 @@ def test_index_type_layout():
 
 
 def test_tensor_type_layout():
-    from toy.dialects.affine import shape_constant
+    from toy.dialects import shape_constant
     from toy.dialects.toy import TensorType
 
     t = TensorType(shape=shape_constant([2, 3]))

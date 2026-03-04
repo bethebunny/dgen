@@ -6,8 +6,8 @@ import dgen
 from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
+from toy.dialects import FunctionType, shape_constant
 from toy.dialects import toy
-from toy.dialects.affine import shape_constant
 from toy.test.helpers import strip_prefix
 
 
@@ -127,7 +127,7 @@ def test_full_module():
     m0 = toy.MulOp(lhs=t0, rhs=t1, type=inferred())
     ret_mt = builtin.ReturnOp(value=m0)
 
-    mt_func_type = toy.FunctionType(inputs=[inferred(), inferred()], result=inferred())
+    mt_func_type = FunctionType(inputs=[inferred(), inferred()], result=inferred())
     mt_func = builtin.FuncOp(
         name="multiply_transpose",
         type=mt_func_type,
@@ -158,7 +158,7 @@ def test_full_module():
     print_op = toy.PrintOp(input=call5)
     ret_main = builtin.ReturnOp()
 
-    main_func_type = toy.FunctionType(inputs=[], result=builtin.Nil())
+    main_func_type = FunctionType(inputs=[], result=builtin.Nil())
     main_func = builtin.FuncOp(
         name="main",
         type=main_func_type,

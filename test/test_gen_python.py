@@ -1,9 +1,9 @@
 """Tests for Python code generator from .dgen AST."""
 
 from dgen.gen.ast import (
+    DataField,
     DgenFile,
     ImportDecl,
-    LayoutExpr,
     OpDecl,
     OperandDecl,
     ParamDecl,
@@ -22,7 +22,11 @@ def test_generate_header():
 
 
 def test_generate_simple_type():
-    f = DgenFile(types=[TypeDecl(name="index", layout=LayoutExpr("INT"))])
+    f = DgenFile(
+        types=[
+            TypeDecl(name="index", data=DataField(name="data", type=TypeRef("Index")))
+        ]
+    )
     code = generate(f, dialect_name="test")
     assert '@test.type("index")' in code
     assert "class IndexType(Type):" in code
@@ -30,8 +34,8 @@ def test_generate_simple_type():
     assert "__layout__ = INT" in code
 
 
-def test_generate_type_no_layout():
-    """Type with no layout at all (provided by companion)."""
+def test_generate_type_no_data():
+    """Type with no data field at all (layout provided externally)."""
     f = DgenFile(
         types=[
             TypeDecl(
@@ -53,7 +57,10 @@ def test_generate_parameterized_type():
             TypeDecl(
                 name="Shape",
                 params=[ParamDecl(name="rank", type=TypeRef("Index"))],
-                layout=LayoutExpr("Array", ["INT", "rank"]),
+                data=DataField(
+                    name="dims",
+                    type=TypeRef("Array", [TypeRef("Index"), TypeRef("rank")]),
+                ),
             )
         ]
     )
@@ -66,12 +73,15 @@ def test_generate_parameterized_type():
     assert "Array(INT," in code
 
 
-def test_generate_type_fatpointer_layout():
+def test_generate_type_fatpointer_data():
     f = DgenFile(
         types=[
             TypeDecl(
                 name="String",
-                layout=LayoutExpr("FatPointer", ["BYTE"]),
+                data=DataField(
+                    name="storage",
+                    type=TypeRef("FatPointer", [TypeRef("Byte")]),
+                ),
             )
         ]
     )
@@ -87,7 +97,10 @@ def test_generate_type_fatpointer_param():
             TypeDecl(
                 name="List",
                 params=[ParamDecl(name="element_type", type=TypeRef("Type"))],
-                layout=LayoutExpr("FatPointer", ["element_type"]),
+                data=DataField(
+                    name="storage",
+                    type=TypeRef("FatPointer", [TypeRef("element_type")]),
+                ),
             )
         ]
     )
@@ -300,10 +313,42 @@ def test_generate_imports():
     assert "from dgen.dialects.builtin import IndexType, Nil" in code
 
 
+def test_generate_imported_trait():
+    """Ops with blocks should inherit HasSingleBlock even when it's imported, not local."""
+    f = DgenFile(
+        imports=[
+            ImportDecl(module="builtin", names=["Index", "Nil", "HasSingleBlock"])
+        ],
+        ops=[
+            OpDecl(
+                name="for",
+                params=[
+                    ParamDecl(name="lo", type=TypeRef("Index")),
+                    ParamDecl(name="hi", type=TypeRef("Index")),
+                ],
+                return_type=TypeRef("Nil"),
+                blocks=["body"],
+            )
+        ],
+    )
+    code = generate(
+        f,
+        dialect_name="test",
+        import_map={"builtin": "dgen.dialects.builtin"},
+    )
+    # HasSingleBlock should be imported without Type suffix
+    assert "HasSingleBlock" in code
+    assert "HasSingleBlockType" not in code
+    # ForOp should inherit from it
+    assert "class ForOp(HasSingleBlock, Op):" in code
+
+
 def test_generate_valid_python():
     """The generated code should be valid Python that can be exec'd."""
     f = DgenFile(
-        types=[TypeDecl(name="index", layout=LayoutExpr("INT"))],
+        types=[
+            TypeDecl(name="index", data=DataField(name="data", type=TypeRef("Index")))
+        ],
         ops=[
             OpDecl(
                 name="nop",
@@ -314,3 +359,40 @@ def test_generate_valid_python():
     code = generate(f, dialect_name="test")
     # Should be parseable as Python
     compile(code, "<test>", "exec")
+
+
+def test_generate_nil_data_field():
+    """A type with data: Nil should get __layout__ = VOID."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="InferredShapeTensor",
+                params=[
+                    ParamDecl(name="dtype", type=TypeRef("Type"), default="F64"),
+                ],
+                data=DataField(name="data", type=TypeRef("Nil")),
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class InferredShapeTensor(Type):" in code
+    assert "__layout__ = VOID" in code
+
+
+def test_generate_pointer_data():
+    """Pointer<Nil> should generate __layout__ = Pointer(VOID)."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="MemRef",
+                params=[
+                    ParamDecl(name="shape", type=TypeRef("Shape")),
+                    ParamDecl(name="dtype", type=TypeRef("Type"), default="F64"),
+                ],
+                data=DataField(name="data", type=TypeRef("Pointer", [TypeRef("Nil")])),
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class MemRefType(Type):" in code
+    assert "__layout__ = Pointer(VOID)" in code

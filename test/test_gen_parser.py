@@ -24,12 +24,13 @@ def test_parse_trait():
 
 
 def test_parse_simple_type():
-    result = parse("type index:\n    layout INT\n")
+    result = parse("type index:\n    data: Index\n")
     assert len(result.types) == 1
     t = result.types[0]
     assert t.name == "index"
-    assert t.layout is not None
-    assert t.layout.name == "INT"
+    assert t.data is not None
+    assert t.data.name == "data"
+    assert t.data.type.name == "Index"
 
 
 def test_parse_type_no_body():
@@ -37,23 +38,26 @@ def test_parse_type_no_body():
     assert len(result.types) == 1
     t = result.types[0]
     assert t.name == "Nil"
-    assert t.layout is None
+    assert t.data is None
 
 
 def test_parse_parameterized_type():
-    result = parse("type Shape<rank: Index>:\n    layout Array<INT, rank>\n")
+    result = parse("type Shape<rank: Index>:\n    dims: Array<Index, rank>\n")
     t = result.types[0]
     assert t.name == "Shape"
     assert len(t.params) == 1
     assert t.params[0].name == "rank"
     assert t.params[0].type.name == "Index"
-    assert t.layout is not None
-    assert t.layout.name == "Array"
-    assert t.layout.args == ["INT", "rank"]
+    assert t.data is not None
+    assert t.data.name == "dims"
+    assert t.data.type.name == "Array"
+    assert len(t.data.type.args) == 2
+    assert t.data.type.args[0].name == "Index"
+    assert t.data.type.args[1].name == "rank"
 
 
 def test_parse_type_with_default_param():
-    result = parse("type Tensor<shape: Shape, dtype: Type = F64>:\n    layout VOID\n")
+    result = parse("type Tensor<shape: Shape, dtype: Type = F64>:\n    data: Nil\n")
     t = result.types[0]
     assert len(t.params) == 2
     assert t.params[0].name == "shape"
@@ -63,12 +67,14 @@ def test_parse_type_with_default_param():
     assert t.params[1].default == "F64"
 
 
-def test_parse_type_fatpointer_layout():
-    result = parse("type String:\n    layout FatPointer<BYTE>\n")
+def test_parse_type_fatpointer_field():
+    result = parse("type String:\n    storage: FatPointer<Byte>\n")
     t = result.types[0]
-    assert t.layout is not None
-    assert t.layout.name == "FatPointer"
-    assert t.layout.args == ["BYTE"]
+    assert t.data is not None
+    assert t.data.name == "storage"
+    assert t.data.type.name == "FatPointer"
+    assert len(t.data.type.args) == 1
+    assert t.data.type.args[0].name == "Byte"
 
 
 def test_parse_simple_op():
@@ -147,7 +153,7 @@ from builtin import Index
 # Another comment
 
 type index:
-    layout INT
+    data: Index
 """
     result = parse(src)
     assert len(result.imports) == 1
@@ -161,7 +167,7 @@ from builtin import Index, Nil
 trait HasSingleBlock
 
 type Shape<rank: Index>:
-    layout Array<INT, rank>
+    dims: Array<Index, rank>
 
 op alloc(shape: Shape) -> Type
 op for<lo: Index, hi: Index>() -> Nil:
@@ -178,12 +184,12 @@ op for<lo: Index, hi: Index>() -> Nil:
 def test_parse_type_comment_in_body():
     src = """\
 type Tensor<shape: Shape>:
-    # Layout computed in companion
+    # Layout computed externally
 """
     result = parse(src)
     t = result.types[0]
     assert t.name == "Tensor"
-    assert t.layout is None
+    assert t.data is None
 
 
 def test_parse_multiple_block_lines():

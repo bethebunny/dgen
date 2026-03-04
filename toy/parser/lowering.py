@@ -6,8 +6,8 @@ from collections.abc import Generator, Iterator
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
+from toy.dialects import FunctionType, shape_constant
 from toy.dialects import toy
-from toy.dialects.affine import shape_constant
 from toy.parser.ast import (
     BinaryOp,
     CallExpr,
@@ -57,7 +57,7 @@ class Lowering:
             ):
                 result = toy.InferredShapeTensor()
 
-        func_type = toy.FunctionType(inputs=[a.type for a in args], result=result)
+        func_type = FunctionType(inputs=[a.type for a in args], result=result)
         return builtin.FuncOp(
             name=f.proto.name,
             type=func_type,

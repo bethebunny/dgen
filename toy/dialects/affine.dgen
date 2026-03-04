@@ -1,0 +1,17 @@
+from builtin import Index, Nil, F64, HasSingleBlock
+
+type Shape<rank: Index>:
+    dims: Array<Index, rank>
+
+type MemRef<shape: Shape, dtype: Type = F64>:
+    data: Pointer<Nil>
+
+op alloc(shape: Shape) -> Type
+op dealloc(input: Type) -> Nil
+op load(memref: Type, indices: Index) -> F64
+op store(value: Type, memref: Type, indices: Index) -> Nil
+op mul_f(lhs: Type, rhs: Type) -> F64
+op add_f(lhs: Type, rhs: Type) -> F64
+op print_memref(input: Type) -> Nil
+op for<lo: Index, hi: Index>() -> Nil:
+    block body

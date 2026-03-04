@@ -7,8 +7,8 @@ from copy import deepcopy
 
 import dgen
 from dgen.dialects import builtin
+from toy.dialects import shape_constant
 from toy.dialects import toy
-from toy.dialects.affine import shape_constant
 
 # ===----------------------------------------------------------------------=== #
 # Helpers

@@ -40,11 +40,15 @@ class OperandDecl:
 
 
 @dataclass
-class LayoutExpr:
-    """A layout expression: INT, Array<INT, rank>, FatPointer<BYTE>."""
+class DataField:
+    """A data field declaration on a type: name: TypeExpr.
+
+    Describes the type's memory layout using type references.
+    E.g. ``dims: Array<Index, rank>`` or ``data: FatPointer<Byte>``.
+    """
 
     name: str
-    args: list[str] = field(default_factory=list)
+    type: TypeRef
 
 
 @dataclass
@@ -56,11 +60,11 @@ class TraitDecl:
 
 @dataclass
 class TypeDecl:
-    """A type declaration with optional params and layout."""
+    """A type declaration with optional params and data fields."""
 
     name: str
     params: list[ParamDecl] = field(default_factory=list)
-    layout: LayoutExpr | None = None
+    data: DataField | None = None
 
 
 @dataclass

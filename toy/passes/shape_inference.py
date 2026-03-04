@@ -6,8 +6,8 @@ from copy import deepcopy
 
 import dgen
 from dgen.dialects import builtin
+from toy.dialects import FunctionType, shape_constant
 from toy.dialects import toy
-from toy.dialects.affine import shape_constant
 
 
 def _resolve_index_value(val: dgen.Value) -> int | None:
@@ -104,7 +104,7 @@ def _infer_function(
                     ):
                         ret_type = type_of.get(id(ret_op.value))
                         if ret_type is not None:
-                            callee.type = toy.FunctionType(
+                            callee.type = FunctionType(
                                 inputs=arg_types,
                                 result=ret_type,
                             )

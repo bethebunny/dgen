@@ -4,7 +4,7 @@
 
 **Goal:** Build a codegen tool that reads `.dgen` dialect specification files and generates Python dialect modules, then generate the 4 existing dialects from `.dgen` specs.
 
-**Architecture:** A parser reads `.dgen` files into an AST; a Python code generator emits dialect modules from that AST. Dialects with language-specific behavior (methods, custom classes) use a two-file pattern: `_generated.py` (never hand-edited) + `dialect.py` (hand-maintained public API). Dialects with no manual additions generate directly to `dialect.py`.
+**Architecture:** A parser reads `.dgen` files into an AST; a Python code generator emits dialect modules from that AST. Dialects are always generated directly to a `dialect.py`, there is no such thing as hand-written or manual additions to dialects. Any language-specific helpers that are not generated must be written directly, and it's up to the individual compiler author how to package them.
 
 **Tech Stack:** Python, pytest, ruff, dataclasses
 

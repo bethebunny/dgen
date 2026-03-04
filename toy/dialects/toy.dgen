@@ -1,0 +1,19 @@
+from builtin import Index, Nil, F64, String
+from affine import Shape
+
+type Tensor<shape: Shape, dtype: Type = F64>:
+    # Layout computed externally (needs math.prod)
+
+type InferredShapeTensor<dtype: Type = F64>:
+    data: Nil
+
+op transpose(input: Type) -> Type
+op reshape(input: Type) -> Type
+op mul(lhs: Type, rhs: Type) -> Type
+op add(lhs: Type, rhs: Type) -> Type
+op generic_call<callee: String>(args: list<Type>) -> Type
+op concat<axis: Index>(lhs: Type, rhs: Type) -> Type
+op tile<count: Index>(input: Type) -> Type
+op nonzero_count(input: Type) -> Index
+op dim_size<axis: Index>(input: Type) -> Index
+op print(input: Type) -> Nil

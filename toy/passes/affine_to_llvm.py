@@ -79,15 +79,15 @@ class AffineToLLVMLowering:
                 shape = op.type.unpack_shape()
                 self.alloc_shapes[new_op] = shape
                 self.alloc_sizes[new_op] = prod(shape)
-        elif isinstance(op, affine.ArithMulFOp):
+        elif isinstance(op, affine.MulFOp):
             llvm_op = llvm.FMulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
             self.value_map[op] = llvm_op
-        elif isinstance(op, affine.ArithAddFOp):
+        elif isinstance(op, affine.AddFOp):
             llvm_op = llvm.FAddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
             self.value_map[op] = llvm_op
-        elif isinstance(op, affine.PrintOp):
+        elif isinstance(op, affine.PrintMemrefOp):
             yield from self._lower_print(op)
         elif isinstance(op, builtin.AddIndexOp):
             llvm_op = llvm.AddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
@@ -260,7 +260,7 @@ class AffineToLLVMLowering:
 
         self.value_map[op] = acc
 
-    def _lower_print(self, op: affine.PrintOp) -> Iterator[dgen.Op]:
+    def _lower_print(self, op: affine.PrintMemrefOp) -> Iterator[dgen.Op]:
         input_val = self._map(op.input)
         size = self.alloc_sizes[input_val]
         size_op = builtin.ConstantOp(value=size, type=builtin.IndexType())

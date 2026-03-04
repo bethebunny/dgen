@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dgen.gen.ast import (
+    DataField,
     DgenFile,
     ImportDecl,
-    LayoutExpr,
     OpDecl,
     OperandDecl,
     ParamDecl,
@@ -74,12 +74,12 @@ class _Parser:
         else:
             name = rest.strip()
 
-        layout = self._parse_type_body() if has_body else None
-        return TypeDecl(name=name, params=params, layout=layout)
+        data = self._parse_type_body() if has_body else None
+        return TypeDecl(name=name, params=params, data=data)
 
-    def _parse_type_body(self) -> LayoutExpr | None:
-        """Parse indented type body lines, return layout if found."""
-        layout = None
+    def _parse_type_body(self) -> DataField | None:
+        """Parse indented type body lines, return data field if found."""
+        data = None
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
             if not next_line or not next_line[0].isspace():
@@ -88,9 +88,13 @@ class _Parser:
             stripped = next_line.strip()
             if stripped.startswith("#") or not stripped:
                 continue
-            if stripped.startswith("layout "):
-                layout = _parse_layout(stripped[7:])
-        return layout
+            # Field declaration: name: TypeExpr
+            if ":" in stripped:
+                colon = stripped.index(":")
+                field_name = stripped[:colon].strip()
+                type_str = stripped[colon + 1 :].strip()
+                data = DataField(name=field_name, type=_parse_type_ref(type_str))
+        return data
 
     def _parse_op(self, line: str) -> OpDecl:
         rest = line[3:]  # strip "op "
@@ -210,18 +214,6 @@ def _parse_type_ref(s: str) -> TypeRef:
         args = [_parse_type_ref(a.strip()) for a in _split_commas(args_str)]
         return TypeRef(name=name, args=args)
     return TypeRef(name=s)
-
-
-def _parse_layout(s: str) -> LayoutExpr:
-    """Parse a layout expression: INT, Array<INT, rank>, FatPointer<BYTE>."""
-    s = s.strip()
-    if "<" in s:
-        lt = s.index("<")
-        name = s[:lt]
-        args_str = s[lt + 1 : s.rindex(">")]
-        args = [a.strip() for a in args_str.split(",")]
-        return LayoutExpr(name=name, args=args)
-    return LayoutExpr(name=s)
 
 
 def _split_commas(s: str) -> list[str]:

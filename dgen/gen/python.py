@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dgen.gen.ast import (
+    DataField,
     DgenFile,
-    LayoutExpr,
     OpDecl,
     OperandDecl,
     ParamDecl,
@@ -17,40 +17,56 @@ from dgen.gen.ast import (
 # Name mapping: .dgen ASM name -> Python class name
 # ===----------------------------------------------------------------------=== #
 
-# Types that keep their .dgen name as-is (no "Type" suffix)
-_TYPE_NAME_KEEP: frozenset[str] = frozenset(
+# Names that keep their .dgen name as-is (no "Type" suffix).
+# Includes both types (Nil, String, etc.) and traits (HasSingleBlock).
+_NAME_KEEP: frozenset[str] = frozenset(
     {
         "Nil",
         "String",
         "List",
         "InferredShapeTensor",
+        "HasSingleBlock",
     }
 )
 
-# Layout primitives that are imported as module-level singletons
-_LAYOUT_SINGLETONS: frozenset[str] = frozenset(
+# Known trait names (subset of _NAME_KEEP that are traits, not types)
+_KNOWN_TRAITS: frozenset[str] = frozenset(
     {
-        "INT",
-        "FLOAT64",
-        "VOID",
-        "BYTE",
+        "HasSingleBlock",
     }
 )
 
-# Layout constructors that need to be imported
+# Map from .dgen type names to Python layout singleton names.
+# These are the leaf types whose layout is intrinsic.
+_TYPE_TO_LAYOUT: dict[str, str] = {
+    "Index": "INT",
+    "index": "INT",
+    "F64": "FLOAT64",
+    "f64": "FLOAT64",
+    "Nil": "VOID",
+    "Byte": "BYTE",
+}
+
+# Map from .dgen compound type names to Python layout constructor names.
+_COMPOUND_TO_LAYOUT: dict[str, str] = {
+    "Array": "Array",
+    "Pointer": "Pointer",
+    "FatPointer": "FatPointer",
+    "Bytes": "Bytes",
+}
+
+# Layout singletons that need to be imported from dgen.layout
+_LAYOUT_SINGLETONS: frozenset[str] = frozenset({"INT", "FLOAT64", "VOID", "BYTE"})
+
+# Layout constructors that need to be imported from dgen.layout
 _LAYOUT_CONSTRUCTORS: frozenset[str] = frozenset(
-    {
-        "Array",
-        "Pointer",
-        "FatPointer",
-        "Bytes",
-    }
+    {"Array", "Pointer", "FatPointer", "Bytes"}
 )
 
 
 def _type_class_name(asm_name: str) -> str:
     """Derive Python class name from ASM type name."""
-    if asm_name in _TYPE_NAME_KEEP:
+    if asm_name in _NAME_KEEP:
         return asm_name
     if asm_name == "Type":
         return "Type"
@@ -66,9 +82,6 @@ def _type_class_name(asm_name: str) -> str:
 
 def _op_class_name(asm_name: str) -> str:
     """Derive Python class name from ASM op name."""
-    # "transpose" -> "Transpose" -> "TransposeOp"
-    # "add_index" -> "AddIndex" -> "AddIndexOp"
-    # "for" -> "For" -> "ForOp"
     parts = asm_name.split("_")
     camel = "".join(p.capitalize() for p in parts)
     return camel + "Op"
@@ -79,7 +92,6 @@ def _resolve_type_ref(ref: TypeRef) -> str:
     if ref.name == "Type":
         return "Type"
     if ref.name == "list":
-        # list<String> -> String (the element type is what goes in the tuple)
         if ref.args:
             return _resolve_type_ref(ref.args[0])
         return "Type"
@@ -100,7 +112,6 @@ def _annotation_for_operand(operand: OperandDecl) -> str:
     """Generate Python type annotation for a runtime operand."""
     if operand.type.name == "list":
         return "list[Value]"
-    # Operands are always Value (no type parameter), per existing convention
     return "Value"
 
 
@@ -143,29 +154,40 @@ class _Generator:
         self._layout_constructors: set[str] = set()
         self._needs_block = False
         self._trait_names: set[str] = {t.name for t in ast.traits}
+        # Also track imported trait names
+        for imp in ast.imports:
+            for name in imp.names:
+                if name in _KNOWN_TRAITS:
+                    self._trait_names.add(name)
 
-        # Scan for required layout imports
+        # Scan for required layout imports from data field type references
         for td in ast.types:
-            if td.layout:
-                self._collect_layout_imports(td.layout, td.params)
+            if td.data:
+                self._collect_layout_imports_from_type(td.data.type, td.params)
         # Scan for Block usage
         for od in ast.ops:
             if od.blocks:
                 self._needs_block = True
 
-    def _collect_layout_imports(
-        self, layout: LayoutExpr, params: list[ParamDecl]
+    def _collect_layout_imports_from_type(
+        self, type_ref: TypeRef, params: list[ParamDecl]
     ) -> None:
-        if layout.name in _LAYOUT_SINGLETONS:
-            self._layout_singletons.add(layout.name)
-        elif layout.name in _LAYOUT_CONSTRUCTORS:
-            self._layout_constructors.add(layout.name)
-        for arg in layout.args:
-            if arg in _LAYOUT_SINGLETONS:
-                self._layout_singletons.add(arg)
-            elif arg in _LAYOUT_CONSTRUCTORS:
-                self._layout_constructors.add(arg)
-            # param refs don't need layout imports
+        """Collect layout imports needed to resolve a data field type reference."""
+        param_names = {p.name for p in params}
+        name = type_ref.name
+        # Check if this type name resolves to a layout
+        if name in _TYPE_TO_LAYOUT:
+            layout_name = _TYPE_TO_LAYOUT[name]
+            if layout_name in _LAYOUT_SINGLETONS:
+                self._layout_singletons.add(layout_name)
+        elif name in _COMPOUND_TO_LAYOUT:
+            layout_name = _COMPOUND_TO_LAYOUT[name]
+            if layout_name in _LAYOUT_CONSTRUCTORS:
+                self._layout_constructors.add(layout_name)
+        # Recurse into type args (but skip param references)
+        for arg in type_ref.args:
+            if arg.name not in param_names:
+                self._collect_layout_imports_from_type(arg, params)
 
     def emit(self) -> str:
         self._emit_header()
@@ -226,24 +248,21 @@ class _Generator:
 
     def _emit_type(self, td: TypeDecl) -> None:
         cls_name = _type_class_name(td.name)
-        is_parametric_layout = td.layout is not None and self._layout_is_parametric(
-            td.layout, td.params
+        is_parametric = td.data is not None and self._data_is_parametric(
+            td.data, td.params
         )
 
         self._line()
         self._line(f'@{self.dialect_name}.type("{td.name}")')
-        if td.params:
-            self._line("@dataclass(frozen=True)")
-        else:
-            self._line("@dataclass(frozen=True)")
+        self._line("@dataclass(frozen=True)")
         self._line(f"class {cls_name}(Type):")
 
         body_lines: list[str] = []
 
         # Static layout (not parametric)
-        if td.layout and not is_parametric_layout:
+        if td.data and not is_parametric:
             body_lines.append(
-                f"    __layout__ = {self._format_layout_value(td.layout)}"
+                f"    __layout__ = {self._resolve_data_static(td.data.type)}"
             )
 
         # Parameters
@@ -261,13 +280,13 @@ class _Generator:
             body_lines.append(f"    __params__ = ({', '.join(parts)},)")
 
         # Parametric layout property
-        if td.layout and is_parametric_layout:
+        if td.data and is_parametric:
             body_lines.append("")
             body_lines.append("    @property")
-            return_type = self._layout_return_type(td.layout)
+            return_type = self._data_return_type(td.data.type)
             body_lines.append(f"    def __layout__(self) -> {return_type}:")
             body_lines.append(
-                f"        return {self._format_layout_property(td.layout, td.params)}"
+                f"        return {self._resolve_data_parametric(td.data.type, td.params)}"
             )
 
         if not body_lines:
@@ -311,10 +330,8 @@ class _Generator:
         # Return type field
         ret = od.return_type
         if ret.name == "Type":
-            # Generic return — no default
             body_lines.append("    type: Type")
         else:
-            # Concrete return — generate default if type has no required params
             ret_cls = _resolve_type_ref(ret)
             if self._type_has_no_required_params(ret):
                 body_lines.append(f"    type: Type = {ret_cls}()")
@@ -347,60 +364,64 @@ class _Generator:
         self._line()
 
     # ===----------------------------------------------------------------------=== #
-    # Layout helpers
+    # Data field -> layout resolution
     # ===----------------------------------------------------------------------=== #
 
-    def _layout_is_parametric(
-        self, layout: LayoutExpr, params: list[ParamDecl]
-    ) -> bool:
-        """Check if a layout expression references any type parameters."""
+    def _data_is_parametric(self, data: DataField, params: list[ParamDecl]) -> bool:
+        """Check if a data field type references any type parameters."""
         param_names = {p.name for p in params}
-        return any(arg in param_names for arg in layout.args)
+        return self._type_ref_has_params(data.type, param_names)
 
-    def _format_layout_value(self, layout: LayoutExpr) -> str:
-        """Format a static layout expression: INT, FatPointer(BYTE), etc."""
-        if not layout.args:
-            return layout.name
-        args_str = ", ".join(layout.args)
-        return f"{layout.name}({args_str})"
+    def _type_ref_has_params(self, ref: TypeRef, param_names: set[str]) -> bool:
+        if ref.name in param_names:
+            return True
+        return any(self._type_ref_has_params(arg, param_names) for arg in ref.args)
 
-    def _format_layout_property(
-        self, layout: LayoutExpr, params: list[ParamDecl]
-    ) -> str:
-        """Format a parametric layout expression for a @property body."""
+    def _resolve_data_static(self, ref: TypeRef) -> str:
+        """Resolve a non-parametric data field type to a static layout expression."""
+        if ref.name in _TYPE_TO_LAYOUT:
+            return _TYPE_TO_LAYOUT[ref.name]
+        if ref.name in _COMPOUND_TO_LAYOUT:
+            constructor = _COMPOUND_TO_LAYOUT[ref.name]
+            args = ", ".join(self._resolve_data_static(arg) for arg in ref.args)
+            return f"{constructor}({args})"
+        return ref.name
+
+    def _resolve_data_parametric(self, ref: TypeRef, params: list[ParamDecl]) -> str:
+        """Resolve a parametric data field type to a layout expression for a @property."""
         param_map = {p.name: p for p in params}
-        args: list[str] = []
-        for arg in layout.args:
-            if arg in param_map:
-                p = param_map[arg]
-                if p.type.name == "Type":
-                    # Type param: use .__layout__
-                    args.append(f"self.{arg}.__layout__")
-                else:
-                    # Index/other param: extract constant value
-                    args.append(f"self.{arg}.__constant__.unpack()[0]")
-            else:
-                # Layout primitive: use as-is
-                args.append(arg)
-        return f"{layout.name}({', '.join(args)})"
+        return self._resolve_ref_parametric(ref, param_map)
 
-    def _layout_return_type(self, layout: LayoutExpr) -> str:
+    def _resolve_ref_parametric(
+        self, ref: TypeRef, param_map: dict[str, ParamDecl]
+    ) -> str:
+        if ref.name in param_map:
+            p = param_map[ref.name]
+            if p.type.name == "Type":
+                return f"self.{ref.name}.__layout__"
+            return f"self.{ref.name}.__constant__.unpack()[0]"
+        if ref.name in _TYPE_TO_LAYOUT:
+            return _TYPE_TO_LAYOUT[ref.name]
+        if ref.name in _COMPOUND_TO_LAYOUT:
+            constructor = _COMPOUND_TO_LAYOUT[ref.name]
+            args = ", ".join(
+                self._resolve_ref_parametric(arg, param_map) for arg in ref.args
+            )
+            return f"{constructor}({args})"
+        return ref.name
+
+    def _data_return_type(self, ref: TypeRef) -> str:
         """Determine the return type annotation for a layout property."""
-        return layout.name if layout.name in _LAYOUT_CONSTRUCTORS else "Layout"
+        if ref.name in _COMPOUND_TO_LAYOUT:
+            return _COMPOUND_TO_LAYOUT[ref.name]
+        return "Layout"
 
     def _type_has_no_required_params(self, ref: TypeRef) -> bool:
-        """Check if a type can be constructed with no arguments.
-
-        Returns True for simple types (Nil, IndexType, F64Type, etc.)
-        and False for parameterized types (List, ShapeType, etc.).
-        """
-        # Known no-arg types
+        """Check if a type can be constructed with no arguments."""
         no_arg = {"Nil", "Index", "index", "F64", "f64", "String"}
         if ref.name in no_arg:
             return True
-        # Types defined in this file: check if they have params
         for td in self.ast.types:
             if td.name == ref.name:
                 return len(td.params) == 0
-        # Unknown types: assume they need params (safer)
         return False

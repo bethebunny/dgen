@@ -9,7 +9,7 @@ from dgen.block import BlockArgument
 from dgen.dialects.builtin import IndexType, List, Nil, PackOp
 from dgen.dialects import builtin
 from dgen.layout import Array
-from toy.dialects import affine, toy
+from toy.dialects import affine, shape_constant, toy
 
 
 def _make_index_list(
@@ -146,8 +146,8 @@ class ToyToAffineLowering:
         rhs_alloc = self.alloc_map.get(rhs_val, rhs_val)
 
         binop = {
-            toy.MulOp: affine.ArithMulFOp,
-            toy.AddOp: affine.ArithAddFOp,
+            toy.MulOp: affine.MulFOp,
+            toy.AddOp: affine.AddFOp,
         }
 
         def body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
@@ -169,7 +169,7 @@ class ToyToAffineLowering:
         input_shape = op.input.type.unpack_shape()
         output_shape: list[int] = [count] + input_shape
 
-        alloc_op = self._make_alloc(affine.shape_constant(output_shape))
+        alloc_op = self._make_alloc(shape_constant(output_shape))
         yield alloc_op
         self.live_allocs.append(alloc_op)
         in_alloc = self.alloc_map.get(op.input, op.input)
@@ -195,7 +195,7 @@ class ToyToAffineLowering:
         output_shape = list(lhs_shape)
         output_shape[axis] = lhs_shape[axis] + rhs_shape[axis]
 
-        alloc_op = self._make_alloc(affine.shape_constant(output_shape))
+        alloc_op = self._make_alloc(shape_constant(output_shape))
         yield alloc_op
         self.live_allocs.append(alloc_op)
         lhs_alloc = self.alloc_map.get(op.lhs, op.lhs)
@@ -234,7 +234,7 @@ class ToyToAffineLowering:
 
     def _lower_print(self, op: toy.PrintOp) -> Iterator[dgen.Op]:
         alloc = self.alloc_map.get(op.input, op.input)
-        yield affine.PrintOp(input=alloc)
+        yield affine.PrintMemrefOp(input=alloc)
 
     def _lower_return(self, op: builtin.ReturnOp) -> Iterator[dgen.Op]:
         for alloc_val in self.live_allocs:
