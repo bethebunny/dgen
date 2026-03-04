@@ -12,8 +12,8 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
-from dgen.dialects.builtin import string_value
 from dgen.dialects.llvm import IntType
+from dgen.module import ConstantOp, Module, string_value
 from dgen.layout import Layout
 from dgen.type import Memory
 
@@ -73,9 +73,7 @@ def _ensure_initialized() -> None:
 # ---------------------------------------------------------------------------
 
 
-def emit_llvm_ir(
-    module: builtin.Module, *, externs: Sequence[str] = ()
-) -> tuple[str, list]:
+def emit_llvm_ir(module: Module, *, externs: Sequence[str] = ()) -> tuple[str, list]:
     """Emit valid LLVM IR text that llvmlite can parse.
 
     Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
@@ -99,7 +97,7 @@ def _result_type_str(ty: Type) -> str | None:
     return _llvm_type(ty.__layout__)
 
 
-def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
+def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     # Build a SlotTracker so all ops get stable names
     tracker = SlotTracker()
     # Register block args (function parameters) first
@@ -117,7 +115,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
 
     for op in f.body.ops:
         vid = id(op)
-        if isinstance(op, builtin.ConstantOp):
+        if isinstance(op, ConstantOp):
             layout = op.type.__layout__
             if _ctype(layout) is ctypes.c_void_p:
                 # Pointer-passed layout (Array, FatPointer): emit buffer address
@@ -168,7 +166,7 @@ def _emit_func(f: builtin.FuncOp, host_buffers: list) -> list[str]:
     lines = [f"define {llvm_ret} @{func_name}({param_str}) {{", "entry:"]
 
     for op in f.body.ops:
-        if isinstance(op, builtin.ConstantOp):
+        if isinstance(op, ConstantOp):
             continue
 
         name = tracker.track_name(op)
@@ -286,7 +284,7 @@ class Executable:
         return cfunc(*ctypes_args)
 
 
-def compile(module: builtin.Module, *, externs: Sequence[str] = ()) -> Executable:
+def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
     """Emit LLVM IR and bundle with execution metadata."""
     ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]

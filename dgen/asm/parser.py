@@ -14,6 +14,7 @@ from typing import Any
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
+from dgen.module import ConstantOp, Function, Module
 from dgen.type import Memory
 
 
@@ -98,7 +99,7 @@ def _expand_list_sugar(
 
     Non-Value elements (raw ints, floats) are wrapped as ConstantOps.
     """
-    from dgen.dialects.builtin import ConstantOp, List, PackOp
+    from dgen.dialects.builtin import List, PackOp
 
     element_type = element_type_cls()
     list_type = List(element_type=element_type)
@@ -408,21 +409,21 @@ class IRParser:
     # Module / function / block parsing
     # ===------------------------------------------------------------------=== #
 
-    def parse_module(self) -> builtin.Module:
+    def parse_module(self) -> Module:
         """Parse a complete module from IR text."""
         self._parse_imports()
         self.skip_whitespace_and_newlines()
 
-        functions: list[builtin.FuncOp] = []
+        functions: list[builtin.FunctionOp] = []
         while not self.at_end():
             self.skip_whitespace_and_newlines()
             if self.at_end():
                 break
             functions.append(self.parse_func())
 
-        return builtin.Module(functions=functions)
+        return Module(functions=functions)
 
-    def parse_func(self) -> builtin.FuncOp:
+    def parse_func(self) -> builtin.FunctionOp:
         """Parse a function definition."""
         func_name = self.parse_ssa_name()
         self.skip_whitespace()
@@ -459,8 +460,8 @@ class IRParser:
         # Parse body (indented lines)
         ops = self._parse_block(min_indent=1)
 
-        func_type = builtin.Function(result=result_type)
-        func_op = builtin.FuncOp(
+        func_type = Function(result=result_type)
+        func_op = builtin.FunctionOp(
             name=func_name, type=func_type, body=Block(ops=ops, args=args)
         )
         self.name_table[func_name] = func_op
@@ -559,7 +560,7 @@ class IRParser:
             value = parse_expr(self)
             if pre_type is None:
                 raise RuntimeError(f"constant %{op_name_str} missing type annotation")
-            op = builtin.ConstantOp(
+            op = ConstantOp(
                 name=op_name_str,
                 value=Memory.from_value(pre_type, value),
                 type=pre_type,
@@ -573,6 +574,6 @@ class IRParser:
         return parse_op_fields(self, cls, name=op_name_str, pre_type=pre_type)
 
 
-def parse_module(text: str) -> builtin.Module:
+def parse_module(text: str) -> Module:
     parser = IRParser(text)
     return parser.parse_module()

@@ -1,0 +1,23 @@
+trait HasSingleBlock
+
+type index:
+    data: Index
+
+type f64:
+    data: F64
+
+type Nil:
+    data: Nil
+
+type String:
+    storage: FatPointer<Byte>
+
+type List<element_type: Type>:
+    storage: FatPointer<element_type>
+
+op pack(values: list<Type>) -> List
+op list_get<index: Index>(list: List) -> Type
+op add_index(lhs: Index, rhs: Index) -> Index
+op return(value: Type = Nil) -> Nil
+op function() -> Function:
+    block body

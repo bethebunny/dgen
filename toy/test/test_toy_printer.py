@@ -6,6 +6,7 @@ import dgen
 from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
+from dgen.module import ConstantOp, Module, string_constant
 from toy.dialects import FunctionType, shape_constant
 from toy.dialects import toy
 from toy.test.helpers import strip_prefix
@@ -20,7 +21,7 @@ def ranked(shape: Sequence[int]) -> dgen.Type:
 
 
 def test_constant_op():
-    op = builtin.ConstantOp(
+    op = ConstantOp(
         name="0",
         value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         type=ranked([2, 3]),
@@ -62,7 +63,7 @@ def test_generic_call_op():
     v3 = dgen.Value(name="3", type=builtin.Nil())
     op = toy.GenericCallOp(
         name="4",
-        callee=builtin.string_constant("multiply_transpose"),
+        callee=string_constant("multiply_transpose"),
         args=[v1, v3],
         type=inferred(),
     )
@@ -128,30 +129,30 @@ def test_full_module():
     ret_mt = builtin.ReturnOp(value=m0)
 
     mt_func_type = FunctionType(inputs=[inferred(), inferred()], result=inferred())
-    mt_func = builtin.FuncOp(
+    mt_func = builtin.FunctionOp(
         name="multiply_transpose",
         type=mt_func_type,
         body=dgen.Block(ops=[t0, t1, m0, ret_mt], args=[mt_arg_a, mt_arg_b]),
     )
 
     # Build main function
-    c0 = builtin.ConstantOp(
+    c0 = ConstantOp(
         value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         type=ranked([2, 3]),
     )
     r1 = toy.ReshapeOp(input=c0, type=ranked([2, 3]))
-    c2 = builtin.ConstantOp(
+    c2 = ConstantOp(
         value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         type=ranked([6]),
     )
     r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
     call4 = toy.GenericCallOp(
-        callee=builtin.string_constant("multiply_transpose"),
+        callee=string_constant("multiply_transpose"),
         args=[r1, r3],
         type=inferred(),
     )
     call5 = toy.GenericCallOp(
-        callee=builtin.string_constant("multiply_transpose"),
+        callee=string_constant("multiply_transpose"),
         args=[r3, r1],
         type=inferred(),
     )
@@ -159,7 +160,7 @@ def test_full_module():
     ret_main = builtin.ReturnOp()
 
     main_func_type = FunctionType(inputs=[], result=builtin.Nil())
-    main_func = builtin.FuncOp(
+    main_func = builtin.FunctionOp(
         name="main",
         type=main_func_type,
         body=dgen.Block(
@@ -167,7 +168,7 @@ def test_full_module():
         ),
     )
 
-    module = builtin.Module(functions=[mt_func, main_func])
+    module = Module(functions=[mt_func, main_func])
 
     expected = strip_prefix("""
         | import toy

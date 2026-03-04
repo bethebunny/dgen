@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Generator, Iterator
 from math import prod
 import dgen
-from dgen.dialects.builtin import Nil, PackOp, string_constant
+from dgen.dialects.builtin import FunctionOp, Nil, PackOp
 from dgen.dialects import builtin, llvm
+from dgen.module import ConstantOp, Function, Module, string_constant
 from dgen.layout import Array
 from toy.dialects import affine, toy
 
@@ -28,11 +29,11 @@ class AffineToLLVMLowering:
         self.alloc_sizes: dict[dgen.Value, int] = {}  # llvm alloca -> total size
         self.current_label = "entry"
 
-    def lower_module(self, m: builtin.Module) -> builtin.Module:
+    def lower_module(self, m: Module) -> Module:
         functions = [self.lower_function(f) for f in m.functions]
-        return builtin.Module(functions=functions)
+        return Module(functions=functions)
 
-    def lower_function(self, f: builtin.FuncOp) -> builtin.FuncOp:
+    def lower_function(self, f: FunctionOp) -> FunctionOp:
         self.loop_counter = 0
         self.value_map = {}
         self.alloc_shapes = {}
@@ -48,10 +49,10 @@ class AffineToLLVMLowering:
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
-        return builtin.FuncOp(
+        return FunctionOp(
             name=f.name,
             body=dgen.Block(ops=ops, args=f.body.args),
-            type=builtin.Function(result=f.type.result),
+            type=Function(result=f.type.result),
         )
 
     def _map(self, old: dgen.Value) -> dgen.Value:
@@ -69,8 +70,8 @@ class AffineToLLVMLowering:
             yield from self._lower_store(op)
         elif isinstance(op, affine.ForOp):
             yield from self._lower_for(op)
-        elif isinstance(op, builtin.ConstantOp):
-            new_op = builtin.ConstantOp(value=op.value, type=op.type)
+        elif isinstance(op, ConstantOp):
+            new_op = ConstantOp(value=op.value, type=op.type)
             yield new_op
             self.value_map[op] = new_op
             if isinstance(op.value.layout, Array) and isinstance(
@@ -151,7 +152,7 @@ class AffineToLLVMLowering:
                     yield add_op
                     result_val = add_op
             else:
-                stride_op = builtin.ConstantOp(value=stride, type=builtin.IndexType())
+                stride_op = ConstantOp(value=stride, type=builtin.IndexType())
                 yield stride_op
                 mul_op = llvm.MulOp(lhs=idx_val, rhs=stride_op)
                 yield mul_op
@@ -174,7 +175,7 @@ class AffineToLLVMLowering:
         exit_label = f"loop_exit{loop_id}"
 
         # Init: constant lo, br header
-        init_op = builtin.ConstantOp(
+        init_op = ConstantOp(
             value=op.lo.__constant__.unpack()[0], type=builtin.IndexType()
         )
         yield init_op
@@ -196,7 +197,7 @@ class AffineToLLVMLowering:
         self.value_map[op.body.args[0]] = phi_op
 
         # Compare and branch
-        hi_op = builtin.ConstantOp(
+        hi_op = ConstantOp(
             value=op.hi.__constant__.unpack()[0], type=builtin.IndexType()
         )
         yield hi_op
@@ -220,7 +221,7 @@ class AffineToLLVMLowering:
         phi_op.labels[1] = string_constant(self.current_label)
 
         # Increment and branch back
-        one_op = builtin.ConstantOp(value=1, type=builtin.IndexType())
+        one_op = ConstantOp(value=1, type=builtin.IndexType())
         yield one_op
         next_op = llvm.AddOp(lhs=phi_op, rhs=one_op)
         yield next_op
@@ -238,13 +239,13 @@ class AffineToLLVMLowering:
         assert isinstance(op.input.type, toy.TensorType)
         total = prod(op.input.type.unpack_shape())
 
-        zero_f = builtin.ConstantOp(value=0.0, type=builtin.F64Type())
+        zero_f = ConstantOp(value=0.0, type=builtin.F64Type())
         yield zero_f
-        acc = builtin.ConstantOp(value=0, type=builtin.IndexType())
+        acc = ConstantOp(value=0, type=builtin.IndexType())
         yield acc
 
         for i in range(total):
-            idx = builtin.ConstantOp(value=i, type=builtin.IndexType())
+            idx = ConstantOp(value=i, type=builtin.IndexType())
             yield idx
             gep = llvm.GepOp(base=input_val, index=idx)
             yield gep
@@ -263,7 +264,7 @@ class AffineToLLVMLowering:
     def _lower_print(self, op: affine.PrintMemrefOp) -> Iterator[dgen.Op]:
         input_val = self._map(op.input)
         size = self.alloc_sizes[input_val]
-        size_op = builtin.ConstantOp(value=size, type=builtin.IndexType())
+        size_op = ConstantOp(value=size, type=builtin.IndexType())
         yield size_op
         yield llvm.CallOp(
             callee=string_constant("print_memref"),
@@ -271,6 +272,6 @@ class AffineToLLVMLowering:
         )
 
 
-def lower_to_llvm(m: builtin.Module) -> builtin.Module:
+def lower_to_llvm(m: Module) -> Module:
     lowering = AffineToLLVMLowering()
     return lowering.lower_module(m)

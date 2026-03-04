@@ -6,6 +6,7 @@ from copy import deepcopy
 
 import dgen
 from dgen.dialects import builtin
+from dgen.module import ConstantOp, Module, string_value
 from toy.dialects import FunctionType, shape_constant
 from toy.dialects import toy
 
@@ -17,14 +18,14 @@ def _resolve_index_value(val: dgen.Value) -> int | None:
     Returns None for computed values (add_index, etc.) — those require
     a staging evaluator.
     """
-    if isinstance(val, builtin.ConstantOp) and isinstance(val.type, builtin.IndexType):
+    if isinstance(val, ConstantOp) and isinstance(val.type, builtin.IndexType):
         return val.__constant__.unpack()[0]
     return None
 
 
 def _infer_function(
-    func: builtin.FuncOp,
-    func_map: dict[str, builtin.FuncOp],
+    func: builtin.FunctionOp,
+    func_map: dict[str, builtin.FunctionOp],
     type_of: dict[int, toy.TensorType],
 ) -> None:
     """Infer shapes for all ops in a function body."""
@@ -34,7 +35,7 @@ def _infer_function(
             type_of[id(arg)] = arg.type
 
     for op in func.body.ops:
-        if isinstance(op, builtin.ConstantOp) and isinstance(op.type, toy.TensorType):
+        if isinstance(op, ConstantOp) and isinstance(op.type, toy.TensorType):
             type_of[id(op)] = op.type
 
         elif isinstance(op, toy.ReshapeOp) and isinstance(op.type, toy.TensorType):
@@ -89,7 +90,7 @@ def _infer_function(
             resolved = [type_of.get(id(a)) for a in op.args]
             arg_types = [t for t in resolved if t is not None]
             if len(arg_types) == len(resolved):
-                callee = func_map.get(builtin.string_value(op.callee))
+                callee = func_map.get(string_value(op.callee))
                 if callee is not None:
                     # Set callee param types from call-site args
                     for param, atype in zip(callee.body.args, arg_types):
@@ -114,9 +115,9 @@ def _infer_function(
                             type_of[id(op)] = op.type
 
 
-def infer_shapes(m: builtin.Module) -> builtin.Module:
+def infer_shapes(m: Module) -> Module:
     m = deepcopy(m)
-    func_map: dict[str, builtin.FuncOp] = {
+    func_map: dict[str, builtin.FunctionOp] = {
         f.name: f for f in m.functions if f.name is not None
     }
     type_of: dict[int, toy.TensorType] = {}

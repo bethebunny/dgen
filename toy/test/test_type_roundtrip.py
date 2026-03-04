@@ -17,6 +17,8 @@ from dgen.asm.parser import IRParser, parse_expr
 from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
+from dgen.dialects.builtin import FunctionOp
+from dgen.module import ConstantOp, Function, Module
 from dgen.type import Memory
 from toy.dialects import shape_constant
 from toy.dialects.affine import MemRefType, ShapeType
@@ -127,12 +129,12 @@ def _parse_type(text: str) -> object:
 def _identity_exe(ty):
     """Build and compile: main(x: ty) -> ty { return x }"""
     arg = BlockArgument(name="v0", type=ty)
-    func = builtin.FuncOp(
+    func = FunctionOp(
         name="main",
         body=Block(ops=[builtin.ReturnOp(value=arg)], args=[arg]),
-        type=builtin.Function(result=ty),
+        type=Function(result=ty),
     )
-    return compile_module(builtin.Module(functions=[func]))
+    return compile_module(Module(functions=[func]))
 
 
 # ---------------------------------------------------------------------------
@@ -285,14 +287,14 @@ def test_list_jit_identity():
 def test_list_constant_jit_return():
     """JIT function returns a list constant: main() -> List<index>."""
     list_type = builtin.List(element_type=builtin.IndexType())
-    const = builtin.ConstantOp(value=[3, 5, 7], type=list_type)
+    const = ConstantOp(value=[3, 5, 7], type=list_type)
     ret = builtin.ReturnOp(value=const)
-    func = builtin.FuncOp(
+    func = FunctionOp(
         name="main",
         body=Block(ops=[const, ret], args=[]),
-        type=builtin.Function(result=list_type),
+        type=Function(result=list_type),
     )
-    exe = compile_module(builtin.Module(functions=[func]))
+    exe = compile_module(Module(functions=[func]))
     raw = exe.run()
     assert isinstance(raw, int)
     result = Memory.from_raw(list_type, raw).to_python()
@@ -361,7 +363,7 @@ def test_packop_mixed_constants_and_refs():
 
 def test_string_constant_roundtrip():
     """string_constant creates a Constant[String], string_value extracts it."""
-    from dgen.dialects.builtin import string_constant, string_value
+    from dgen.module import string_constant, string_value
 
     c = string_constant("hello")
     assert string_value(c) == "hello"
@@ -531,19 +533,19 @@ def test_deepcopy_module_with_list_constant():
     from copy import deepcopy
 
     list_type = builtin.List(element_type=builtin.IndexType())
-    const = builtin.ConstantOp(value=[3, 5, 7], type=list_type)
+    const = ConstantOp(value=[3, 5, 7], type=list_type)
     ret = builtin.ReturnOp(value=const)
-    func = builtin.FuncOp(
+    func = FunctionOp(
         name="main",
         body=Block(ops=[const, ret], args=[]),
-        type=builtin.Function(result=list_type),
+        type=Function(result=list_type),
     )
-    module = builtin.Module(functions=[func])
+    module = Module(functions=[func])
     copied = deepcopy(module)
 
     # The copied module's constant should still be readable
     copied_const = copied.functions[0].body.ops[0]
-    assert isinstance(copied_const, builtin.ConstantOp)
+    assert isinstance(copied_const, ConstantOp)
     assert copied_const.value.to_python() == [3, 5, 7]
 
 

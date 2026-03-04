@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from math import prod
 
 from dgen import Constant, Type, Value
-from dgen.dialects import builtin
 from dgen.dialects.builtin import IndexType
+from dgen.module import Function
 from dgen.layout import FLOAT64, Array, Layout
 from dgen.type import Memory
 
@@ -85,7 +85,7 @@ DimSizeOp.resolve_constant = _dim_size_resolve_constant  # type: ignore[assignme
 
 
 @dataclass
-class FunctionType(builtin.Function):
+class FunctionType(Function):
     """Toy function signature with explicit input types."""
 
     inputs: list[Type]

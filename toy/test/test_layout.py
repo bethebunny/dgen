@@ -2,6 +2,7 @@
 
 from dgen.dialects import builtin
 from dgen.layout import BYTE, FLOAT64, INT, Array, Bytes, FatPointer, Pointer
+from dgen.module import string_constant, string_value
 
 
 def test_primitive_sizes():
@@ -50,7 +51,7 @@ def test_string_constant_fatpointer():
     """String constant via FatPointer: data in origin, pointer in Memory."""
     import ctypes
 
-    c = builtin.string_constant("hello")
+    c = string_constant("hello")
     mem = c.__constant__
     # Memory is 16 bytes (ptr + i64 length)
     assert mem.layout.byte_size == 16
@@ -61,7 +62,7 @@ def test_string_constant_fatpointer():
     data = bytes((ctypes.c_char * length).from_address(ptr))
     assert data == b"hello"
     # string_value still works
-    assert builtin.string_value(c) == "hello"
+    assert string_value(c) == "hello"
 
 
 def test_string_type_asm_no_params():

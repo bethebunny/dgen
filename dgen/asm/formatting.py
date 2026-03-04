@@ -193,3 +193,36 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
             if _is_sugar_op(child_op):
                 continue
             yield from indent(op_asm(child_op, tracker))
+
+
+# ===----------------------------------------------------------------------=== #
+# Function-specific ASM formatter
+# ===----------------------------------------------------------------------=== #
+
+
+def format_func(func: Op) -> Iterable[str]:
+    """Format a function op with its signature and body.
+
+    Unlike generic op_asm, this shows the function signature style:
+      %name = function (%arg0: type, ...) -> result_type:
+          body ops...
+    """
+    tracker = SlotTracker()
+    for arg in func.body.args:
+        tracker.track_name(arg)
+    tracker.register(func.body.ops)
+
+    name = tracker.track_name(func)
+    arg_parts = []
+    for a in func.body.args:
+        n = tracker.track_name(a)
+        if a.type is not None:
+            arg_parts.append(f"%{n}: {format_expr(a.type, tracker)}")
+        else:
+            arg_parts.append(f"%{n}")
+    args = ", ".join(arg_parts)
+    yield f"%{name} = function ({args}) -> {format_expr(func.type.result, tracker)}:"
+    for op in func.body.ops:
+        if _is_sugar_op(op):
+            continue
+        yield from indent(op_asm(op, tracker))

@@ -6,6 +6,7 @@ from collections.abc import Generator, Iterator
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
+from dgen.module import ConstantOp, Module, string_constant
 from toy.dialects import FunctionType, shape_constant
 from toy.dialects import toy
 from toy.parser.ast import (
@@ -29,11 +30,11 @@ class Lowering:
     def __init__(self) -> None:
         self.scope: dict[str, dgen.Value] = {}
 
-    def lower_module(self, tm: ToyModule) -> builtin.Module:
+    def lower_module(self, tm: ToyModule) -> Module:
         functions = [self.lower_function(f) for f in tm.functions]
-        return builtin.Module(functions=functions)
+        return Module(functions=functions)
 
-    def lower_function(self, f: Function) -> builtin.FuncOp:
+    def lower_function(self, f: Function) -> builtin.FunctionOp:
         self.scope = {}
 
         # Create block args for function params
@@ -58,7 +59,7 @@ class Lowering:
                 result = toy.InferredShapeTensor()
 
         func_type = FunctionType(inputs=[a.type for a in args], result=result)
-        return builtin.FuncOp(
+        return builtin.FunctionOp(
             name=f.proto.name,
             type=func_type,
             body=dgen.Block(ops=ops, args=args),
@@ -96,14 +97,14 @@ class Lowering:
     def lower_expr(self, expr: Expression) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression, yielding ops and returning the result Value."""
         if isinstance(expr, NumberLiteral):
-            op = builtin.ConstantOp(
+            op = ConstantOp(
                 value=[expr.value],
                 type=toy.TensorType(shape=shape_constant([1])),
             )
             yield op
             return op
         if isinstance(expr, TensorLiteral):
-            op = builtin.ConstantOp(
+            op = ConstantOp(
                 value=list(expr.values),
                 type=toy.TensorType(shape=shape_constant(list(expr.shape))),
             )
@@ -135,7 +136,7 @@ class Lowering:
     ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression that should produce an index value."""
         if isinstance(expr, NumberLiteral):
-            op = builtin.ConstantOp(value=int(expr.value), type=builtin.IndexType())
+            op = ConstantOp(value=int(expr.value), type=builtin.IndexType())
             yield op
             return op
         return (yield from self.lower_expr(expr))
@@ -213,7 +214,7 @@ class Lowering:
         for a in call.args:
             args.append((yield from self.lower_expr(a)))
         op = toy.GenericCallOp(
-            callee=builtin.string_constant(call.callee),
+            callee=string_constant(call.callee),
             args=args,
             type=toy.InferredShapeTensor(),
         )
@@ -226,6 +227,6 @@ class Lowering:
         return arg
 
 
-def lower(tm: ToyModule) -> builtin.Module:
+def lower(tm: ToyModule) -> Module:
     lowering = Lowering()
     return lowering.lower_module(tm)

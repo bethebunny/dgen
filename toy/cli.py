@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from dgen.dialects import builtin
+from dgen.module import Module
 from dgen.staging import compile_and_run_staged
 from toy.dialects import shape_constant
 from toy.dialects.toy import TensorType
@@ -17,7 +17,7 @@ from toy.passes.shape_inference import infer_shapes
 from toy.passes.toy_to_affine import lower_to_affine
 
 
-def _lower(m: builtin.Module) -> builtin.Module:
+def _lower(m: Module) -> Module:
     return lower_to_llvm(lower_to_affine(m))
 
 
@@ -28,7 +28,7 @@ def _parse_arg(arg: str) -> object:
     return parse_expr(IRParser(arg))
 
 
-def _set_param_types(ir: builtin.Module, args: Sequence[object]) -> None:
+def _set_param_types(ir: Module, args: Sequence[object]) -> None:
     """Set function parameter types from runtime argument values.
 
     For list arguments, sets the parameter type to a 1-D TensorType

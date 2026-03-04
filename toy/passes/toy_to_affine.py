@@ -6,8 +6,9 @@ from collections.abc import Callable, Iterator, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects.builtin import IndexType, List, Nil, PackOp
+from dgen.dialects.builtin import FunctionOp, IndexType, List, Nil, PackOp
 from dgen.dialects import builtin
+from dgen.module import ConstantOp, Function, Module
 from dgen.layout import Array
 from toy.dialects import affine, shape_constant, toy
 
@@ -29,11 +30,11 @@ class ToyToAffineLowering:
         self.alloc_map: dict[dgen.Value, dgen.Value] = {}
         self.live_allocs: list[dgen.Value] = []
 
-    def lower_module(self, m: builtin.Module) -> builtin.Module:
+    def lower_module(self, m: Module) -> Module:
         functions = [self.lower_function(f) for f in m.functions]
-        return builtin.Module(functions=functions)
+        return Module(functions=functions)
 
-    def lower_function(self, f: builtin.FuncOp) -> builtin.FuncOp:
+    def lower_function(self, f: FunctionOp) -> FunctionOp:
         self.alloc_map = {}
         self.live_allocs = []
         # Register block args (function parameters) as themselves
@@ -42,16 +43,16 @@ class ToyToAffineLowering:
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
-        return builtin.FuncOp(
+        return FunctionOp(
             name=f.name,
             body=dgen.Block(ops=ops, args=f.body.args),
-            type=builtin.Function(result=f.type.result),
+            type=Function(result=f.type.result),
         )
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
-        if isinstance(op, builtin.ConstantOp) and isinstance(op.value.layout, Array):
+        if isinstance(op, ConstantOp) and isinstance(op.value.layout, Array):
             yield from self._lower_constant(op)
-        elif isinstance(op, builtin.ConstantOp):
+        elif isinstance(op, ConstantOp):
             yield op
         elif isinstance(op, builtin.AddIndexOp):
             new_op = builtin.AddIndexOp(
@@ -108,8 +109,8 @@ class ToyToAffineLowering:
             ]
         yield ops[0]
 
-    def _lower_constant(self, op: builtin.ConstantOp) -> Iterator[dgen.Op]:
-        new_const = builtin.ConstantOp(value=op.value, type=op.type)
+    def _lower_constant(self, op: ConstantOp) -> Iterator[dgen.Op]:
+        new_const = ConstantOp(value=op.value, type=op.type)
         yield new_const
         self.alloc_map[op] = new_const
         self.live_allocs.append(new_const)
@@ -162,7 +163,7 @@ class ToyToAffineLowering:
         self.alloc_map[result_op] = alloc_op
 
     def _lower_tile(self, op: toy.TileOp) -> Iterator[dgen.Op]:
-        assert isinstance(op.count, builtin.ConstantOp)
+        assert isinstance(op.count, ConstantOp)
         count = op.count.__constant__.unpack()[0]
         assert isinstance(count, int)
         assert isinstance(op.input.type, toy.TensorType)
@@ -211,9 +212,7 @@ class ToyToAffineLowering:
         yield from self._nested_for(lhs_shape, lhs_body)
 
         # Copy rhs into output[lhs_shape[axis]:, ...] with offset along axis
-        offset_const = builtin.ConstantOp(
-            value=lhs_shape[axis], type=builtin.IndexType()
-        )
+        offset_const = ConstantOp(value=lhs_shape[axis], type=builtin.IndexType())
         yield offset_const
 
         def rhs_body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
@@ -245,6 +244,6 @@ class ToyToAffineLowering:
             yield builtin.ReturnOp(value=self.alloc_map.get(op.value, op.value))
 
 
-def lower_to_affine(m: builtin.Module) -> builtin.Module:
+def lower_to_affine(m: Module) -> Module:
     lowering = ToyToAffineLowering()
     return lowering.lower_module(m)

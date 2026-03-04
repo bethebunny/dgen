@@ -35,7 +35,7 @@ Implementation language: **Python**.
   - `op.py`, `type.py`, `value.py`, `block.py` — Core IR types
   - `dialect.py` — Dialect class with decorator-based op/type registration
   - `asm/` — IR text formatting (`formatting.py`) and parsing (`parser.py`)
-  - `dialects/builtin.py` — Builtin dialect (Module, FuncOp, ConstantOp, ReturnOp, types)
+  - `dialects/builtin.py` — Builtin dialect (Module, FunctionOp, ConstantOp, ReturnOp, types)
   - `dialects/llvm.py` — LLVM dialect ops (alloca, gep, load, store, fadd, br, phi, etc.)
   - `codegen.py` — LLVM IR emission and JIT compilation via llvmlite
   - `layout.py` — Memory layout descriptors for types

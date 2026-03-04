@@ -7,6 +7,7 @@ from copy import deepcopy
 
 import dgen
 from dgen.dialects import builtin
+from dgen.module import ConstantOp, Module
 from toy.dialects import shape_constant
 from toy.dialects import toy
 
@@ -44,7 +45,7 @@ def rewrite_uses(
 # ===----------------------------------------------------------------------=== #
 
 
-def eliminate_transpose(func: builtin.FuncOp) -> None:
+def eliminate_transpose(func: builtin.FunctionOp) -> None:
     to_remove: list[int] = []
     ops = func.body.ops
     for i, op in enumerate(ops):
@@ -60,13 +61,13 @@ def eliminate_transpose(func: builtin.FuncOp) -> None:
     _remove_indices(ops, to_remove)
 
 
-def fold_constants(func: builtin.FuncOp) -> None:
+def fold_constants(func: builtin.FunctionOp) -> None:
     ops = func.body.ops
     for i, op in enumerate(ops):
         if not isinstance(op, toy.ReshapeOp):
             continue
         defn = op.input
-        if not isinstance(defn, builtin.ConstantOp):
+        if not isinstance(defn, ConstantOp):
             continue
         if not isinstance(op.type, toy.TensorType):
             continue
@@ -75,7 +76,7 @@ def fold_constants(func: builtin.FuncOp) -> None:
         if isinstance(defn.type, toy.TensorType):
             if defn.type.shape == target_shape:
                 continue
-        new_op = builtin.ConstantOp(
+        new_op = ConstantOp(
             value=list(defn.value.unpack()),
             type=toy.TensorType(
                 shape=shape_constant(list(target_shape.__constant__.unpack()))
@@ -86,7 +87,7 @@ def fold_constants(func: builtin.FuncOp) -> None:
         ops[i] = new_op
 
 
-def simplify_reshape(func: builtin.FuncOp) -> None:
+def simplify_reshape(func: builtin.FunctionOp) -> None:
     to_remove: list[int] = []
     ops = func.body.ops
     for i, op in enumerate(ops):
@@ -95,7 +96,7 @@ def simplify_reshape(func: builtin.FuncOp) -> None:
         defn = op.input
 
         # Reshape of constant with matching shape -> remove
-        if isinstance(defn, builtin.ConstantOp):
+        if isinstance(defn, ConstantOp):
             if isinstance(op.type, toy.TensorType) and isinstance(
                 defn.type, toy.TensorType
             ):
@@ -116,7 +117,7 @@ def simplify_reshape(func: builtin.FuncOp) -> None:
     _remove_indices(ops, to_remove)
 
 
-def eliminate_dead_code(func: builtin.FuncOp) -> None:
+def eliminate_dead_code(func: builtin.FunctionOp) -> None:
     changed = True
     while changed:
         changed = False
@@ -141,7 +142,7 @@ def _remove_indices(ops: list[dgen.Op], indices: Sequence[int]) -> None:
 # ===----------------------------------------------------------------------=== #
 
 
-def optimize(m: builtin.Module) -> builtin.Module:
+def optimize(m: Module) -> Module:
     functions = []
     for func in m.functions:
         func = deepcopy(func)
@@ -150,4 +151,4 @@ def optimize(m: builtin.Module) -> builtin.Module:
         simplify_reshape(func)
         eliminate_dead_code(func)
         functions.append(func)
-    return builtin.Module(functions=functions)
+    return Module(functions=functions)

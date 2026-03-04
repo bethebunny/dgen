@@ -12,11 +12,13 @@ from dgen import codegen
 from dgen.block import BlockArgument
 from dgen.codegen import _ctype, _llvm_type
 from dgen.dialects import builtin, llvm
+from dgen.dialects.builtin import FunctionOp
+from dgen.module import ConstantOp, Function, Module, string_constant
 from dgen.type import Memory
 from dgen.value import Constant
 
 
-def _trace_dependencies(target: dgen.Value, func: builtin.FuncOp) -> list[dgen.Op]:
+def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
     """Backward-walk from target, return all needed ops in topological order."""
     needed: set[int] = set()
     worklist = [target]
@@ -69,19 +71,19 @@ def _make_memories(
 def _jit_evaluate(
     subgraph: list[dgen.Op],
     target: dgen.Value,
-    lower: Callable[[builtin.Module], builtin.Module],
+    lower: Callable[[Module], Module],
     *,
     block_args: Sequence[BlockArgument] = (),
     args: Sequence = (),
 ) -> object:
     """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
     ops = list(subgraph) + [builtin.ReturnOp(value=target)]
-    func = builtin.FuncOp(
+    func = FunctionOp(
         name="main",
         body=dgen.Block(ops=ops, args=list(block_args)),
-        type=builtin.Function(result=target.type),
+        type=Function(result=target.type),
     )
-    module = builtin.Module(functions=[func])
+    module = Module(functions=[func])
     lowered = lower(module)
     exe = codegen.compile(lowered)
     memories = _make_memories(block_args, args)
@@ -92,11 +94,11 @@ def _jit_evaluate(
 
 
 def _resolve_comptime_field(
-    func: builtin.FuncOp,
+    func: FunctionOp,
     op: dgen.Op,
     field_name: str,
     value: dgen.Value,
-    lower: Callable[[builtin.Module], builtin.Module],
+    lower: Callable[[Module], Module],
     *,
     block_args: Sequence[BlockArgument] = (),
     args: Sequence = (),
@@ -113,13 +115,13 @@ def _resolve_comptime_field(
     if block_args:
         subgraph_ids = {id(o) for o in subgraph}
         func.body.ops = [o for o in func.body.ops if id(o) not in subgraph_ids]
-    const_op = builtin.ConstantOp(value=result, type=value.type)
+    const_op = ConstantOp(value=result, type=value.type)
     idx = func.body.ops.index(op)
     func.body.ops.insert(idx, const_op)
     setattr(op, field_name, const_op)
 
 
-def _resolve_constant_ops(func: builtin.FuncOp) -> None:
+def _resolve_constant_ops(func: FunctionOp) -> None:
     """Replace ops that implement resolve_constant() with ConstantOps.
 
     After shape inference runs, ops like DimSizeOp may be resolvable to
@@ -133,7 +135,7 @@ def _resolve_constant_ops(func: builtin.FuncOp) -> None:
         val = resolver()
         if val is None:
             continue
-        const = builtin.ConstantOp(value=val, type=op.type)
+        const = ConstantOp(value=val, type=op.type)
         func.body.ops[i] = const
         for other in func.body.ops:
             for param_name, param_value in other.parameters:
@@ -158,7 +160,7 @@ def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
     return result
 
 
-def compute_stages(func: builtin.FuncOp) -> dict[int, int]:
+def compute_stages(func: FunctionOp) -> dict[int, int]:
     """Assign a stage number to every Value in a function.
 
     Base cases:
@@ -204,7 +206,7 @@ def compute_stages(func: builtin.FuncOp) -> dict[int, int]:
 
 
 def _unresolved_boundaries(
-    func: builtin.FuncOp,
+    func: FunctionOp,
     stages: dict[int, int],
 ) -> list[tuple[int, dgen.Op, str, dgen.Value]]:
     """Find ops with unresolved __params__, sorted by stage number.
@@ -227,11 +229,11 @@ def _unresolved_boundaries(
 
 
 def _resolve_all_comptime(
-    module: builtin.Module,
+    module: Module,
     *,
-    infer: Callable[[builtin.Module], builtin.Module],
-    lower: Callable[[builtin.Module], builtin.Module],
-) -> builtin.Module:
+    infer: Callable[[Module], Module],
+    lower: Callable[[Module], Module],
+) -> Module:
     """Deepcopy + resolve all Constant fields in stage order.
 
     Computes stage numbers, then processes unresolved ``__params__``
@@ -268,11 +270,11 @@ def _raw_to_python(raw: object, ty: dgen.Type) -> object:
 
 
 def _compile_with_callbacks(
-    resolved: builtin.Module,
-    func: builtin.FuncOp,
+    resolved: Module,
+    func: FunctionOp,
     *,
-    infer: Callable[[builtin.Module], builtin.Module],
-    lower: Callable[[builtin.Module], builtin.Module],
+    infer: Callable[[Module], Module],
+    lower: Callable[[Module], Module],
 ) -> codegen.Executable:
     """Build a stage-1 thunk that calls a host callback for stage-2 JIT.
 
@@ -347,7 +349,7 @@ def _compile_with_callbacks(
     # Build stage-1 thunk: call callback with all original params, return result
     thunk_args = [BlockArgument(name=arg.name, type=arg.type) for arg in func.body.args]
     call_op = llvm.CallOp(
-        callee=builtin.string_constant(callback_name),
+        callee=string_constant(callback_name),
         args=thunk_args,
         type=func.type.result,
     )
@@ -356,12 +358,12 @@ def _compile_with_callbacks(
     else:
         ret_op = builtin.ReturnOp(value=call_op)
 
-    thunk_func = builtin.FuncOp(
+    thunk_func = FunctionOp(
         name=func.name,
         body=dgen.Block(ops=[call_op, ret_op], args=thunk_args),
-        type=builtin.Function(result=func.type.result),
+        type=Function(result=func.type.result),
     )
-    thunk_module = builtin.Module(functions=[thunk_func])
+    thunk_module = Module(functions=[thunk_func])
 
     exe = codegen.compile(thunk_module, externs=[extern_decl])
     exe.host_refs.append(callback_func)  # prevent GC
@@ -369,10 +371,10 @@ def _compile_with_callbacks(
 
 
 def compile_staged(
-    module: builtin.Module,
+    module: Module,
     *,
-    infer: Callable[[builtin.Module], builtin.Module],
-    lower: Callable[[builtin.Module], builtin.Module],
+    infer: Callable[[Module], Module],
+    lower: Callable[[Module], Module],
 ) -> codegen.Executable:
     """Stage-resolve, infer, lower, and compile to an Executable.
 
@@ -393,10 +395,10 @@ def compile_staged(
 
 
 def compile_and_run_staged(
-    module: builtin.Module,
+    module: Module,
     *,
-    infer: Callable[[builtin.Module], builtin.Module],
-    lower: Callable[[builtin.Module], builtin.Module],
+    infer: Callable[[Module], Module],
+    lower: Callable[[Module], Module],
     args: Sequence = (),
 ) -> object:
     """Full staged compilation pipeline: resolve, compile, and run."""
