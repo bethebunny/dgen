@@ -1,0 +1,17 @@
+{
+  "grammars": [
+    {
+      "name": "dgen",
+      "scope": "source.dgen",
+      "path": ".",
+      "file-types": ["dgen"]
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "description": "Tree-sitter grammar for DGEN dialect specification files",
+    "links": {
+      "repository": "https://github.com/example/tree-sitter-dgen"
+    }
+  }
+}

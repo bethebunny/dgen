@@ -1,0 +1,10 @@
+id = "dgen"
+name = "DGEN"
+version = "0.0.1"
+schema_version = 1
+authors = ["Stef"]
+description = "DGEN dialect specification language support"
+
+[grammars.dgen]
+repository = "file:///home/stef/dgen/editors/tree-sitter-dgen"
+rev = ""
