@@ -66,9 +66,6 @@ class Memory(Generic[T]):
     def layout(self) -> Layout:
         return self.type.__layout__
 
-    def pack(self, *values: object) -> None:
-        self.layout.struct.pack_into(self.buffer, 0, *values)
-
     def unpack(self) -> tuple[Any, ...]:
         return self.layout.struct.unpack(self.buffer)
 

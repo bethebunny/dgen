@@ -395,7 +395,7 @@ class _Generator:
             p = param_map[ref.name]
             if p.type.name == "Type":
                 return f"self.{ref.name}.__layout__"
-            return f"self.{ref.name}.__constant__.unpack()[0]"
+            return f"self.{ref.name}.__constant__.to_json()"
         if ref.name in _TYPE_TO_LAYOUT:
             return _TYPE_TO_LAYOUT[ref.name]
         if ref.name in _COMPOUND_TO_LAYOUT:

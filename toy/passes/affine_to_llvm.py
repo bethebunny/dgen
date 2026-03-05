@@ -105,7 +105,7 @@ class AffineToLLVMLowering:
 
     def _lower_alloc(self, op: affine.AllocOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, affine.MemRefType)
-        shape = list(op.type.shape.__constant__.unpack())  # MemRefType, not TensorType
+        shape = op.type.shape.__constant__.to_json()  # MemRefType, not TensorType
         total = prod(shape)
         alloca_op = llvm.AllocaOp(elem_count=builtin.IndexType().constant(total))
         yield alloca_op
@@ -177,7 +177,7 @@ class AffineToLLVMLowering:
 
         # Init: constant lo, br header
         init_op = ConstantOp(
-            value=op.lo.__constant__.unpack()[0], type=builtin.IndexType()
+            value=op.lo.__constant__.to_json(), type=builtin.IndexType()
         )
         yield init_op
         prev_label = self.current_label
@@ -198,9 +198,7 @@ class AffineToLLVMLowering:
         self.value_map[op.body.args[0]] = phi_op
 
         # Compare and branch
-        hi_op = ConstantOp(
-            value=op.hi.__constant__.unpack()[0], type=builtin.IndexType()
-        )
+        hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.IndexType())
         yield hi_op
         cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=phi_op, rhs=hi_op)
         yield cmp_op

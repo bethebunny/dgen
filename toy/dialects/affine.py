@@ -19,7 +19,7 @@ class ShapeType(Type):
 
     @property
     def __layout__(self) -> Array:
-        return Array(Int(), self.rank.__constant__.unpack()[0])
+        return Array(Int(), self.rank.__constant__.to_json())
 
 
 @affine.type("MemRef")

@@ -175,8 +175,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             lines.append(f"{string_value(op.label_name)}:")
         elif isinstance(op, llvm.AllocaOp):
             lines.append(
-                f"  %{name} = alloca double, i64"
-                f" {op.elem_count.__constant__.unpack()[0]}"
+                f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
             )
         elif isinstance(op, llvm.GepOp):
             lines.append(

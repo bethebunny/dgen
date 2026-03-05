@@ -77,9 +77,9 @@ def fold_constants(func: builtin.FunctionOp) -> None:
             if defn.type.shape == target_shape:
                 continue
         new_op = ConstantOp(
-            value=list(defn.value.unpack()),
+            value=defn.value.to_json(),
             type=toy.TensorType(
-                shape=shape_constant(list(target_shape.__constant__.unpack()))
+                shape=shape_constant(target_shape.__constant__.to_json())
             ),
         )
         # Transfer identity: rewrite uses of old op to new op

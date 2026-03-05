@@ -164,7 +164,7 @@ class ToyToAffineLowering:
 
     def _lower_tile(self, op: toy.TileOp) -> Iterator[dgen.Op]:
         assert isinstance(op.count, ConstantOp)
-        count = op.count.__constant__.unpack()[0]
+        count = op.count.__constant__.to_json()
         assert isinstance(count, int)
         assert isinstance(op.input.type, toy.TensorType)
         input_shape = op.input.type.unpack_shape()
@@ -191,7 +191,7 @@ class ToyToAffineLowering:
         assert isinstance(op.rhs.type, toy.TensorType)
         lhs_shape = op.lhs.type.unpack_shape()
         rhs_shape = op.rhs.type.unpack_shape()
-        axis = op.axis.__constant__.unpack()[0]
+        axis = op.axis.__constant__.to_json()
 
         output_shape = list(lhs_shape)
         output_shape[axis] = lhs_shape[axis] + rhs_shape[axis]

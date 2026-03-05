@@ -24,7 +24,7 @@ from toy.dialects.toy import DimSizeOp, TensorType
 def _shape_for_value(cls: type[ShapeType], value: object) -> ShapeType:
     if isinstance(value, Constant):
         assert isinstance(value.type, IndexType)
-        return cls(rank=IndexType().constant(value.__constant__.unpack()[0]))
+        return cls(rank=IndexType().constant(value.__constant__.to_json()))
     assert isinstance(value, list)
     return cls(rank=IndexType().constant(len(value)))
 
@@ -45,7 +45,7 @@ def shape_constant(dims: Sequence[int]) -> Constant:
 
 def _tensor_unpack_shape(self: TensorType) -> list[int]:
     """Extract concrete shape dimensions as a list of ints."""
-    return list(self.shape.__constant__.unpack())
+    return self.shape.__constant__.to_json()
 
 
 TensorType.unpack_shape = _tensor_unpack_shape  # type: ignore[assignment]
@@ -55,7 +55,7 @@ TensorType.unpack_shape = _tensor_unpack_shape  # type: ignore[assignment]
 def _tensor_layout(self: TensorType) -> Layout:
     assert self.shape.ready
     shape: Memory[ShapeType] = self.shape.__constant__
-    return Array(Float64(), prod(shape.unpack()))
+    return Array(Float64(), prod(shape.to_json()))
 
 
 TensorType.__layout__ = _tensor_layout  # type: ignore[assignment, misc]
@@ -73,7 +73,7 @@ def _dim_size_resolve_constant(self: DimSizeOp) -> int | None:
     shape: Value[ShapeType] = self.input.type.shape
     if not shape.ready:
         return None
-    return shape.__constant__.unpack()[self.axis.__constant__.unpack()[0]]
+    return shape.__constant__.to_json()[self.axis.__constant__.to_json()]
 
 
 DimSizeOp.resolve_constant = _dim_size_resolve_constant  # type: ignore[assignment]
