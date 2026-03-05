@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterator
 from math import prod
+
 import dgen
-from dgen.dialects.builtin import FunctionOp, Nil, PackOp
 from dgen.dialects import builtin, llvm
-from dgen.module import ConstantOp, Function, Module, string_constant
+from dgen.dialects.builtin import FunctionOp, Nil, PackOp, String
 from dgen.layout import Array
+from dgen.module import ConstantOp, Function, Module
 from toy.dialects import affine, toy
 
 
@@ -180,17 +181,17 @@ class AffineToLLVMLowering:
         )
         yield init_op
         prev_label = self.current_label
-        yield llvm.BrOp(dest=string_constant(header_label))
+        yield llvm.BrOp(dest=String().constant(header_label))
 
         # Header label
-        yield llvm.LabelOp(label_name=string_constant(header_label))
+        yield llvm.LabelOp(label_name=String().constant(header_label))
         self.current_label = header_label
 
         # Phi node for loop variable (back-edge value patched after body)
         back_edge = dgen.Value(type=builtin.IndexType())  # placeholder, patched below
         phi_op = llvm.PhiOp(
             values=[init_op, back_edge],
-            labels=[string_constant(prev_label), string_constant(body_label)],
+            labels=[String().constant(prev_label), String().constant(body_label)],
         )
         yield phi_op
         # Map the affine loop variable to the LLVM phi node
@@ -201,16 +202,16 @@ class AffineToLLVMLowering:
             value=op.hi.__constant__.unpack()[0], type=builtin.IndexType()
         )
         yield hi_op
-        cmp_op = llvm.IcmpOp(pred=string_constant("slt"), lhs=phi_op, rhs=hi_op)
+        cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=phi_op, rhs=hi_op)
         yield cmp_op
         yield llvm.CondBrOp(
             cond=cmp_op,
-            true_dest=string_constant(body_label),
-            false_dest=string_constant(exit_label),
+            true_dest=String().constant(body_label),
+            false_dest=String().constant(exit_label),
         )
 
         # Body label
-        yield llvm.LabelOp(label_name=string_constant(body_label))
+        yield llvm.LabelOp(label_name=String().constant(body_label))
         self.current_label = body_label
 
         # Lower body ops
@@ -218,7 +219,7 @@ class AffineToLLVMLowering:
             yield from self.lower_op(child_op)
 
         # Patch phi back-edge label to actual current block
-        phi_op.labels[1] = string_constant(self.current_label)
+        phi_op.labels[1] = String().constant(self.current_label)
 
         # Increment and branch back
         one_op = ConstantOp(value=1, type=builtin.IndexType())
@@ -227,10 +228,10 @@ class AffineToLLVMLowering:
         yield next_op
         # Patch phi back-edge value
         phi_op.values[1] = next_op
-        yield llvm.BrOp(dest=string_constant(header_label))
+        yield llvm.BrOp(dest=String().constant(header_label))
 
         # Exit label
-        yield llvm.LabelOp(label_name=string_constant(exit_label))
+        yield llvm.LabelOp(label_name=String().constant(exit_label))
         self.current_label = exit_label
 
     def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> Iterator[dgen.Op]:
@@ -251,7 +252,7 @@ class AffineToLLVMLowering:
             yield gep
             elem = llvm.LoadOp(ptr=gep)
             yield elem
-            cmp = llvm.FcmpOp(pred=string_constant("one"), lhs=elem, rhs=zero_f)
+            cmp = llvm.FcmpOp(pred=String().constant("one"), lhs=elem, rhs=zero_f)
             yield cmp
             ext = llvm.ZextOp(input=cmp)
             yield ext
@@ -267,7 +268,7 @@ class AffineToLLVMLowering:
         size_op = ConstantOp(value=size, type=builtin.IndexType())
         yield size_op
         yield llvm.CallOp(
-            callee=string_constant("print_memref"),
+            callee=String().constant("print_memref"),
             args=[input_val, size_op],
         )
 

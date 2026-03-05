@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import ctypes
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from copy import deepcopy
-from collections.abc import Sequence
 
 import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
 from dgen.codegen import _ctype, _llvm_type
 from dgen.dialects import builtin, llvm
-from dgen.dialects.builtin import FunctionOp
-from dgen.module import ConstantOp, Function, Module, string_constant
+from dgen.dialects.builtin import FunctionOp, String
+from dgen.module import ConstantOp, Function, Module
 from dgen.type import Memory
 from dgen.value import Constant
 
@@ -349,7 +348,7 @@ def _compile_with_callbacks(
     # Build stage-1 thunk: call callback with all original params, return result
     thunk_args = [BlockArgument(name=arg.name, type=arg.type) for arg in func.body.args]
     call_op = llvm.CallOp(
-        callee=string_constant(callback_name),
+        callee=String().constant(callback_name),
         args=thunk_args,
         type=func.type.result,
     )

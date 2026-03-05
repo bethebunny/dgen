@@ -24,7 +24,6 @@ from toy.dialects import shape_constant
 from toy.dialects.affine import MemRefType, ShapeType
 from toy.dialects.toy import InferredShapeTensor, TensorType
 
-
 # ---------------------------------------------------------------------------
 # Test data: (type, python_value, asm_literal, expected_unpack)
 #
@@ -330,7 +329,6 @@ def test_packop_mixed_constants_and_refs():
     """Parser handles [literal, %ref, literal] by creating ConstantOps."""
     from dgen import asm
     from dgen.asm.parser import parse_module
-
     from toy.test.helpers import strip_prefix
 
     # Input: mixed integer literals and SSA refs in list sugar
@@ -362,10 +360,11 @@ def test_packop_mixed_constants_and_refs():
 
 
 def test_string_constant_roundtrip():
-    """string_constant creates a Constant[String], string_value extracts it."""
-    from dgen.module import string_constant, string_value
+    """String().constant creates a Constant[String], string_value extracts it."""
+    from dgen.dialects.builtin import String
+    from dgen.module import string_value
 
-    c = string_constant("hello")
+    c = String().constant("hello")
     assert string_value(c) == "hello"
 
 
@@ -381,7 +380,6 @@ def test_string_as_op_param():
     """String constants work as __params__ on ops — ASM round-trip."""
     from dgen import asm
     from dgen.asm.parser import parse_module
-
     from toy.test.helpers import strip_prefix
 
     ir = strip_prefix("""
@@ -416,7 +414,6 @@ def test_string_param_staging():
     """
     from dgen.asm.parser import parse_module
     from dgen.staging import compile_and_run_staged
-
     from toy.test.helpers import strip_prefix
 
     ir = strip_prefix("""
@@ -457,7 +454,6 @@ def test_compile_once_run_twice():
     """
     from dgen.asm.parser import parse_module
     from dgen.staging import compile_staged
-
     from toy.test.helpers import strip_prefix
 
     ir = strip_prefix("""

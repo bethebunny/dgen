@@ -1349,7 +1349,7 @@ FunctionOp.asm = _func_asm  # type: ignore[assignment]
 # --- Helper functions ---
 
 def string_constant(s: str) -> Constant[String]:
-    return String.for_value(s).constant(s)
+    return String.constant(s)
 
 def string_value(v: Value[String]) -> str:
     result = v.__constant__.to_python()

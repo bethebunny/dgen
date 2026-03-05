@@ -6,9 +6,9 @@ import dgen
 from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module, string_constant
-from toy.dialects import FunctionType, shape_constant
-from toy.dialects import toy
+from dgen.dialects.builtin import String
+from dgen.module import ConstantOp, Module
+from toy.dialects import FunctionType, shape_constant, toy
 from toy.test.helpers import strip_prefix
 
 
@@ -63,7 +63,7 @@ def test_generic_call_op():
     v3 = dgen.Value(name="3", type=builtin.Nil())
     op = toy.GenericCallOp(
         name="4",
-        callee=string_constant("multiply_transpose"),
+        callee=String().constant("multiply_transpose"),
         args=[v1, v3],
         type=inferred(),
     )
@@ -147,12 +147,12 @@ def test_full_module():
     )
     r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
     call4 = toy.GenericCallOp(
-        callee=string_constant("multiply_transpose"),
+        callee=String().constant("multiply_transpose"),
         args=[r1, r3],
         type=inferred(),
     )
     call5 = toy.GenericCallOp(
-        callee=string_constant("multiply_transpose"),
+        callee=String().constant("multiply_transpose"),
         args=[r3, r1],
         type=inferred(),
     )

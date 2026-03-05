@@ -13,9 +13,6 @@ from typing import ClassVar
 
 from dgen import Constant, Dialect, Op, Type, Value
 from dgen.asm.formatting import format_func
-from dgen.layout import VOID
-from dgen.type import Memory
-
 from dgen.dialects.builtin import (
     FunctionOp,
     HasSingleBlock,
@@ -24,7 +21,8 @@ from dgen.dialects.builtin import (
     String,
     builtin,
 )
-
+from dgen.layout import VOID
+from dgen.type import Memory
 
 # ===----------------------------------------------------------------------=== #
 # Function type (not dialect-registered)
@@ -69,11 +67,6 @@ class ConstantOp(Op, Constant):
 # ===----------------------------------------------------------------------=== #
 # Helper functions
 # ===----------------------------------------------------------------------=== #
-
-
-def string_constant(s: str) -> Constant[String]:
-    """Create a Constant[String] from a Python str."""
-    return String.for_value(s).constant(s)
 
 
 def string_value(v: Value[String]) -> str:

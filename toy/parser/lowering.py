@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Generator, Iterator
+
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module, string_constant
-from toy.dialects import FunctionType, shape_constant
-from toy.dialects import toy
+from dgen.module import ConstantOp, Module
+from toy.dialects import FunctionType, shape_constant, toy
 from toy.parser.ast import (
     BinaryOp,
     CallExpr,
@@ -214,7 +214,7 @@ class Lowering:
         for a in call.args:
             args.append((yield from self.lower_expr(a)))
         op = toy.GenericCallOp(
-            callee=string_constant(call.callee),
+            callee=builtin.String().constant(call.callee),
             args=args,
             type=toy.InferredShapeTensor(),
         )
