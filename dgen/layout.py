@@ -10,6 +10,7 @@ for pack/unpack operations.
 
 from __future__ import annotations
 
+import ctypes
 from struct import Struct
 
 
@@ -85,6 +86,12 @@ class Array(Layout):
         assert isinstance(obj, list), f"expected list, got {type(obj).__name__}"
         return [self.element.parse(v) for v in obj]
 
+    def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
+        return [
+            self.element.to_json(buf, offset + i * self.element.struct.size)
+            for i in range(self.count)
+        ]
+
 
 class Bytes(Layout):
     """N raw bytes, stored as a single bytes object."""
@@ -107,6 +114,12 @@ class Pointer(Layout):
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
 
+    def to_json(self, buf: bytes | bytearray, offset: int) -> object:
+        (ptr,) = self.struct.unpack_from(buf, offset)
+        pointee = self.pointee
+        data = bytes((ctypes.c_char * pointee.struct.size).from_address(ptr))
+        return pointee.to_json(data, 0)
+
 
 class FatPointer(Layout):
     """Pointer + i64 length (16 bytes)."""
@@ -115,6 +128,13 @@ class FatPointer(Layout):
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
+        ptr, length = self.struct.unpack_from(buf, offset)
+        pointee = self.pointee
+        ps = pointee.struct.size
+        data = bytes((ctypes.c_char * (length * ps)).from_address(ptr))
+        return [pointee.to_json(data, i * ps) for i in range(length)]
 
 
 # Module-level singletons for primitives

@@ -144,6 +144,15 @@ def _list_for_value(cls: type[List], value: object) -> List:
 List.for_value = _list_for_value  # type: ignore[assignment]
 
 
+@staticmethod
+def _string_to_json(value: object) -> str:
+    assert isinstance(value, list)
+    return bytes(value).decode("utf-8")
+
+
+String.__to_json__ = _string_to_json  # type: ignore[attr-defined]
+
+
 @property  # type: ignore[misc]
 def _function_asm(self: FunctionOp) -> Iterable[str]:
     return format_func(self)

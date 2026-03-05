@@ -146,3 +146,28 @@ def test_tensor_type_layout():
     assert layout.byte_size == 48  # 6 * 8 bytes
     assert isinstance(layout, Array)
     assert layout.count == 6
+
+
+def test_array_to_json():
+    from dgen.type import Memory
+    from toy.dialects import shape_constant
+    from toy.dialects.toy import TensorType
+
+    ty = TensorType(shape=shape_constant([3]))
+    mem = Memory.from_value(ty, [1.0, 2.0, 3.0])
+    assert mem.to_json() == [1.0, 2.0, 3.0]
+
+
+def test_fatpointer_to_json():
+    from dgen.type import Memory
+
+    ty = builtin.List(element_type=builtin.IndexType())
+    mem = Memory.from_value(ty, [10, 20, 30])
+    assert mem.to_json() == [10, 20, 30]
+
+
+def test_string_to_json():
+    from dgen.type import Memory
+
+    mem = Memory.from_value(builtin.String(), "hello")
+    assert mem.to_json() == "hello"
