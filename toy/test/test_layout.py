@@ -171,3 +171,34 @@ def test_string_to_json():
 
     mem = Memory.from_value(builtin.String(), "hello")
     assert mem.to_json() == "hello"
+
+
+def test_int_from_json_roundtrip():
+    from dgen.type import Memory
+
+    mem = Memory.from_json(builtin.IndexType(), 42)
+    assert mem.to_json() == 42
+
+
+def test_list_from_json_roundtrip():
+    from dgen.type import Memory
+
+    ty = builtin.List(element_type=builtin.IndexType())
+    mem = Memory.from_json(ty, [10, 20, 30])
+    assert mem.to_json() == [10, 20, 30]
+
+
+def test_string_from_json_roundtrip():
+    from dgen.type import Memory
+
+    mem = Memory.from_json(builtin.String(), "hello")
+    assert mem.to_json() == "hello"
+
+
+def test_nested_list_from_json_roundtrip():
+    from dgen.type import Memory
+
+    inner = builtin.List(element_type=builtin.IndexType())
+    outer = builtin.List(element_type=inner)
+    mem = Memory.from_json(outer, [[1, 2], [3, 4, 5]])
+    assert mem.to_json() == [[1, 2], [3, 4, 5]]

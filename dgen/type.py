@@ -4,7 +4,7 @@ import ctypes
 from copy import deepcopy as _deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
 
-from .layout import BYTE, Array, FatPointer, Layout, Pointer
+from .layout import BYTE, Array, FatPointer, Layout, Pointer, _bytearray_address
 
 if TYPE_CHECKING:
     from .value import Constant
@@ -43,12 +43,6 @@ Fields = tuple[Field, ...]
 
 
 T = TypeVar("T", bound=Type)
-
-
-def _bytearray_address(buf: bytearray) -> int:
-    """Get the raw ctypes address of a bytearray."""
-    ct = (ctypes.c_char * len(buf)).from_buffer(buf)
-    return ctypes.addressof(ct)
 
 
 class Memory(Generic[T]):
@@ -143,6 +137,16 @@ class Memory(Generic[T]):
         if hook is not None:
             result = hook(result)
         return result
+
+    @classmethod
+    def from_json(cls, type: Type, value: object) -> Memory:
+        """Create Memory from a Type and a JSON-compatible Python value."""
+        hook = getattr(type, "__from_json__", None)
+        if hook is not None:
+            value = hook(value)
+        mem = cls(type)
+        type.__layout__.from_json(mem.buffer, 0, value, mem.origins)
+        return mem
 
     def to_python(self) -> object:
         """Convert back to a Python value by reading from the buffer.

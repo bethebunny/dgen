@@ -147,10 +147,20 @@ List.for_value = _list_for_value  # type: ignore[assignment]
 @staticmethod
 def _string_to_json(value: object) -> str:
     assert isinstance(value, list)
-    return bytes(value).decode("utf-8")
+    return bytes(bytearray(value)).decode("utf-8")
 
 
 String.__to_json__ = _string_to_json  # type: ignore[attr-defined]
+
+
+@staticmethod
+def _string_from_json(value: object) -> list[int]:
+    if isinstance(value, str):
+        return list(value.encode("utf-8"))
+    return value  # type: ignore[return-value]
+
+
+String.__from_json__ = _string_from_json  # type: ignore[attr-defined]
 
 
 @property  # type: ignore[misc]

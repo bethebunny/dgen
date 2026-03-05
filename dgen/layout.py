@@ -14,6 +14,12 @@ import ctypes
 from struct import Struct
 
 
+def _bytearray_address(buf: bytearray) -> int:
+    """Get the raw ctypes address of a bytearray."""
+    ct = (ctypes.c_char * len(buf)).from_buffer(buf)
+    return ctypes.addressof(ct)
+
+
 class Layout:
     """Base for memory layout types."""
 
@@ -29,6 +35,11 @@ class Layout:
     def to_json(self, buf: bytes | bytearray, offset: int) -> object:
         raise NotImplementedError
 
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        raise NotImplementedError
+
 
 class Void(Layout):
     """Zero-size layout for types with no runtime representation."""
@@ -38,12 +49,23 @@ class Void(Layout):
     def to_json(self, buf: bytes | bytearray, offset: int) -> None:
         return None
 
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        pass
+
 
 class Byte(Layout):
     struct = Struct("B")
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        assert isinstance(value, int)
+        self.struct.pack_into(buf, offset, value)
 
 
 class Int(Layout):
@@ -57,6 +79,12 @@ class Int(Layout):
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        assert isinstance(value, int)
+        self.struct.pack_into(buf, offset, value)
 
 
 class Float64(Layout):
@@ -72,6 +100,12 @@ class Float64(Layout):
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> float:
         return self.struct.unpack_from(buf, offset)[0]
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        assert isinstance(value, (int, float))
+        self.struct.pack_into(buf, offset, float(value))
 
 
 class Array(Layout):
@@ -91,6 +125,14 @@ class Array(Layout):
             self.element.to_json(buf, offset + i * self.element.struct.size)
             for i in range(self.count)
         ]
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        assert isinstance(value, list)
+        es = self.element.struct.size
+        for i, v in enumerate(value):
+            self.element.from_json(buf, offset + i * es, v, origins)
 
 
 class Bytes(Layout):
@@ -120,6 +162,16 @@ class Pointer(Layout):
         data = bytes((ctypes.c_char * pointee.struct.size).from_address(ptr))
         return pointee.to_json(data, 0)
 
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        pointee = self.pointee
+        origin = bytearray(pointee.struct.size)
+        origins.append(origin)
+        pointee.from_json(origin, 0, value, origins)
+        ptr = _bytearray_address(origin)
+        self.struct.pack_into(buf, offset, ptr)
+
 
 class FatPointer(Layout):
     """Pointer + i64 length (16 bytes)."""
@@ -135,6 +187,19 @@ class FatPointer(Layout):
         ps = pointee.struct.size
         data = bytes((ctypes.c_char * (length * ps)).from_address(ptr))
         return [pointee.to_json(data, i * ps) for i in range(length)]
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        assert isinstance(value, list)
+        pointee = self.pointee
+        ps = pointee.struct.size
+        origin = bytearray(ps * len(value))
+        origins.append(origin)
+        for i, v in enumerate(value):
+            pointee.from_json(origin, i * ps, v, origins)
+        ptr = _bytearray_address(origin)
+        self.struct.pack_into(buf, offset, ptr, len(value))
 
 
 # Module-level singletons for primitives
