@@ -109,6 +109,26 @@ def test_list_type_asm_one_param():
     assert type_asm(list_type) == "List<index>"
 
 
+def test_int_to_json():
+    from dgen.type import Memory
+
+    mem = Memory.from_value(builtin.IndexType(), 42)
+    assert mem.to_json() == 42
+
+
+def test_float_to_json():
+    from dgen.type import Memory
+
+    mem = Memory.from_value(builtin.F64Type(), 3.14)
+    assert mem.to_json() == 3.14
+
+
+def test_byte_to_json():
+    buf = bytearray(1)
+    BYTE.struct.pack_into(buf, 0, 65)
+    assert BYTE.to_json(buf, 0) == 65
+
+
 def test_f64type_layout():
     assert builtin.F64Type().__layout__.byte_size == 8
 

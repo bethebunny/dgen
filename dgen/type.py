@@ -136,6 +136,14 @@ class Memory(Generic[T]):
         mem.pack(_bytearray_address(origin), length)
         return mem
 
+    def to_json(self) -> object:
+        """Convert to a JSON-compatible Python value by reading from the buffer."""
+        result = self.layout.to_json(self.buffer, 0)
+        hook = getattr(self.type, "__to_json__", None)
+        if hook is not None:
+            result = hook(result)
+        return result
+
     def to_python(self) -> object:
         """Convert back to a Python value by reading from the buffer.
 

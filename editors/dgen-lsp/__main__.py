@@ -103,10 +103,10 @@ def _word_at_position(source: str, pos: lsp.Position) -> str | None:
     if pos.character >= len(line):
         return None
     start = pos.character
-    while start > 0 and (line[start - 1].isalnum() or line[start - 1] == '_'):
+    while start > 0 and (line[start - 1].isalnum() or line[start - 1] == "_"):
         start -= 1
     end = pos.character
-    while end < len(line) and (line[end].isalnum() or line[end] == '_'):
+    while end < len(line) and (line[end].isalnum() or line[end] == "_"):
         end += 1
     word = line[start:end]
     return word if word else None

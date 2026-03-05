@@ -25,15 +25,24 @@ class Layout:
     def parse(self, obj: object) -> object:
         raise NotImplementedError
 
+    def to_json(self, buf: bytes | bytearray, offset: int) -> object:
+        raise NotImplementedError
+
 
 class Void(Layout):
     """Zero-size layout for types with no runtime representation."""
 
     struct = Struct("0s")
 
+    def to_json(self, buf: bytes | bytearray, offset: int) -> None:
+        return None
+
 
 class Byte(Layout):
     struct = Struct("B")
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> int:
+        return self.struct.unpack_from(buf, offset)[0]
 
 
 class Int(Layout):
@@ -44,6 +53,9 @@ class Int(Layout):
     def parse(self, obj: object) -> int:
         assert isinstance(obj, int), f"expected int, got {type(obj).__name__}"
         return obj
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> int:
+        return self.struct.unpack_from(buf, offset)[0]
 
 
 class Float64(Layout):
@@ -56,6 +68,9 @@ class Float64(Layout):
             f"expected number, got {type(obj).__name__}"
         )
         return float(obj)
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> float:
+        return self.struct.unpack_from(buf, offset)[0]
 
 
 class Array(Layout):
