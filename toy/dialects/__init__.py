@@ -17,7 +17,7 @@ from toy.dialects.affine import Shape
 from toy.dialects.toy import DimSizeOp, Tensor
 
 # ===----------------------------------------------------------------------=== #
-# ShapeType helpers
+# Shape helpers
 # ===----------------------------------------------------------------------=== #
 
 
@@ -40,7 +40,7 @@ def shape_constant(dims: Sequence[int]) -> Constant:
 
 
 # ===----------------------------------------------------------------------=== #
-# TensorType helpers
+# Tensor helpers
 # ===----------------------------------------------------------------------=== #
 
 

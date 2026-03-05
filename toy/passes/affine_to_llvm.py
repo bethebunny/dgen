@@ -105,7 +105,7 @@ class AffineToLLVMLowering:
 
     def _lower_alloc(self, op: affine.AllocOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, affine.MemRef)
-        shape = op.type.shape.__constant__.to_json()  # MemRefType, not TensorType
+        shape = op.type.shape.__constant__.to_json()  # MemRef, not Tensor
         total = prod(shape)
         alloca_op = llvm.AllocaOp(elem_count=builtin.Index().constant(total))
         yield alloca_op

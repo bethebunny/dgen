@@ -31,7 +31,7 @@ def _parse_arg(arg: str) -> object:
 def _set_param_types(ir: Module, args: Sequence[object]) -> None:
     """Set function parameter types from runtime argument values.
 
-    For list arguments, sets the parameter type to a 1-D TensorType
+    For list arguments, sets the parameter type to a 1-D Tensor
     with the list's length as the shape dimension.
     """
     func = ir.functions[0]

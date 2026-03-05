@@ -1,4 +1,4 @@
-"""Shape inference pass: resolve InferredShapeTensor to concrete TensorType."""
+"""Shape inference pass: resolve InferredShapeTensor to concrete Tensor."""
 
 from __future__ import annotations
 

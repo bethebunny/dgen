@@ -28,7 +28,7 @@ from toy.dialects.toy import InferredShapeTensor, Tensor
 # Test data: (type, python_value, asm_literal, expected_unpack)
 #
 # Every type with a runtime representation should appear here.
-# Types with genuinely void layouts (Nil, VoidType) are excluded.
+# Types with genuinely void layouts (Nil, Void) are excluded.
 # ---------------------------------------------------------------------------
 
 BUILTIN_TYPES = [
@@ -141,8 +141,8 @@ def _identity_exe(ty):
 # ---------------------------------------------------------------------------
 
 # Types that are genuinely void (no runtime representation):
-# - Nil/VoidType: void return types
-# - InferredShapeTensor: pre-inference placeholder, becomes TensorType
+# - Nil/Void: void return types
+# - InferredShapeTensor: pre-inference placeholder, becomes Tensor
 # - Shape(rank=builtin.Index().constant(0)): empty shape (zero dimensions)
 VOID_TYPES = [
     pytest.param(builtin.Nil(), id="builtin.nil"),

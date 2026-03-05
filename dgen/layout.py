@@ -190,6 +190,3 @@ class String(FatPointer):
         elif isinstance(value, bytes):
             value = list(value)
         super().from_json(buf, offset, value, origins)
-
-
-StringLayout = String
