@@ -74,12 +74,13 @@ class _Parser:
         else:
             name = rest.strip()
 
-        data = self._parse_type_body() if has_body else None
-        return TypeDecl(name=name, params=params, data=data)
+        data, layout = self._parse_type_body() if has_body else (None, None)
+        return TypeDecl(name=name, params=params, data=data, layout=layout)
 
-    def _parse_type_body(self) -> DataField | None:
-        """Parse indented type body lines, return data field if found."""
+    def _parse_type_body(self) -> tuple[DataField | None, str | None]:
+        """Parse indented type body lines, return (data field, layout name)."""
         data = None
+        layout = None
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
             if not next_line or not next_line[0].isspace():
@@ -88,13 +89,17 @@ class _Parser:
             stripped = next_line.strip()
             if stripped.startswith("#") or not stripped:
                 continue
+            # Layout declaration: layout LayoutName
+            if stripped.startswith("layout "):
+                layout = stripped.split()[1]
+                continue
             # Field declaration: name: TypeExpr
             if ":" in stripped:
                 colon = stripped.index(":")
                 field_name = stripped[:colon].strip()
                 type_str = stripped[colon + 1 :].strip()
                 data = DataField(name=field_name, type=_parse_type_ref(type_str))
-        return data
+        return data, layout
 
     def _parse_op(self, line: str) -> OpDecl:
         rest = line[3:]  # strip "op "

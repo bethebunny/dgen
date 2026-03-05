@@ -379,6 +379,16 @@ def test_generate_nil_data_field():
     assert "__layout__ = Void()" in code
 
 
+def test_parse_layout_keyword():
+    from dgen.gen.parser import parse
+
+    f = parse("type Index:\n    layout Int\n")
+    assert len(f.types) == 1
+    assert f.types[0].name == "Index"
+    assert f.types[0].layout == "Int"
+    assert f.types[0].data is None
+
+
 def test_generate_pointer_data():
     """Pointer<Nil> should generate __layout__ = Pointer(Void())."""
     f = DgenFile(
