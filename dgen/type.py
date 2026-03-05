@@ -76,59 +76,13 @@ class Memory(Generic[T]):
     def from_value(cls, type: Type, value: object) -> Memory:
         """Create Memory from a Type and a Python value.
 
-        Works for all layouts: inline scalars/arrays pack directly into the
-        buffer; FatPointer allocates a backing origin and packs {ptr, length}.
+        Converts str/bytes to list[int], then delegates to from_json().
         """
         if isinstance(value, str):
             value = value.encode("utf-8")
-
-        layout = type.__layout__
-
-        if isinstance(layout, FatPointer):
-            return cls._from_fat_pointer(type, layout, value)
-
-        parsed = layout.parse(value)
-        mem = cls(type)
-        if isinstance(parsed, list):
-            mem.pack(*parsed)
-        else:
-            mem.pack(parsed)
-        return mem
-
-    @classmethod
-    def _from_fat_pointer(cls, type: Type, layout: FatPointer, value: object) -> Memory:
-        """Create Memory for a FatPointer layout with a backing origin."""
         if isinstance(value, bytes):
-            origin = bytearray(value)
-            length = len(value)
-        elif isinstance(value, list):
-            pointee = layout.pointee
-            length = len(value)
-            origin = bytearray(pointee.struct.size * length)
-            inner_origins: list[bytearray] = []
-            if isinstance(pointee, (FatPointer, Pointer)):
-                # Nested pointer: recursively create Memory for each element
-                elem_type: Type = type.element_type  # type: ignore[attr-defined]
-                for i, v in enumerate(value):
-                    elem_mem = cls.from_value(elem_type, v)
-                    offset = i * pointee.struct.size
-                    origin[offset : offset + pointee.struct.size] = elem_mem.buffer
-                    inner_origins.extend(elem_mem.origins)
-            else:
-                for i, v in enumerate(value):
-                    parsed = pointee.parse(v)
-                    pointee.struct.pack_into(origin, i * pointee.struct.size, parsed)
-        else:
-            raise ValueError(
-                f"cannot create FatPointer from {value.__class__.__name__}"
-            )
-
-        mem = cls(type)
-        mem.origins.append(origin)
-        if isinstance(value, list):
-            mem.origins.extend(inner_origins)
-        mem.pack(_bytearray_address(origin), length)
-        return mem
+            value = list(value)
+        return cls.from_json(type, value)
 
     def to_json(self) -> object:
         """Convert to a JSON-compatible Python value by reading from the buffer."""

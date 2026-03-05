@@ -191,6 +191,10 @@ class FatPointer(Layout):
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
     ) -> None:
+        if isinstance(value, str):
+            value = list(value.encode("utf-8"))
+        elif isinstance(value, bytes):
+            value = list(value)
         assert isinstance(value, list)
         pointee = self.pointee
         ps = pointee.struct.size
