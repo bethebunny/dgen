@@ -1,16 +1,16 @@
 trait HasSingleBlock
 
-type index:
-    data: Index
+type Index:
+    layout Int
 
-type f64:
-    data: F64
+type F64:
+    layout Float64
 
 type Nil:
-    data: Nil
+    layout Void
 
 type String:
-    storage: StringLayout
+    layout String
 
 type List<element_type: Type>:
     storage: FatPointer<element_type>
