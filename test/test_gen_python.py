@@ -24,14 +24,14 @@ def test_generate_header():
 def test_generate_simple_type():
     f = DgenFile(
         types=[
-            TypeDecl(name="index", data=DataField(name="data", type=TypeRef("Index")))
+            TypeDecl(name="Index", data=DataField(name="data", type=TypeRef("Index")))
         ]
     )
     code = generate(f, dialect_name="test")
-    assert '@test.type("index")' in code
-    assert "class IndexType(Type):" in code
+    assert '@test.type("Index")' in code
+    assert "class Index(Type):" in code
     assert "@dataclass(frozen=True)" in code
-    assert "__layout__ = Int()" in code
+    assert "__layout__ = layout.Int()" in code
 
 
 def test_generate_type_no_data():
@@ -47,7 +47,7 @@ def test_generate_type_no_data():
         ]
     )
     code = generate(f, dialect_name="test")
-    assert "class TensorType(Type):" in code
+    assert "class Tensor(Type):" in code
     assert "__layout__" not in code
 
 
@@ -65,12 +65,12 @@ def test_generate_parameterized_type():
         ]
     )
     code = generate(f, dialect_name="test")
-    assert "class ShapeType(Type):" in code
-    assert "rank: Value[IndexType]" in code
-    assert '__params__ = (("rank", IndexType),)' in code
+    assert "class Shape(Type):" in code
+    assert "rank: Value[Index]" in code
+    assert '__params__ = (("rank", Index),)' in code
     # Parametric layout becomes a property
     assert "def __layout__(self)" in code
-    assert "Array(Int()," in code
+    assert "layout.Array(layout.Int()," in code
 
 
 def test_generate_type_fatpointer_data():
@@ -87,7 +87,7 @@ def test_generate_type_fatpointer_data():
     )
     code = generate(f, dialect_name="test")
     assert "class String(Type):" in code
-    assert "__layout__ = FatPointer(Byte())" in code
+    assert "__layout__ = layout.FatPointer(layout.Byte())" in code
 
 
 def test_generate_type_fatpointer_param():
@@ -123,10 +123,10 @@ def test_generate_type_default_param():
         ]
     )
     code = generate(f, dialect_name="test")
-    assert "shape: Value[ShapeType]" in code
+    assert "shape: Value[Shape]" in code
     assert "dtype: Type" in code
     # Default should reference the type class
-    assert "F64Type()" in code
+    assert "F64()" in code
 
 
 def test_generate_trait():
@@ -170,10 +170,10 @@ def test_generate_op_with_params():
         ]
     )
     code = generate(f, dialect_name="test")
-    assert "axis: Value[IndexType]" in code
+    assert "axis: Value[Index]" in code
     assert "lhs: Value" in code
     assert "rhs: Value" in code
-    assert '__params__ = (("axis", IndexType),)' in code
+    assert '__params__ = (("axis", Index),)' in code
     assert '__operands__ = (("lhs", Type), ("rhs", Type),)' in code
 
 
@@ -300,7 +300,7 @@ def test_generate_op_typed_operand():
     )
     code = generate(f, dialect_name="test")
     assert "shape: Value" in code
-    assert '__operands__ = (("shape", ShapeType),)' in code
+    assert '__operands__ = (("shape", Shape),)' in code
 
 
 def test_generate_imports():
@@ -310,7 +310,7 @@ def test_generate_imports():
         dialect_name="test",
         import_map={"builtin": "dgen.dialects.builtin"},
     )
-    assert "from dgen.dialects.builtin import IndexType, Nil" in code
+    assert "from dgen.dialects.builtin import Index, Nil" in code
 
 
 def test_generate_imported_trait():
@@ -336,10 +336,8 @@ def test_generate_imported_trait():
         dialect_name="test",
         import_map={"builtin": "dgen.dialects.builtin"},
     )
-    # HasSingleBlock should be imported without Type suffix
     assert "HasSingleBlock" in code
     assert "HasSingleBlockType" not in code
-    # ForOp should inherit from it
     assert "class ForOp(HasSingleBlock, Op):" in code
 
 
@@ -347,7 +345,7 @@ def test_generate_valid_python():
     """The generated code should be valid Python that can be exec'd."""
     f = DgenFile(
         types=[
-            TypeDecl(name="index", data=DataField(name="data", type=TypeRef("Index")))
+            TypeDecl(name="Index", data=DataField(name="data", type=TypeRef("Index")))
         ],
         ops=[
             OpDecl(
@@ -362,7 +360,7 @@ def test_generate_valid_python():
 
 
 def test_generate_nil_data_field():
-    """A type with data: Nil should get __layout__ = Void()."""
+    """A type with data: Nil should get __layout__ = layout.Void()."""
     f = DgenFile(
         types=[
             TypeDecl(
@@ -376,7 +374,7 @@ def test_generate_nil_data_field():
     )
     code = generate(f, dialect_name="test")
     assert "class InferredShapeTensor(Type):" in code
-    assert "__layout__ = Void()" in code
+    assert "__layout__ = layout.Void()" in code
 
 
 def test_parse_layout_keyword():
@@ -389,8 +387,28 @@ def test_parse_layout_keyword():
     assert f.types[0].data is None
 
 
+def test_generate_layout_keyword():
+    """layout keyword generates static __layout__."""
+    f = DgenFile(
+        types=[TypeDecl(name="Index", layout="Int")]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class Index(Type):" in code
+    assert "__layout__ = layout.Int()" in code
+
+
+def test_generate_layout_keyword_pointer():
+    """layout Pointer generates __layout__ = layout.Pointer(layout.Void())."""
+    f = DgenFile(
+        types=[TypeDecl(name="Ptr", layout="Pointer")]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class Ptr(Type):" in code
+    assert "__layout__ = layout.Pointer(layout.Void())" in code
+
+
 def test_generate_pointer_data():
-    """Pointer<Nil> should generate __layout__ = Pointer(Void())."""
+    """Pointer<Nil> should generate __layout__ = layout.Pointer(layout.Void())."""
     f = DgenFile(
         types=[
             TypeDecl(
@@ -404,5 +422,5 @@ def test_generate_pointer_data():
         ]
     )
     code = generate(f, dialect_name="test")
-    assert "class MemRefType(Type):" in code
-    assert "__layout__ = Pointer(Void())" in code
+    assert "class MemRef(Type):" in code
+    assert "__layout__ = layout.Pointer(layout.Void())" in code
