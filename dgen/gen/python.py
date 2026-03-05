@@ -83,14 +83,12 @@ def _ref_has_params(ref: TypeRef, param_map: dict[str, ParamDecl]) -> bool:
 def _resolve_type_ref(ref: TypeRef) -> str:
     if ref.name == "Type":
         return "Type"
-    if ref.name == "list":
-        return _resolve_type_ref(ref.args[0]) if ref.args else "Type"
     return ref.name
 
 
 def _annotation_for_param(param: ParamDecl) -> str:
-    if param.type.name == "list":
-        inner = _resolve_type_ref(param.type.args[0]) if param.type.args else "Type"
+    if param.variadic:
+        inner = _resolve_type_ref(param.type)
         return f"list[Value[{inner}]]"
     if param.type.name == "Type":
         return "Type"
@@ -98,7 +96,7 @@ def _annotation_for_param(param: ParamDecl) -> str:
 
 
 def _annotation_for_operand(operand: OperandDecl) -> str:
-    if operand.type.name == "list":
+    if operand.variadic:
         return "list[Value]"
     return "Value"
 

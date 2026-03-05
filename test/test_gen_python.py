@@ -274,7 +274,7 @@ def test_generate_list_operand():
             OpDecl(
                 name="pack",
                 operands=[
-                    OperandDecl(name="values", type=TypeRef("list", [TypeRef("Type")]))
+                    OperandDecl(name="values", type=TypeRef("Type"), variadic=True)
                 ],
                 return_type=TypeRef("List"),
             )
@@ -291,10 +291,10 @@ def test_generate_list_param():
             OpDecl(
                 name="phi",
                 params=[
-                    ParamDecl(name="labels", type=TypeRef("list", [TypeRef("String")]))
+                    ParamDecl(name="labels", type=TypeRef("String"), variadic=True)
                 ],
                 operands=[
-                    OperandDecl(name="values", type=TypeRef("list", [TypeRef("Type")]))
+                    OperandDecl(name="values", type=TypeRef("Type"), variadic=True)
                 ],
                 return_type=TypeRef("Type"),
             )
