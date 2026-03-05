@@ -1,16 +1,16 @@
-from builtin import Index, Nil, F64, String
+from builtin import Index, Nil, F64, String, Pointer
 
 type Ptr:
-    layout Pointer
+    data: Pointer<Nil>
 
 type Int<bits: Index>:
-    layout Int
+    data: Index
 
 type Float:
-    layout Float64
+    data: F64
 
 type Void:
-    layout Void
+    data: Nil
 
 op alloca<elem_count: Index>() -> Ptr
 op gep(base: Type, index: Type) -> Ptr

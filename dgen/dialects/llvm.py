@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, String
+from dgen.dialects.builtin import Index, Nil, F64, String
 
 llvm = Dialect("llvm")
 
@@ -13,13 +13,13 @@ llvm = Dialect("llvm")
 @llvm.type("Ptr")
 @dataclass(frozen=True)
 class Ptr(Type):
-    __layout__ = layout.Pointer(layout.Void())
+    __layout__ = layout.Pointer(Nil.__layout__)
 
 
 @llvm.type("Int")
 @dataclass(frozen=True)
 class Int(Type):
-    __layout__ = layout.Int()
+    __layout__ = Index.__layout__
     bits: Value[Index]
     __params__ = (("bits", Index),)
 
@@ -27,13 +27,13 @@ class Int(Type):
 @llvm.type("Float")
 @dataclass(frozen=True)
 class Float(Type):
-    __layout__ = layout.Float64()
+    __layout__ = F64.__layout__
 
 
 @llvm.type("Void")
 @dataclass(frozen=True)
 class Void(Type):
-    __layout__ = layout.Void()
+    __layout__ = Nil.__layout__
 
 
 @llvm.op("alloca")

@@ -12,7 +12,8 @@ from dgen.gen.ast import (
     TypeRef,
 )
 
-# Layout keyword values → expressions. Leaf layouts end in ")"; constructors don't.
+# Builtin type → layout expression. Leaf entries end in ")"; constructors don't.
+# Used by both the `layout` keyword handler and `_layout_expr` for data fields.
 _LAYOUTS: dict[str, str] = {
     "Int": "layout.Int()",
     "Float64": "layout.Float64()",
@@ -53,12 +54,12 @@ def _type_expr(
 
 
 def _layout_expr(ref: TypeRef, param_map: dict[str, ParamDecl]) -> str:
-    """Resolve a data-field TypeRef to a layout expression.
+    """Resolve a data-field type reference to a layout expression.
 
     - Parameter (Type kind) → self.name.__layout__
     - Parameter (value kind) → self.name.__constant__.to_json()
-    - Layout constructor (Array, Pointer, FatPointer) → layout.X(recurse args)
-    - Any other name (a type) → Name.__layout__
+    - Builtin constructor type (Array, Pointer, FatPointer) → layout.X(recurse args)
+    - Any other type name → Name.__layout__
     """
     if ref.name in param_map:
         p = param_map[ref.name]
@@ -162,7 +163,13 @@ def _generate(
 
         body: list[str] = []
 
-        if td.layout is not None:
+        is_parametric_layout = (
+            td.layout is not None
+            and not _LAYOUTS[td.layout].endswith(")")
+            and bool(td.params)
+        )
+
+        if td.layout is not None and not is_parametric_layout:
             entry = _LAYOUTS[td.layout]
             if entry.endswith(")"):
                 body.append(f"    __layout__ = {entry}")
@@ -182,7 +189,20 @@ def _generate(
             parts = [f'("{p.name}", {_resolve_type_ref(p.type)})' for p in td.params]
             body.append(f"    __params__ = ({', '.join(parts)},)")
 
-        if td.data is not None and is_parametric:
+        if is_parametric_layout:
+            assert td.layout is not None
+            entry = _LAYOUTS[td.layout]
+            args = []
+            for p in td.params:
+                if p.type.name == "Type":
+                    args.append(f"self.{p.name}.__layout__")
+                else:
+                    args.append(f"self.{p.name}.__constant__.to_json()")
+            body.append("")
+            body.append("    @property")
+            body.append("    def __layout__(self) -> layout.Layout:")
+            body.append(f"        return {entry}({', '.join(args)})")
+        elif td.data is not None and is_parametric:
             body.append("")
             body.append("    @property")
             body.append("    def __layout__(self) -> layout.Layout:")

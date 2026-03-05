@@ -37,6 +37,49 @@ class String(Type):
     __layout__ = layout.String()
 
 
+@builtin.type("Byte")
+@dataclass(frozen=True)
+class Byte(Type):
+    __layout__ = layout.Byte()
+
+
+@builtin.type("Array")
+@dataclass(frozen=True)
+class Array(Type):
+    element_type: Type
+    n: Value[Index]
+    __params__ = (
+        ("element_type", Type),
+        ("n", Index),
+    )
+
+    @property
+    def __layout__(self) -> layout.Layout:
+        return layout.Array(self.element_type.__layout__, self.n.__constant__.to_json())
+
+
+@builtin.type("Pointer")
+@dataclass(frozen=True)
+class Pointer(Type):
+    pointee: Type
+    __params__ = (("pointee", Type),)
+
+    @property
+    def __layout__(self) -> layout.Layout:
+        return layout.Pointer(self.pointee.__layout__)
+
+
+@builtin.type("FatPointer")
+@dataclass(frozen=True)
+class FatPointer(Type):
+    pointee: Type
+    __params__ = (("pointee", Type),)
+
+    @property
+    def __layout__(self) -> layout.Layout:
+        return layout.FatPointer(self.pointee.__layout__)
+
+
 @builtin.type("List")
 @dataclass(frozen=True)
 class List(Type):

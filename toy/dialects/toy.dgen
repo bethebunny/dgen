@@ -2,7 +2,8 @@ from builtin import Index, Nil, F64, String
 from affine import Shape
 
 type Tensor<shape: Shape, dtype: Type = F64>:
-    # Layout computed externally (needs math.prod)
+    # TODO: layout requires math.prod of shape dims, not yet expressible in .dgen.
+    # Temporary workaround: __layout__ monkey-patched in toy/dialects/__init__.py
 
 type InferredShapeTensor<dtype: Type = F64>:
     data: Nil

@@ -12,6 +12,18 @@ type Nil:
 type String:
     layout String
 
+type Byte:
+    layout Byte
+
+type Array<element_type: Type, n: Index>:
+    layout Array
+
+type Pointer<pointee: Type>:
+    layout Pointer
+
+type FatPointer<pointee: Type>:
+    layout FatPointer
+
 type List<element_type: Type>:
     storage: FatPointer<element_type>
 

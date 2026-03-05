@@ -429,6 +429,41 @@ def test_generate_pointer_data():
     assert "__layout__ = layout.Pointer(Nil.__layout__)" in code
 
 
+def test_generate_parametric_layout_keyword():
+    """layout keyword on parametric type generates __layout__ property."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="MyArray",
+                params=[
+                    ParamDecl(name="elem", type=TypeRef("Type")),
+                    ParamDecl(name="n", type=TypeRef("Index")),
+                ],
+                layout="Array",
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "def __layout__(self)" in code
+    assert "layout.Array(self.elem.__layout__, self.n.__constant__.to_json())" in code
+
+
+def test_generate_parametric_layout_pointer():
+    """layout Pointer on parametric type generates __layout__ property."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="MyPointer",
+                params=[ParamDecl(name="pointee", type=TypeRef("Type"))],
+                layout="Pointer",
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "def __layout__(self)" in code
+    assert "layout.Pointer(self.pointee.__layout__)" in code
+
+
 def test_generate_unknown_return_type_errors():
     """Return type referencing unknown type should raise."""
     import pytest

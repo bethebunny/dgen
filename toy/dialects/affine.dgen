@@ -1,4 +1,4 @@
-from builtin import Index, Nil, F64, HasSingleBlock
+from builtin import Index, Nil, F64, HasSingleBlock, Array, Pointer
 
 type Shape<rank: Index>:
     dims: Array<Index, rank>
