@@ -28,6 +28,7 @@ class ParamDecl:
     name: str
     type: TypeRef
     default: str | None = None
+    variadic: bool = False
 
 
 @dataclass
@@ -37,6 +38,7 @@ class OperandDecl:
     name: str
     type: TypeRef
     default: str | None = None
+    variadic: bool = False
 
 
 @dataclass

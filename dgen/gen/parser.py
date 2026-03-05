@@ -180,11 +180,17 @@ def _parse_params(s: str) -> list[ParamDecl]:
             default = default.strip()
             part = decl.strip()
         name, type_str = part.split(":", 1)
+        type_ref = _parse_type_ref(type_str.strip())
+        variadic = False
+        if type_ref.name == "list" and len(type_ref.args) == 1:
+            variadic = True
+            type_ref = type_ref.args[0]
         params.append(
             ParamDecl(
                 name=name.strip(),
-                type=_parse_type_ref(type_str.strip()),
+                type=type_ref,
                 default=default,
+                variadic=variadic,
             )
         )
     return params
@@ -201,11 +207,17 @@ def _parse_operands(s: str) -> list[OperandDecl]:
             default = default.strip()
             part = decl.strip()
         name, type_str = part.split(":", 1)
+        type_ref = _parse_type_ref(type_str.strip())
+        variadic = False
+        if type_ref.name == "list" and len(type_ref.args) == 1:
+            variadic = True
+            type_ref = type_ref.args[0]
         operands.append(
             OperandDecl(
                 name=name.strip(),
-                type=_parse_type_ref(type_str.strip()),
+                type=type_ref,
                 default=default,
+                variadic=variadic,
             )
         )
     return operands

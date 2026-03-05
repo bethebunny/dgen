@@ -117,16 +117,34 @@ def test_parse_op_with_default_operand():
 def test_parse_list_operand():
     result = parse("op pack(values: list<Type>) -> List\n")
     op = result.ops[0]
-    assert op.operands[0].type.name == "list"
-    assert op.operands[0].type.args[0].name == "Type"
+    assert op.operands[0].variadic is True
+    assert op.operands[0].type.name == "Type"
 
 
 def test_parse_op_with_list_param():
     result = parse("op phi<labels: list<String>>(values: list<Type>) -> Type\n")
     op = result.ops[0]
-    assert op.params[0].type.name == "list"
-    assert op.params[0].type.args[0].name == "String"
-    assert op.operands[0].type.name == "list"
+    assert op.params[0].variadic is True
+    assert op.params[0].type.name == "String"
+    assert op.operands[0].variadic is True
+    assert op.operands[0].type.name == "Type"
+
+
+def test_parse_variadic_operand():
+    """list<Type> in operand position parses as variadic."""
+    result = parse("op pack(values: list<Type>) -> List\n")
+    op = result.ops[0]
+    assert op.operands[0].variadic is True
+    assert op.operands[0].type.name == "Type"
+
+
+def test_parse_variadic_param():
+    """list<String> in param position parses as variadic."""
+    result = parse("op phi<labels: list<String>>(values: list<Type>) -> Type\n")
+    op = result.ops[0]
+    assert op.params[0].variadic is True
+    assert op.params[0].type.name == "String"
+    assert op.operands[0].variadic is True
 
 
 def test_parse_no_operands():
