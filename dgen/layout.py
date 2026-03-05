@@ -172,7 +172,7 @@ class FatPointer(Layout):
         self.struct.pack_into(buf, offset, ptr, len(value))
 
 
-class StringLayout(FatPointer):
+class String(FatPointer):
     """FatPointer(Byte()) with str ↔ list[int] conversion in to_json/from_json."""
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> str:
@@ -187,3 +187,6 @@ class StringLayout(FatPointer):
         elif isinstance(value, bytes):
             value = list(value)
         super().from_json(buf, offset, value, origins)
+
+
+StringLayout = String

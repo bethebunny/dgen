@@ -74,7 +74,10 @@ class _Parser:
         else:
             name = rest.strip()
 
-        data, layout = self._parse_type_body() if has_body else (None, None)
+        data: DataField | None = None
+        layout: str | None = None
+        if has_body:
+            data, layout = self._parse_type_body()
         return TypeDecl(name=name, params=params, data=data, layout=layout)
 
     def _parse_type_body(self) -> tuple[DataField | None, str | None]:
