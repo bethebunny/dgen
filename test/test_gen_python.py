@@ -40,7 +40,9 @@ def test_generate_layout_keyword_pointer():
 def test_generate_data_field_type_ref():
     """Data field referencing a type name uses Name.__layout__."""
     f = DgenFile(
-        types=[TypeDecl(name="Foo", data=DataField(name="data", type=TypeRef("Index")))]
+        types=[
+            TypeDecl(name="Foo", data=[DataField(name="data", type=TypeRef("Index"))])
+        ]
     )
     code = generate(f, dialect_name="test")
     assert "__layout__ = Index.__layout__" in code
@@ -69,10 +71,12 @@ def test_generate_parameterized_type():
             TypeDecl(
                 name="Shape",
                 params=[ParamDecl(name="rank", type=TypeRef("Index"))],
-                data=DataField(
-                    name="dims",
-                    type=TypeRef("Array", [TypeRef("Index"), TypeRef("rank")]),
-                ),
+                data=[
+                    DataField(
+                        name="dims",
+                        type=TypeRef("Array", [TypeRef("Index"), TypeRef("rank")]),
+                    )
+                ],
             )
         ]
     )
@@ -89,10 +93,12 @@ def test_generate_type_fatpointer_data():
         types=[
             TypeDecl(
                 name="String",
-                data=DataField(
-                    name="storage",
-                    type=TypeRef("FatPointer", [TypeRef("Byte")]),
-                ),
+                data=[
+                    DataField(
+                        name="storage",
+                        type=TypeRef("FatPointer", [TypeRef("Byte")]),
+                    )
+                ],
             )
         ]
     )
@@ -108,10 +114,12 @@ def test_generate_type_fatpointer_param():
             TypeDecl(
                 name="List",
                 params=[ParamDecl(name="element_type", type=TypeRef("Type"))],
-                data=DataField(
-                    name="storage",
-                    type=TypeRef("FatPointer", [TypeRef("element_type")]),
-                ),
+                data=[
+                    DataField(
+                        name="storage",
+                        type=TypeRef("FatPointer", [TypeRef("element_type")]),
+                    )
+                ],
             )
         ]
     )
@@ -391,7 +399,7 @@ def test_generate_nil_data_field():
                 params=[
                     ParamDecl(name="dtype", type=TypeRef("Type"), default="F64"),
                 ],
-                data=DataField(name="data", type=TypeRef("Nil")),
+                data=[DataField(name="data", type=TypeRef("Nil"))],
             )
         ]
     )
@@ -407,7 +415,7 @@ def test_parse_layout_keyword():
     assert len(f.types) == 1
     assert f.types[0].name == "Index"
     assert f.types[0].layout == "Int"
-    assert f.types[0].data is None
+    assert f.types[0].data == []
 
 
 def test_generate_pointer_data():
@@ -420,7 +428,9 @@ def test_generate_pointer_data():
                     ParamDecl(name="shape", type=TypeRef("Shape")),
                     ParamDecl(name="dtype", type=TypeRef("Type"), default="F64"),
                 ],
-                data=DataField(name="data", type=TypeRef("Pointer", [TypeRef("Nil")])),
+                data=[
+                    DataField(name="data", type=TypeRef("Pointer", [TypeRef("Nil")]))
+                ],
             )
         ]
     )
@@ -495,6 +505,25 @@ def test_generate_op_none_return_type():
     code = generate(f, dialect_name="test")
     assert "type: Type" in code
     assert "type: Type =" not in code
+
+
+def test_generate_type_multiple_data_fields():
+    """Multiple data fields — layout uses first field only."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="Pair",
+                data=[
+                    DataField(name="x", type=TypeRef("Index")),
+                    DataField(name="y", type=TypeRef("F64")),
+                ],
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class Pair(Type):" in code
+    # Layout uses first field
+    assert "__layout__ = Index.__layout__" in code
 
 
 def test_generate_unknown_return_type_errors():

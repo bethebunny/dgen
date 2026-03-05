@@ -28,9 +28,9 @@ def test_parse_simple_type():
     assert len(result.types) == 1
     t = result.types[0]
     assert t.name == "index"
-    assert t.data is not None
-    assert t.data.name == "data"
-    assert t.data.type.name == "Index"
+    assert len(t.data) == 1
+    assert t.data[0].name == "data"
+    assert t.data[0].type.name == "Index"
 
 
 def test_parse_type_no_body():
@@ -38,7 +38,7 @@ def test_parse_type_no_body():
     assert len(result.types) == 1
     t = result.types[0]
     assert t.name == "Nil"
-    assert t.data is None
+    assert t.data == []
 
 
 def test_parse_parameterized_type():
@@ -48,12 +48,12 @@ def test_parse_parameterized_type():
     assert len(t.params) == 1
     assert t.params[0].name == "rank"
     assert t.params[0].type.name == "Index"
-    assert t.data is not None
-    assert t.data.name == "dims"
-    assert t.data.type.name == "Array"
-    assert len(t.data.type.args) == 2
-    assert t.data.type.args[0].name == "Index"
-    assert t.data.type.args[1].name == "rank"
+    assert len(t.data) == 1
+    assert t.data[0].name == "dims"
+    assert t.data[0].type.name == "Array"
+    assert len(t.data[0].type.args) == 2
+    assert t.data[0].type.args[0].name == "Index"
+    assert t.data[0].type.args[1].name == "rank"
 
 
 def test_parse_type_with_default_param():
@@ -70,11 +70,11 @@ def test_parse_type_with_default_param():
 def test_parse_type_fatpointer_field():
     result = parse("type String:\n    storage: FatPointer<Byte>\n")
     t = result.types[0]
-    assert t.data is not None
-    assert t.data.name == "storage"
-    assert t.data.type.name == "FatPointer"
-    assert len(t.data.type.args) == 1
-    assert t.data.type.args[0].name == "Byte"
+    assert len(t.data) == 1
+    assert t.data[0].name == "storage"
+    assert t.data[0].type.name == "FatPointer"
+    assert len(t.data[0].type.args) == 1
+    assert t.data[0].type.args[0].name == "Byte"
 
 
 def test_parse_simple_op():
@@ -207,7 +207,7 @@ type Tensor<shape: Shape>:
     result = parse(src)
     t = result.types[0]
     assert t.name == "Tensor"
-    assert t.data is None
+    assert t.data == []
 
 
 def test_parse_untyped_operand():
@@ -245,3 +245,14 @@ op multi() -> Nil:
     result = parse(src)
     op = result.ops[0]
     assert op.blocks == ["first", "second"]
+
+
+def test_parse_multiple_data_fields():
+    src = "type Foo:\n    x: Index\n    y: F64\n"
+    result = parse(src)
+    t = result.types[0]
+    assert len(t.data) == 2
+    assert t.data[0].name == "x"
+    assert t.data[0].type.name == "Index"
+    assert t.data[1].name == "y"
+    assert t.data[1].type.name == "F64"

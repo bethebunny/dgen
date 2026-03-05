@@ -152,7 +152,8 @@ def _generate(
     # Types
     for td in ast.types:
         param_map = {p.name: p for p in td.params}
-        is_parametric = td.data is not None and _ref_has_params(td.data.type, param_map)
+        # TODO: multi-field layout (struct layout) is future work; use first field only.
+        is_parametric = bool(td.data) and _ref_has_params(td.data[0].type, param_map)
 
         yield ""
         yield f'@{dialect_name}.type("{td.name}")'
@@ -173,8 +174,8 @@ def _generate(
                 body.append(f"    __layout__ = {entry}")
             else:
                 body.append(f"    __layout__ = {entry}(layout.Void())")
-        elif td.data is not None and not is_parametric:
-            body.append(f"    __layout__ = {_layout_expr(td.data.type, param_map)}")
+        elif td.data and not is_parametric:
+            body.append(f"    __layout__ = {_layout_expr(td.data[0].type, param_map)}")
 
         for p in td.params:
             ann = _annotation_for_param(p)
@@ -200,11 +201,11 @@ def _generate(
             body.append("    @property")
             body.append("    def __layout__(self) -> layout.Layout:")
             body.append(f"        return {entry}({', '.join(args)})")
-        elif td.data is not None and is_parametric:
+        elif td.data and is_parametric:
             body.append("")
             body.append("    @property")
             body.append("    def __layout__(self) -> layout.Layout:")
-            body.append(f"        return {_layout_expr(td.data.type, param_map)}")
+            body.append(f"        return {_layout_expr(td.data[0].type, param_map)}")
 
         if not body:
             body.append("    pass")

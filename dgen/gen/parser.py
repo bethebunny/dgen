@@ -74,15 +74,15 @@ class _Parser:
         else:
             name = rest.strip()
 
-        data: DataField | None = None
+        data: list[DataField] = []
         layout: str | None = None
         if has_body:
             data, layout = self._parse_type_body()
         return TypeDecl(name=name, params=params, data=data, layout=layout)
 
-    def _parse_type_body(self) -> tuple[DataField | None, str | None]:
-        """Parse indented type body lines, return (data field, layout name)."""
-        data = None
+    def _parse_type_body(self) -> tuple[list[DataField], str | None]:
+        """Parse indented type body lines, return (data fields, layout name)."""
+        data: list[DataField] = []
         layout = None
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
@@ -101,7 +101,7 @@ class _Parser:
                 colon = stripped.index(":")
                 field_name = stripped[:colon].strip()
                 type_str = stripped[colon + 1 :].strip()
-                data = DataField(name=field_name, type=_parse_type_ref(type_str))
+                data.append(DataField(name=field_name, type=_parse_type_ref(type_str)))
         return data, layout
 
     def _parse_op(self, line: str) -> OpDecl:

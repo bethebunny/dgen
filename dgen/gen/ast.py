@@ -66,7 +66,7 @@ class TypeDecl:
 
     name: str
     params: list[ParamDecl] = field(default_factory=list)
-    data: DataField | None = None
+    data: list[DataField] = field(default_factory=list)
     layout: str | None = None
 
 

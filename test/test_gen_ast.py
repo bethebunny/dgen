@@ -6,7 +6,7 @@ from dgen.gen.ast import DataField, DgenFile, OpDecl, TypeDecl, TypeRef
 def test_ast_construction():
     f = DgenFile(
         types=[
-            TypeDecl(name="index", data=DataField(name="data", type=TypeRef("Index")))
+            TypeDecl(name="index", data=[DataField(name="data", type=TypeRef("Index"))])
         ],
         ops=[OpDecl(name="return", return_type=TypeRef("Nil"))],
     )
