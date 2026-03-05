@@ -481,6 +481,22 @@ def test_generate_untyped_operand():
     assert '__operands__ = (("input", Type),)' in code
 
 
+def test_generate_op_none_return_type():
+    """None return type generates same as Type return type."""
+    f = DgenFile(
+        ops=[
+            OpDecl(
+                name="foo",
+                operands=[OperandDecl(name="x", type=TypeRef("Type"))],
+                return_type=None,
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "type: Type" in code
+    assert "type: Type =" not in code
+
+
 def test_generate_unknown_return_type_errors():
     """Return type referencing unknown type should raise."""
     import pytest

@@ -77,7 +77,7 @@ class OpDecl:
     name: str
     params: list[ParamDecl] = field(default_factory=list)
     operands: list[OperandDecl] = field(default_factory=list)
-    return_type: TypeRef = field(default_factory=lambda: TypeRef("Type"))
+    return_type: TypeRef | None = None
     blocks: list[str] = field(default_factory=list)
 
 

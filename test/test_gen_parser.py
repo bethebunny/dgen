@@ -229,6 +229,13 @@ def test_parse_mixed_typed_untyped_operands():
     assert op.operands[1].type.name == "Type"
 
 
+def test_parse_op_no_return_type():
+    """Op with no -> clause has None return type."""
+    result = parse("op nop()\n")
+    op = result.ops[0]
+    assert op.return_type is None
+
+
 def test_parse_multiple_block_lines():
     src = """\
 op multi() -> Nil:

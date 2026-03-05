@@ -139,7 +139,7 @@ class _Parser:
             rest = rest[cp + 1 :]
 
         # Parse return type -> Type
-        return_type = TypeRef("Type")
+        return_type: TypeRef | None = None
         if "->" in rest:
             ret_str = rest[rest.index("->") + 2 :].strip()
             return_type = _parse_type_ref(ret_str)
