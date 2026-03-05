@@ -4,34 +4,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Block, Dialect, Op, Type, Value
-from dgen.layout import Array, Int, Pointer, Void
-from dgen.dialects.builtin import IndexType, Nil, F64Type, HasSingleBlock
+from dgen import Block, Dialect, Op, Type, Value, layout
+from dgen.dialects.builtin import Index, Nil, F64, HasSingleBlock
 
 affine = Dialect("affine")
 
 
 @affine.type("Shape")
 @dataclass(frozen=True)
-class ShapeType(Type):
-    rank: Value[IndexType]
-    __params__ = (("rank", IndexType),)
+class Shape(Type):
+    rank: Value[Index]
+    __params__ = (("rank", Index),)
 
     @property
-    def __layout__(self) -> Array:
-        return Array(Int(), self.rank.__constant__.to_json())
+    def __layout__(self) -> layout.Layout:
+        return layout.Array(layout.Int(), self.rank.__constant__.to_json())
 
 
 @affine.type("MemRef")
 @dataclass(frozen=True)
-class MemRefType(Type):
-    __layout__ = Pointer(Void())
-    shape: Value[ShapeType]
-    dtype: Type = F64Type()
-    __params__ = (
-        ("shape", ShapeType),
-        ("dtype", Type),
-    )
+class MemRef(Type):
+    __layout__ = layout.Pointer(layout.Void())
+    shape: Value[Shape]
+    dtype: Type = F64()
+    __params__ = (("shape", Shape), ("dtype", Type),)
 
 
 @affine.op("alloc")
@@ -39,7 +35,7 @@ class MemRefType(Type):
 class AllocOp(Op):
     shape: Value
     type: Type
-    __operands__ = (("shape", ShapeType),)
+    __operands__ = (("shape", Shape),)
 
 
 @affine.op("dealloc")
@@ -55,11 +51,8 @@ class DeallocOp(Op):
 class LoadOp(Op):
     memref: Value
     indices: Value
-    type: Type = F64Type()
-    __operands__ = (
-        ("memref", Type),
-        ("indices", IndexType),
-    )
+    type: Type = F64()
+    __operands__ = (("memref", Type), ("indices", Index),)
 
 
 @affine.op("store")
@@ -69,11 +62,7 @@ class StoreOp(Op):
     memref: Value
     indices: Value
     type: Type = Nil()
-    __operands__ = (
-        ("value", Type),
-        ("memref", Type),
-        ("indices", IndexType),
-    )
+    __operands__ = (("value", Type), ("memref", Type), ("indices", Index),)
 
 
 @affine.op("mul_f")
@@ -81,11 +70,8 @@ class StoreOp(Op):
 class MulFOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = F64Type()
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    type: Type = F64()
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @affine.op("add_f")
@@ -93,11 +79,8 @@ class MulFOp(Op):
 class AddFOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = F64Type()
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    type: Type = F64()
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @affine.op("print_memref")
@@ -111,12 +94,11 @@ class PrintMemrefOp(Op):
 @affine.op("for")
 @dataclass(eq=False, kw_only=True)
 class ForOp(HasSingleBlock, Op):
-    lo: Value[IndexType]
-    hi: Value[IndexType]
+    lo: Value[Index]
+    hi: Value[Index]
     type: Type = Nil()
     body: Block
-    __params__ = (
-        ("lo", IndexType),
-        ("hi", IndexType),
-    )
+    __params__ = (("lo", Index), ("hi", Index),)
     __blocks__ = ("body",)
+
+

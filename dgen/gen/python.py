@@ -36,21 +36,25 @@ def _op_class_name(asm_name: str) -> str:
     return "".join(p.capitalize() for p in parts) + "Op"
 
 
-def _type_expr(ref: TypeRef, type_map: dict[str, TypeDecl]) -> str:
+def _type_expr(
+    ref: TypeRef, type_map: dict[str, TypeDecl], known_names: set[str]
+) -> str:
     """Resolve a return-type TypeRef to a default construction expression.
 
     For simple refs (no args): emit Name() if the type has no required params.
     For parameterized refs: emit Name(param=ParamType().constant(val)).
+    Raises ValueError if the type is unknown or has unfillable required params.
     """
     if not ref.args:
         td = type_map.get(ref.name)
-        if td is not None and td.params:
-            # Has required params we can't fill — check if all have defaults
+        if td is not None:
             required = [p for p in td.params if p.default is None]
             if required:
                 raise ValueError(
                     f"cannot default-construct {ref.name}: has required params"
                 )
+        elif ref.name not in known_names:
+            raise ValueError(f"unknown type {ref.name}")
         return f"{ref.name}()"
     td = type_map.get(ref.name)
     if td is None or len(ref.args) != len(td.params):
@@ -131,6 +135,12 @@ def generate(
     lines: list[str] = []
 
     type_map: dict[str, TypeDecl] = {td.name: td for td in ast.types}
+
+    # Known type names (local + imported) for default expression resolution
+    known_names: set[str] = set(type_map)
+    for imp in ast.imports:
+        for name in imp.names:
+            known_names.add(name)
 
     # Collect trait names from local declarations and imports
     trait_names: set[str] = {t.name for t in ast.traits}
@@ -264,7 +274,7 @@ def generate(
             body.append("    type: Type")
         else:
             try:
-                default = _type_expr(ret, type_map)
+                default = _type_expr(ret, type_map, known_names)
                 body.append(f"    type: Type = {default}")
             except ValueError:
                 body.append("    type: Type")

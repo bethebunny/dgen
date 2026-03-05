@@ -201,6 +201,7 @@ def test_generate_op_with_block():
 def test_generate_op_return_default():
     """Concrete return type generates a default."""
     f = DgenFile(
+        types=[TypeDecl(name="Nil", layout="Void")],
         ops=[
             OpDecl(
                 name="store",
@@ -210,7 +211,7 @@ def test_generate_op_return_default():
                 ],
                 return_type=TypeRef("Nil"),
             )
-        ]
+        ],
     )
     code = generate(f, dialect_name="test")
     assert "type: Type = Nil()" in code

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Block, Dialect, Op, Type, Value
-from dgen.layout import Byte, FatPointer, Float64, Int, StringLayout, Void
+from dgen import Block, Dialect, Op, Type, Value, layout
 
 builtin = Dialect("builtin")
 
@@ -14,28 +13,28 @@ class HasSingleBlock:
     pass
 
 
-@builtin.type("index")
+@builtin.type("Index")
 @dataclass(frozen=True)
-class IndexType(Type):
-    __layout__ = Int()
+class Index(Type):
+    __layout__ = layout.Int()
 
 
-@builtin.type("f64")
+@builtin.type("F64")
 @dataclass(frozen=True)
-class F64Type(Type):
-    __layout__ = Float64()
+class F64(Type):
+    __layout__ = layout.Float64()
 
 
 @builtin.type("Nil")
 @dataclass(frozen=True)
 class Nil(Type):
-    __layout__ = Void()
+    __layout__ = layout.Void()
 
 
 @builtin.type("String")
 @dataclass(frozen=True)
 class String(Type):
-    __layout__ = StringLayout(Byte())
+    __layout__ = layout.String()
 
 
 @builtin.type("List")
@@ -45,8 +44,8 @@ class List(Type):
     __params__ = (("element_type", Type),)
 
     @property
-    def __layout__(self) -> FatPointer:
-        return FatPointer(self.element_type.__layout__)
+    def __layout__(self) -> layout.Layout:
+        return layout.FatPointer(self.element_type.__layout__)
 
 
 @builtin.op("pack")
@@ -60,10 +59,10 @@ class PackOp(Op):
 @builtin.op("list_get")
 @dataclass(eq=False, kw_only=True)
 class ListGetOp(Op):
-    index: Value[IndexType]
+    index: Value[Index]
     list: Value
     type: Type
-    __params__ = (("index", IndexType),)
+    __params__ = (("index", Index),)
     __operands__ = (("list", List),)
 
 
@@ -72,11 +71,8 @@ class ListGetOp(Op):
 class AddIndexOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = IndexType()
-    __operands__ = (
-        ("lhs", IndexType),
-        ("rhs", IndexType),
-    )
+    type: Type = Index()
+    __operands__ = (("lhs", Index), ("rhs", Index),)
 
 
 @builtin.op("return")
@@ -93,3 +89,5 @@ class FunctionOp(HasSingleBlock, Op):
     type: Type
     body: Block
     __blocks__ = ("body",)
+
+

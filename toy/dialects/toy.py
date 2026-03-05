@@ -4,30 +4,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Op, Type, Value
-from dgen.layout import Void
-from dgen.dialects.builtin import IndexType, Nil, F64Type, String
-from toy.dialects.affine import ShapeType
+from dgen import Dialect, Op, Type, Value, layout
+from dgen.dialects.builtin import Index, Nil, F64, String
+from toy.dialects.affine import Shape
 
 toy = Dialect("toy")
 
 
 @toy.type("Tensor")
 @dataclass(frozen=True)
-class TensorType(Type):
-    shape: Value[ShapeType]
-    dtype: Type = F64Type()
-    __params__ = (
-        ("shape", ShapeType),
-        ("dtype", Type),
-    )
+class Tensor(Type):
+    shape: Value[Shape]
+    dtype: Type = F64()
+    __params__ = (("shape", Shape), ("dtype", Type),)
 
 
 @toy.type("InferredShapeTensor")
 @dataclass(frozen=True)
 class InferredShapeTensor(Type):
-    __layout__ = Void()
-    dtype: Type = F64Type()
+    __layout__ = layout.Void()
+    dtype: Type = F64()
     __params__ = (("dtype", Type),)
 
 
@@ -53,10 +49,7 @@ class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @toy.op("add")
@@ -65,10 +58,7 @@ class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @toy.op("generic_call")
@@ -84,24 +74,21 @@ class GenericCallOp(Op):
 @toy.op("concat")
 @dataclass(eq=False, kw_only=True)
 class ConcatOp(Op):
-    axis: Value[IndexType]
+    axis: Value[Index]
     lhs: Value
     rhs: Value
     type: Type
-    __params__ = (("axis", IndexType),)
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    __params__ = (("axis", Index),)
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @toy.op("tile")
 @dataclass(eq=False, kw_only=True)
 class TileOp(Op):
-    count: Value[IndexType]
+    count: Value[Index]
     input: Value
     type: Type
-    __params__ = (("count", IndexType),)
+    __params__ = (("count", Index),)
     __operands__ = (("input", Type),)
 
 
@@ -109,17 +96,17 @@ class TileOp(Op):
 @dataclass(eq=False, kw_only=True)
 class NonzeroCountOp(Op):
     input: Value
-    type: Type = IndexType()
+    type: Type = Index()
     __operands__ = (("input", Type),)
 
 
 @toy.op("dim_size")
 @dataclass(eq=False, kw_only=True)
 class DimSizeOp(Op):
-    axis: Value[IndexType]
+    axis: Value[Index]
     input: Value
-    type: Type = IndexType()
-    __params__ = (("axis", IndexType),)
+    type: Type = Index()
+    __params__ = (("axis", Index),)
     __operands__ = (("input", Type),)
 
 
@@ -129,3 +116,5 @@ class PrintOp(Op):
     input: Value
     type: Type = Nil()
     __operands__ = (("input", Type),)
+
+

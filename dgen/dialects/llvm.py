@@ -4,45 +4,44 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Op, Type, Value
-from dgen.layout import Float64, Int, Pointer, Void
-from dgen.dialects.builtin import IndexType, Nil, String
+from dgen import Dialect, Op, Type, Value, layout
+from dgen.dialects.builtin import Index, Nil, F64, String
 
 llvm = Dialect("llvm")
 
 
 @llvm.type("Ptr")
 @dataclass(frozen=True)
-class PtrType(Type):
-    __layout__ = Pointer(Void())
+class Ptr(Type):
+    __layout__ = layout.Pointer(layout.Void())
 
 
 @llvm.type("Int")
 @dataclass(frozen=True)
-class IntType(Type):
-    __layout__ = Int()
-    bits: Value[IndexType]
-    __params__ = (("bits", IndexType),)
+class Int(Type):
+    __layout__ = layout.Int()
+    bits: Value[Index]
+    __params__ = (("bits", Index),)
 
 
 @llvm.type("Float")
 @dataclass(frozen=True)
-class FloatType(Type):
-    __layout__ = Float64()
+class Float(Type):
+    __layout__ = layout.Float64()
 
 
 @llvm.type("Void")
 @dataclass(frozen=True)
-class VoidType(Type):
-    __layout__ = Void()
+class Void(Type):
+    __layout__ = layout.Void()
 
 
 @llvm.op("alloca")
 @dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
-    elem_count: Value[IndexType]
-    type: Type = PtrType()
-    __params__ = (("elem_count", IndexType),)
+    elem_count: Value[Index]
+    type: Type = Ptr()
+    __params__ = (("elem_count", Index),)
 
 
 @llvm.op("gep")
@@ -50,18 +49,15 @@ class AllocaOp(Op):
 class GepOp(Op):
     base: Value
     index: Value
-    type: Type = PtrType()
-    __operands__ = (
-        ("base", Type),
-        ("index", Type),
-    )
+    type: Type = Ptr()
+    __operands__ = (("base", Type), ("index", Type),)
 
 
 @llvm.op("load")
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
     ptr: Value
-    type: Type = FloatType()
+    type: Type = Float()
     __operands__ = (("ptr", Type),)
 
 
@@ -71,10 +67,7 @@ class StoreOp(Op):
     value: Value
     ptr: Value
     type: Type = Nil()
-    __operands__ = (
-        ("value", Type),
-        ("ptr", Type),
-    )
+    __operands__ = (("value", Type), ("ptr", Type),)
 
 
 @llvm.op("fadd")
@@ -82,11 +75,8 @@ class StoreOp(Op):
 class FaddOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = FloatType()
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    type: Type = Float()
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @llvm.op("fmul")
@@ -94,11 +84,8 @@ class FaddOp(Op):
 class FmulOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = FloatType()
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    type: Type = Float()
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @llvm.op("add")
@@ -106,11 +93,8 @@ class FmulOp(Op):
 class AddOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = IntType(bits=IndexType().constant(64))
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    type: Type = Int(bits=Index().constant(64))
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @llvm.op("mul")
@@ -118,11 +102,8 @@ class AddOp(Op):
 class MulOp(Op):
     lhs: Value
     rhs: Value
-    type: Type = IntType(bits=IndexType().constant(64))
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    type: Type = Int(bits=Index().constant(64))
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @llvm.op("icmp")
@@ -131,12 +112,9 @@ class IcmpOp(Op):
     pred: Value[String]
     lhs: Value
     rhs: Value
-    type: Type = IntType(bits=IndexType().constant(1))
+    type: Type = Int(bits=Index().constant(1))
     __params__ = (("pred", String),)
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @llvm.op("br")
@@ -154,10 +132,7 @@ class CondBrOp(Op):
     false_dest: Value[String]
     cond: Value
     type: Type = Nil()
-    __params__ = (
-        ("true_dest", String),
-        ("false_dest", String),
-    )
+    __params__ = (("true_dest", String), ("false_dest", String),)
     __operands__ = (("cond", Type),)
 
 
@@ -185,19 +160,16 @@ class FcmpOp(Op):
     pred: Value[String]
     lhs: Value
     rhs: Value
-    type: Type = IntType(bits=IndexType().constant(1))
+    type: Type = Int(bits=Index().constant(1))
     __params__ = (("pred", String),)
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @llvm.op("zext")
 @dataclass(eq=False, kw_only=True)
 class ZextOp(Op):
     input: Value
-    type: Type = IntType(bits=IndexType().constant(64))
+    type: Type = Int(bits=Index().constant(64))
     __operands__ = (("input", Type),)
 
 
@@ -209,3 +181,5 @@ class CallOp(Op):
     type: Type = Nil()
     __params__ = (("callee", String),)
     __operands__ = (("args", Type),)
+
+
