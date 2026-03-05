@@ -30,7 +30,7 @@ type List<element_type: Type>:
 op pack(values: list<Type>) -> Type
 op list_get<index: Index>(list: List) -> Type
 op add_index(lhs: Index, rhs: Index) -> Index
-op return(value: Type = Nil) -> Nil
+op return(value = Nil) -> Nil
 op function() -> Type:
     block body
     has trait HasSingleBlock
