@@ -102,4 +102,4 @@ _Always_ strive to add correct type annotations! If the type annotations are inc
 
 This repo uses **jj** (Jujutsu) as its VCS frontend over git. Use `jj` commands rather than `git` for day-to-day operations (e.g., `jj st`, `jj log`, `jj new`, `jj commit`, `jj describe`).
 
-_Don't ever_ use `jj edit`, `jj abandon`, or `jj squash`, or other changes which mutate the commit history. Use `jj new` and add an appropriate commit description.
+_Don't ever_ use `jj edit`, `jj abandon`, or `jj squash`, or other changes which mutate the commit history. Use `jj new` and add an appropriate commit description. Note that `jj new` creates a new empty commit, so use `jj describe` to describe the current commit, or `jj commit -m` as sugar for `jj describe -m ... && jj new`.
