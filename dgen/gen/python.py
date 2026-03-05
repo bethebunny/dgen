@@ -249,7 +249,8 @@ def _generate(
 
         if od.operands:
             parts = [
-                f'("{op.name}", {_resolve_type_ref(op.type)})' for op in od.operands
+                f'("{op.name}", {_resolve_type_ref(op.type) if op.type is not None else "Type"})'
+                for op in od.operands
             ]
             body.append(f"    __operands__ = ({', '.join(parts)},)")
 

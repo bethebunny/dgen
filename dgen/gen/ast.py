@@ -33,10 +33,10 @@ class ParamDecl:
 
 @dataclass
 class OperandDecl:
-    """A runtime operand: name: Type [= default]."""
+    """A runtime operand: name[: Type] [= default]."""
 
     name: str
-    type: TypeRef
+    type: TypeRef | None = None
     default: str | None = None
     variadic: bool = False
 

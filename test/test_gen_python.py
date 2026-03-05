@@ -464,6 +464,23 @@ def test_generate_parametric_layout_pointer():
     assert "layout.Pointer(self.pointee.__layout__)" in code
 
 
+def test_generate_untyped_operand():
+    """Untyped operand generates same as Type operand."""
+    f = DgenFile(
+        ops=[
+            OpDecl(
+                name="transpose",
+                operands=[OperandDecl(name="input", type=None)],
+                return_type=TypeRef("Type"),
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "input: Value" in code
+    assert "type: Type" in code
+    assert '__operands__ = (("input", Type),)' in code
+
+
 def test_generate_unknown_return_type_errors():
     """Return type referencing unknown type should raise."""
     import pytest

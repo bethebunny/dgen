@@ -210,6 +210,25 @@ type Tensor<shape: Shape>:
     assert t.data is None
 
 
+def test_parse_untyped_operand():
+    """Operands without type annotation default to no constraint."""
+    result = parse("op transpose(input) -> Type\n")
+    op = result.ops[0]
+    assert op.operands[0].name == "input"
+    assert op.operands[0].type is None
+
+
+def test_parse_mixed_typed_untyped_operands():
+    """Mix of typed and untyped operands."""
+    result = parse("op add(lhs, rhs: Type) -> Type\n")
+    op = result.ops[0]
+    assert op.operands[0].name == "lhs"
+    assert op.operands[0].type is None
+    assert op.operands[1].name == "rhs"
+    assert op.operands[1].type is not None
+    assert op.operands[1].type.name == "Type"
+
+
 def test_parse_multiple_block_lines():
     src = """\
 op multi() -> Nil:

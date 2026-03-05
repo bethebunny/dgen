@@ -197,7 +197,7 @@ def _parse_params(s: str) -> list[ParamDecl]:
 
 
 def _parse_operands(s: str) -> list[OperandDecl]:
-    """Parse a comma-separated operand list: name: Type [= default], ..."""
+    """Parse a comma-separated operand list: name[: Type] [= default], ..."""
     operands: list[OperandDecl] = []
     for part in _split_commas(s):
         part = part.strip()
@@ -206,15 +206,20 @@ def _parse_operands(s: str) -> list[OperandDecl]:
             decl, default = part.rsplit("=", 1)
             default = default.strip()
             part = decl.strip()
-        name, type_str = part.split(":", 1)
-        type_ref = _parse_type_ref(type_str.strip())
+        type_ref: TypeRef | None = None
         variadic = False
-        if type_ref.name == "list" and len(type_ref.args) == 1:
-            variadic = True
-            type_ref = type_ref.args[0]
+        if ":" in part:
+            name, type_str = part.split(":", 1)
+            name = name.strip()
+            type_ref = _parse_type_ref(type_str.strip())
+            if type_ref.name == "list" and len(type_ref.args) == 1:
+                variadic = True
+                type_ref = type_ref.args[0]
+        else:
+            name = part.strip()
         operands.append(
             OperandDecl(
-                name=name.strip(),
+                name=name,
                 type=type_ref,
                 default=default,
                 variadic=variadic,
