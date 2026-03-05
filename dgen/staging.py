@@ -89,7 +89,7 @@ def _jit_evaluate(
     raw = exe.run(*memories)
 
     # Convert result back to Python while JIT buffers are still alive
-    return _raw_to_python(raw, target.type)
+    return _raw_to_json(raw, target.type)
 
 
 def _resolve_comptime_field(
@@ -255,16 +255,16 @@ def _resolve_all_comptime(
     return module
 
 
-def _raw_to_python(raw: object, ty: dgen.Type) -> object:
+def _raw_to_json(raw: object, ty: dgen.Type) -> object:
     """Convert a raw ctypes callback value to a Python value.
 
     Scalars (int, float) pass through. Pointer types are read from memory
-    via Memory.from_raw().to_python().
+    via Memory.from_raw().to_json().
     """
     layout = ty.__layout__
     if _ctype(layout) is ctypes.c_void_p:
         assert isinstance(raw, int)
-        return Memory.from_raw(ty, raw).to_python()
+        return Memory.from_raw(ty, raw).to_json()
     return raw
 
 
@@ -304,7 +304,7 @@ def _compile_with_callbacks(
     def _callback(*raw_args: object) -> object:
         # Convert raw ctypes values to Python values
         python_args = [
-            _raw_to_python(raw_args[i], orig_types[i]) for i in range(len(orig_types))
+            _raw_to_json(raw_args[i], orig_types[i]) for i in range(len(orig_types))
         ]
 
         # Deep-copy template and resolve all __params__ in stage order

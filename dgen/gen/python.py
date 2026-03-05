@@ -52,16 +52,13 @@ _COMPOUND_TO_LAYOUT: dict[str, str] = {
     "Array": "Array",
     "Pointer": "Pointer",
     "FatPointer": "FatPointer",
-    "Bytes": "Bytes",
 }
 
 # Layout singletons that need to be imported from dgen.layout
 _LAYOUT_SINGLETONS: frozenset[str] = frozenset({"INT", "FLOAT64", "VOID", "BYTE"})
 
 # Layout constructors that need to be imported from dgen.layout
-_LAYOUT_CONSTRUCTORS: frozenset[str] = frozenset(
-    {"Array", "Pointer", "FatPointer", "Bytes"}
-)
+_LAYOUT_CONSTRUCTORS: frozenset[str] = frozenset({"Array", "Pointer", "FatPointer"})
 
 
 def _type_class_name(asm_name: str) -> str:

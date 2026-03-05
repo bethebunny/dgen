@@ -197,7 +197,7 @@ def test_type_asm_roundtrip(ty):
 # 2. Memory from_value round-trip
 # ---------------------------------------------------------------------------
 
-# Types with Layout.parse() — can round-trip through from_value/from_asm
+# Types that can round-trip through from_value/from_asm
 _PARSEABLE_TYPES = [
     pytest.param(builtin.IndexType(), 42, "42", (42,), id="builtin.index"),
     pytest.param(builtin.F64Type(), 3.14, "3.14", (3.14,), id="builtin.f64"),
@@ -296,7 +296,7 @@ def test_list_constant_jit_return():
     exe = compile_module(Module(functions=[func]))
     raw = exe.run()
     assert isinstance(raw, int)
-    result = Memory.from_raw(list_type, raw).to_python()
+    result = Memory.from_raw(list_type, raw).to_json()
     assert result == [3, 5, 7]
 
 
@@ -310,14 +310,14 @@ def test_list_of_lists_memory_roundtrip():
     inner = builtin.List(element_type=builtin.IndexType())
     outer = builtin.List(element_type=inner)
     mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
-    assert mem.to_python() == [[1, 2], [3, 4, 5]]
+    assert mem.to_json() == [[1, 2], [3, 4, 5]]
 
 
 def test_list_of_strings_memory_roundtrip():
     """List<String> round-trips through Memory."""
     ty = builtin.List(element_type=builtin.String())
     mem = Memory.from_value(ty, ["hello", "world"])
-    assert mem.to_python() == ["hello", "world"]
+    assert mem.to_json() == ["hello", "world"]
 
 
 # ---------------------------------------------------------------------------
@@ -494,7 +494,7 @@ def test_deepcopy_string_constant():
     ty = builtin.String()
     mem = Memory.from_value(ty, "hello")
     copied = deepcopy(mem)
-    assert copied.to_python() == "hello"
+    assert copied.to_json() == "hello"
     # Origins are shared, not copied
     assert copied.origins is mem.origins
 
@@ -506,7 +506,7 @@ def test_deepcopy_list_of_strings():
     ty = builtin.List(element_type=builtin.String())
     mem = Memory.from_value(ty, ["hello", "world"])
     copied = deepcopy(mem)
-    assert copied.to_python() == ["hello", "world"]
+    assert copied.to_json() == ["hello", "world"]
 
 
 def test_deepcopy_list_of_lists():
@@ -517,7 +517,7 @@ def test_deepcopy_list_of_lists():
     outer = builtin.List(element_type=inner)
     mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
     copied = deepcopy(mem)
-    assert copied.to_python() == [[1, 2], [3, 4, 5]]
+    assert copied.to_json() == [[1, 2], [3, 4, 5]]
 
 
 def test_deepcopy_module_with_list_constant():
@@ -542,7 +542,7 @@ def test_deepcopy_module_with_list_constant():
     # The copied module's constant should still be readable
     copied_const = copied.functions[0].body.ops[0]
     assert isinstance(copied_const, ConstantOp)
-    assert copied_const.value.to_python() == [3, 5, 7]
+    assert copied_const.value.to_json() == [3, 5, 7]
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +552,7 @@ def test_deepcopy_module_with_list_constant():
 # FatPointer memories created from the same Python value compare as NOT
 # equal (different heap pointers in the buffer). This breaks constant
 # deduplication and makes equality checks unreliable for pointer types.
-# Options: (a) define equality via to_python() for pointer layouts,
+# Options: (a) define equality via to_json() for pointer layouts,
 # (b) normalize pointer buffers, (c) content-hash the origins.
 # ---------------------------------------------------------------------------
 
@@ -598,21 +598,21 @@ def test_empty_list():
     """Empty list round-trips through Memory."""
     ty = builtin.List(element_type=builtin.IndexType())
     mem = Memory.from_value(ty, [])
-    assert mem.to_python() == []
+    assert mem.to_json() == []
 
 
 def test_single_element_list():
     """Single-element list round-trips through Memory."""
     ty = builtin.List(element_type=builtin.IndexType())
     mem = Memory.from_value(ty, [42])
-    assert mem.to_python() == [42]
+    assert mem.to_json() == [42]
 
 
 def test_list_of_f64():
     """List<f64> round-trips through Memory (float variant of FatPointer)."""
     ty = builtin.List(element_type=builtin.F64Type())
     mem = Memory.from_value(ty, [1.5, 2.5, 3.5])
-    assert mem.to_python() == [1.5, 2.5, 3.5]
+    assert mem.to_json() == [1.5, 2.5, 3.5]
 
 
 def test_three_level_nesting():
@@ -621,13 +621,13 @@ def test_three_level_nesting():
     l2 = builtin.List(element_type=l1)
     l3 = builtin.List(element_type=l2)
     mem = Memory.from_value(l3, [[[1, 2], [3]], [[4, 5, 6]]])
-    assert mem.to_python() == [[[1, 2], [3]], [[4, 5, 6]]]
+    assert mem.to_json() == [[[1, 2], [3]], [[4, 5, 6]]]
 
 
 def test_empty_string():
     """Empty string round-trips through Memory."""
     mem = Memory.from_value(builtin.String(), "")
-    assert mem.to_python() == ""
+    assert mem.to_json() == ""
 
 
 def test_list_of_empty_lists():
@@ -635,7 +635,7 @@ def test_list_of_empty_lists():
     inner = builtin.List(element_type=builtin.IndexType())
     outer = builtin.List(element_type=inner)
     mem = Memory.from_value(outer, [[], [], []])
-    assert mem.to_python() == [[], [], []]
+    assert mem.to_json() == [[], [], []]
 
 
 # ---------------------------------------------------------------------------
@@ -650,7 +650,7 @@ def test_list_identity_jit_roundtrip_full():
     exe = _identity_exe(list_type)
     raw = exe.run(mem)
     assert isinstance(raw, int)
-    result = Memory.from_raw(list_type, raw).to_python()
+    result = Memory.from_raw(list_type, raw).to_json()
     assert result == [10, 20, 30]
 
 
@@ -661,5 +661,5 @@ def test_list_f64_jit_roundtrip():
     exe = _identity_exe(list_type)
     raw = exe.run(mem)
     assert isinstance(raw, int)
-    result = Memory.from_raw(list_type, raw).to_python()
+    result = Memory.from_raw(list_type, raw).to_json()
     assert result == [1.1, 2.2, 3.3]

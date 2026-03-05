@@ -37,6 +37,18 @@ class Nil(Type):
 class String(Type):
     __layout__ = FatPointer(BYTE)
 
+    @staticmethod
+    def __to_json__(value: object) -> str:
+        assert isinstance(value, list)
+        return bytes(bytearray(value)).decode("utf-8")
+
+    @staticmethod
+    def __from_json__(value: object) -> list[int]:
+        if isinstance(value, str):
+            return list(value.encode("utf-8"))
+        assert isinstance(value, list)
+        return value
+
 
 @builtin.type("List")
 @dataclass(frozen=True)
@@ -47,6 +59,20 @@ class List(Type):
     @property
     def __layout__(self) -> FatPointer:
         return FatPointer(self.element_type.__layout__)
+
+    def __to_json__(self, value: object) -> object:
+        hook = getattr(self.element_type, "__to_json__", None)
+        if hook is None:
+            return value
+        assert isinstance(value, list)
+        return [hook(elem) for elem in value]
+
+    def __from_json__(self, value: object) -> object:
+        hook = getattr(self.element_type, "__from_json__", None)
+        if hook is None:
+            return value
+        assert isinstance(value, list)
+        return [hook(elem) for elem in value]
 
 
 @builtin.op("pack")

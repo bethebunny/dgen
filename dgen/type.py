@@ -4,7 +4,7 @@ import ctypes
 from copy import deepcopy as _deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
 
-from .layout import BYTE, Array, FatPointer, Layout, Pointer, _bytearray_address
+from .layout import Layout, _bytearray_address
 
 if TYPE_CHECKING:
     from .value import Constant
@@ -101,37 +101,6 @@ class Memory(Generic[T]):
         mem = cls(type)
         type.__layout__.from_json(mem.buffer, 0, value, mem.origins)
         return mem
-
-    def to_python(self) -> object:
-        """Convert back to a Python value by reading from the buffer.
-
-        For pointer layouts, dereferences the packed pointer to read data.
-        """
-        layout = self.layout
-
-        if isinstance(layout, FatPointer):
-            ptr, length = self.unpack()
-            pointee = layout.pointee
-            ps = pointee.struct.size
-            data = bytes((ctypes.c_char * (length * ps)).from_address(ptr))
-            if pointee is BYTE:
-                return data.decode("utf-8")
-            if isinstance(pointee, (FatPointer, Pointer)):
-                # Nested pointer: recursively convert each element
-                elem_type: Type = self.type.element_type  # type: ignore[attr-defined]
-                return [
-                    Memory(
-                        elem_type, bytearray(data[i * ps : (i + 1) * ps])
-                    ).to_python()
-                    for i in range(length)
-                ]
-            return [pointee.struct.unpack_from(data, i * ps)[0] for i in range(length)]
-
-        if isinstance(layout, Array):
-            return list(self.unpack())
-
-        vals = self.unpack()
-        return vals[0] if len(vals) == 1 else vals
 
     @classmethod
     def from_raw(cls, type: Type, address: int) -> Memory:

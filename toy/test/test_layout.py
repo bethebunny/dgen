@@ -1,7 +1,7 @@
 """Tests for memory layout types."""
 
 from dgen.dialects import builtin
-from dgen.layout import BYTE, FLOAT64, INT, Array, Bytes, FatPointer, Pointer
+from dgen.layout import BYTE, FLOAT64, INT, Array, FatPointer, Pointer
 from dgen.module import string_value
 
 
@@ -24,12 +24,6 @@ def test_pointer():
 def test_fat_pointer():
     assert FatPointer(BYTE).byte_size == 16
     assert FatPointer(INT).byte_size == 16
-
-
-def test_bytes_layout():
-    b = Bytes(5)
-    assert b.byte_size == 5
-    assert b.parse(b"hello") == b"hello"
 
 
 def test_string_layout():
@@ -97,8 +91,8 @@ def test_list_constant_fatpointer():
     # Pointer dereferences to [10, 20, 30]
     arr = (ctypes.c_int64 * length).from_address(ptr)
     assert list(arr) == [10, 20, 30]
-    # to_python round-trip
-    assert mem.to_python() == [10, 20, 30]
+    # to_json round-trip
+    assert mem.to_json() == [10, 20, 30]
 
 
 def test_list_type_asm_one_param():

@@ -29,9 +29,6 @@ class Layout:
     def byte_size(self) -> int:
         return self.struct.size
 
-    def parse(self, obj: object) -> object:
-        raise NotImplementedError
-
     def to_json(self, buf: bytes | bytearray, offset: int) -> object:
         raise NotImplementedError
 
@@ -73,10 +70,6 @@ class Int(Layout):
 
     struct = Struct("q")
 
-    def parse(self, obj: object) -> int:
-        assert isinstance(obj, int), f"expected int, got {type(obj).__name__}"
-        return obj
-
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
 
@@ -91,12 +84,6 @@ class Float64(Layout):
     """64-bit float (f64)."""
 
     struct = Struct("d")
-
-    def parse(self, obj: object) -> float:
-        assert isinstance(obj, (int, float)), (
-            f"expected number, got {type(obj).__name__}"
-        )
-        return float(obj)
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> float:
         return self.struct.unpack_from(buf, offset)[0]
@@ -116,10 +103,6 @@ class Array(Layout):
         self.count = count
         self.struct = Struct(f"{count}{element.struct.format}")
 
-    def parse(self, obj: object) -> list[object]:
-        assert isinstance(obj, list), f"expected list, got {type(obj).__name__}"
-        return [self.element.parse(v) for v in obj]
-
     def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
         return [
             self.element.to_json(buf, offset + i * self.element.struct.size)
@@ -133,19 +116,6 @@ class Array(Layout):
         es = self.element.struct.size
         for i, v in enumerate(value):
             self.element.from_json(buf, offset + i * es, v, origins)
-
-
-class Bytes(Layout):
-    """N raw bytes, stored as a single bytes object."""
-
-    def __init__(self, count: int) -> None:
-        self.count = count
-        self.struct = Struct(f"{count}s")
-
-    def parse(self, obj: object) -> bytes:
-        assert isinstance(obj, bytes), f"expected bytes, got {type(obj).__name__}"
-        assert len(obj) == self.count, f"expected {self.count} bytes, got {len(obj)}"
-        return obj
 
 
 class Pointer(Layout):
