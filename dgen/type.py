@@ -86,18 +86,11 @@ class Memory(Generic[T]):
 
     def to_json(self) -> object:
         """Convert to a JSON-compatible Python value by reading from the buffer."""
-        result = self.layout.to_json(self.buffer, 0)
-        hook = getattr(self.type, "__to_json__", None)
-        if hook is not None:
-            result = hook(result)
-        return result
+        return self.layout.to_json(self.buffer, 0)
 
     @classmethod
     def from_json(cls, type: Type, value: object) -> Memory:
         """Create Memory from a Type and a JSON-compatible Python value."""
-        hook = getattr(type, "__from_json__", None)
-        if hook is not None:
-            value = hook(value)
         mem = cls(type)
         type.__layout__.from_json(mem.buffer, 0, value, mem.origins)
         return mem

@@ -1,6 +1,6 @@
 """Memory layout types for language-agnostic type descriptions.
 
-Layouts are value-level descriptors: Byte, Int, Float64 are singletons;
+Layouts are value-level descriptors: Byte(), Int(), Float64() are leaf types;
 Array, Pointer, FatPointer are parameterized via constructors.
 
 Each layout has a `struct` attribute (a `struct.Struct`) that describes
@@ -161,10 +161,6 @@ class FatPointer(Layout):
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
     ) -> None:
-        if isinstance(value, str):
-            value = list(value.encode("utf-8"))
-        elif isinstance(value, bytes):
-            value = list(value)
         assert isinstance(value, list)
         pointee = self.pointee
         ps = pointee.struct.size
@@ -176,8 +172,18 @@ class FatPointer(Layout):
         self.struct.pack_into(buf, offset, ptr, len(value))
 
 
-# Module-level singletons for primitives
-VOID = Void()
-BYTE = Byte()
-INT = Int()
-FLOAT64 = Float64()
+class StringLayout(FatPointer):
+    """FatPointer(Byte()) with str ↔ list[int] conversion in to_json/from_json."""
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> str:
+        byte_list = super().to_json(buf, offset)
+        return bytes(bytearray(byte_list)).decode("utf-8")
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        if isinstance(value, str):
+            value = list(value.encode("utf-8"))
+        elif isinstance(value, bytes):
+            value = list(value)
+        super().from_json(buf, offset, value, origins)

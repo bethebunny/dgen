@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.layout import INT, VOID, Array, Pointer
+from dgen.layout import Array, Int, Pointer, Void
 from dgen.dialects.builtin import IndexType, Nil, F64Type, HasSingleBlock
 
 affine = Dialect("affine")
@@ -19,13 +19,13 @@ class ShapeType(Type):
 
     @property
     def __layout__(self) -> Array:
-        return Array(INT, self.rank.__constant__.unpack()[0])
+        return Array(Int(), self.rank.__constant__.unpack()[0])
 
 
 @affine.type("MemRef")
 @dataclass(frozen=True)
 class MemRefType(Type):
-    __layout__ = Pointer(VOID)
+    __layout__ = Pointer(Void())
     shape: Value[ShapeType]
     dtype: Type = F64Type()
     __params__ = (

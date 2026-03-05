@@ -10,7 +10,7 @@ type Nil:
     data: Nil
 
 type String:
-    storage: FatPointer<Byte>
+    storage: StringLayout
 
 type List<element_type: Type>:
     storage: FatPointer<element_type>

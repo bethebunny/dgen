@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Dialect, Op, Type, Value
-from dgen.layout import VOID
+from dgen.layout import Void
 from dgen.dialects.builtin import IndexType, Nil, F64Type, String
 from toy.dialects.affine import ShapeType
 
@@ -26,7 +26,7 @@ class TensorType(Type):
 @toy.type("InferredShapeTensor")
 @dataclass(frozen=True)
 class InferredShapeTensor(Type):
-    __layout__ = VOID
+    __layout__ = Void()
     dtype: Type = F64Type()
     __params__ = (("dtype", Type),)
 

@@ -1,29 +1,29 @@
 """Tests for memory layout types."""
 
 from dgen.dialects import builtin
-from dgen.layout import BYTE, FLOAT64, INT, Array, FatPointer, Pointer
+from dgen.layout import Byte, Float64, Int, Array, FatPointer, Pointer
 from dgen.module import string_value
 
 
 def test_primitive_sizes():
-    assert BYTE.byte_size == 1
-    assert INT.byte_size == 8
-    assert FLOAT64.byte_size == 8
+    assert Byte().byte_size == 1
+    assert Int().byte_size == 8
+    assert Float64().byte_size == 8
 
 
 def test_array():
-    assert Array(BYTE, 8).byte_size == 8
-    assert Array(FLOAT64, 6).byte_size == 48
+    assert Array(Byte(), 8).byte_size == 8
+    assert Array(Float64(), 6).byte_size == 48
 
 
 def test_pointer():
-    assert Pointer(FLOAT64).byte_size == 8
-    assert Pointer(INT).byte_size == 8
+    assert Pointer(Float64()).byte_size == 8
+    assert Pointer(Int()).byte_size == 8
 
 
 def test_fat_pointer():
-    assert FatPointer(BYTE).byte_size == 16
-    assert FatPointer(INT).byte_size == 16
+    assert FatPointer(Byte()).byte_size == 16
+    assert FatPointer(Int()).byte_size == 16
 
 
 def test_string_layout():
@@ -32,13 +32,14 @@ def test_string_layout():
     assert s.__layout__.byte_size == 16
 
 
-def test_string_fatpointer_layout():
-    """String type uses FatPointer(BYTE) layout — 16 bytes, not inline."""
-    s = builtin.String()  # No params needed
+def test_string_layout_is_string_layout():
+    """String type uses StringLayout — 16 bytes, FatPointer subclass."""
+    from dgen.layout import StringLayout
+
+    s = builtin.String()
     layout = s.__layout__
-    assert isinstance(layout, FatPointer)
+    assert isinstance(layout, StringLayout)
     assert layout.byte_size == 16
-    assert layout.pointee is BYTE
 
 
 def test_string_constant_fatpointer():
@@ -73,7 +74,7 @@ def test_list_fatpointer_layout():
     layout = list_type.__layout__
     assert isinstance(layout, FatPointer)
     assert layout.byte_size == 16
-    assert layout.pointee is INT
+    assert isinstance(layout.pointee, Int)
 
 
 def test_list_constant_fatpointer():
@@ -118,9 +119,10 @@ def test_float_to_json():
 
 
 def test_byte_to_json():
+    b = Byte()
     buf = bytearray(1)
-    BYTE.struct.pack_into(buf, 0, 65)
-    assert BYTE.to_json(buf, 0) == 65
+    b.struct.pack_into(buf, 0, 65)
+    assert b.to_json(buf, 0) == 65
 
 
 def test_f64type_layout():

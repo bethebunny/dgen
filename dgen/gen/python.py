@@ -36,15 +36,16 @@ _KNOWN_TRAITS: frozenset[str] = frozenset(
     }
 )
 
-# Map from .dgen type names to Python layout singleton names.
+# Map from .dgen type names to Python layout constructor calls.
 # These are the leaf types whose layout is intrinsic.
 _TYPE_TO_LAYOUT: dict[str, str] = {
-    "Index": "INT",
-    "index": "INT",
-    "F64": "FLOAT64",
-    "f64": "FLOAT64",
-    "Nil": "VOID",
-    "Byte": "BYTE",
+    "Index": "Int()",
+    "index": "Int()",
+    "F64": "Float64()",
+    "f64": "Float64()",
+    "Nil": "Void()",
+    "Byte": "Byte()",
+    "StringLayout": "StringLayout(Byte())",
 }
 
 # Map from .dgen compound type names to Python layout constructor names.
@@ -54,11 +55,10 @@ _COMPOUND_TO_LAYOUT: dict[str, str] = {
     "FatPointer": "FatPointer",
 }
 
-# Layout singletons that need to be imported from dgen.layout
-_LAYOUT_SINGLETONS: frozenset[str] = frozenset({"INT", "FLOAT64", "VOID", "BYTE"})
-
-# Layout constructors that need to be imported from dgen.layout
-_LAYOUT_CONSTRUCTORS: frozenset[str] = frozenset({"Array", "Pointer", "FatPointer"})
+# Layout classes that need to be imported from dgen.layout
+_LAYOUT_CONSTRUCTORS: frozenset[str] = frozenset(
+    {"Array", "Pointer", "FatPointer", "Void", "Byte", "Int", "Float64", "StringLayout"}
+)
 
 
 def _type_class_name(asm_name: str) -> str:
@@ -147,8 +147,7 @@ class _Generator:
         self._lines: list[str] = []
 
         # Pre-compute: which layout imports are needed
-        self._layout_singletons: set[str] = set()
-        self._layout_constructors: set[str] = set()
+        self._layout_classes: set[str] = set()
         self._needs_block = False
         self._trait_names: set[str] = {t.name for t in ast.traits}
         # Also track imported trait names
@@ -174,13 +173,15 @@ class _Generator:
         name = type_ref.name
         # Check if this type name resolves to a layout
         if name in _TYPE_TO_LAYOUT:
-            layout_name = _TYPE_TO_LAYOUT[name]
-            if layout_name in _LAYOUT_SINGLETONS:
-                self._layout_singletons.add(layout_name)
+            # Extract class names from constructor call expressions
+            expr = _TYPE_TO_LAYOUT[name]
+            for cls_name in _LAYOUT_CONSTRUCTORS:
+                if cls_name in expr:
+                    self._layout_classes.add(cls_name)
         elif name in _COMPOUND_TO_LAYOUT:
             layout_name = _COMPOUND_TO_LAYOUT[name]
             if layout_name in _LAYOUT_CONSTRUCTORS:
-                self._layout_constructors.add(layout_name)
+                self._layout_classes.add(layout_name)
         # Recurse into type args (but skip param references)
         for arg in type_ref.args:
             if arg.name not in param_names:
@@ -218,9 +219,7 @@ class _Generator:
         self._line(f"from dgen import {', '.join(sorted(dgen_names))}")
 
         # Layout imports
-        layout_names: list[str] = sorted(self._layout_singletons) + sorted(
-            self._layout_constructors
-        )
+        layout_names: list[str] = sorted(self._layout_classes)
         if layout_names:
             self._line(f"from dgen.layout import {', '.join(layout_names)}")
 

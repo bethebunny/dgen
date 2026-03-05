@@ -21,7 +21,7 @@ from dgen.dialects.builtin import (
     String,
     builtin,
 )
-from dgen.layout import VOID
+from dgen.layout import Void
 from dgen.type import Memory
 
 # ===----------------------------------------------------------------------=== #
@@ -33,7 +33,7 @@ from dgen.type import Memory
 class Function(Type):
     """A function signature."""
 
-    __layout__ = VOID
+    __layout__ = Void()
     result: Type
 
 

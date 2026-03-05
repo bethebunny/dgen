@@ -31,7 +31,7 @@ def test_generate_simple_type():
     assert '@test.type("index")' in code
     assert "class IndexType(Type):" in code
     assert "@dataclass(frozen=True)" in code
-    assert "__layout__ = INT" in code
+    assert "__layout__ = Int()" in code
 
 
 def test_generate_type_no_data():
@@ -70,7 +70,7 @@ def test_generate_parameterized_type():
     assert '__params__ = (("rank", IndexType),)' in code
     # Parametric layout becomes a property
     assert "def __layout__(self)" in code
-    assert "Array(INT," in code
+    assert "Array(Int()," in code
 
 
 def test_generate_type_fatpointer_data():
@@ -87,7 +87,7 @@ def test_generate_type_fatpointer_data():
     )
     code = generate(f, dialect_name="test")
     assert "class String(Type):" in code
-    assert "__layout__ = FatPointer(BYTE)" in code
+    assert "__layout__ = FatPointer(Byte())" in code
 
 
 def test_generate_type_fatpointer_param():
@@ -362,7 +362,7 @@ def test_generate_valid_python():
 
 
 def test_generate_nil_data_field():
-    """A type with data: Nil should get __layout__ = VOID."""
+    """A type with data: Nil should get __layout__ = Void()."""
     f = DgenFile(
         types=[
             TypeDecl(
@@ -376,11 +376,11 @@ def test_generate_nil_data_field():
     )
     code = generate(f, dialect_name="test")
     assert "class InferredShapeTensor(Type):" in code
-    assert "__layout__ = VOID" in code
+    assert "__layout__ = Void()" in code
 
 
 def test_generate_pointer_data():
-    """Pointer<Nil> should generate __layout__ = Pointer(VOID)."""
+    """Pointer<Nil> should generate __layout__ = Pointer(Void())."""
     f = DgenFile(
         types=[
             TypeDecl(
@@ -395,4 +395,4 @@ def test_generate_pointer_data():
     )
     code = generate(f, dialect_name="test")
     assert "class MemRefType(Type):" in code
-    assert "__layout__ = Pointer(VOID)" in code
+    assert "__layout__ = Pointer(Void())" in code

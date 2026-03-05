@@ -9,7 +9,7 @@ from math import prod
 from dgen import Constant, Type, Value
 from dgen.dialects.builtin import IndexType
 from dgen.module import Function
-from dgen.layout import FLOAT64, Array, Layout
+from dgen.layout import Array, Float64, Layout
 from dgen.type import Memory
 
 from toy.dialects.affine import ShapeType
@@ -55,7 +55,7 @@ TensorType.unpack_shape = _tensor_unpack_shape  # type: ignore[assignment]
 def _tensor_layout(self: TensorType) -> Layout:
     assert self.shape.ready
     shape: Memory[ShapeType] = self.shape.__constant__
-    return Array(FLOAT64, prod(shape.unpack()))
+    return Array(Float64(), prod(shape.unpack()))
 
 
 TensorType.__layout__ = _tensor_layout  # type: ignore[assignment, misc]

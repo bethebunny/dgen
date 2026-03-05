@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.layout import BYTE, FLOAT64, INT, VOID, FatPointer
+from dgen.layout import Byte, FatPointer, Float64, Int, StringLayout, Void
 
 builtin = Dialect("builtin")
 
@@ -17,37 +17,25 @@ class HasSingleBlock:
 @builtin.type("index")
 @dataclass(frozen=True)
 class IndexType(Type):
-    __layout__ = INT
+    __layout__ = Int()
 
 
 @builtin.type("f64")
 @dataclass(frozen=True)
 class F64Type(Type):
-    __layout__ = FLOAT64
+    __layout__ = Float64()
 
 
 @builtin.type("Nil")
 @dataclass(frozen=True)
 class Nil(Type):
-    __layout__ = VOID
+    __layout__ = Void()
 
 
 @builtin.type("String")
 @dataclass(frozen=True)
 class String(Type):
-    __layout__ = FatPointer(BYTE)
-
-    @staticmethod
-    def __to_json__(value: object) -> str:
-        assert isinstance(value, list)
-        return bytes(bytearray(value)).decode("utf-8")
-
-    @staticmethod
-    def __from_json__(value: object) -> list[int]:
-        if isinstance(value, str):
-            return list(value.encode("utf-8"))
-        assert isinstance(value, list)
-        return value
+    __layout__ = StringLayout(Byte())
 
 
 @builtin.type("List")
@@ -59,20 +47,6 @@ class List(Type):
     @property
     def __layout__(self) -> FatPointer:
         return FatPointer(self.element_type.__layout__)
-
-    def __to_json__(self, value: object) -> object:
-        hook = getattr(self.element_type, "__to_json__", None)
-        if hook is None:
-            return value
-        assert isinstance(value, list)
-        return [hook(elem) for elem in value]
-
-    def __from_json__(self, value: object) -> object:
-        hook = getattr(self.element_type, "__from_json__", None)
-        if hook is None:
-            return value
-        assert isinstance(value, list)
-        return [hook(elem) for elem in value]
 
 
 @builtin.op("pack")
