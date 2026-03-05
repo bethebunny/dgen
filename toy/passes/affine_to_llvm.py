@@ -82,11 +82,11 @@ class AffineToLLVMLowering:
                 self.alloc_shapes[new_op] = shape
                 self.alloc_sizes[new_op] = prod(shape)
         elif isinstance(op, affine.MulFOp):
-            llvm_op = llvm.FMulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
+            llvm_op = llvm.FmulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
             self.value_map[op] = llvm_op
         elif isinstance(op, affine.AddFOp):
-            llvm_op = llvm.FAddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
+            llvm_op = llvm.FaddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
             self.value_map[op] = llvm_op
         elif isinstance(op, affine.PrintMemrefOp):

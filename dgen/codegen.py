@@ -93,7 +93,7 @@ def _result_type_str(ty: Type) -> str | None:
     if isinstance(ty, builtin.Nil):
         return None
     if isinstance(ty, IntType):
-        return f"i{ty.bits}"
+        return f"i{ty.bits.__constant__.to_json()}"
     return _llvm_type(ty.__layout__)
 
 
@@ -186,11 +186,11 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             lines.append(f"  %{name} = load double, {typed_ref(op.ptr)}")
         elif isinstance(op, llvm.StoreOp):
             lines.append(f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}")
-        elif isinstance(op, llvm.FAddOp):
+        elif isinstance(op, llvm.FaddOp):
             lines.append(
                 f"  %{name} = fadd double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
-        elif isinstance(op, llvm.FMulOp):
+        elif isinstance(op, llvm.FmulOp):
             lines.append(
                 f"  %{name} = fmul double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )

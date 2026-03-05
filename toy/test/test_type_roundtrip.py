@@ -51,7 +51,7 @@ BUILTIN_TYPES = [
 
 LLVM_TYPES = [
     pytest.param(
-        llvm.IntType(bits=64),
+        llvm.IntType(bits=builtin.IndexType().constant(64)),
         42,
         "42",
         (42,),
@@ -202,7 +202,13 @@ _PARSEABLE_TYPES = [
     pytest.param(builtin.IndexType(), 42, "42", (42,), id="builtin.index"),
     pytest.param(builtin.F64Type(), 3.14, "3.14", (3.14,), id="builtin.f64"),
     # String uses FatPointer — tested separately (not via from_value)
-    pytest.param(llvm.IntType(bits=64), 42, "42", (42,), id="llvm.i64"),
+    pytest.param(
+        llvm.IntType(bits=builtin.IndexType().constant(64)),
+        42,
+        "42",
+        (42,),
+        id="llvm.i64",
+    ),
     pytest.param(llvm.FloatType(), 3.14, "3.14", (3.14,), id="llvm.f64"),
     pytest.param(
         TensorType(shape=shape_constant([3])),

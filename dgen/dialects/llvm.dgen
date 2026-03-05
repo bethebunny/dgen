@@ -1,0 +1,30 @@
+from builtin import Index, Nil, F64, String
+
+type Ptr:
+    data: Pointer<Nil>
+
+type Int<bits: Index>:
+    data: Index
+
+type Float:
+    data: F64
+
+type Void:
+    data: Nil
+
+op alloca<elem_count: Index>() -> Ptr
+op gep(base: Type, index: Type) -> Ptr
+op load(ptr: Type) -> Float
+op store(value: Type, ptr: Type) -> Nil
+op fadd(lhs: Type, rhs: Type) -> Float
+op fmul(lhs: Type, rhs: Type) -> Float
+op add(lhs: Type, rhs: Type) -> Int<64>
+op mul(lhs: Type, rhs: Type) -> Int<64>
+op icmp<pred: String>(lhs: Type, rhs: Type) -> Int<1>
+op br<dest: String>() -> Nil
+op cond_br<true_dest: String, false_dest: String>(cond: Type) -> Nil
+op label<label_name: String>() -> Nil
+op phi<labels: list<String>>(values: list<Type>) -> Nil
+op fcmp<pred: String>(lhs: Type, rhs: Type) -> Int<1>
+op zext(input: Type) -> Int<64>
+op call<callee: String>(args: list<Type>) -> Nil

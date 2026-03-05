@@ -328,9 +328,9 @@ class _Generator:
         if ret.name == "Type":
             body_lines.append("    type: Type")
         else:
-            ret_cls = _resolve_type_ref(ret)
-            if self._type_has_no_required_params(ret):
-                body_lines.append(f"    type: Type = {ret_cls}()")
+            default_expr = self._type_default_expr(ret)
+            if default_expr is not None:
+                body_lines.append(f"    type: Type = {default_expr}")
             else:
                 body_lines.append("    type: Type")
 
@@ -411,6 +411,27 @@ class _Generator:
         if ref.name in _COMPOUND_TO_LAYOUT:
             return _COMPOUND_TO_LAYOUT[ref.name]
         return "Layout"
+
+    def _type_default_expr(self, ref: TypeRef) -> str | None:
+        """Generate a default construction expression for a return type.
+
+        Handles both simple types (Nil -> Nil()) and parameterized types
+        with literal args (Int<64> -> IntType(bits=IndexType().constant(64))).
+        """
+        cls_name = _type_class_name(ref.name)
+        if not ref.args:
+            if self._type_has_no_required_params(ref):
+                return f"{cls_name}()"
+            return None
+        # Find type declaration to get param names and types
+        td = next((t for t in self.ast.types if t.name == ref.name), None)
+        if td is None or len(ref.args) != len(td.params):
+            return None
+        parts = []
+        for arg, param in zip(ref.args, td.params):
+            param_type_cls = _type_class_name(param.type.name)
+            parts.append(f"{param.name}={param_type_cls}().constant({arg.name})")
+        return f"{cls_name}({', '.join(parts)})"
 
     def _type_has_no_required_params(self, ref: TypeRef) -> bool:
         """Check if a type can be constructed with no arguments."""
