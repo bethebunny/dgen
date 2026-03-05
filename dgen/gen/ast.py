@@ -68,6 +68,7 @@ class TypeDecl:
     params: list[ParamDecl] = field(default_factory=list)
     data: list[DataField] = field(default_factory=list)
     layout: str | None = None
+    traits: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -79,6 +80,7 @@ class OpDecl:
     operands: list[OperandDecl] = field(default_factory=list)
     return_type: TypeRef | None = None
     blocks: list[str] = field(default_factory=list)
+    traits: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -15,3 +15,4 @@ op add_f(lhs: Type, rhs: Type) -> F64
 op print_memref(input: Type) -> Nil
 op for<lo: Index, hi: Index>() -> Nil:
     block body
+    has trait HasSingleBlock

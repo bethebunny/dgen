@@ -76,14 +76,18 @@ class _Parser:
 
         data: list[DataField] = []
         layout: str | None = None
+        traits: list[str] = []
         if has_body:
-            data, layout = self._parse_type_body()
-        return TypeDecl(name=name, params=params, data=data, layout=layout)
+            data, layout, traits = self._parse_type_body()
+        return TypeDecl(
+            name=name, params=params, data=data, layout=layout, traits=traits
+        )
 
-    def _parse_type_body(self) -> tuple[list[DataField], str | None]:
-        """Parse indented type body lines, return (data fields, layout name)."""
+    def _parse_type_body(self) -> tuple[list[DataField], str | None, list[str]]:
+        """Parse indented type body lines, return (data fields, layout name, traits)."""
         data: list[DataField] = []
         layout = None
+        traits: list[str] = []
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
             if not next_line or not next_line[0].isspace():
@@ -96,13 +100,17 @@ class _Parser:
             if stripped.startswith("layout "):
                 layout = stripped.split()[1]
                 continue
+            # Trait declaration: has trait Name
+            if stripped.startswith("has trait "):
+                traits.append(stripped.split()[2])
+                continue
             # Field declaration: name: TypeExpr
             if ":" in stripped:
                 colon = stripped.index(":")
                 field_name = stripped[:colon].strip()
                 type_str = stripped[colon + 1 :].strip()
                 data.append(DataField(name=field_name, type=_parse_type_ref(type_str)))
-        return data, layout
+        return data, layout, traits
 
     def _parse_op(self, line: str) -> OpDecl:
         rest = line[3:]  # strip "op "
@@ -144,18 +152,23 @@ class _Parser:
             ret_str = rest[rest.index("->") + 2 :].strip()
             return_type = _parse_type_ref(ret_str)
 
-        blocks = self._parse_op_body() if has_body else []
+        blocks: list[str] = []
+        traits: list[str] = []
+        if has_body:
+            blocks, traits = self._parse_op_body()
         return OpDecl(
             name=name,
             params=params,
             operands=operands,
             return_type=return_type,
             blocks=blocks,
+            traits=traits,
         )
 
-    def _parse_op_body(self) -> list[str]:
-        """Parse indented op body lines, return block names."""
+    def _parse_op_body(self) -> tuple[list[str], list[str]]:
+        """Parse indented op body lines, return (block names, traits)."""
         blocks: list[str] = []
+        traits: list[str] = []
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
             if not next_line or not next_line[0].isspace():
@@ -166,7 +179,9 @@ class _Parser:
                 continue
             if stripped.startswith("block "):
                 blocks.append(stripped.split()[1])
-        return blocks
+            elif stripped.startswith("has trait "):
+                traits.append(stripped.split()[2])
+        return blocks, traits
 
 
 def _parse_decl_parts(

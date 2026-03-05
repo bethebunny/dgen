@@ -33,3 +33,4 @@ op add_index(lhs: Index, rhs: Index) -> Index
 op return(value: Type = Nil) -> Nil
 op function() -> Type:
     block body
+    has trait HasSingleBlock

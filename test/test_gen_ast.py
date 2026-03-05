@@ -13,6 +13,7 @@ def test_ast_construction():
     assert len(f.types) == 1
     assert f.types[0].name == "index"
     assert len(f.ops) == 1
+    assert f.ops[0].return_type is not None
     assert f.ops[0].return_type.name == "Nil"
 
 

@@ -256,3 +256,16 @@ def test_parse_multiple_data_fields():
     assert t.data[0].type.name == "Index"
     assert t.data[1].name == "y"
     assert t.data[1].type.name == "F64"
+
+
+def test_parse_has_trait_on_type():
+    src = "type Float64:\n    has trait FloatingPoint\n"
+    result = parse(src)
+    assert result.types[0].traits == ["FloatingPoint"]
+
+
+def test_parse_has_trait_on_op():
+    src = "op for() -> Nil:\n    block body\n    has trait HasSingleBlock\n"
+    result = parse(src)
+    assert result.ops[0].traits == ["HasSingleBlock"]
+    assert result.ops[0].blocks == ["body"]

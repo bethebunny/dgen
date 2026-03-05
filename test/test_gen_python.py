@@ -213,6 +213,7 @@ def test_generate_op_with_block():
                 ],
                 return_type=TypeRef("Nil"),
                 blocks=["body"],
+                traits=["HasSingleBlock"],
             )
         ],
     )
@@ -345,7 +346,7 @@ def test_generate_imports():
 
 
 def test_generate_imported_trait():
-    """Ops with blocks should inherit HasSingleBlock even when it's imported."""
+    """Ops with explicit traits should inherit them even when imported."""
     f = DgenFile(
         imports=[
             ImportDecl(module="builtin", names=["Index", "Nil", "HasSingleBlock"])
@@ -359,6 +360,7 @@ def test_generate_imported_trait():
                 ],
                 return_type=TypeRef("Nil"),
                 blocks=["body"],
+                traits=["HasSingleBlock"],
             )
         ],
     )
@@ -533,3 +535,28 @@ def test_generate_unknown_return_type_errors():
     f = DgenFile(ops=[OpDecl(name="foo", return_type=TypeRef("Unknown"))])
     with pytest.raises(ValueError, match="unknown type Unknown"):
         generate(f, dialect_name="test")
+
+
+def test_generate_type_with_trait():
+    f = DgenFile(
+        types=[TypeDecl(name="F64", layout="Float64", traits=["FloatingPoint"])]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class F64(FloatingPoint, Type):" in code
+
+
+def test_generate_op_with_has_trait():
+    f = DgenFile(
+        traits=[TraitDecl(name="HasSingleBlock")],
+        types=[TypeDecl(name="Nil", layout="Void")],
+        ops=[
+            OpDecl(
+                name="for",
+                return_type=TypeRef("Nil"),
+                blocks=["body"],
+                traits=["HasSingleBlock"],
+            )
+        ],
+    )
+    code = generate(f, dialect_name="test")
+    assert "class ForOp(HasSingleBlock, Op):" in code

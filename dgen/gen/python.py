@@ -108,12 +108,9 @@ def _generate(
 ) -> Iterator[str]:
     type_map: dict[str, TypeDecl] = {td.name: td for td in ast.types}
     known_names: set[str] = set(type_map)
-    trait_names: set[str] = {t.name for t in ast.traits}
     for imp in ast.imports:
         for name in imp.names:
             known_names.add(name)
-            if name == "HasSingleBlock":
-                trait_names.add(name)
 
     needs_block = any(od.blocks for od in ast.ops)
     needs_layout = any(td.data or td.layout for td in ast.types)
@@ -158,7 +155,11 @@ def _generate(
         yield ""
         yield f'@{dialect_name}.type("{td.name}")'
         yield "@dataclass(frozen=True)"
-        yield f"class {td.name}(Type):"
+        if td.traits:
+            bases = ", ".join(td.traits + ["Type"])
+        else:
+            bases = "Type"
+        yield f"class {td.name}({bases}):"
 
         body: list[str] = []
 
@@ -215,12 +216,13 @@ def _generate(
 
     # Ops
     for od in ast.ops:
-        has_trait = bool(od.blocks) and "HasSingleBlock" in trait_names
-
         yield ""
         yield f'@{dialect_name}.op("{od.name}")'
         yield "@dataclass(eq=False, kw_only=True)"
-        bases = "HasSingleBlock, Op" if has_trait else "Op"
+        if od.traits:
+            bases = ", ".join(od.traits + ["Op"])
+        else:
+            bases = "Op"
         yield f"class {_op_class_name(od.name)}({bases}):"
 
         body = []
