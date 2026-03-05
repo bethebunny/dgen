@@ -8,7 +8,7 @@ import click
 from dgen.module import Module
 from dgen.staging import compile_and_run_staged
 from toy.dialects import shape_constant
-from toy.dialects.toy import TensorType
+from toy.dialects.toy import Tensor
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.affine_to_llvm import lower_to_llvm
@@ -37,7 +37,7 @@ def _set_param_types(ir: Module, args: Sequence[object]) -> None:
     func = ir.functions[0]
     for arg, param in zip(args, func.body.args):
         if isinstance(arg, list):
-            param.type = TensorType(shape=shape_constant([len(arg)]))
+            param.type = Tensor(shape=shape_constant([len(arg)]))
 
 
 def run(source: str, *, args: Sequence[object | str] = ()) -> object:

@@ -21,8 +21,8 @@ from dgen.dialects.builtin import FunctionOp
 from dgen.module import ConstantOp, Function, Module
 from dgen.type import Memory
 from toy.dialects import shape_constant
-from toy.dialects.affine import MemRefType, ShapeType
-from toy.dialects.toy import InferredShapeTensor, TensorType
+from toy.dialects.affine import MemRef, Shape
+from toy.dialects.toy import InferredShapeTensor, Tensor
 
 # ---------------------------------------------------------------------------
 # Test data: (type, python_value, asm_literal, expected_unpack)
@@ -33,14 +33,14 @@ from toy.dialects.toy import InferredShapeTensor, TensorType
 
 BUILTIN_TYPES = [
     pytest.param(
-        builtin.IndexType(),
+        builtin.Index(),
         42,
         "42",
         (42,),
         id="builtin.index",
     ),
     pytest.param(
-        builtin.F64Type(),
+        builtin.F64(),
         3.14,
         "3.14",
         (3.14,),
@@ -51,21 +51,21 @@ BUILTIN_TYPES = [
 
 LLVM_TYPES = [
     pytest.param(
-        llvm.IntType(bits=builtin.IndexType().constant(64)),
+        llvm.Int(bits=builtin.Index().constant(64)),
         42,
         "42",
         (42,),
         id="llvm.i64",
     ),
     pytest.param(
-        llvm.FloatType(),
+        llvm.Float(),
         3.14,
         "3.14",
         (3.14,),
         id="llvm.f64",
     ),
     pytest.param(
-        llvm.PtrType(),
+        llvm.Ptr(),
         (0,),
         None,
         None,
@@ -75,14 +75,14 @@ LLVM_TYPES = [
 
 TOY_TYPES = [
     pytest.param(
-        TensorType(shape=shape_constant([3])),
+        Tensor(shape=shape_constant([3])),
         [1.0, 2.0, 3.0],
         "[1.0, 2.0, 3.0]",
         (1.0, 2.0, 3.0),
         id="toy.tensor_1d",
     ),
     pytest.param(
-        TensorType(shape=shape_constant([2, 3])),
+        Tensor(shape=shape_constant([2, 3])),
         [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         "[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]",
         (1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
@@ -92,14 +92,14 @@ TOY_TYPES = [
 
 AFFINE_TYPES = [
     pytest.param(
-        ShapeType(rank=builtin.IndexType().constant(2)),
+        Shape(rank=builtin.Index().constant(2)),
         [2, 3],
         "[2, 3]",
         (2, 3),
         id="affine.shape",
     ),
     pytest.param(
-        MemRefType(shape=shape_constant([2, 3])),
+        MemRef(shape=shape_constant([2, 3])),
         (0,),
         None,
         None,
@@ -143,12 +143,12 @@ def _identity_exe(ty):
 # Types that are genuinely void (no runtime representation):
 # - Nil/VoidType: void return types
 # - InferredShapeTensor: pre-inference placeholder, becomes TensorType
-# - ShapeType(rank=builtin.IndexType().constant(0)): empty shape (zero dimensions)
+# - Shape(rank=builtin.Index().constant(0)): empty shape (zero dimensions)
 VOID_TYPES = [
     pytest.param(builtin.Nil(), id="builtin.nil"),
-    pytest.param(llvm.VoidType(), id="llvm.void"),
+    pytest.param(llvm.Void(), id="llvm.void"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
-    pytest.param(ShapeType(rank=builtin.IndexType().constant(0)), id="affine.shape_0"),
+    pytest.param(Shape(rank=builtin.Index().constant(0)), id="affine.shape_0"),
 ]
 
 
@@ -169,20 +169,18 @@ def test_layout_is_void(ty):
 # ---------------------------------------------------------------------------
 
 _ASM_TYPES = [
-    pytest.param(builtin.IndexType(), id="builtin.index"),
-    pytest.param(builtin.F64Type(), id="builtin.f64"),
+    pytest.param(builtin.Index(), id="builtin.index"),
+    pytest.param(builtin.F64(), id="builtin.f64"),
     pytest.param(builtin.Nil(), id="builtin.nil"),
     pytest.param(builtin.String(), id="builtin.string"),
-    pytest.param(
-        builtin.List(element_type=builtin.IndexType()), id="builtin.list_index"
-    ),
-    pytest.param(builtin.List(element_type=builtin.F64Type()), id="builtin.list_f64"),
-    pytest.param(TensorType(shape=shape_constant([3])), id="toy.tensor_1d"),
-    pytest.param(TensorType(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
+    pytest.param(builtin.List(element_type=builtin.Index()), id="builtin.list_index"),
+    pytest.param(builtin.List(element_type=builtin.F64()), id="builtin.list_f64"),
+    pytest.param(Tensor(shape=shape_constant([3])), id="toy.tensor_1d"),
+    pytest.param(Tensor(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
-    pytest.param(ShapeType(rank=builtin.IndexType().constant(0)), id="affine.shape_0"),
-    pytest.param(ShapeType(rank=builtin.IndexType().constant(2)), id="affine.shape_2"),
-    pytest.param(MemRefType(shape=shape_constant([2, 3])), id="affine.memref"),
+    pytest.param(Shape(rank=builtin.Index().constant(0)), id="affine.shape_0"),
+    pytest.param(Shape(rank=builtin.Index().constant(2)), id="affine.shape_2"),
+    pytest.param(MemRef(shape=shape_constant([2, 3])), id="affine.memref"),
 ]
 
 
@@ -199,33 +197,33 @@ def test_type_asm_roundtrip(ty):
 
 # Types that can round-trip through from_value/from_asm
 _PARSEABLE_TYPES = [
-    pytest.param(builtin.IndexType(), 42, "42", (42,), id="builtin.index"),
-    pytest.param(builtin.F64Type(), 3.14, "3.14", (3.14,), id="builtin.f64"),
+    pytest.param(builtin.Index(), 42, "42", (42,), id="builtin.index"),
+    pytest.param(builtin.F64(), 3.14, "3.14", (3.14,), id="builtin.f64"),
     # String uses FatPointer — tested separately (not via from_value)
     pytest.param(
-        llvm.IntType(bits=builtin.IndexType().constant(64)),
+        llvm.Int(bits=builtin.Index().constant(64)),
         42,
         "42",
         (42,),
         id="llvm.i64",
     ),
-    pytest.param(llvm.FloatType(), 3.14, "3.14", (3.14,), id="llvm.f64"),
+    pytest.param(llvm.Float(), 3.14, "3.14", (3.14,), id="llvm.f64"),
     pytest.param(
-        TensorType(shape=shape_constant([3])),
+        Tensor(shape=shape_constant([3])),
         [1.0, 2.0, 3.0],
         "[1.0, 2.0, 3.0]",
         (1.0, 2.0, 3.0),
         id="toy.tensor_1d",
     ),
     pytest.param(
-        TensorType(shape=shape_constant([2, 3])),
+        Tensor(shape=shape_constant([2, 3])),
         [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         "[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]",
         (1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
         id="toy.tensor_2d",
     ),
     pytest.param(
-        ShapeType(rank=builtin.IndexType().constant(2)),
+        Shape(rank=builtin.Index().constant(2)),
         [2, 3],
         "[2, 3]",
         (2, 3),
@@ -281,7 +279,7 @@ def test_jit_identity_roundtrip(ty, value, _asm, expected):
 
 def test_list_jit_identity():
     """Pass List<index> through identity JIT function."""
-    ty = builtin.List(element_type=builtin.IndexType())
+    ty = builtin.List(element_type=builtin.Index())
     mem = Memory.from_value(ty, [10, 20, 30])
     exe = _identity_exe(ty)
     result = exe.run(mem)
@@ -291,7 +289,7 @@ def test_list_jit_identity():
 
 def test_list_constant_jit_return():
     """JIT function returns a list constant: main() -> List<index>."""
-    list_type = builtin.List(element_type=builtin.IndexType())
+    list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
     ret = builtin.ReturnOp(value=const)
     func = FunctionOp(
@@ -313,7 +311,7 @@ def test_list_constant_jit_return():
 
 def test_list_of_lists_memory_roundtrip():
     """List<List<index>> round-trips through Memory."""
-    inner = builtin.List(element_type=builtin.IndexType())
+    inner = builtin.List(element_type=builtin.Index())
     outer = builtin.List(element_type=inner)
     mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
     assert mem.to_json() == [[1, 2], [3, 4, 5]]
@@ -341,7 +339,7 @@ def test_packop_mixed_constants_and_refs():
     ir_input = strip_prefix("""
         | import affine
         |
-        | %main = function (%x: index) -> ():
+        | %main = function (%x: Index) -> ():
         |     %_ : () = affine.store(%x, %x, [3, %x, 5])
         |     %_ : () = return(())
     """)
@@ -351,9 +349,9 @@ def test_packop_mixed_constants_and_refs():
     ir_expected = strip_prefix("""
         | import affine
         |
-        | %main = function (%x: index) -> ():
-        |     %0 : index = 3
-        |     %1 : index = 5
+        | %main = function (%x: Index) -> ():
+        |     %0 : Index = 3
+        |     %1 : Index = 5
         |     %_ : () = affine.store(%x, %x, [%0, %x, %1])
         |     %_ : () = return(())
     """)
@@ -425,7 +423,7 @@ def test_string_param_staging():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main = function (%pred : String, %x : index, %y : index) -> index:
+        | %main = function (%pred : String, %x : Index, %y : Index) -> Index:
         |     %cmp : () = llvm.icmp<%pred>(%x, %y)
         |     %ext : () = llvm.zext(%cmp)
         |     %_ : () = return(%ext)
@@ -465,7 +463,7 @@ def test_compile_once_run_twice():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main = function (%pred : String, %x : index, %y : index) -> index:
+        | %main = function (%pred : String, %x : Index, %y : Index) -> Index:
         |     %cmp : () = llvm.icmp<%pred>(%x, %y)
         |     %ext : () = llvm.zext(%cmp)
         |     %_ : () = return(%ext)
@@ -519,7 +517,7 @@ def test_deepcopy_list_of_lists():
     """Deepcopy of List<List<index>> constant preserves nested pointer validity."""
     from copy import deepcopy
 
-    inner = builtin.List(element_type=builtin.IndexType())
+    inner = builtin.List(element_type=builtin.Index())
     outer = builtin.List(element_type=inner)
     mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
     copied = deepcopy(mem)
@@ -534,7 +532,7 @@ def test_deepcopy_module_with_list_constant():
     """
     from copy import deepcopy
 
-    list_type = builtin.List(element_type=builtin.IndexType())
+    list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
     ret = builtin.ReturnOp(value=const)
     func = FunctionOp(
@@ -565,8 +563,8 @@ def test_deepcopy_module_with_list_constant():
 
 def test_memory_equality_scalars():
     """Scalar Memory equality works — same value, same buffer."""
-    a = Memory.from_value(builtin.IndexType(), 42)
-    b = Memory.from_value(builtin.IndexType(), 42)
+    a = Memory.from_value(builtin.Index(), 42)
+    b = Memory.from_value(builtin.Index(), 42)
     assert a == b
 
 
@@ -589,7 +587,7 @@ def test_memory_equality_strings():
 )
 def test_memory_equality_lists():
     """Two List memories from the same Python value should be equal."""
-    ty = builtin.List(element_type=builtin.IndexType())
+    ty = builtin.List(element_type=builtin.Index())
     a = Memory.from_value(ty, [1, 2, 3])
     b = Memory.from_value(ty, [1, 2, 3])
     assert a == b
@@ -602,28 +600,28 @@ def test_memory_equality_lists():
 
 def test_empty_list():
     """Empty list round-trips through Memory."""
-    ty = builtin.List(element_type=builtin.IndexType())
+    ty = builtin.List(element_type=builtin.Index())
     mem = Memory.from_value(ty, [])
     assert mem.to_json() == []
 
 
 def test_single_element_list():
     """Single-element list round-trips through Memory."""
-    ty = builtin.List(element_type=builtin.IndexType())
+    ty = builtin.List(element_type=builtin.Index())
     mem = Memory.from_value(ty, [42])
     assert mem.to_json() == [42]
 
 
 def test_list_of_f64():
-    """List<f64> round-trips through Memory (float variant of FatPointer)."""
-    ty = builtin.List(element_type=builtin.F64Type())
+    """List<F64> round-trips through Memory (float variant of FatPointer)."""
+    ty = builtin.List(element_type=builtin.F64())
     mem = Memory.from_value(ty, [1.5, 2.5, 3.5])
     assert mem.to_json() == [1.5, 2.5, 3.5]
 
 
 def test_three_level_nesting():
     """List<List<List<index>>> — 3 levels of FatPointer nesting."""
-    l1 = builtin.List(element_type=builtin.IndexType())
+    l1 = builtin.List(element_type=builtin.Index())
     l2 = builtin.List(element_type=l1)
     l3 = builtin.List(element_type=l2)
     mem = Memory.from_value(l3, [[[1, 2], [3]], [[4, 5, 6]]])
@@ -638,7 +636,7 @@ def test_empty_string():
 
 def test_list_of_empty_lists():
     """List of empty lists round-trips through Memory."""
-    inner = builtin.List(element_type=builtin.IndexType())
+    inner = builtin.List(element_type=builtin.Index())
     outer = builtin.List(element_type=inner)
     mem = Memory.from_value(outer, [[], [], []])
     assert mem.to_json() == [[], [], []]
@@ -651,7 +649,7 @@ def test_list_of_empty_lists():
 
 def test_list_identity_jit_roundtrip_full():
     """Pass List<index>, read back via from_raw — full data integrity check."""
-    list_type = builtin.List(element_type=builtin.IndexType())
+    list_type = builtin.List(element_type=builtin.Index())
     mem = Memory.from_value(list_type, [10, 20, 30])
     exe = _identity_exe(list_type)
     raw = exe.run(mem)
@@ -661,8 +659,8 @@ def test_list_identity_jit_roundtrip_full():
 
 
 def test_list_f64_jit_roundtrip():
-    """Pass List<f64> through JIT identity and read back."""
-    list_type = builtin.List(element_type=builtin.F64Type())
+    """Pass List<F64> through JIT identity and read back."""
+    list_type = builtin.List(element_type=builtin.F64())
     mem = Memory.from_value(list_type, [1.1, 2.2, 3.3])
     exe = _identity_exe(list_type)
     raw = exe.run(mem)

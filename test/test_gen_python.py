@@ -390,9 +390,7 @@ def test_parse_layout_keyword():
 
 def test_generate_layout_keyword():
     """layout keyword generates static __layout__."""
-    f = DgenFile(
-        types=[TypeDecl(name="Index", layout="Int")]
-    )
+    f = DgenFile(types=[TypeDecl(name="Index", layout="Int")])
     code = generate(f, dialect_name="test")
     assert "class Index(Type):" in code
     assert "__layout__ = layout.Int()" in code
@@ -400,9 +398,7 @@ def test_generate_layout_keyword():
 
 def test_generate_layout_keyword_pointer():
     """layout Pointer generates __layout__ = layout.Pointer(layout.Void())."""
-    f = DgenFile(
-        types=[TypeDecl(name="Ptr", layout="Pointer")]
-    )
+    f = DgenFile(types=[TypeDecl(name="Ptr", layout="Pointer")])
     code = generate(f, dialect_name="test")
     assert "class Ptr(Type):" in code
     assert "__layout__ = layout.Pointer(layout.Void())" in code

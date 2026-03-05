@@ -72,7 +72,10 @@ class AddIndexOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Index()
-    __operands__ = (("lhs", Index), ("rhs", Index),)
+    __operands__ = (
+        ("lhs", Index),
+        ("rhs", Index),
+    )
 
 
 @builtin.op("return")
@@ -89,5 +92,3 @@ class FunctionOp(HasSingleBlock, Op):
     type: Type
     body: Block
     __blocks__ = ("body",)
-
-

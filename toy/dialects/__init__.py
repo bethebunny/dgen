@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from math import prod
 
 from dgen import Constant, Type, Value
-from dgen.dialects.builtin import IndexType
+from dgen import layout
+from dgen.dialects.builtin import Index
 from dgen.module import Function
-from dgen.layout import Array, Float64, Layout
+from dgen.layout import Layout
 from dgen.type import Memory
 
-from toy.dialects.affine import ShapeType
-from toy.dialects.toy import DimSizeOp, TensorType
+from toy.dialects.affine import Shape
+from toy.dialects.toy import DimSizeOp, Tensor
 
 # ===----------------------------------------------------------------------=== #
 # ShapeType helpers
@@ -21,21 +22,21 @@ from toy.dialects.toy import DimSizeOp, TensorType
 
 
 @classmethod  # type: ignore[misc]
-def _shape_for_value(cls: type[ShapeType], value: object) -> ShapeType:
+def _shape_for_value(cls: type[Shape], value: object) -> Shape:
     if isinstance(value, Constant):
-        assert isinstance(value.type, IndexType)
-        return cls(rank=IndexType().constant(value.__constant__.to_json()))
+        assert isinstance(value.type, Index)
+        return cls(rank=Index().constant(value.__constant__.to_json()))
     assert isinstance(value, list)
-    return cls(rank=IndexType().constant(len(value)))
+    return cls(rank=Index().constant(len(value)))
 
 
-ShapeType.for_value = _shape_for_value  # type: ignore[assignment]
+Shape.for_value = _shape_for_value  # type: ignore[assignment]
 
 
 def shape_constant(dims: Sequence[int]) -> Constant:
-    """Create a Constant[ShapeType] from a list of dims."""
-    rank = IndexType().constant(len(dims))
-    return ShapeType(rank=rank).constant(dims)
+    """Create a Constant[Shape] from a list of dims."""
+    rank = Index().constant(len(dims))
+    return Shape(rank=rank).constant(dims)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -43,22 +44,22 @@ def shape_constant(dims: Sequence[int]) -> Constant:
 # ===----------------------------------------------------------------------=== #
 
 
-def _tensor_unpack_shape(self: TensorType) -> list[int]:
+def _tensor_unpack_shape(self: Tensor) -> list[int]:
     """Extract concrete shape dimensions as a list of ints."""
     return self.shape.__constant__.to_json()
 
 
-TensorType.unpack_shape = _tensor_unpack_shape  # type: ignore[assignment]
+Tensor.unpack_shape = _tensor_unpack_shape  # type: ignore[assignment]
 
 
 @property  # type: ignore[misc]
-def _tensor_layout(self: TensorType) -> Layout:
+def _tensor_layout(self: Tensor) -> Layout:
     assert self.shape.ready
-    shape: Memory[ShapeType] = self.shape.__constant__
-    return Array(Float64(), prod(shape.to_json()))
+    shape: Memory[Shape] = self.shape.__constant__
+    return layout.Array(layout.Float64(), prod(shape.to_json()))
 
 
-TensorType.__layout__ = _tensor_layout  # type: ignore[assignment, misc]
+Tensor.__layout__ = _tensor_layout  # type: ignore[assignment, misc]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -68,9 +69,9 @@ TensorType.__layout__ = _tensor_layout  # type: ignore[assignment, misc]
 
 def _dim_size_resolve_constant(self: DimSizeOp) -> int | None:
     """Return constant value if input type has a resolved shape."""
-    if not isinstance(self.input.type, TensorType):
+    if not isinstance(self.input.type, Tensor):
         return None
-    shape: Value[ShapeType] = self.input.type.shape
+    shape: Value[Shape] = self.input.type.shape
     if not shape.ready:
         return None
     return shape.__constant__.to_json()[self.axis.__constant__.to_json()]

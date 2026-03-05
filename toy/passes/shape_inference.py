@@ -18,7 +18,7 @@ def _resolve_index_value(val: dgen.Value) -> int | None:
     Returns None for computed values (add_index, etc.) — those require
     a staging evaluator.
     """
-    if isinstance(val, ConstantOp) and isinstance(val.type, builtin.IndexType):
+    if isinstance(val, ConstantOp) and isinstance(val.type, builtin.Index):
         return val.__constant__.to_json()
     return None
 
@@ -26,34 +26,32 @@ def _resolve_index_value(val: dgen.Value) -> int | None:
 def _infer_function(
     func: builtin.FunctionOp,
     func_map: dict[str, builtin.FunctionOp],
-    type_of: dict[int, toy.TensorType],
+    type_of: dict[int, toy.Tensor],
 ) -> None:
     """Infer shapes for all ops in a function body."""
     # Seed from block args that already have concrete types
     for arg in func.body.args:
-        if isinstance(arg.type, toy.TensorType):
+        if isinstance(arg.type, toy.Tensor):
             type_of[id(arg)] = arg.type
 
     for op in func.body.ops:
-        if isinstance(op, ConstantOp) and isinstance(op.type, toy.TensorType):
+        if isinstance(op, ConstantOp) and isinstance(op.type, toy.Tensor):
             type_of[id(op)] = op.type
 
-        elif isinstance(op, toy.ReshapeOp) and isinstance(op.type, toy.TensorType):
+        elif isinstance(op, toy.ReshapeOp) and isinstance(op.type, toy.Tensor):
             type_of[id(op)] = op.type
 
         elif isinstance(op, toy.TransposeOp):
             src = type_of.get(id(op.input))
             if src is not None:
-                t = toy.TensorType(
-                    shape=shape_constant(list(reversed(src.unpack_shape())))
-                )
+                t = toy.Tensor(shape=shape_constant(list(reversed(src.unpack_shape()))))
                 op.type = t
                 type_of[id(op)] = t
 
         elif isinstance(op, (toy.MulOp, toy.AddOp)):
             src = type_of.get(id(op.lhs))
             if src is not None:
-                t = toy.TensorType(shape=shape_constant(src.unpack_shape()))
+                t = toy.Tensor(shape=shape_constant(src.unpack_shape()))
                 op.type = t
                 type_of[id(op)] = t
 
@@ -66,7 +64,7 @@ def _infer_function(
                 shape = list(lhs_dims)
                 axis = op.axis.__constant__.to_json()
                 shape[axis] = lhs_dims[axis] + rhs_dims[axis]
-                t = toy.TensorType(shape=shape_constant(shape))
+                t = toy.Tensor(shape=shape_constant(shape))
                 op.type = t
                 type_of[id(op)] = t
 
@@ -80,7 +78,7 @@ def _infer_function(
                     else None
                 )
                 if count_val is not None:
-                    t = toy.TensorType(
+                    t = toy.Tensor(
                         shape=shape_constant([count_val] + src.unpack_shape())
                     )
                     op.type = t
@@ -109,7 +107,7 @@ def _infer_function(
                                 inputs=arg_types,
                                 result=ret_type,
                             )
-                            op.type = toy.TensorType(
+                            op.type = toy.Tensor(
                                 shape=shape_constant(ret_type.unpack_shape())
                             )
                             type_of[id(op)] = op.type
@@ -120,7 +118,7 @@ def infer_shapes(m: Module) -> Module:
     func_map: dict[str, builtin.FunctionOp] = {
         f.name: f for f in m.functions if f.name is not None
     }
-    type_of: dict[int, toy.TensorType] = {}
+    type_of: dict[int, toy.Tensor] = {}
 
     # Process main first (all shapes derivable from constants)
     main = func_map.get("main")

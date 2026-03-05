@@ -6,10 +6,10 @@ from collections.abc import Callable, Iterator, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects.builtin import FunctionOp, IndexType, List, Nil, PackOp
+from dgen import layout
 from dgen.dialects import builtin
+from dgen.dialects.builtin import FunctionOp, Index, List, Nil, PackOp
 from dgen.module import ConstantOp, Function, Module
-from dgen.layout import Array
 from toy.dialects import affine, shape_constant, toy
 
 
@@ -20,7 +20,7 @@ def _make_index_list(
 
     Returns (ops_to_emit, pack_value).
     """
-    list_type = List(element_type=IndexType())
+    list_type = List(element_type=Index())
     pack_op = PackOp(values=list(values), type=list_type)
     return [pack_op], pack_op
 
@@ -50,7 +50,7 @@ class ToyToAffineLowering:
         )
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
-        if isinstance(op, ConstantOp) and isinstance(op.value.layout, Array):
+        if isinstance(op, ConstantOp) and isinstance(op.value.layout, layout.Array):
             yield from self._lower_constant(op)
         elif isinstance(op, ConstantOp):
             yield op
@@ -86,7 +86,7 @@ class ToyToAffineLowering:
         """Create an AllocOp from a shape Constant."""
         return affine.AllocOp(
             shape=shape,
-            type=affine.MemRefType(shape=shape),
+            type=affine.MemRef(shape=shape),
         )
 
     def _nested_for(
@@ -95,15 +95,13 @@ class ToyToAffineLowering:
         body_fn: Callable[[Sequence[dgen.Value]], list[dgen.Op]],
     ) -> Iterator[dgen.Op]:
         """Build nested ForOps for each dimension. body_fn(ivars) -> innermost ops."""
-        ivars: list[dgen.Value] = [
-            BlockArgument(type=builtin.IndexType()) for _ in shape
-        ]
+        ivars: list[dgen.Value] = [BlockArgument(type=builtin.Index()) for _ in shape]
         ops = list(body_fn(ivars))
         for dim, var in reversed(list(zip(shape, ivars))):
             ops = [
                 affine.ForOp(
-                    lo=builtin.IndexType().constant(0),
-                    hi=builtin.IndexType().constant(dim),
+                    lo=builtin.Index().constant(0),
+                    hi=builtin.Index().constant(dim),
                     body=dgen.Block(ops=ops, args=[var]),
                 )
             ]
@@ -116,8 +114,8 @@ class ToyToAffineLowering:
         self.live_allocs.append(new_const)
 
     def _lower_transpose(self, op: toy.TransposeOp) -> Iterator[dgen.Op]:
-        assert isinstance(op.type, toy.TensorType)
-        assert isinstance(op.input.type, toy.TensorType)
+        assert isinstance(op.type, toy.Tensor)
+        assert isinstance(op.input.type, toy.Tensor)
         in_shape = op.input.type.unpack_shape()
 
         alloc_op = self._make_alloc(op.type.shape)
@@ -138,7 +136,7 @@ class ToyToAffineLowering:
     def _lower_binop(
         self, result_op: dgen.Op, lhs_val: dgen.Value, rhs_val: dgen.Value
     ) -> Iterator[dgen.Op]:
-        assert isinstance(lhs_val.type, toy.TensorType)
+        assert isinstance(lhs_val.type, toy.Tensor)
         shape = lhs_val.type.unpack_shape()
         alloc_op = self._make_alloc(lhs_val.type.shape)
         yield alloc_op
@@ -166,7 +164,7 @@ class ToyToAffineLowering:
         assert isinstance(op.count, ConstantOp)
         count = op.count.__constant__.to_json()
         assert isinstance(count, int)
-        assert isinstance(op.input.type, toy.TensorType)
+        assert isinstance(op.input.type, toy.Tensor)
         input_shape = op.input.type.unpack_shape()
         output_shape: list[int] = [count] + input_shape
 
@@ -187,8 +185,8 @@ class ToyToAffineLowering:
         self.alloc_map[op] = alloc_op
 
     def _lower_concat(self, op: toy.ConcatOp) -> Iterator[dgen.Op]:
-        assert isinstance(op.lhs.type, toy.TensorType)
-        assert isinstance(op.rhs.type, toy.TensorType)
+        assert isinstance(op.lhs.type, toy.Tensor)
+        assert isinstance(op.rhs.type, toy.Tensor)
         lhs_shape = op.lhs.type.unpack_shape()
         rhs_shape = op.rhs.type.unpack_shape()
         axis = op.axis.__constant__.to_json()
@@ -212,7 +210,7 @@ class ToyToAffineLowering:
         yield from self._nested_for(lhs_shape, lhs_body)
 
         # Copy rhs into output[lhs_shape[axis]:, ...] with offset along axis
-        offset_const = ConstantOp(value=lhs_shape[axis], type=builtin.IndexType())
+        offset_const = ConstantOp(value=lhs_shape[axis], type=builtin.Index())
         yield offset_const
 
         def rhs_body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:

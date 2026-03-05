@@ -16,7 +16,10 @@ toy = Dialect("toy")
 class Tensor(Type):
     shape: Value[Shape]
     dtype: Type = F64()
-    __params__ = (("shape", Shape), ("dtype", Type),)
+    __params__ = (
+        ("shape", Shape),
+        ("dtype", Type),
+    )
 
 
 @toy.type("InferredShapeTensor")
@@ -49,7 +52,10 @@ class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @toy.op("add")
@@ -58,7 +64,10 @@ class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @toy.op("generic_call")
@@ -79,7 +88,10 @@ class ConcatOp(Op):
     rhs: Value
     type: Type
     __params__ = (("axis", Index),)
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @toy.op("tile")
@@ -116,5 +128,3 @@ class PrintOp(Op):
     input: Value
     type: Type = Nil()
     __operands__ = (("input", Type),)
-
-

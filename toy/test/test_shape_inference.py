@@ -29,8 +29,8 @@ def test_transpose():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[3, 2], f64> = toy.transpose(%0)
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
         |     %2 : () = toy.print(%1)
         |     %3 : () = return(())
     """)
@@ -52,9 +52,9 @@ def test_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2], f64> = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor<[2, 2], f64> = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : toy.Tensor<[2, 2], f64> = toy.mul(%0, %1)
+        |     %0 : toy.Tensor<[2, 2], F64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : toy.Tensor<[2, 2], F64> = toy.mul(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %4 : () = return(())
     """)
@@ -76,9 +76,9 @@ def test_3d_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<[2, 2, 2], f64> = toy.add(%0, %1)
+        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.add(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %4 : () = return(())
     """)
@@ -100,9 +100,9 @@ def test_3d_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<[2, 2, 2], f64> = toy.mul(%0, %1)
+        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.mul(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %4 : () = return(())
     """)
@@ -127,16 +127,16 @@ def test_generic_call():
     expected = strip_prefix("""
         | import toy
         |
-        | %multiply_transpose = function (%a: toy.Tensor<[2, 3], f64>, %b: toy.Tensor<[2, 3], f64>) -> toy.Tensor<[3, 2], f64>:
-        |     %0 : toy.Tensor<[3, 2], f64> = toy.transpose(%a)
-        |     %1 : toy.Tensor<[3, 2], f64> = toy.transpose(%b)
-        |     %2 : toy.Tensor<[3, 2], f64> = toy.mul(%0, %1)
+        | %multiply_transpose = function (%a: toy.Tensor<[2, 3], F64>, %b: toy.Tensor<[2, 3], F64>) -> toy.Tensor<[3, 2], F64>:
+        |     %0 : toy.Tensor<[3, 2], F64> = toy.transpose(%a)
+        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%b)
+        |     %2 : toy.Tensor<[3, 2], F64> = toy.mul(%0, %1)
         |     %3 : () = return(%2)
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %2 : toy.Tensor<[3, 2], f64> = toy.generic_call<"multiply_transpose">([%0, %1])
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %2 : toy.Tensor<[3, 2], F64> = toy.generic_call<"multiply_transpose">([%0, %1])
         |     %3 : () = toy.print(%2)
         |     %4 : () = return(())
     """)
@@ -149,9 +149,9 @@ def test_concat():
         | import toy
         |
         | %f = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[3, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.InferredShapeTensor<f64> = toy.concat<0>(%0, %1)
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.InferredShapeTensor<F64> = toy.concat<0>(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -162,9 +162,9 @@ def test_concat():
         | import toy
         |
         | %f = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[3, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<[5, 3], f64> = toy.concat<0>(%0, %1)
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor<[5, 3], F64> = toy.concat<0>(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -177,9 +177,9 @@ def test_concat_axis1():
         | import toy
         |
         | %f = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 5], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-        |     %2 : toy.InferredShapeTensor<f64> = toy.concat<1>(%0, %1)
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[2, 5], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        |     %2 : toy.InferredShapeTensor<F64> = toy.concat<1>(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -190,9 +190,9 @@ def test_concat_axis1():
         | import toy
         |
         | %f = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 5], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-        |     %2 : toy.Tensor<[2, 8], f64> = toy.concat<1>(%0, %1)
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[2, 5], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        |     %2 : toy.Tensor<[2, 8], F64> = toy.concat<1>(%0, %1)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -205,9 +205,9 @@ def test_tile_with_constant_count():
         | import toy
         |
         | %f = function () -> ():
-        |     %0 : toy.Tensor<[3], f64> = [1.0, 2.0, 3.0]
-        |     %1 : index = 4
-        |     %2 : toy.InferredShapeTensor<f64> = toy.tile<%1>(%0)
+        |     %0 : toy.Tensor<[3], F64> = [1.0, 2.0, 3.0]
+        |     %1 : Index = 4
+        |     %2 : toy.InferredShapeTensor<F64> = toy.tile<%1>(%0)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -218,9 +218,9 @@ def test_tile_with_constant_count():
         | import toy
         |
         | %f = function () -> ():
-        |     %0 : toy.Tensor<[3], f64> = [1.0, 2.0, 3.0]
-        |     %1 : index = 4
-        |     %2 : toy.Tensor<[4, 3], f64> = toy.tile<%1>(%0)
+        |     %0 : toy.Tensor<[3], F64> = [1.0, 2.0, 3.0]
+        |     %1 : Index = 4
+        |     %2 : toy.Tensor<[4, 3], F64> = toy.tile<%1>(%0)
         |     %3 : () = toy.print(%2)
         |     %_ : () = return(())
     """)
@@ -237,11 +237,11 @@ def test_tile_with_computed_count():
         | import toy
         |
         | %f = function () -> ():
-        |     %0 : toy.Tensor<[3], f64> = [1.0, 2.0, 3.0]
-        |     %1 : index = 2
-        |     %2 : index = 2
-        |     %3 : index = add_index(%1, %2)
-        |     %4 : toy.InferredShapeTensor<f64> = toy.tile<%0>(%3)
+        |     %0 : toy.Tensor<[3], F64> = [1.0, 2.0, 3.0]
+        |     %1 : Index = 2
+        |     %2 : Index = 2
+        |     %3 : Index = add_index(%1, %2)
+        |     %4 : toy.InferredShapeTensor<F64> = toy.tile<%0>(%3)
         |     %5 : () = toy.print(%4)
         |     %_ : () = return(())
     """)
@@ -251,7 +251,7 @@ def test_tile_with_computed_count():
     # Shape inference cannot resolve %4 — it stays InferredShapeTensor
     # because the count (%3) is not a constant, it's a computed value.
     # Resolving this requires a staging evaluator.
-    assert "toy.InferredShapeTensor<f64> = toy.tile" in out
+    assert "toy.InferredShapeTensor<F64> = toy.tile" in out
 
 
 def test_full_tutorial_example():
@@ -273,19 +273,19 @@ def test_full_tutorial_example():
     expected = strip_prefix("""
         | import toy
         |
-        | %multiply_transpose = function (%a: toy.Tensor<[2, 3], f64>, %b: toy.Tensor<[2, 3], f64>) -> toy.Tensor<[3, 2], f64>:
-        |     %0 : toy.Tensor<[3, 2], f64> = toy.transpose(%a)
-        |     %1 : toy.Tensor<[3, 2], f64> = toy.transpose(%b)
-        |     %2 : toy.Tensor<[3, 2], f64> = toy.mul(%0, %1)
+        | %multiply_transpose = function (%a: toy.Tensor<[2, 3], F64>, %b: toy.Tensor<[2, 3], F64>) -> toy.Tensor<[3, 2], F64>:
+        |     %0 : toy.Tensor<[3, 2], F64> = toy.transpose(%a)
+        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%b)
+        |     %2 : toy.Tensor<[3, 2], F64> = toy.mul(%0, %1)
         |     %3 : () = return(%2)
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 3], f64> = toy.reshape(%0)
-        |     %2 : toy.Tensor<[6], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor<[2, 3], f64> = toy.reshape(%2)
-        |     %4 : toy.Tensor<[3, 2], f64> = toy.generic_call<"multiply_transpose">([%1, %3])
-        |     %5 : toy.Tensor<[3, 2], f64> = toy.generic_call<"multiply_transpose">([%3, %1])
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)
+        |     %2 : toy.Tensor<[6], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor<[2, 3], F64> = toy.reshape(%2)
+        |     %4 : toy.Tensor<[3, 2], F64> = toy.generic_call<"multiply_transpose">([%1, %3])
+        |     %5 : toy.Tensor<[3, 2], F64> = toy.generic_call<"multiply_transpose">([%3, %1])
         |     %6 : () = toy.print(%5)
         |     %7 : () = return(())
     """)

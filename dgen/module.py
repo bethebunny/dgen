@@ -13,15 +13,16 @@ from typing import ClassVar
 
 from dgen import Constant, Dialect, Op, Type, Value
 from dgen.asm.formatting import format_func
+from dgen import layout
 from dgen.dialects.builtin import (
     FunctionOp,
     HasSingleBlock,
-    IndexType,
+    Index,
     List,
     String,
     builtin,
 )
-from dgen.layout import Void
+
 from dgen.type import Memory
 
 # ===----------------------------------------------------------------------=== #
@@ -33,7 +34,7 @@ from dgen.type import Memory
 class Function(Type):
     """A function signature."""
 
-    __layout__ = Void()
+    __layout__ = layout.Void()
     result: Type
 
 
@@ -138,7 +139,7 @@ HasSingleBlock.__annotations__["__blocks__"] = ClassVar[tuple[str, ...]]
 @classmethod  # type: ignore[misc]
 def _list_for_value(cls: type[List], value: object) -> List:
     assert isinstance(value, list)
-    return cls(element_type=IndexType())
+    return cls(element_type=Index())
 
 
 List.for_value = _list_for_value  # type: ignore[assignment]

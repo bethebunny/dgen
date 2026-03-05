@@ -12,7 +12,6 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
-from dgen.dialects.llvm import IntType
 from dgen.module import ConstantOp, Module, string_value
 from dgen.layout import Layout
 from dgen.type import Memory
@@ -92,7 +91,7 @@ def _result_type_str(ty: Type) -> str | None:
     """Derive LLVM IR type string from an op's type, or None for void ops."""
     if isinstance(ty, builtin.Nil):
         return None
-    if isinstance(ty, IntType):
+    if isinstance(ty, llvm.Int):
         return f"i{ty.bits.__constant__.to_json()}"
     return _llvm_type(ty.__layout__)
 

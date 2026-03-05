@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64, String
+from dgen.dialects.builtin import Index, Nil, String
 
 llvm = Dialect("llvm")
 
@@ -50,7 +50,10 @@ class GepOp(Op):
     base: Value
     index: Value
     type: Type = Ptr()
-    __operands__ = (("base", Type), ("index", Type),)
+    __operands__ = (
+        ("base", Type),
+        ("index", Type),
+    )
 
 
 @llvm.op("load")
@@ -67,7 +70,10 @@ class StoreOp(Op):
     value: Value
     ptr: Value
     type: Type = Nil()
-    __operands__ = (("value", Type), ("ptr", Type),)
+    __operands__ = (
+        ("value", Type),
+        ("ptr", Type),
+    )
 
 
 @llvm.op("fadd")
@@ -76,7 +82,10 @@ class FaddOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Float()
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @llvm.op("fmul")
@@ -85,7 +94,10 @@ class FmulOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Float()
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @llvm.op("add")
@@ -94,7 +106,10 @@ class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @llvm.op("mul")
@@ -103,7 +118,10 @@ class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @llvm.op("icmp")
@@ -114,7 +132,10 @@ class IcmpOp(Op):
     rhs: Value
     type: Type = Int(bits=Index().constant(1))
     __params__ = (("pred", String),)
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @llvm.op("br")
@@ -132,7 +153,10 @@ class CondBrOp(Op):
     false_dest: Value[String]
     cond: Value
     type: Type = Nil()
-    __params__ = (("true_dest", String), ("false_dest", String),)
+    __params__ = (
+        ("true_dest", String),
+        ("false_dest", String),
+    )
     __operands__ = (("cond", Type),)
 
 
@@ -162,7 +186,10 @@ class FcmpOp(Op):
     rhs: Value
     type: Type = Int(bits=Index().constant(1))
     __params__ = (("pred", String),)
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @llvm.op("zext")
@@ -181,5 +208,3 @@ class CallOp(Op):
     type: Type = Nil()
     __params__ = (("callee", String),)
     __operands__ = (("args", Type),)
-
-

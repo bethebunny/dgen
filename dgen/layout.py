@@ -175,6 +175,9 @@ class FatPointer(Layout):
 class String(FatPointer):
     """FatPointer(Byte()) with str ↔ list[int] conversion in to_json/from_json."""
 
+    def __init__(self, pointee: Layout | None = None) -> None:
+        super().__init__(pointee or Byte())
+
     def to_json(self, buf: bytes | bytearray, offset: int) -> str:
         byte_list = super().to_json(buf, offset)
         return bytes(bytearray(byte_list)).decode("utf-8")

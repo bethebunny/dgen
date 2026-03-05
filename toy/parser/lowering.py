@@ -80,7 +80,7 @@ class Lowering:
         if decl.shape is not None:
             op = toy.ReshapeOp(
                 input=expr_val,
-                type=toy.TensorType(shape=shape_constant(list(decl.shape))),
+                type=toy.Tensor(shape=shape_constant(list(decl.shape))),
             )
             yield op
             self.scope[decl.name] = op
@@ -99,14 +99,14 @@ class Lowering:
         if isinstance(expr, NumberLiteral):
             op = ConstantOp(
                 value=[expr.value],
-                type=toy.TensorType(shape=shape_constant([1])),
+                type=toy.Tensor(shape=shape_constant([1])),
             )
             yield op
             return op
         if isinstance(expr, TensorLiteral):
             op = ConstantOp(
                 value=list(expr.values),
-                type=toy.TensorType(shape=shape_constant(list(expr.shape))),
+                type=toy.Tensor(shape=shape_constant(list(expr.shape))),
             )
             yield op
             return op
@@ -136,7 +136,7 @@ class Lowering:
     ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression that should produce an index value."""
         if isinstance(expr, NumberLiteral):
-            op = ConstantOp(value=int(expr.value), type=builtin.IndexType())
+            op = ConstantOp(value=int(expr.value), type=builtin.Index())
             yield op
             return op
         return (yield from self.lower_expr(expr))
@@ -180,7 +180,7 @@ class Lowering:
             rhs = yield from self.lower_expr(call.args[1])
             if not isinstance(call.args[2], NumberLiteral):
                 raise RuntimeError("concat axis must be a literal")
-            axis = builtin.IndexType().constant(int(call.args[2].value))
+            axis = builtin.Index().constant(int(call.args[2].value))
             op = toy.ConcatOp(
                 axis=axis, lhs=lhs, rhs=rhs, type=toy.InferredShapeTensor()
             )
@@ -194,7 +194,7 @@ class Lowering:
             input_val = yield from self.lower_expr(call.args[0])
             if not isinstance(call.args[1], NumberLiteral):
                 raise RuntimeError("dim_size axis must be a literal")
-            axis = builtin.IndexType().constant(int(call.args[1].value))
+            axis = builtin.Index().constant(int(call.args[1].value))
             op = toy.DimSizeOp(axis=axis, input=input_val)
             yield op
             return op

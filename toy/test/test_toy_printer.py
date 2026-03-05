@@ -17,7 +17,7 @@ def inferred() -> dgen.Type:
 
 
 def ranked(shape: Sequence[int]) -> dgen.Type:
-    return toy.TensorType(shape=shape_constant(shape))
+    return toy.Tensor(shape=shape_constant(shape))
 
 
 def test_constant_op():
@@ -28,34 +28,34 @@ def test_constant_op():
     )
     assert (
         asm.format(op)
-        == "%0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
+        == "%0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
     )
 
 
 def test_transpose_op():
     a = dgen.Value(name="a", type=builtin.Nil())
     op = toy.TransposeOp(name="0", input=a, type=inferred())
-    assert asm.format(op) == "%0 : toy.InferredShapeTensor<f64> = toy.transpose(%a)"
+    assert asm.format(op) == "%0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)"
 
 
 def test_reshape_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
-    assert asm.format(op) == "%1 : toy.Tensor<[2, 3], f64> = toy.reshape(%0)"
+    assert asm.format(op) == "%1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)"
 
 
 def test_mul_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.MulOp(name="2", lhs=v0, rhs=v1, type=inferred())
-    assert asm.format(op) == "%2 : toy.InferredShapeTensor<f64> = toy.mul(%0, %1)"
+    assert asm.format(op) == "%2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)"
 
 
 def test_add_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.AddOp(name="2", lhs=v0, rhs=v1, type=inferred())
-    assert asm.format(op) == "%2 : toy.InferredShapeTensor<f64> = toy.add(%0, %1)"
+    assert asm.format(op) == "%2 : toy.InferredShapeTensor<F64> = toy.add(%0, %1)"
 
 
 def test_generic_call_op():
@@ -69,7 +69,7 @@ def test_generic_call_op():
     )
     assert (
         asm.format(op)
-        == '%4 : toy.InferredShapeTensor<f64> = toy.generic_call<"multiply_transpose">([%1, %3])'
+        == '%4 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%1, %3])'
     )
 
 
@@ -96,26 +96,26 @@ def test_concat_op():
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.ConcatOp(
         name="2",
-        axis=builtin.IndexType().constant(0),
+        axis=builtin.Index().constant(0),
         lhs=v0,
         rhs=v1,
         type=inferred(),
     )
-    assert asm.format(op) == "%2 : toy.InferredShapeTensor<f64> = toy.concat<0>(%0, %1)"
+    assert asm.format(op) == "%2 : toy.InferredShapeTensor<F64> = toy.concat<0>(%0, %1)"
 
 
 def test_tile_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
-    n = dgen.Value(name="n", type=builtin.IndexType())
+    n = dgen.Value(name="n", type=builtin.Index())
     op = toy.TileOp(name="1", input=v0, count=n, type=inferred())
-    assert asm.format(op) == "%1 : toy.InferredShapeTensor<f64> = toy.tile<%n>(%0)"
+    assert asm.format(op) == "%1 : toy.InferredShapeTensor<F64> = toy.tile<%n>(%0)"
 
 
 def test_add_index_op():
-    x = dgen.Value(name="x", type=builtin.IndexType())
-    y = dgen.Value(name="y", type=builtin.IndexType())
+    x = dgen.Value(name="x", type=builtin.Index())
+    y = dgen.Value(name="y", type=builtin.Index())
     op = builtin.AddIndexOp(name="0", lhs=x, rhs=y)
-    assert asm.format(op) == "%0 : index = add_index(%x, %y)"
+    assert asm.format(op) == "%0 : Index = add_index(%x, %y)"
 
 
 def test_full_module():
@@ -173,19 +173,19 @@ def test_full_module():
     expected = strip_prefix("""
         | import toy
         |
-        | %multiply_transpose = function (%a: toy.InferredShapeTensor<f64>, %b: toy.InferredShapeTensor<f64>) -> toy.InferredShapeTensor<f64>:
-        |     %0 : toy.InferredShapeTensor<f64> = toy.transpose(%a)
-        |     %1 : toy.InferredShapeTensor<f64> = toy.transpose(%b)
-        |     %2 : toy.InferredShapeTensor<f64> = toy.mul(%0, %1)
+        | %multiply_transpose = function (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>) -> toy.InferredShapeTensor<F64>:
+        |     %0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)
+        |     %1 : toy.InferredShapeTensor<F64> = toy.transpose(%b)
+        |     %2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)
         |     %3 : () = return(%2)
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 3], f64> = toy.reshape(%0)
-        |     %2 : toy.Tensor<[6], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor<[2, 3], f64> = toy.reshape(%2)
-        |     %4 : toy.InferredShapeTensor<f64> = toy.generic_call<"multiply_transpose">([%1, %3])
-        |     %5 : toy.InferredShapeTensor<f64> = toy.generic_call<"multiply_transpose">([%3, %1])
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)
+        |     %2 : toy.Tensor<[6], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor<[2, 3], F64> = toy.reshape(%2)
+        |     %4 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%1, %3])
+        |     %5 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%3, %1])
         |     %6 : () = toy.print(%5)
         |     %7 : () = return(())
     """)

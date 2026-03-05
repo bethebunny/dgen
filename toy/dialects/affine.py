@@ -27,7 +27,10 @@ class MemRef(Type):
     __layout__ = layout.Pointer(layout.Void())
     shape: Value[Shape]
     dtype: Type = F64()
-    __params__ = (("shape", Shape), ("dtype", Type),)
+    __params__ = (
+        ("shape", Shape),
+        ("dtype", Type),
+    )
 
 
 @affine.op("alloc")
@@ -52,7 +55,10 @@ class LoadOp(Op):
     memref: Value
     indices: Value
     type: Type = F64()
-    __operands__ = (("memref", Type), ("indices", Index),)
+    __operands__ = (
+        ("memref", Type),
+        ("indices", Index),
+    )
 
 
 @affine.op("store")
@@ -62,7 +68,11 @@ class StoreOp(Op):
     memref: Value
     indices: Value
     type: Type = Nil()
-    __operands__ = (("value", Type), ("memref", Type), ("indices", Index),)
+    __operands__ = (
+        ("value", Type),
+        ("memref", Type),
+        ("indices", Index),
+    )
 
 
 @affine.op("mul_f")
@@ -71,7 +81,10 @@ class MulFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = F64()
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @affine.op("add_f")
@@ -80,7 +93,10 @@ class AddFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = F64()
-    __operands__ = (("lhs", Type), ("rhs", Type),)
+    __operands__ = (
+        ("lhs", Type),
+        ("rhs", Type),
+    )
 
 
 @affine.op("print_memref")
@@ -98,7 +114,8 @@ class ForOp(HasSingleBlock, Op):
     hi: Value[Index]
     type: Type = Nil()
     body: Block
-    __params__ = (("lo", Index), ("hi", Index),)
+    __params__ = (
+        ("lo", Index),
+        ("hi", Index),
+    )
     __blocks__ = ("body",)
-
-

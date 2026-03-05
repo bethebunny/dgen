@@ -12,7 +12,7 @@ def test_llvm_via_imports():
         |
         | %f = function () -> ():
         |     %0 : () = llvm.alloca<6>()
-        |     %1 : f64 = 1.0
+        |     %1 : F64 = 1.0
         |     %_ : () = llvm.store(%1, %0)
         |     %_ : () = return(())
     """)
@@ -27,15 +27,15 @@ def test_llvm_full_loop():
         |
         | %f = function () -> ():
         |     %0 : () = llvm.alloca<3>()
-        |     %init : index = 0
+        |     %init : Index = 0
         |     %_ : () = llvm.br<"loop_header">()
         |     %_ : () = llvm.label<"loop_header">()
         |     %i0 : () = llvm.phi<["entry", "loop_body"]>([%init, %next])
-        |     %hi : index = 3
+        |     %hi : Index = 3
         |     %cmp : () = llvm.icmp<"slt">(%i0, %hi)
         |     %_ : () = llvm.cond_br<"loop_body", "loop_exit">(%cmp)
         |     %_ : () = llvm.label<"loop_body">()
-        |     %one : index = 1
+        |     %one : Index = 1
         |     %next : () = llvm.add(%i0, %one)
         |     %_ : () = llvm.br<"loop_header">()
         |     %_ : () = llvm.label<"loop_exit">()

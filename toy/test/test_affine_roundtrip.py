@@ -10,7 +10,7 @@ def test_roundtrip_alloc():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef<[2, 3], f64> = affine.alloc([2, 3])
+        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc([2, 3])
         |     %_ : () = affine.dealloc(%0)
         |     %_ : () = return(())
     """)
@@ -23,9 +23,9 @@ def test_roundtrip_store_load():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef<[3], f64> = affine.alloc([3])
-        |     %1 : f64 = 1.0
-        |     %2 : index = 0
+        |     %0 : affine.MemRef<[3], F64> = affine.alloc([3])
+        |     %1 : F64 = 1.0
+        |     %2 : Index = 0
         |     %_ : () = affine.store(%1, %0, [%2])
         |     %3 : () = affine.load(%0, [%2])
         |     %_ : () = return(())
@@ -39,8 +39,8 @@ def test_roundtrip_arith():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : f64 = 2.5
-        |     %1 : f64 = 3.0
+        |     %0 : F64 = 2.5
+        |     %1 : F64 = 3.0
         |     %2 : () = affine.mul_f(%0, %1)
         |     %3 : () = affine.add_f(%0, %1)
         |     %_ : () = return(())
@@ -52,7 +52,7 @@ def test_roundtrip_arith():
 def test_roundtrip_index_constant():
     ir = strip_prefix("""
         | %f = function () -> ():
-        |     %0 : index = 42
+        |     %0 : Index = 42
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -64,7 +64,7 @@ def test_roundtrip_print_memref():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef<[3], f64> = affine.alloc([3])
+        |     %0 : affine.MemRef<[3], F64> = affine.alloc([3])
         |     %_ : () = affine.print_memref(%0)
         |     %_ : () = return(())
     """)
@@ -77,10 +77,10 @@ def test_roundtrip_for_op():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef<[3], f64> = affine.alloc([3])
-        |     %_ : () = affine.for<0, 3>() (%i0: index):
-        |         %1 : f64 = 1.0
-        |         %2 : index = 0
+        |     %0 : affine.MemRef<[3], F64> = affine.alloc([3])
+        |     %_ : () = affine.for<0, 3>() (%i0: Index):
+        |         %1 : F64 = 1.0
+        |         %2 : Index = 0
         |         %_ : () = affine.store(%1, %0, [%2])
         |     %_ : () = affine.print_memref(%0)
         |     %_ : () = return(())
@@ -94,11 +94,11 @@ def test_roundtrip_nested_for():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef<[2, 3], f64> = affine.alloc([2, 3])
-        |     %_ : () = affine.for<0, 2>() (%i0: index):
-        |         %_ : () = affine.for<0, 3>() (%i1: index):
-        |             %1 : f64 = 1.0
-        |             %2 : index = 0
+        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc([2, 3])
+        |     %_ : () = affine.for<0, 2>() (%i0: Index):
+        |         %_ : () = affine.for<0, 3>() (%i1: Index):
+        |             %1 : F64 = 1.0
+        |             %2 : Index = 0
         |             %_ : () = affine.store(%1, %0, [%2, %2])
         |     %_ : () = return(())
     """)
@@ -109,7 +109,7 @@ def test_roundtrip_nested_for():
 def test_roundtrip_return_value():
     ir = strip_prefix("""
         | %f = function () -> ():
-        |     %0 : f64 = 1.0
+        |     %0 : F64 = 1.0
         |     %_ : () = return(%0)
     """)
     module = parse_module(ir)
@@ -121,10 +121,10 @@ def test_roundtrip_multi_index_load_store():
         | import affine
         |
         | %f = function () -> ():
-        |     %0 : affine.MemRef<[2, 3], f64> = affine.alloc([2, 3])
-        |     %1 : f64 = 5.0
-        |     %2 : index = 0
-        |     %3 : index = 1
+        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc([2, 3])
+        |     %1 : F64 = 5.0
+        |     %2 : Index = 0
+        |     %3 : Index = 1
         |     %_ : () = affine.store(%1, %0, [%2, %3])
         |     %4 : () = affine.load(%0, [%2, %3])
         |     %_ : () = return(())
@@ -140,7 +140,7 @@ def test_roundtrip_ssa_in_op_arg():
         |
         | %f = function () -> ():
         |     %shape : affine.Shape<2> = [2, 3]
-        |     %0 : affine.MemRef<[2, 3], f64> = affine.alloc(%shape)
+        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc(%shape)
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -154,7 +154,7 @@ def test_roundtrip_ssa_in_type_param():
         |
         | %f = function () -> ():
         |     %shape : affine.Shape<2> = [2, 3]
-        |     %0 : affine.MemRef<%shape, f64> = affine.alloc(%shape)
+        |     %0 : affine.MemRef<%shape, F64> = affine.alloc(%shape)
         |     %_ : () = return(())
     """)
     module = parse_module(ir)
@@ -168,9 +168,9 @@ def test_ssa_shape_through_lowering():
         |
         | %f = function () -> ():
         |     %shape : affine.Shape<2> = [2, 3]
-        |     %0 : affine.MemRef<[2, 3], f64> = affine.alloc(%shape)
-        |     %1 : f64 = 1.0
-        |     %2 : index = 0
+        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc(%shape)
+        |     %1 : F64 = 1.0
+        |     %2 : Index = 0
         |     %_ : () = affine.store(%1, %0, [%2, %2])
         |     %3 : () = affine.load(%0, [%2, %2])
         |     %_ : () = affine.dealloc(%0)

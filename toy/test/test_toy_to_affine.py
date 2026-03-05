@@ -12,7 +12,7 @@ def test_simple_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
         |     %_ = return(())
     """)
@@ -24,7 +24,7 @@ def test_simple_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : () = affine.print_memref(%0)
         |     %2 : () = affine.dealloc(%0)
         |     %3 : () = return(())
@@ -38,8 +38,8 @@ def test_transpose():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[3, 2], f64> = toy.transpose(%0)
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
         |     %_ = toy.print(%1)
         |     %_ = return(())
     """)
@@ -51,11 +51,11 @@ def test_transpose():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : affine.MemRef<[3, 2], f64> = affine.alloc([3, 2])
-        |     %2 : () = affine.for<0, 2>() (%3: index):
-        |         %4 : () = affine.for<0, 3>() (%5: index):
-        |             %6 : f64 = affine.load(%0, [%3, %5])
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : affine.MemRef<[3, 2], F64> = affine.alloc([3, 2])
+        |     %2 : () = affine.for<0, 2>() (%3: Index):
+        |         %4 : () = affine.for<0, 3>() (%5: Index):
+        |             %6 : F64 = affine.load(%0, [%3, %5])
         |             %7 : () = affine.store(%6, %1, [%5, %3])
         |     %8 : () = affine.print_memref(%1)
         |     %9 : () = affine.dealloc(%0)
@@ -71,9 +71,9 @@ def test_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2], f64> = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor<[2, 2], f64> = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : toy.Tensor<[2, 2], f64> = toy.mul(%0, %1)
+        |     %0 : toy.Tensor<[2, 2], F64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : toy.Tensor<[2, 2], F64> = toy.mul(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return(())
     """)
@@ -85,14 +85,14 @@ def test_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2], f64> = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor<[2, 2], f64> = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : affine.MemRef<[2, 2], f64> = affine.alloc([2, 2])
-        |     %3 : () = affine.for<0, 2>() (%4: index):
-        |         %5 : () = affine.for<0, 2>() (%6: index):
-        |             %7 : f64 = affine.load(%0, [%4, %6])
-        |             %8 : f64 = affine.load(%1, [%4, %6])
-        |             %9 : f64 = affine.mul_f(%7, %8)
+        |     %0 : toy.Tensor<[2, 2], F64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : affine.MemRef<[2, 2], F64> = affine.alloc([2, 2])
+        |     %3 : () = affine.for<0, 2>() (%4: Index):
+        |         %5 : () = affine.for<0, 2>() (%6: Index):
+        |             %7 : F64 = affine.load(%0, [%4, %6])
+        |             %8 : F64 = affine.load(%1, [%4, %6])
+        |             %9 : F64 = affine.mul_f(%7, %8)
         |             %10 : () = affine.store(%9, %2, [%4, %6])
         |     %11 : () = affine.print_memref(%2)
         |     %12 : () = affine.dealloc(%0)
@@ -109,9 +109,9 @@ def test_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2], f64> = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor<[2, 2], f64> = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : toy.Tensor<[2, 2], f64> = toy.add(%0, %1)
+        |     %0 : toy.Tensor<[2, 2], F64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : toy.Tensor<[2, 2], F64> = toy.add(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return(())
     """)
@@ -123,14 +123,14 @@ def test_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2], f64> = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor<[2, 2], f64> = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : affine.MemRef<[2, 2], f64> = affine.alloc([2, 2])
-        |     %3 : () = affine.for<0, 2>() (%4: index):
-        |         %5 : () = affine.for<0, 2>() (%6: index):
-        |             %7 : f64 = affine.load(%0, [%4, %6])
-        |             %8 : f64 = affine.load(%1, [%4, %6])
-        |             %9 : f64 = affine.add_f(%7, %8)
+        |     %0 : toy.Tensor<[2, 2], F64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : affine.MemRef<[2, 2], F64> = affine.alloc([2, 2])
+        |     %3 : () = affine.for<0, 2>() (%4: Index):
+        |         %5 : () = affine.for<0, 2>() (%6: Index):
+        |             %7 : F64 = affine.load(%0, [%4, %6])
+        |             %8 : F64 = affine.load(%1, [%4, %6])
+        |             %9 : F64 = affine.add_f(%7, %8)
         |             %10 : () = affine.store(%9, %2, [%4, %6])
         |     %11 : () = affine.print_memref(%2)
         |     %12 : () = affine.dealloc(%0)
@@ -147,7 +147,7 @@ def test_print():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %_ = toy.print(%0)
         |     %_ = return(())
     """)
@@ -159,7 +159,7 @@ def test_print():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : () = affine.print_memref(%0)
         |     %2 : () = affine.dealloc(%0)
         |     %3 : () = return(())
@@ -173,7 +173,7 @@ def test_3d_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %_ = toy.print(%0)
         |     %_ = return(())
     """)
@@ -185,7 +185,7 @@ def test_3d_constant():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : () = affine.print_memref(%0)
         |     %2 : () = affine.dealloc(%0)
         |     %3 : () = return(())
@@ -199,9 +199,9 @@ def test_3d_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<[2, 2, 2], f64> = toy.add(%0, %1)
+        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.add(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return(())
     """)
@@ -213,15 +213,15 @@ def test_3d_add():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : affine.MemRef<[2, 2, 2], f64> = affine.alloc([2, 2, 2])
-        |     %3 : () = affine.for<0, 2>() (%4: index):
-        |         %5 : () = affine.for<0, 2>() (%6: index):
-        |             %7 : () = affine.for<0, 2>() (%8: index):
-        |                 %9 : f64 = affine.load(%0, [%4, %6, %8])
-        |                 %10 : f64 = affine.load(%1, [%4, %6, %8])
-        |                 %11 : f64 = affine.add_f(%9, %10)
+        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : affine.MemRef<[2, 2, 2], F64> = affine.alloc([2, 2, 2])
+        |     %3 : () = affine.for<0, 2>() (%4: Index):
+        |         %5 : () = affine.for<0, 2>() (%6: Index):
+        |             %7 : () = affine.for<0, 2>() (%8: Index):
+        |                 %9 : F64 = affine.load(%0, [%4, %6, %8])
+        |                 %10 : F64 = affine.load(%1, [%4, %6, %8])
+        |                 %11 : F64 = affine.add_f(%9, %10)
         |                 %12 : () = affine.store(%11, %2, [%4, %6, %8])
         |     %13 : () = affine.print_memref(%2)
         |     %14 : () = affine.dealloc(%0)
@@ -238,9 +238,9 @@ def test_3d_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<[2, 2, 2], f64> = toy.mul(%0, %1)
+        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.mul(%0, %1)
         |     %_ = toy.print(%2)
         |     %_ = return(())
     """)
@@ -252,15 +252,15 @@ def test_3d_mul():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 2, 2], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<[2, 2, 2], f64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : affine.MemRef<[2, 2, 2], f64> = affine.alloc([2, 2, 2])
-        |     %3 : () = affine.for<0, 2>() (%4: index):
-        |         %5 : () = affine.for<0, 2>() (%6: index):
-        |             %7 : () = affine.for<0, 2>() (%8: index):
-        |                 %9 : f64 = affine.load(%0, [%4, %6, %8])
-        |                 %10 : f64 = affine.load(%1, [%4, %6, %8])
-        |                 %11 : f64 = affine.mul_f(%9, %10)
+        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : affine.MemRef<[2, 2, 2], F64> = affine.alloc([2, 2, 2])
+        |     %3 : () = affine.for<0, 2>() (%4: Index):
+        |         %5 : () = affine.for<0, 2>() (%6: Index):
+        |             %7 : () = affine.for<0, 2>() (%8: Index):
+        |                 %9 : F64 = affine.load(%0, [%4, %6, %8])
+        |                 %10 : F64 = affine.load(%1, [%4, %6, %8])
+        |                 %11 : F64 = affine.mul_f(%9, %10)
         |                 %12 : () = affine.store(%11, %2, [%4, %6, %8])
         |     %13 : () = affine.print_memref(%2)
         |     %14 : () = affine.dealloc(%0)
@@ -277,11 +277,11 @@ def test_full_example():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[3, 2], f64> = toy.transpose(%0)
-        |     %2 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor<[3, 2], f64> = toy.transpose(%2)
-        |     %4 : toy.Tensor<[3, 2], f64> = toy.mul(%1, %3)
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
+        |     %2 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor<[3, 2], F64> = toy.transpose(%2)
+        |     %4 : toy.Tensor<[3, 2], F64> = toy.mul(%1, %3)
         |     %_ = toy.print(%4)
         |     %_ = return(())
     """)
@@ -293,24 +293,24 @@ def test_full_example():
         | import toy
         |
         | %main = function () -> ():
-        |     %0 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : affine.MemRef<[3, 2], f64> = affine.alloc([3, 2])
-        |     %2 : () = affine.for<0, 2>() (%3: index):
-        |         %4 : () = affine.for<0, 3>() (%5: index):
-        |             %6 : f64 = affine.load(%0, [%3, %5])
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : affine.MemRef<[3, 2], F64> = affine.alloc([3, 2])
+        |     %2 : () = affine.for<0, 2>() (%3: Index):
+        |         %4 : () = affine.for<0, 3>() (%5: Index):
+        |             %6 : F64 = affine.load(%0, [%3, %5])
         |             %7 : () = affine.store(%6, %1, [%5, %3])
-        |     %8 : toy.Tensor<[2, 3], f64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %9 : affine.MemRef<[3, 2], f64> = affine.alloc([3, 2])
-        |     %10 : () = affine.for<0, 2>() (%11: index):
-        |         %12 : () = affine.for<0, 3>() (%13: index):
-        |             %14 : f64 = affine.load(%8, [%11, %13])
+        |     %8 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %9 : affine.MemRef<[3, 2], F64> = affine.alloc([3, 2])
+        |     %10 : () = affine.for<0, 2>() (%11: Index):
+        |         %12 : () = affine.for<0, 3>() (%13: Index):
+        |             %14 : F64 = affine.load(%8, [%11, %13])
         |             %15 : () = affine.store(%14, %9, [%13, %11])
-        |     %16 : affine.MemRef<[3, 2], f64> = affine.alloc([3, 2])
-        |     %17 : () = affine.for<0, 3>() (%18: index):
-        |         %19 : () = affine.for<0, 2>() (%20: index):
-        |             %21 : f64 = affine.load(%1, [%18, %20])
-        |             %22 : f64 = affine.load(%9, [%18, %20])
-        |             %23 : f64 = affine.mul_f(%21, %22)
+        |     %16 : affine.MemRef<[3, 2], F64> = affine.alloc([3, 2])
+        |     %17 : () = affine.for<0, 3>() (%18: Index):
+        |         %19 : () = affine.for<0, 2>() (%20: Index):
+        |             %21 : F64 = affine.load(%1, [%18, %20])
+        |             %22 : F64 = affine.load(%9, [%18, %20])
+        |             %23 : F64 = affine.mul_f(%21, %22)
         |             %24 : () = affine.store(%23, %16, [%18, %20])
         |     %25 : () = affine.print_memref(%16)
         |     %26 : () = affine.dealloc(%0)
