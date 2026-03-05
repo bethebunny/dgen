@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from dgen.gen.ast import (
     DgenFile,
     OperandDecl,
@@ -10,6 +12,7 @@ from dgen.gen.ast import (
     TypeRef,
 )
 
+# Layout keyword values → expressions. Leaf layouts end in ")"; constructors don't.
 _LAYOUTS: dict[str, str] = {
     "Int": "layout.Int()",
     "Float64": "layout.Float64()",
@@ -21,17 +24,8 @@ _LAYOUTS: dict[str, str] = {
     "FatPointer": "layout.FatPointer",
 }
 
-# Map dgen type names to layout expressions (for data field resolution).
-_TYPE_LAYOUTS: dict[str, str] = {
-    "Index": "layout.Int()",
-    "F64": "layout.Float64()",
-    "Nil": "layout.Void()",
-    "Byte": "layout.Byte()",
-}
-
 
 def _op_class_name(asm_name: str) -> str:
-    """Derive Python class name from ASM op name: snake_case -> CamelCaseOp."""
     parts = asm_name.split("_")
     return "".join(p.capitalize() for p in parts) + "Op"
 
@@ -39,20 +33,12 @@ def _op_class_name(asm_name: str) -> str:
 def _type_expr(
     ref: TypeRef, type_map: dict[str, TypeDecl], known_names: set[str]
 ) -> str:
-    """Resolve a return-type TypeRef to a default construction expression.
-
-    For simple refs (no args): emit Name() if the type has no required params.
-    For parameterized refs: emit Name(param=ParamType().constant(val)).
-    Raises ValueError if the type is unknown or has unfillable required params.
-    """
+    """Resolve a TypeRef to a Python construction expression for defaults."""
     if not ref.args:
         td = type_map.get(ref.name)
         if td is not None:
-            required = [p for p in td.params if p.default is None]
-            if required:
-                raise ValueError(
-                    f"cannot default-construct {ref.name}: has required params"
-                )
+            if any(p.default is None for p in td.params):
+                raise ValueError(f"cannot default-construct {ref.name}")
         elif ref.name not in known_names:
             raise ValueError(f"unknown type {ref.name}")
         return f"{ref.name}()"
@@ -67,49 +53,41 @@ def _type_expr(
 
 
 def _layout_expr(ref: TypeRef, param_map: dict[str, ParamDecl]) -> str:
-    """Resolve a data-field TypeRef to a layout expression."""
+    """Resolve a data-field TypeRef to a layout expression.
+
+    - Parameter (Type kind) → self.name.__layout__
+    - Parameter (value kind) → self.name.__constant__.to_json()
+    - Layout constructor (Array, Pointer, FatPointer) → layout.X(recurse args)
+    - Any other name (a type) → Name.__layout__
+    """
     if ref.name in param_map:
         p = param_map[ref.name]
         if p.type.name == "Type":
             return f"self.{ref.name}.__layout__"
         return f"self.{ref.name}.__constant__.to_json()"
-    # Check type-name-to-layout mapping (e.g. Index -> layout.Int())
-    type_layout = _TYPE_LAYOUTS.get(ref.name)
-    if type_layout is not None:
-        return type_layout
-    # Check layout keyword mapping
-    layout_str = _LAYOUTS.get(ref.name)
-    if layout_str is not None:
-        if layout_str.endswith(")"):
-            return layout_str
-        # Constructor — recurse into args
-        if ref.args:
-            args = ", ".join(_layout_expr(a, param_map) for a in ref.args)
-            return f"{layout_str}({args})"
-        return f"{layout_str}(layout.Void())"
-    return ref.name
+    entry = _LAYOUTS.get(ref.name)
+    if entry is not None and not entry.endswith(")"):
+        args = ", ".join(_layout_expr(a, param_map) for a in ref.args)
+        return f"{entry}({args})"
+    # Type name — defer to its __layout__
+    return f"{ref.name}.__layout__"
 
 
 def _ref_has_params(ref: TypeRef, param_map: dict[str, ParamDecl]) -> bool:
-    """Check if a TypeRef references any type parameters."""
     if ref.name in param_map:
         return True
     return any(_ref_has_params(a, param_map) for a in ref.args)
 
 
 def _resolve_type_ref(ref: TypeRef) -> str:
-    """Resolve a TypeRef to a Python name for __params__/__operands__ tuples."""
     if ref.name == "Type":
         return "Type"
     if ref.name == "list":
-        if ref.args:
-            return _resolve_type_ref(ref.args[0])
-        return "Type"
+        return _resolve_type_ref(ref.args[0]) if ref.args else "Type"
     return ref.name
 
 
 def _annotation_for_param(param: ParamDecl) -> str:
-    """Generate Python type annotation for a compile-time parameter."""
     if param.type.name == "list":
         inner = _resolve_type_ref(param.type.args[0]) if param.type.args else "Type"
         return f"list[Value[{inner}]]"
@@ -119,104 +97,80 @@ def _annotation_for_param(param: ParamDecl) -> str:
 
 
 def _annotation_for_operand(operand: OperandDecl) -> str:
-    """Generate Python type annotation for a runtime operand."""
     if operand.type.name == "list":
         return "list[Value]"
     return "Value"
 
 
-def generate(
+def _generate(
     ast: DgenFile,
     dialect_name: str,
-    import_map: dict[str, str] | None = None,
-) -> str:
-    """Generate Python source code from a DgenFile AST."""
-    import_map = import_map or {}
-    lines: list[str] = []
-
+    import_map: dict[str, str],
+) -> Iterator[str]:
     type_map: dict[str, TypeDecl] = {td.name: td for td in ast.types}
-
-    # Known type names (local + imported) for default expression resolution
     known_names: set[str] = set(type_map)
-    for imp in ast.imports:
-        for name in imp.names:
-            known_names.add(name)
-
-    # Collect trait names from local declarations and imports
     trait_names: set[str] = {t.name for t in ast.traits}
     for imp in ast.imports:
         for name in imp.names:
+            known_names.add(name)
             if name == "HasSingleBlock":
                 trait_names.add(name)
 
     needs_block = any(od.blocks for od in ast.ops)
     needs_layout = any(td.data or td.layout for td in ast.types)
 
-    # --- Header ---
-    lines.append(f"# GENERATED by dgen from {dialect_name}.dgen — do not edit.")
-    lines.append("")
-    lines.append("from __future__ import annotations")
-    lines.append("")
-    lines.append("from dataclasses import dataclass")
-    lines.append("")
+    # Header
+    yield f"# GENERATED by dgen from {dialect_name}.dgen — do not edit."
+    yield ""
+    yield "from __future__ import annotations"
+    yield ""
+    yield "from dataclasses import dataclass"
+    yield ""
 
-    # --- dgen imports ---
     dgen_names = ["Dialect", "Op", "Type", "Value"]
     if needs_block:
         dgen_names.insert(0, "Block")
     if needs_layout:
         dgen_names.append("layout")
-    lines.append(f"from dgen import {', '.join(sorted(dgen_names))}")
+    yield f"from dgen import {', '.join(sorted(dgen_names))}"
 
-    # --- Cross-dialect imports (names pass through as-is) ---
     for imp in ast.imports:
         python_module = import_map.get(imp.module)
         if python_module:
-            lines.append(f"from {python_module} import {', '.join(imp.names)}")
+            yield f"from {python_module} import {', '.join(imp.names)}"
 
-    lines.append("")
+    yield ""
+    yield f'{dialect_name} = Dialect("{dialect_name}")'
+    yield ""
 
-    # --- Dialect instance ---
-    lines.append(f'{dialect_name} = Dialect("{dialect_name}")')
-    lines.append("")
-
-    # --- Traits ---
+    # Traits
     for trait in ast.traits:
-        lines.append("")
-        lines.append(f"class {trait.name}:")
-        lines.append("    pass")
-        lines.append("")
+        yield ""
+        yield f"class {trait.name}:"
+        yield "    pass"
+        yield ""
 
-    # --- Types ---
+    # Types
     for td in ast.types:
         param_map = {p.name: p for p in td.params}
-        has_data = td.data is not None
-        has_layout_kw = td.layout is not None
-        is_parametric = has_data and _ref_has_params(td.data.type, param_map)
+        is_parametric = td.data is not None and _ref_has_params(td.data.type, param_map)
 
-        lines.append("")
-        lines.append(f'@{dialect_name}.type("{td.name}")')
-        lines.append("@dataclass(frozen=True)")
-        lines.append(f"class {td.name}(Type):")
+        yield ""
+        yield f'@{dialect_name}.type("{td.name}")'
+        yield "@dataclass(frozen=True)"
+        yield f"class {td.name}(Type):"
 
         body: list[str] = []
 
-        # Static layout from keyword
-        if has_layout_kw:
-            layout_str = _LAYOUTS.get(td.layout)
-            if layout_str is not None:
-                if layout_str.endswith(")"):
-                    body.append(f"    __layout__ = {layout_str}")
-                else:
-                    body.append(f"    __layout__ = {layout_str}(layout.Void())")
+        if td.layout is not None:
+            entry = _LAYOUTS[td.layout]
+            if entry.endswith(")"):
+                body.append(f"    __layout__ = {entry}")
             else:
-                body.append(f"    __layout__ = layout.{td.layout}()")
-
-        # Static layout from data field (non-parametric)
-        if has_data and not is_parametric:
+                body.append(f"    __layout__ = {entry}(layout.Void())")
+        elif td.data is not None and not is_parametric:
             body.append(f"    __layout__ = {_layout_expr(td.data.type, param_map)}")
 
-        # Parameters
         for p in td.params:
             ann = _annotation_for_param(p)
             if p.default:
@@ -224,13 +178,11 @@ def generate(
             else:
                 body.append(f"    {p.name}: {ann}")
 
-        # __params__ tuple
         if td.params:
             parts = [f'("{p.name}", {_resolve_type_ref(p.type)})' for p in td.params]
             body.append(f"    __params__ = ({', '.join(parts)},)")
 
-        # Parametric layout property
-        if has_data and is_parametric:
+        if td.data is not None and is_parametric:
             body.append("")
             body.append("    @property")
             body.append("    def __layout__(self) -> layout.Layout:")
@@ -239,28 +191,24 @@ def generate(
         if not body:
             body.append("    pass")
 
-        lines.extend(body)
-        lines.append("")
+        yield from body
+        yield ""
 
-    # --- Ops ---
+    # Ops
     for od in ast.ops:
-        cls_name = _op_class_name(od.name)
         has_trait = bool(od.blocks) and "HasSingleBlock" in trait_names
 
-        lines.append("")
-        lines.append(f'@{dialect_name}.op("{od.name}")')
-        lines.append("@dataclass(eq=False, kw_only=True)")
-
+        yield ""
+        yield f'@{dialect_name}.op("{od.name}")'
+        yield "@dataclass(eq=False, kw_only=True)"
         bases = "HasSingleBlock, Op" if has_trait else "Op"
-        lines.append(f"class {cls_name}({bases}):")
+        yield f"class {_op_class_name(od.name)}({bases}):"
 
         body = []
 
-        # Parameters (compile-time)
         for p in od.params:
             body.append(f"    {p.name}: {_annotation_for_param(p)}")
 
-        # Operands (runtime)
         for op in od.operands:
             ann = _annotation_for_operand(op)
             if op.default:
@@ -268,39 +216,36 @@ def generate(
             else:
                 body.append(f"    {op.name}: {ann}")
 
-        # Return type
         ret = od.return_type
         if ret.name == "Type":
             body.append("    type: Type")
         else:
-            try:
-                default = _type_expr(ret, type_map, known_names)
-                body.append(f"    type: Type = {default}")
-            except ValueError:
-                body.append("    type: Type")
+            body.append(f"    type: Type = {_type_expr(ret, type_map, known_names)}")
 
-        # Block fields
         for block_name in od.blocks:
             body.append(f"    {block_name}: Block")
 
-        # __params__ tuple
         if od.params:
             parts = [f'("{p.name}", {_resolve_type_ref(p.type)})' for p in od.params]
             body.append(f"    __params__ = ({', '.join(parts)},)")
 
-        # __operands__ tuple
         if od.operands:
             parts = [
                 f'("{op.name}", {_resolve_type_ref(op.type)})' for op in od.operands
             ]
             body.append(f"    __operands__ = ({', '.join(parts)},)")
 
-        # __blocks__ tuple
         if od.blocks:
             parts = [f'"{b}"' for b in od.blocks]
             body.append(f"    __blocks__ = ({', '.join(parts)},)")
 
-        lines.extend(body)
-        lines.append("")
+        yield from body
+        yield ""
 
-    return "\n".join(lines) + "\n"
+
+def generate(
+    ast: DgenFile,
+    dialect_name: str,
+    import_map: dict[str, str] | None = None,
+) -> str:
+    return "\n".join(_generate(ast, dialect_name, import_map or {})) + "\n"

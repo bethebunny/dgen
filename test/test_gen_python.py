@@ -21,17 +21,29 @@ def test_generate_header():
     assert 'Dialect("test")' in code
 
 
-def test_generate_simple_type():
+def test_generate_layout_keyword():
+    """layout keyword generates static __layout__."""
+    f = DgenFile(types=[TypeDecl(name="Index", layout="Int")])
+    code = generate(f, dialect_name="test")
+    assert "class Index(Type):" in code
+    assert "__layout__ = layout.Int()" in code
+
+
+def test_generate_layout_keyword_pointer():
+    """layout Pointer generates __layout__ = layout.Pointer(layout.Void())."""
+    f = DgenFile(types=[TypeDecl(name="Ptr", layout="Pointer")])
+    code = generate(f, dialect_name="test")
+    assert "class Ptr(Type):" in code
+    assert "__layout__ = layout.Pointer(layout.Void())" in code
+
+
+def test_generate_data_field_type_ref():
+    """Data field referencing a type name uses Name.__layout__."""
     f = DgenFile(
-        types=[
-            TypeDecl(name="Index", data=DataField(name="data", type=TypeRef("Index")))
-        ]
+        types=[TypeDecl(name="Foo", data=DataField(name="data", type=TypeRef("Index")))]
     )
     code = generate(f, dialect_name="test")
-    assert '@test.type("Index")' in code
-    assert "class Index(Type):" in code
-    assert "@dataclass(frozen=True)" in code
-    assert "__layout__ = layout.Int()" in code
+    assert "__layout__ = Index.__layout__" in code
 
 
 def test_generate_type_no_data():
@@ -68,9 +80,8 @@ def test_generate_parameterized_type():
     assert "class Shape(Type):" in code
     assert "rank: Value[Index]" in code
     assert '__params__ = (("rank", Index),)' in code
-    # Parametric layout becomes a property
     assert "def __layout__(self)" in code
-    assert "layout.Array(layout.Int()," in code
+    assert "layout.Array(Index.__layout__," in code
 
 
 def test_generate_type_fatpointer_data():
@@ -87,7 +98,7 @@ def test_generate_type_fatpointer_data():
     )
     code = generate(f, dialect_name="test")
     assert "class String(Type):" in code
-    assert "__layout__ = layout.FatPointer(layout.Byte())" in code
+    assert "__layout__ = layout.FatPointer(Byte.__layout__)" in code
 
 
 def test_generate_type_fatpointer_param():
@@ -125,7 +136,6 @@ def test_generate_type_default_param():
     code = generate(f, dialect_name="test")
     assert "shape: Value[Shape]" in code
     assert "dtype: Type" in code
-    # Default should reference the type class
     assert "F64()" in code
 
 
@@ -157,6 +167,7 @@ def test_generate_simple_op():
 
 def test_generate_op_with_params():
     f = DgenFile(
+        imports=[ImportDecl(module="builtin", names=["Index"])],
         ops=[
             OpDecl(
                 name="concat",
@@ -167,9 +178,13 @@ def test_generate_op_with_params():
                 ],
                 return_type=TypeRef("Type"),
             )
-        ]
+        ],
     )
-    code = generate(f, dialect_name="test")
+    code = generate(
+        f,
+        dialect_name="test",
+        import_map={"builtin": "dgen.dialects.builtin"},
+    )
     assert "axis: Value[Index]" in code
     assert "lhs: Value" in code
     assert "rhs: Value" in code
@@ -180,6 +195,7 @@ def test_generate_op_with_params():
 def test_generate_op_with_block():
     f = DgenFile(
         traits=[TraitDecl(name="HasSingleBlock")],
+        types=[TypeDecl(name="Nil", layout="Void")],
         ops=[
             OpDecl(
                 name="for",
@@ -230,13 +246,13 @@ def test_generate_op_return_generic():
     )
     code = generate(f, dialect_name="test")
     assert "type: Type\n" in code or "type: Type" in code
-    # Should NOT have a default
     assert "type: Type =" not in code
 
 
 def test_generate_op_default_operand():
     """Operand with default value."""
     f = DgenFile(
+        types=[TypeDecl(name="Nil", layout="Void")],
         ops=[
             OpDecl(
                 name="return",
@@ -245,7 +261,7 @@ def test_generate_op_default_operand():
                 ],
                 return_type=TypeRef("Nil"),
             )
-        ]
+        ],
     )
     code = generate(f, dialect_name="test")
     assert "value: Value | Nil = Nil()" in code
@@ -253,6 +269,7 @@ def test_generate_op_default_operand():
 
 def test_generate_list_operand():
     f = DgenFile(
+        types=[TypeDecl(name="List")],
         ops=[
             OpDecl(
                 name="pack",
@@ -261,7 +278,7 @@ def test_generate_list_operand():
                 ],
                 return_type=TypeRef("List"),
             )
-        ]
+        ],
     )
     code = generate(f, dialect_name="test")
     assert "values: list[Value]" in code
@@ -269,6 +286,7 @@ def test_generate_list_operand():
 
 def test_generate_list_param():
     f = DgenFile(
+        imports=[ImportDecl(module="builtin", names=["String"])],
         ops=[
             OpDecl(
                 name="phi",
@@ -280,9 +298,13 @@ def test_generate_list_param():
                 ],
                 return_type=TypeRef("Type"),
             )
-        ]
+        ],
     )
-    code = generate(f, dialect_name="test")
+    code = generate(
+        f,
+        dialect_name="test",
+        import_map={"builtin": "dgen.dialects.builtin"},
+    )
     assert "labels: list[Value[String]]" in code
     assert "values: list[Value]" in code
     assert '__params__ = (("labels", String),)' in code
@@ -315,7 +337,7 @@ def test_generate_imports():
 
 
 def test_generate_imported_trait():
-    """Ops with blocks should inherit HasSingleBlock even when it's imported, not local."""
+    """Ops with blocks should inherit HasSingleBlock even when it's imported."""
     f = DgenFile(
         imports=[
             ImportDecl(module="builtin", names=["Index", "Nil", "HasSingleBlock"])
@@ -346,7 +368,8 @@ def test_generate_valid_python():
     """The generated code should be valid Python that can be exec'd."""
     f = DgenFile(
         types=[
-            TypeDecl(name="Index", data=DataField(name="data", type=TypeRef("Index")))
+            TypeDecl(name="Index", layout="Int"),
+            TypeDecl(name="Nil", layout="Void"),
         ],
         ops=[
             OpDecl(
@@ -356,12 +379,11 @@ def test_generate_valid_python():
         ],
     )
     code = generate(f, dialect_name="test")
-    # Should be parseable as Python
     compile(code, "<test>", "exec")
 
 
 def test_generate_nil_data_field():
-    """A type with data: Nil should get __layout__ = layout.Void()."""
+    """A type with data: Nil should get __layout__ = Nil.__layout__."""
     f = DgenFile(
         types=[
             TypeDecl(
@@ -375,7 +397,7 @@ def test_generate_nil_data_field():
     )
     code = generate(f, dialect_name="test")
     assert "class InferredShapeTensor(Type):" in code
-    assert "__layout__ = layout.Void()" in code
+    assert "__layout__ = Nil.__layout__" in code
 
 
 def test_parse_layout_keyword():
@@ -388,24 +410,8 @@ def test_parse_layout_keyword():
     assert f.types[0].data is None
 
 
-def test_generate_layout_keyword():
-    """layout keyword generates static __layout__."""
-    f = DgenFile(types=[TypeDecl(name="Index", layout="Int")])
-    code = generate(f, dialect_name="test")
-    assert "class Index(Type):" in code
-    assert "__layout__ = layout.Int()" in code
-
-
-def test_generate_layout_keyword_pointer():
-    """layout Pointer generates __layout__ = layout.Pointer(layout.Void())."""
-    f = DgenFile(types=[TypeDecl(name="Ptr", layout="Pointer")])
-    code = generate(f, dialect_name="test")
-    assert "class Ptr(Type):" in code
-    assert "__layout__ = layout.Pointer(layout.Void())" in code
-
-
 def test_generate_pointer_data():
-    """Pointer<Nil> should generate __layout__ = layout.Pointer(layout.Void())."""
+    """Pointer<Nil> should generate __layout__ = layout.Pointer(Nil.__layout__)."""
     f = DgenFile(
         types=[
             TypeDecl(
@@ -420,4 +426,13 @@ def test_generate_pointer_data():
     )
     code = generate(f, dialect_name="test")
     assert "class MemRef(Type):" in code
-    assert "__layout__ = layout.Pointer(layout.Void())" in code
+    assert "__layout__ = layout.Pointer(Nil.__layout__)" in code
+
+
+def test_generate_unknown_return_type_errors():
+    """Return type referencing unknown type should raise."""
+    import pytest
+
+    f = DgenFile(ops=[OpDecl(name="foo", return_type=TypeRef("Unknown"))])
+    with pytest.raises(ValueError, match="unknown type Unknown"):
+        generate(f, dialect_name="test")

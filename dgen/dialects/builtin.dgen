@@ -15,9 +15,9 @@ type String:
 type List<element_type: Type>:
     storage: FatPointer<element_type>
 
-op pack(values: list<Type>) -> List
+op pack(values: list<Type>) -> Type
 op list_get<index: Index>(list: List) -> Type
 op add_index(lhs: Index, rhs: Index) -> Index
 op return(value: Type = Nil) -> Nil
-op function() -> Function:
+op function() -> Type:
     block body

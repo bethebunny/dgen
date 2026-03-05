@@ -18,13 +18,13 @@ class Shape(Type):
 
     @property
     def __layout__(self) -> layout.Layout:
-        return layout.Array(layout.Int(), self.rank.__constant__.to_json())
+        return layout.Array(Index.__layout__, self.rank.__constant__.to_json())
 
 
 @affine.type("MemRef")
 @dataclass(frozen=True)
 class MemRef(Type):
-    __layout__ = layout.Pointer(layout.Void())
+    __layout__ = layout.Pointer(Nil.__layout__)
     shape: Value[Shape]
     dtype: Type = F64()
     __params__ = (
