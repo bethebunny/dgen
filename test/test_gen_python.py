@@ -511,7 +511,7 @@ def test_generate_op_none_return_type():
 
 
 def test_generate_type_multiple_data_fields():
-    """Multiple data fields — layout uses first field only."""
+    """Multiple data fields generate a Record layout."""
     f = DgenFile(
         types=[
             TypeDecl(
@@ -525,8 +525,7 @@ def test_generate_type_multiple_data_fields():
     )
     code = generate(f, dialect_name="test")
     assert "class Pair(Type):" in code
-    # Layout uses first field
-    assert "__layout__ = Index.__layout__" in code
+    assert "layout.Record" in code
 
 
 def test_generate_unknown_return_type_falls_back():
@@ -685,3 +684,45 @@ def test_generate_qualified_type_no_default():
     )
     assert "type: Type" in code
     assert "type: Type =" not in code
+
+
+def test_generate_type_multi_field_record():
+    """Multiple data fields generate a Record layout."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="Point",
+                data=[
+                    DataField(name="x", type=TypeRef("Index")),
+                    DataField(name="y", type=TypeRef("F64")),
+                ],
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class Point(Type):" in code
+    assert "layout.Record" in code
+    assert '"x"' in code
+    assert '"y"' in code
+    assert "Index.__layout__" in code
+    assert "F64.__layout__" in code
+
+
+def test_generate_type_multi_field_parametric_record():
+    """Multi-field type with parametric fields generates Record property."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="Pair",
+                params=[ParamDecl(name="t", type=TypeRef("Type"))],
+                data=[
+                    DataField(name="first", type=TypeRef("t")),
+                    DataField(name="second", type=TypeRef("Index")),
+                ],
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "def __layout__(self)" in code
+    assert "layout.Record" in code
+    assert "self.t.__layout__" in code
