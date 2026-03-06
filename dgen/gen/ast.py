@@ -79,6 +79,105 @@ class Constraint:
     expr: str | None = None
 
 
+# --- Expression AST (mini-language) ---
+
+
+@dataclass
+class Expr:
+    """Base class marker for expressions."""
+
+
+@dataclass
+class NameExpr(Expr):
+    """A name reference: x, count, self."""
+
+    name: str
+
+
+@dataclass
+class LiteralExpr(Expr):
+    """An integer or float literal."""
+
+    value: int | float
+
+
+@dataclass
+class AttrExpr(Expr):
+    """Attribute access: value.attr."""
+
+    value: Expr
+    attr: str
+
+
+@dataclass
+class BinOpExpr(Expr):
+    """Binary operation: left op right."""
+
+    op: str  # +, -, *, //, <, ==, !=
+    left: Expr
+    right: Expr
+
+
+@dataclass
+class CallExpr(Expr):
+    """Function/method call: func(args)."""
+
+    func: Expr
+    args: list[Expr]
+
+
+# --- Statement AST ---
+
+
+@dataclass
+class Assignment:
+    """name[: Type] = value."""
+
+    name: str
+    value: Expr
+    type: TypeRef | None = None
+
+
+@dataclass
+class ReturnStmt:
+    """return value."""
+
+    value: Expr
+
+
+@dataclass
+class ForStmt:
+    """for var in iter: body."""
+
+    var: str
+    iter: Expr
+    body: list[Assignment | ReturnStmt | ForStmt | IfStmt]
+
+
+@dataclass
+class IfStmt:
+    """if condition: then_body [else: else_body]."""
+
+    condition: Expr
+    then_body: list[Assignment | ReturnStmt | ForStmt | IfStmt]
+    else_body: list[Assignment | ReturnStmt | ForStmt | IfStmt] = field(
+        default_factory=list
+    )
+
+
+Statement = Assignment | ReturnStmt | ForStmt | IfStmt
+
+
+@dataclass
+class MethodDecl:
+    """A method on a type: method name(self[, args]) -> ReturnType: body."""
+
+    name: str
+    params: list[ParamDecl]
+    return_type: TypeRef
+    body: list[Statement]
+
+
 @dataclass
 class TraitDecl:
     """A trait declaration with optional static fields."""
@@ -97,6 +196,7 @@ class TypeDecl:
     layout: str | None = None
     traits: list[str] = field(default_factory=list)
     statics: list[StaticField] = field(default_factory=list)
+    methods: list[MethodDecl] = field(default_factory=list)
 
 
 @dataclass
