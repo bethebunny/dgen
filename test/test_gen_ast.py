@@ -1,6 +1,6 @@
 """Tests for .dgen AST types."""
 
-from dgen.gen.ast import DataField, DgenFile, OpDecl, TypeDecl, TypeRef
+from dgen.gen.ast import Constraint, DataField, DgenFile, OpDecl, TypeDecl, TypeRef
 
 
 def test_ast_construction():
@@ -33,3 +33,31 @@ def test_data_field_with_compound_type():
     assert len(data.type.args) == 2
     assert data.type.args[0].name == "Index"
     assert data.type.args[1].name == "rank"
+
+
+def test_constraint_match():
+    c = Constraint(kind="match", lhs="$X", pattern="Tensor")
+    assert c.kind == "match"
+    assert c.lhs == "$X"
+    assert c.pattern == "Tensor"
+
+
+def test_constraint_eq():
+    c = Constraint(kind="eq", lhs="$X", rhs="$Result")
+    assert c.kind == "eq"
+
+
+def test_constraint_expr():
+    c = Constraint(kind="expr", expr="axis < $X.rank")
+    assert c.kind == "expr"
+
+
+def test_op_with_constraints():
+    op = OpDecl(
+        name="tile",
+        return_type=TypeRef("Type"),
+        constraints=[
+            Constraint(kind="match", lhs="$X", pattern="Tensor"),
+        ],
+    )
+    assert len(op.constraints) == 1

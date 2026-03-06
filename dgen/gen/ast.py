@@ -63,6 +63,23 @@ class StaticField:
 
 
 @dataclass
+class Constraint:
+    """A requires clause on an op.
+
+    Kinds:
+    - "match": requires $Var ~= TypePattern  (lhs, pattern)
+    - "eq":    requires $Var == $Var          (lhs, rhs)
+    - "expr":  requires <expression>          (expr)
+    """
+
+    kind: str  # "match", "eq", or "expr"
+    lhs: str | None = None
+    pattern: str | None = None
+    rhs: str | None = None
+    expr: str | None = None
+
+
+@dataclass
 class TraitDecl:
     """A trait declaration with optional static fields."""
 
@@ -92,6 +109,7 @@ class OpDecl:
     return_type: TypeRef | None = None
     blocks: list[str] = field(default_factory=list)
     traits: list[str] = field(default_factory=list)
+    constraints: list[Constraint] = field(default_factory=list)
 
 
 @dataclass
