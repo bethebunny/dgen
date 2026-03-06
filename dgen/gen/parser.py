@@ -81,24 +81,7 @@ class _Parser:
             if stripped.startswith("#") or not stripped:
                 continue
             if stripped.startswith("static "):
-                rest = stripped[7:]  # strip "static "
-                default: str | None = None
-                if "=" in rest:
-                    rest, default_str = rest.rsplit("=", 1)
-                    default = default_str.strip()
-                    rest = rest.strip()
-                if ":" not in rest:
-                    raise SyntaxError(
-                        f"static field requires type annotation: {stripped!r}"
-                    )
-                name, type_str = rest.split(":", 1)
-                statics.append(
-                    StaticField(
-                        name=name.strip(),
-                        type=_parse_type_ref(type_str.strip()),
-                        default=default,
-                    )
-                )
+                statics.append(_parse_static_field(stripped))
             else:
                 raise SyntaxError(f"unexpected line in trait body: {stripped!r}")
         return statics
@@ -163,24 +146,7 @@ class _Parser:
                 continue
             # Static field: static name: Type [= default]
             if stripped.startswith("static "):
-                rest = stripped[7:]  # strip "static "
-                default: str | None = None
-                if "=" in rest:
-                    rest, default_str = rest.rsplit("=", 1)
-                    default = default_str.strip()
-                    rest = rest.strip()
-                if ":" not in rest:
-                    raise SyntaxError(
-                        f"static field requires type annotation: {stripped!r}"
-                    )
-                sf_name, type_str = rest.split(":", 1)
-                statics.append(
-                    StaticField(
-                        name=sf_name.strip(),
-                        type=_parse_type_ref(type_str.strip()),
-                        default=default,
-                    )
-                )
+                statics.append(_parse_static_field(stripped))
                 continue
             # Field declaration: name: TypeExpr
             if ":" in stripped:
@@ -260,6 +226,24 @@ class _Parser:
             elif stripped.startswith("has trait "):
                 traits.append(stripped.split()[2])
         return blocks, traits
+
+
+def _parse_static_field(line: str) -> StaticField:
+    """Parse a 'static name: Type [= default]' line into a StaticField."""
+    rest = line[7:]  # strip "static "
+    default: str | None = None
+    if "=" in rest:
+        rest, default_str = rest.rsplit("=", 1)
+        default = default_str.strip()
+        rest = rest.strip()
+    if ":" not in rest:
+        raise SyntaxError(f"static field requires type annotation: {line!r}")
+    name, type_str = rest.split(":", 1)
+    return StaticField(
+        name=name.strip(),
+        type=_parse_type_ref(type_str.strip()),
+        default=default,
+    )
 
 
 def _parse_decl_parts(

@@ -24,6 +24,21 @@ in terms of syntax, scope, and expressiveness.
 - builtin types and ops are referenced without a prefix
 - other types and ops are imported by namespace, not directly
 
+### Type semantics
+
+`Type` always means **type value** — a value that is itself a type.
+
+- **In parameters**: `element_type: Type` means this compile-time parameter holds a type.
+- **In return position**: `-> Type` means the op returns a type value, not a runtime value.
+- **Omitted return type**: The result type is supplied by the caller at construction time.
+- **Concrete return type**: `-> Nil`, `-> Float` means the return type is always that type.
+- **Parameterized return type**: `-> Tensor`, `-> MemRef` means the op returns that kind
+  of value, but the caller must specify the exact parameterization.
+- **Operand types**: Operands have types. Write `op add(lhs: Tensor, rhs: Tensor)`.
+  Use the base type name even for parameterized types.
+- **Variadic operands**: Bare `list` for variadic operands (`values: list`).
+  For variadic params, use `list<T>` (`labels: list<String>`).
+
 ### Types have known memory layouts
 
 ### Example
