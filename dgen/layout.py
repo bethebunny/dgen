@@ -172,6 +172,34 @@ class FatPointer(Layout):
         self.struct.pack_into(buf, offset, ptr, len(value))
 
 
+class Record(Layout):
+    """Fixed struct of named fields, laid out sequentially."""
+
+    def __init__(self, fields: list[tuple[str, Layout]]) -> None:
+        self.fields = fields
+        self._offsets: list[int] = []
+        offset = 0
+        for _, lay in fields:
+            self._offsets.append(offset)
+            offset += lay.byte_size
+        self._total_size = offset
+        # Use a raw byte format for the total size
+        self.struct = Struct(f"{offset}s") if offset > 0 else Struct("0s")
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for (name, lay), field_offset in zip(self.fields, self._offsets):
+            result[name] = lay.to_json(buf, offset + field_offset)
+        return result
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        assert isinstance(value, dict)
+        for (name, lay), field_offset in zip(self.fields, self._offsets):
+            lay.from_json(buf, offset + field_offset, value[name], origins)
+
+
 class String(FatPointer):
     """FatPointer(Byte()) with str ↔ list[int] conversion in to_json/from_json."""
 
