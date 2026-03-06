@@ -398,3 +398,115 @@ def test_parse_requires_with_block():
     op = parse(src).ops[0]
     assert op.blocks == ["body"]
     assert len(op.constraints) == 1
+
+
+def test_parse_method_simple_return():
+    src = """\
+type Foo:
+    method size(self) -> Index:
+        return 42
+"""
+    t = parse(src).types[0]
+    assert len(t.methods) == 1
+    m = t.methods[0]
+    assert m.name == "size"
+    assert m.return_type.name == "Index"
+    assert len(m.body) == 1
+    from dgen.gen.ast import ReturnStmt, LiteralExpr
+
+    assert isinstance(m.body[0], ReturnStmt)
+    assert isinstance(m.body[0].value, LiteralExpr)
+    assert m.body[0].value.value == 42
+
+
+def test_parse_method_with_assignment():
+    src = """\
+type Shape:
+    method num_elements(self) -> Index:
+        count: Index = 1
+        return count
+"""
+    t = parse(src).types[0]
+    m = t.methods[0]
+    from dgen.gen.ast import Assignment, ReturnStmt, NameExpr, LiteralExpr
+
+    assert len(m.body) == 2
+    assert isinstance(m.body[0], Assignment)
+    assert m.body[0].name == "count"
+    assert m.body[0].type.name == "Index"
+    assert isinstance(m.body[0].value, LiteralExpr)
+    assert isinstance(m.body[1], ReturnStmt)
+    assert isinstance(m.body[1].value, NameExpr)
+
+
+def test_parse_method_for_loop():
+    src = """\
+type Shape<rank: Index>:
+    dims: Array<Index, rank>
+
+    method num_elements(self) -> Index:
+        count: Index = 1
+        for dim in self.dims:
+            count = count * dim
+        return count
+"""
+    t = parse(src).types[0]
+    m = t.methods[0]
+    from dgen.gen.ast import Assignment, ForStmt, ReturnStmt, BinOpExpr
+
+    assert len(m.body) == 3
+    assert isinstance(m.body[0], Assignment)
+    assert isinstance(m.body[1], ForStmt)
+    assert m.body[1].var == "dim"
+    assert len(m.body[1].body) == 1
+    assert isinstance(m.body[1].body[0], Assignment)
+    assert isinstance(m.body[1].body[0].value, BinOpExpr)
+    assert isinstance(m.body[2], ReturnStmt)
+
+
+def test_parse_method_attr_access():
+    src = """\
+type Foo:
+    method bar(self) -> Index:
+        return self.x.y
+"""
+    t = parse(src).types[0]
+    m = t.methods[0]
+    from dgen.gen.ast import ReturnStmt, AttrExpr
+
+    assert isinstance(m.body[0], ReturnStmt)
+    assert isinstance(m.body[0].value, AttrExpr)
+    assert m.body[0].value.attr == "y"
+
+
+def test_parse_method_call():
+    src = """\
+type Foo:
+    method bar(self) -> Index:
+        return prod(self.dims)
+"""
+    t = parse(src).types[0]
+    m = t.methods[0]
+    from dgen.gen.ast import ReturnStmt, CallExpr
+
+    assert isinstance(m.body[0], ReturnStmt)
+    assert isinstance(m.body[0].value, CallExpr)
+    assert len(m.body[0].value.args) == 1
+
+
+def test_parse_method_if():
+    src = """\
+type Foo:
+    method bar(self) -> Index:
+        if self.x == 0:
+            return 0
+        return 1
+"""
+    t = parse(src).types[0]
+    m = t.methods[0]
+    from dgen.gen.ast import IfStmt, ReturnStmt
+
+    assert len(m.body) == 2
+    assert isinstance(m.body[0], IfStmt)
+    assert len(m.body[0].then_body) == 1
+    assert isinstance(m.body[1], ReturnStmt)
