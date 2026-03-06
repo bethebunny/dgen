@@ -8,13 +8,13 @@ type Tensor<shape: Shape, dtype: Type = F64>:
 type InferredShapeTensor<dtype: Type = F64>:
     data: Nil
 
-op transpose(input) -> Type
-op reshape(input) -> Type
-op mul(lhs, rhs) -> Type
-op add(lhs, rhs) -> Type
-op generic_call<callee: String>(args: list<Type>) -> Type
-op concat<axis: Index>(lhs, rhs) -> Type
-op tile<count: Index>(input) -> Type
-op nonzero_count(input) -> Index
-op dim_size<axis: Index>(input) -> Index
-op print(input) -> Nil
+op transpose(input: Tensor) -> Tensor
+op reshape(input: Tensor) -> Tensor
+op mul(lhs: Tensor, rhs: Tensor) -> Tensor
+op add(lhs: Tensor, rhs: Tensor) -> Tensor
+op generic_call<callee: String>(args: list) -> Tensor
+op concat<axis: Index>(lhs: Tensor, rhs: Tensor) -> Tensor
+op tile<count: Index>(input: Tensor) -> Tensor
+op nonzero_count(input: Tensor) -> Index
+op dim_size<axis: Index>(input: Tensor) -> Index
+op print(input: Tensor) -> Nil

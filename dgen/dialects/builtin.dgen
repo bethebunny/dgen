@@ -27,10 +27,10 @@ type FatPointer<pointee: Type>:
 type List<element_type: Type>:
     storage: FatPointer<element_type>
 
-op pack(values: list<Type>) -> Type
-op list_get<index: Index>(list: List) -> Type
+op pack(values: list) -> List
+op list_get<index: Index>(list: List)
 op add_index(lhs: Index, rhs: Index) -> Index
 op return(value = Nil) -> Nil
-op function() -> Type:
+op function():
     block body
     has trait HasSingleBlock

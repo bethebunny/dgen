@@ -13,18 +13,18 @@ type Void:
     data: Nil
 
 op alloca<elem_count: Index>() -> Ptr
-op gep(base, index) -> Ptr
-op load(ptr) -> Float
-op store(value, ptr) -> Nil
-op fadd(lhs, rhs) -> Float
-op fmul(lhs, rhs) -> Float
-op add(lhs, rhs) -> Int<64>
-op mul(lhs, rhs) -> Int<64>
-op icmp<pred: String>(lhs, rhs) -> Int<1>
+op gep(base: Ptr, index: Int<64>) -> Ptr
+op load(ptr: Ptr) -> Float
+op store(value: Float, ptr: Ptr) -> Nil
+op fadd(lhs: Float, rhs: Float) -> Float
+op fmul(lhs: Float, rhs: Float) -> Float
+op add(lhs: Int<64>, rhs: Int<64>) -> Int<64>
+op mul(lhs: Int<64>, rhs: Int<64>) -> Int<64>
+op icmp<pred: String>(lhs: Int<64>, rhs: Int<64>) -> Int<1>
 op br<dest: String>() -> Nil
-op cond_br<true_dest: String, false_dest: String>(cond) -> Nil
+op cond_br<true_dest: String, false_dest: String>(cond: Int<1>) -> Nil
 op label<label_name: String>() -> Nil
-op phi<labels: list<String>>(values: list<Type>) -> Nil
-op fcmp<pred: String>(lhs, rhs) -> Int<1>
-op zext(input) -> Int<64>
-op call<callee: String>(args: list<Type>) -> Nil
+op phi<labels: list<String>>(values: list) -> Nil
+op fcmp<pred: String>(lhs: Float, rhs: Float) -> Int<1>
+op zext(input: Int<1>) -> Int<64>
+op call<callee: String>(args: list) -> Nil

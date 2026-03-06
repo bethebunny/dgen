@@ -6,13 +6,13 @@ type Shape<rank: Index>:
 type MemRef<shape: Shape, dtype: Type = F64>:
     data: Pointer<Nil>
 
-op alloc(shape: Shape) -> Type
-op dealloc(input) -> Nil
-op load(memref, indices: Index) -> F64
-op store(value, memref, indices: Index) -> Nil
-op mul_f(lhs, rhs) -> F64
-op add_f(lhs, rhs) -> F64
-op print_memref(input) -> Nil
+op alloc(shape: Shape) -> MemRef
+op dealloc(input: MemRef) -> Nil
+op load(memref: MemRef, indices: Index) -> F64
+op store(value: F64, memref: MemRef, indices: Index) -> Nil
+op mul_f(lhs: F64, rhs: F64) -> F64
+op add_f(lhs: F64, rhs: F64) -> F64
+op print_memref(input: MemRef) -> Nil
 op for<lo: Index, hi: Index>() -> Nil:
     block body
     has trait HasSingleBlock
