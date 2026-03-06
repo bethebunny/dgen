@@ -1,6 +1,7 @@
 """Tests for Python code generator from .dgen AST."""
 
 from dgen.gen.ast import (
+    Constraint,
     DataField,
     DgenFile,
     ImportDecl,
@@ -726,3 +727,40 @@ def test_generate_type_multi_field_parametric_record():
     assert "def __layout__(self)" in code
     assert "layout.Record" in code
     assert "self.t.__layout__" in code
+
+
+def test_generate_op_constraints():
+    """Constraints are emitted as __constraints__ metadata."""
+    f = DgenFile(
+        ops=[
+            OpDecl(
+                name="tile",
+                operands=[OperandDecl(name="x", type=TypeRef("$X"))],
+                return_type=TypeRef("$Result"),
+                constraints=[
+                    Constraint(kind="match", lhs="$X", pattern="Tensor"),
+                    Constraint(kind="match", lhs="$Result", pattern="Tensor"),
+                    Constraint(kind="eq", lhs="$X.dtype", rhs="$Result.dtype"),
+                ],
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "__constraints__" in code
+    assert '"$X ~= Tensor"' in code
+    assert '"$Result ~= Tensor"' in code
+    assert '"$X.dtype == $Result.dtype"' in code
+
+
+def test_generate_op_no_constraints():
+    """Ops without constraints have no __constraints__."""
+    f = DgenFile(
+        ops=[
+            OpDecl(
+                name="nop",
+                return_type=TypeRef("Nil"),
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "__constraints__" not in code

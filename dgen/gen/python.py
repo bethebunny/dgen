@@ -304,6 +304,17 @@ def _generate(
             parts = [f'"{b}"' for b in od.blocks]
             body.append(f"    __blocks__ = ({', '.join(parts)},)")
 
+        if od.constraints:
+            cparts: list[str] = []
+            for c in od.constraints:
+                if c.kind == "match":
+                    cparts.append(f'"{c.lhs} ~= {c.pattern}"')
+                elif c.kind == "eq":
+                    cparts.append(f'"{c.lhs} == {c.rhs}"')
+                else:
+                    cparts.append(f'"{c.expr}"')
+            body.append(f"    __constraints__ = ({', '.join(cparts)},)")
+
         yield from body
         yield ""
 
