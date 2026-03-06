@@ -34,6 +34,9 @@ class _Parser:
                 continue
             if line.startswith("from "):
                 result.imports.append(self._parse_import(line))
+            elif line.startswith("import "):
+                module = line.split()[1]
+                result.imports.append(ImportDecl(module=module, names=[]))
             elif line.startswith("trait "):
                 result.traits.append(self._parse_trait(line))
             elif line.startswith("type "):

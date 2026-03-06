@@ -581,3 +581,35 @@ def test_generate_op_with_has_trait():
     )
     code = generate(f, dialect_name="test")
     assert "class ForOp(HasSingleBlock, Op):" in code
+
+
+def test_generate_namespace_import():
+    f = DgenFile(
+        imports=[ImportDecl(module="affine", names=[])],
+    )
+    code = generate(
+        f,
+        dialect_name="test",
+        import_map={"affine": "toy.dialects.affine"},
+    )
+    assert "import toy.dialects.affine as affine" in code
+
+
+def test_generate_qualified_type_no_default():
+    """Qualified type ref (affine.Shape) can't be default-constructed."""
+    f = DgenFile(
+        imports=[ImportDecl(module="affine", names=[])],
+        ops=[
+            OpDecl(
+                name="foo",
+                return_type=TypeRef("affine.Shape"),
+            )
+        ],
+    )
+    code = generate(
+        f,
+        dialect_name="test",
+        import_map={"affine": "toy.dialects.affine"},
+    )
+    assert "type: Type" in code
+    assert "type: Type =" not in code

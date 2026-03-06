@@ -36,6 +36,9 @@ def _type_expr(
 ) -> str:
     """Resolve a TypeRef to a Python construction expression for defaults."""
     if not ref.args:
+        # Qualified names (e.g. affine.Shape) are cross-module; can't default-construct
+        if "." in ref.name:
+            raise ValueError(f"cannot default-construct cross-module type {ref.name}")
         td = type_map.get(ref.name)
         if td is not None:
             if any(p.default is None for p in td.params):
@@ -108,9 +111,13 @@ def _generate(
 ) -> Iterator[str]:
     type_map: dict[str, TypeDecl] = {td.name: td for td in ast.types}
     known_names: set[str] = set(type_map)
+    namespaces: set[str] = set()
     for imp in ast.imports:
-        for name in imp.names:
-            known_names.add(name)
+        if imp.names:
+            for name in imp.names:
+                known_names.add(name)
+        else:
+            namespaces.add(imp.module)
 
     needs_block = any(od.blocks for od in ast.ops)
     needs_layout = any(td.data or td.layout for td in ast.types)
@@ -133,7 +140,10 @@ def _generate(
     for imp in ast.imports:
         python_module = import_map.get(imp.module)
         if python_module:
-            yield f"from {python_module} import {', '.join(imp.names)}"
+            if imp.names:
+                yield f"from {python_module} import {', '.join(imp.names)}"
+            else:
+                yield f"import {python_module} as {imp.module}"
 
     yield ""
     yield f'{dialect_name} = Dialect("{dialect_name}")'

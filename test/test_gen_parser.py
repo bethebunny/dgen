@@ -277,3 +277,16 @@ def test_parse_has_trait_on_op():
     result = parse(src)
     assert result.ops[0].traits == ["HasSingleBlock"]
     assert result.ops[0].blocks == ["body"]
+
+
+def test_parse_namespace_import():
+    result = parse("import affine\n")
+    assert len(result.imports) == 1
+    assert result.imports[0].module == "affine"
+    assert result.imports[0].names == []
+
+
+def test_parse_qualified_type_ref():
+    result = parse("type Tensor<shape: affine.Shape>:\n    data: Nil\n")
+    t = result.types[0]
+    assert t.params[0].type.name == "affine.Shape"

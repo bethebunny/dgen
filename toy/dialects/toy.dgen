@@ -1,7 +1,7 @@
 from builtin import Index, Nil, F64, String
-from affine import Shape
+import affine
 
-type Tensor<shape: Shape, dtype: Type = F64>:
+type Tensor<shape: affine.Shape, dtype: Type = F64>:
     # TODO: layout requires math.prod of shape dims, not yet expressible in .dgen.
     # Temporary workaround: __layout__ monkey-patched in toy/dialects/__init__.py
 
