@@ -241,7 +241,12 @@ def _generate(
         if ret is None or ret.name == "Type":
             body.append("    type: Type")
         else:
-            body.append(f"    type: Type = {_type_expr(ret, type_map, known_names)}")
+            try:
+                body.append(
+                    f"    type: Type = {_type_expr(ret, type_map, known_names)}"
+                )
+            except ValueError:
+                body.append("    type: Type")
 
         for block_name in od.blocks:
             body.append(f"    {block_name}: Block")

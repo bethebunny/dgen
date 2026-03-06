@@ -528,13 +528,34 @@ def test_generate_type_multiple_data_fields():
     assert "__layout__ = Index.__layout__" in code
 
 
-def test_generate_unknown_return_type_errors():
-    """Return type referencing unknown type should raise."""
-    import pytest
-
+def test_generate_unknown_return_type_falls_back():
+    """Return type referencing unknown type falls back to no default."""
     f = DgenFile(ops=[OpDecl(name="foo", return_type=TypeRef("Unknown"))])
-    with pytest.raises(ValueError, match="unknown type Unknown"):
-        generate(f, dialect_name="test")
+    code = generate(f, dialect_name="test")
+    assert "type: Type" in code
+    assert "type: Type =" not in code
+
+
+def test_generate_op_parameterized_return_type():
+    """Parameterized return type that can't be default-constructed generates no default."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="Tensor",
+                params=[ParamDecl(name="shape", type=TypeRef("Shape"))],
+            )
+        ],
+        ops=[
+            OpDecl(
+                name="transpose",
+                operands=[OperandDecl(name="input", type=TypeRef("Tensor"))],
+                return_type=TypeRef("Tensor"),
+            )
+        ],
+    )
+    code = generate(f, dialect_name="test")
+    assert "type: Type" in code
+    assert "type: Type =" not in code
 
 
 def test_generate_type_with_trait():
