@@ -206,9 +206,12 @@ def _parse_decl_parts(
             name, type_str = part.split(":", 1)
             name = name.strip()
             type_ref = _parse_type_ref(type_str.strip())
-            if type_ref.name == "list" and len(type_ref.args) == 1:
+            if type_ref.name == "list":
                 variadic = True
-                type_ref = type_ref.args[0]
+                if type_ref.args:
+                    type_ref = type_ref.args[0]
+                else:
+                    type_ref = None
         else:
             name = part.strip()
         parts.append((name, type_ref, default, variadic))

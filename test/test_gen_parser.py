@@ -264,6 +264,14 @@ def test_parse_has_trait_on_type():
     assert result.types[0].traits == ["FloatingPoint"]
 
 
+def test_parse_bare_list_operand():
+    """Bare list (no inner type) in operand position parses as variadic."""
+    result = parse("op pack(values: list)\n")
+    op = result.ops[0]
+    assert op.operands[0].variadic is True
+    assert op.operands[0].type is None
+
+
 def test_parse_has_trait_on_op():
     src = "op for() -> Nil:\n    block body\n    has trait HasSingleBlock\n"
     result = parse(src)
