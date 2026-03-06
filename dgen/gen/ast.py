@@ -79,6 +79,7 @@ class TypeDecl:
     data: list[DataField] = field(default_factory=list)
     layout: str | None = None
     traits: list[str] = field(default_factory=list)
+    statics: list[StaticField] = field(default_factory=list)
 
 
 @dataclass

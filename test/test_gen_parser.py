@@ -319,3 +319,23 @@ def test_parse_bare_trait_still_works():
     assert len(result.traits) == 1
     assert result.traits[0].name == "HasSingleBlock"
     assert result.traits[0].statics == []
+
+
+def test_parse_type_with_static_fields():
+    src = "type F64:\n    has trait FloatingPoint\n    static bitwidth: Index = 64\n"
+    result = parse(src)
+    t = result.types[0]
+    assert t.traits == ["FloatingPoint"]
+    assert len(t.statics) == 1
+    assert t.statics[0].name == "bitwidth"
+    assert t.statics[0].default == "64"
+
+
+def test_parse_type_with_static_no_default():
+    src = "type F64:\n    static signed: Boolean\n"
+    result = parse(src)
+    t = result.types[0]
+    assert len(t.statics) == 1
+    assert t.statics[0].name == "signed"
+    assert t.statics[0].type.name == "Boolean"
+    assert t.statics[0].default is None

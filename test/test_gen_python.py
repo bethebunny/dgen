@@ -7,6 +7,7 @@ from dgen.gen.ast import (
     OpDecl,
     OperandDecl,
     ParamDecl,
+    StaticField,
     TraitDecl,
     TypeDecl,
     TypeRef,
@@ -596,7 +597,6 @@ def test_generate_namespace_import():
 
 
 def test_generate_trait_with_statics():
-    from dgen.gen.ast import StaticField
 
     f = DgenFile(
         traits=[
@@ -617,7 +617,6 @@ def test_generate_trait_with_statics():
 
 
 def test_generate_trait_with_static_default():
-    from dgen.gen.ast import StaticField
 
     f = DgenFile(
         traits=[
@@ -632,6 +631,40 @@ def test_generate_trait_with_static_default():
     code = generate(f, dialect_name="test")
     assert "class DType:" in code
     assert "bitwidth = 64" in code
+
+
+def test_generate_type_with_static_default():
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="F64",
+                layout="Float64",
+                traits=["FloatingPoint"],
+                statics=[
+                    StaticField(name="bitwidth", type=TypeRef("Index"), default="64"),
+                ],
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class F64(FloatingPoint, Type):" in code
+    assert "bitwidth = 64" in code
+
+
+def test_generate_type_with_static_no_default():
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="F64",
+                statics=[
+                    StaticField(name="signed", type=TypeRef("Boolean")),
+                ],
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class F64(Type):" in code
+    assert "signed: Boolean" in code
 
 
 def test_generate_qualified_type_no_default():

@@ -221,6 +221,12 @@ def _generate(
             body.append("    def __layout__(self) -> layout.Layout:")
             body.append(f"        return {_layout_expr(td.data[0].type, param_map)}")
 
+        for sf in td.statics:
+            if sf.default:
+                body.append(f"    {sf.name} = {sf.default}")
+            else:
+                body.append(f"    {sf.name}: {_resolve_type_ref(sf.type)}")
+
         if not body:
             body.append("    pass")
 

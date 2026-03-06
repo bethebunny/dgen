@@ -125,17 +125,26 @@ class _Parser:
         data: list[DataField] = []
         layout: str | None = None
         traits: list[str] = []
+        statics: list[StaticField] = []
         if has_body:
-            data, layout, traits = self._parse_type_body()
+            data, layout, traits, statics = self._parse_type_body()
         return TypeDecl(
-            name=name, params=params, data=data, layout=layout, traits=traits
+            name=name,
+            params=params,
+            data=data,
+            layout=layout,
+            traits=traits,
+            statics=statics,
         )
 
-    def _parse_type_body(self) -> tuple[list[DataField], str | None, list[str]]:
-        """Parse indented type body lines, return (data fields, layout name, traits)."""
+    def _parse_type_body(
+        self,
+    ) -> tuple[list[DataField], str | None, list[str], list[StaticField]]:
+        """Parse indented type body lines, return (data fields, layout name, traits, statics)."""
         data: list[DataField] = []
         layout = None
         traits: list[str] = []
+        statics: list[StaticField] = []
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
             if not next_line or not next_line[0].isspace():
@@ -152,13 +161,34 @@ class _Parser:
             if stripped.startswith("has trait "):
                 traits.append(stripped.split()[2])
                 continue
+            # Static field: static name: Type [= default]
+            if stripped.startswith("static "):
+                rest = stripped[7:]  # strip "static "
+                default: str | None = None
+                if "=" in rest:
+                    rest, default_str = rest.rsplit("=", 1)
+                    default = default_str.strip()
+                    rest = rest.strip()
+                if ":" not in rest:
+                    raise SyntaxError(
+                        f"static field requires type annotation: {stripped!r}"
+                    )
+                sf_name, type_str = rest.split(":", 1)
+                statics.append(
+                    StaticField(
+                        name=sf_name.strip(),
+                        type=_parse_type_ref(type_str.strip()),
+                        default=default,
+                    )
+                )
+                continue
             # Field declaration: name: TypeExpr
             if ":" in stripped:
                 colon = stripped.index(":")
                 field_name = stripped[:colon].strip()
                 type_str = stripped[colon + 1 :].strip()
                 data.append(DataField(name=field_name, type=_parse_type_ref(type_str)))
-        return data, layout, traits
+        return data, layout, traits, statics
 
     def _parse_op(self, line: str) -> OpDecl:
         rest = line[3:]  # strip "op "
