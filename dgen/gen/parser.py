@@ -9,6 +9,7 @@ from dgen.gen.ast import (
     OpDecl,
     OperandDecl,
     ParamDecl,
+    StaticField,
     TraitDecl,
     TypeDecl,
     TypeRef,
@@ -35,8 +36,10 @@ class _Parser:
             if line.startswith("from "):
                 result.imports.append(self._parse_import(line))
             elif line.startswith("import "):
-                module = line.split()[1]
-                result.imports.append(ImportDecl(module=module, names=[]))
+                parts = line.split()
+                if len(parts) != 2:
+                    raise SyntaxError(f"expected 'import module', got: {line!r}")
+                result.imports.append(ImportDecl(module=parts[1], names=[]))
             elif line.startswith("trait "):
                 result.traits.append(self._parse_trait(line))
             elif line.startswith("type "):
@@ -56,7 +59,49 @@ class _Parser:
         return ImportDecl(module=module, names=names)
 
     def _parse_trait(self, line: str) -> TraitDecl:
-        return TraitDecl(name=line.split()[1])
+        rest = line[6:]  # strip "trait "
+        has_body = rest.rstrip().endswith(":")
+        if has_body:
+            name = rest.rstrip()[:-1].strip()
+            statics = self._parse_trait_body()
+        else:
+            name = rest.strip()
+            statics = []
+        return TraitDecl(name=name, statics=statics)
+
+    def _parse_trait_body(self) -> list[StaticField]:
+        """Parse indented trait body lines, return static fields."""
+        statics: list[StaticField] = []
+        while self.pos + 1 < len(self.lines):
+            next_line = self.lines[self.pos + 1]
+            if not next_line or not next_line[0].isspace():
+                break
+            self.pos += 1
+            stripped = next_line.strip()
+            if stripped.startswith("#") or not stripped:
+                continue
+            if stripped.startswith("static "):
+                rest = stripped[7:]  # strip "static "
+                default: str | None = None
+                if "=" in rest:
+                    rest, default_str = rest.rsplit("=", 1)
+                    default = default_str.strip()
+                    rest = rest.strip()
+                if ":" not in rest:
+                    raise SyntaxError(
+                        f"static field requires type annotation: {stripped!r}"
+                    )
+                name, type_str = rest.split(":", 1)
+                statics.append(
+                    StaticField(
+                        name=name.strip(),
+                        type=_parse_type_ref(type_str.strip()),
+                        default=default,
+                    )
+                )
+            else:
+                raise SyntaxError(f"unexpected line in trait body: {stripped!r}")
+        return statics
 
     def _parse_type(self, line: str) -> TypeDecl:
         rest = line[5:]  # strip "type "

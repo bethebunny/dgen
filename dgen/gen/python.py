@@ -111,13 +111,9 @@ def _generate(
 ) -> Iterator[str]:
     type_map: dict[str, TypeDecl] = {td.name: td for td in ast.types}
     known_names: set[str] = set(type_map)
-    namespaces: set[str] = set()
     for imp in ast.imports:
-        if imp.names:
-            for name in imp.names:
-                known_names.add(name)
-        else:
-            namespaces.add(imp.module)
+        for name in imp.names:
+            known_names.add(name)
 
     needs_block = any(od.blocks for od in ast.ops)
     needs_layout = any(td.data or td.layout for td in ast.types)
@@ -153,7 +149,14 @@ def _generate(
     for trait in ast.traits:
         yield ""
         yield f"class {trait.name}:"
-        yield "    pass"
+        if trait.statics:
+            for sf in trait.statics:
+                if sf.default:
+                    yield f"    {sf.name} = {sf.default}"
+                else:
+                    yield f"    {sf.name}: {_resolve_type_ref(sf.type)}"
+        else:
+            yield "    pass"
         yield ""
 
     # Types

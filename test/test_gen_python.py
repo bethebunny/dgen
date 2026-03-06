@@ -595,6 +595,45 @@ def test_generate_namespace_import():
     assert "import toy.dialects.affine as affine" in code
 
 
+def test_generate_trait_with_statics():
+    from dgen.gen.ast import StaticField
+
+    f = DgenFile(
+        traits=[
+            TraitDecl(
+                name="DType",
+                statics=[
+                    StaticField(name="signed", type=TypeRef("Boolean")),
+                    StaticField(name="bitwidth", type=TypeRef("Index")),
+                ],
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class DType:" in code
+    assert "signed: Boolean" in code
+    assert "bitwidth: Index" in code
+    assert "pass" not in code.split("class DType:")[1].split("\n\n")[0]
+
+
+def test_generate_trait_with_static_default():
+    from dgen.gen.ast import StaticField
+
+    f = DgenFile(
+        traits=[
+            TraitDecl(
+                name="DType",
+                statics=[
+                    StaticField(name="bitwidth", type=TypeRef("Index"), default="64"),
+                ],
+            )
+        ]
+    )
+    code = generate(f, dialect_name="test")
+    assert "class DType:" in code
+    assert "bitwidth = 64" in code
+
+
 def test_generate_qualified_type_no_default():
     """Qualified type ref (affine.Shape) can't be default-constructed."""
     f = DgenFile(

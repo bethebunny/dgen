@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class ImportDecl:
-    """An import statement: from module import Name1, Name2."""
+    """An import: 'from module import Name1, Name2' or 'import module'."""
 
     module: str
     names: list[str]
@@ -54,10 +54,20 @@ class DataField:
 
 
 @dataclass
-class TraitDecl:
-    """A trait declaration: trait Name."""
+class StaticField:
+    """A static field: static name: Type [= default]."""
 
     name: str
+    type: TypeRef
+    default: str | None = None
+
+
+@dataclass
+class TraitDecl:
+    """A trait declaration with optional static fields."""
+
+    name: str
+    statics: list[StaticField] = field(default_factory=list)
 
 
 @dataclass

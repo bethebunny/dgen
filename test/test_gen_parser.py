@@ -290,3 +290,32 @@ def test_parse_qualified_type_ref():
     result = parse("type Tensor<shape: affine.Shape>:\n    data: Nil\n")
     t = result.types[0]
     assert t.params[0].type.name == "affine.Shape"
+
+
+def test_parse_trait_with_static_fields():
+    src = "trait DType:\n    static signed: Boolean\n    static bitwidth: Index\n"
+    result = parse(src)
+    t = result.traits[0]
+    assert t.name == "DType"
+    assert len(t.statics) == 2
+    assert t.statics[0].name == "signed"
+    assert t.statics[0].type.name == "Boolean"
+    assert t.statics[1].name == "bitwidth"
+    assert t.statics[1].type.name == "Index"
+
+
+def test_parse_trait_with_static_default():
+    src = "trait DType:\n    static bitwidth: Index = 64\n"
+    result = parse(src)
+    t = result.traits[0]
+    assert len(t.statics) == 1
+    assert t.statics[0].name == "bitwidth"
+    assert t.statics[0].type.name == "Index"
+    assert t.statics[0].default == "64"
+
+
+def test_parse_bare_trait_still_works():
+    result = parse("trait HasSingleBlock\n")
+    assert len(result.traits) == 1
+    assert result.traits[0].name == "HasSingleBlock"
+    assert result.traits[0].statics == []
