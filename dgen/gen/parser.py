@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dgen.gen.ast import (
+    Constraint,
     DataField,
     DgenFile,
     ImportDecl,
@@ -198,8 +199,9 @@ class _Parser:
 
         blocks: list[str] = []
         traits: list[str] = []
+        constraints: list[Constraint] = []
         if has_body:
-            blocks, traits = self._parse_op_body()
+            blocks, traits, constraints = self._parse_op_body()
         return OpDecl(
             name=name,
             params=params,
@@ -207,12 +209,14 @@ class _Parser:
             return_type=return_type,
             blocks=blocks,
             traits=traits,
+            constraints=constraints,
         )
 
-    def _parse_op_body(self) -> tuple[list[str], list[str]]:
-        """Parse indented op body lines, return (block names, traits)."""
+    def _parse_op_body(self) -> tuple[list[str], list[str], list[Constraint]]:
+        """Parse indented op body lines, return (block names, traits, constraints)."""
         blocks: list[str] = []
         traits: list[str] = []
+        constraints: list[Constraint] = []
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
             if not next_line or not next_line[0].isspace():
@@ -225,7 +229,9 @@ class _Parser:
                 blocks.append(stripped.split()[1])
             elif stripped.startswith("has trait "):
                 traits.append(stripped.split()[2])
-        return blocks, traits
+            elif stripped.startswith("requires "):
+                constraints.append(_parse_constraint(stripped))
+        return blocks, traits, constraints
 
 
 def _parse_static_field(line: str) -> StaticField:
@@ -244,6 +250,26 @@ def _parse_static_field(line: str) -> StaticField:
         type=_parse_type_ref(type_str.strip()),
         default=default,
     )
+
+
+def _parse_constraint(line: str) -> Constraint:
+    """Parse a 'requires ...' line into a Constraint."""
+    rest = line[9:]  # strip "requires "
+    if " ~= " in rest:
+        lhs, pattern = rest.split(" ~= ", 1)
+        return Constraint(kind="match", lhs=lhs.strip(), pattern=pattern.strip())
+    if " == " in rest:
+        lhs, rhs = rest.split(" == ", 1)
+        lhs_s, rhs_s = lhs.strip(), rhs.strip()
+        # Only "eq" if both sides are simple metavariables ($Var, no dots)
+        if (
+            lhs_s.startswith("$")
+            and "." not in lhs_s
+            and rhs_s.startswith("$")
+            and "." not in rhs_s
+        ):
+            return Constraint(kind="eq", lhs=lhs_s, rhs=rhs_s)
+    return Constraint(kind="expr", expr=rest.strip())
 
 
 def _parse_decl_parts(

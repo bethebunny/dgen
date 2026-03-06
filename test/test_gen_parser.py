@@ -339,3 +339,62 @@ def test_parse_type_with_static_no_default():
     assert t.statics[0].name == "signed"
     assert t.statics[0].type.name == "Boolean"
     assert t.statics[0].default is None
+
+
+def test_parse_metavar_operand():
+    """$X in operand position is a metavariable."""
+    result = parse("op tile(x: $X) -> $Result\n")
+    op = result.ops[0]
+    assert op.operands[0].name == "x"
+    assert op.operands[0].type.name == "$X"
+    assert op.return_type.name == "$Result"
+
+
+def test_parse_requires_match():
+    src = "op tile(x: $X) -> $Result:\n    requires $X ~= Tensor\n"
+    op = parse(src).ops[0]
+    assert len(op.constraints) == 1
+    c = op.constraints[0]
+    assert c.kind == "match"
+    assert c.lhs == "$X"
+    assert c.pattern == "Tensor"
+
+
+def test_parse_requires_eq():
+    src = "op sqrt(x: $X) -> $Result:\n    requires $X == $Result\n"
+    op = parse(src).ops[0]
+    assert len(op.constraints) == 1
+    c = op.constraints[0]
+    assert c.kind == "eq"
+    assert c.lhs == "$X"
+    assert c.rhs == "$Result"
+
+
+def test_parse_requires_expr():
+    src = "op tile<axis: Index>(x: $X) -> $Result:\n    requires axis < $X.rank\n"
+    op = parse(src).ops[0]
+    assert len(op.constraints) == 1
+    c = op.constraints[0]
+    assert c.kind == "expr"
+    assert c.expr == "axis < $X.rank"
+
+
+def test_parse_multiple_requires():
+    src = """\
+op tile<axis: Index>(x: $X) -> $Result:
+    requires $X ~= Tensor
+    requires $Result ~= Tensor
+    requires $X.dtype == $Result.dtype
+"""
+    op = parse(src).ops[0]
+    assert len(op.constraints) == 3
+    assert op.constraints[0].kind == "match"
+    assert op.constraints[1].kind == "match"
+    assert op.constraints[2].kind == "expr"
+
+
+def test_parse_requires_with_block():
+    src = "op foo() -> Nil:\n    block body\n    requires $X ~= Tensor\n"
+    op = parse(src).ops[0]
+    assert op.blocks == ["body"]
+    assert len(op.constraints) == 1
