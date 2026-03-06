@@ -5,9 +5,20 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from dgen.gen.ast import (
+    Assignment,
+    AttrExpr,
+    BinOpExpr,
+    CallExpr,
     DgenFile,
+    Expr,
+    ForStmt,
+    IfStmt,
+    LiteralExpr,
+    NameExpr,
     OperandDecl,
     ParamDecl,
+    ReturnStmt,
+    Statement,
     TypeDecl,
     TypeRef,
 )
@@ -102,6 +113,40 @@ def _annotation_for_operand(operand: OperandDecl) -> str:
     if operand.variadic:
         return "list[Value]"
     return "Value"
+
+
+def _emit_expr(expr: Expr) -> str:
+    """Convert an Expr AST node to a Python expression string."""
+    if isinstance(expr, NameExpr):
+        return expr.name
+    if isinstance(expr, LiteralExpr):
+        return repr(expr.value)
+    if isinstance(expr, AttrExpr):
+        return f"{_emit_expr(expr.value)}.{expr.attr}"
+    if isinstance(expr, BinOpExpr):
+        return f"{_emit_expr(expr.left)} {expr.op} {_emit_expr(expr.right)}"
+    if isinstance(expr, CallExpr):
+        args = ", ".join(_emit_expr(a) for a in expr.args)
+        return f"{_emit_expr(expr.func)}({args})"
+    raise ValueError(f"unknown expr type: {type(expr)}")
+
+
+def _emit_stmts(stmts: list[Statement], indent: str) -> Iterator[str]:
+    """Emit Python statements at the given indent level."""
+    for stmt in stmts:
+        if isinstance(stmt, ReturnStmt):
+            yield f"{indent}return {_emit_expr(stmt.value)}"
+        elif isinstance(stmt, Assignment):
+            yield f"{indent}{stmt.name} = {_emit_expr(stmt.value)}"
+        elif isinstance(stmt, ForStmt):
+            yield f"{indent}for {stmt.var} in {_emit_expr(stmt.iter)}:"
+            yield from _emit_stmts(stmt.body, indent + "    ")
+        elif isinstance(stmt, IfStmt):
+            yield f"{indent}if {_emit_expr(stmt.condition)}:"
+            yield from _emit_stmts(stmt.then_body, indent + "    ")
+            if stmt.else_body:
+                yield f"{indent}else:"
+                yield from _emit_stmts(stmt.else_body, indent + "    ")
 
 
 def _generate(
@@ -245,6 +290,11 @@ def _generate(
                 body.append(f"    {sf.name} = {sf.default}")
             else:
                 body.append(f"    {sf.name}: {_resolve_type_ref(sf.type)}")
+
+        for method in td.methods:
+            body.append("")
+            body.append(f"    def {method.name}(self):")
+            body.extend(_emit_stmts(method.body, "        "))
 
         if not body:
             body.append("    pass")
