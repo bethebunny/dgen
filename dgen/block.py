@@ -13,6 +13,7 @@ from .type import Value
 class BlockArgument(Value):
     """A block argument (function parameter)."""
 
+    name: str | None = None
     type: Type
 
 

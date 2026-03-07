@@ -181,7 +181,7 @@ def compute_stages(func: FunctionOp) -> dict[int, int]:
         vid = id(value)
         if vid in stages:
             return stages[vid]
-        if isinstance(value, Constant):
+        if isinstance(value, (Constant, dgen.Type)):
             stages[vid] = 0
             return 0
         if isinstance(value, BlockArgument):
@@ -216,7 +216,9 @@ def _unresolved_boundaries(
     boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
     for op in func.body.ops:
         for field_name, value in op.parameters:
-            if isinstance(value, dgen.Value) and not isinstance(value, Constant):
+            if isinstance(value, dgen.Value) and not isinstance(
+                value, (Constant, dgen.Type)
+            ):
                 boundaries.append((stages.get(id(op), 0), op, field_name, value))
     boundaries.sort(key=lambda t: t[0])
     return boundaries

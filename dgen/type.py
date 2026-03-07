@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar
 
 import dgen
@@ -13,13 +14,19 @@ from .layout import String as StringLayout
 T = TypeVar("T", bound="Type")
 
 
-@dataclass(eq=False, kw_only=True)
 class Value(Generic[T]):
-    """Base class for SSA values. An op or block argument."""
+    """Base class for SSA values."""
 
     name: str | None = None
     type: T
-    ready: ClassVar[bool] = False
+
+    def __init__(self, *, name: str | None = None, type: T) -> None:
+        self.name = name
+        self.type = type
+
+    @property
+    def ready(self) -> bool:
+        return False
 
     @property
     def operands(self) -> list[Value]:
@@ -34,29 +41,50 @@ class Value(Generic[T]):
         raise NotImplementedError
 
 
-class Type:
+class Type(Value["TypeType"]):
     """Any dialect type.
 
     Types registered via @dialect.type() get _asm_name and dialect set
     automatically. The format_expr() function handles formatting via
     type_asm() for registered types, or falls back to .asm for types
     with hand-written formatting (e.g. llvm types).
+
+    Type subclasses are typically @dataclass(frozen=True) and provide
+    their own __init__. This class does not call Value.__init__ since
+    .type and .name are provided via cached_property/class default.
     """
 
     __layout__: Layout
     __params__: ClassVar[Fields] = ()
+    name: None = None
+
+    # Type subclasses are @dataclass(frozen=True) with their own __init__.
+    # This prevents falling through to Value.__init__ for bare Type().
+    def __init__(self) -> None:
+        pass
 
     def constant(self, value: object) -> Constant[Self]:
         """Create a Constant wrapping this type and a Python value."""
         return Constant(type=self, value=Memory.from_value(self, value))
 
-    def as_value(self) -> Constant[Self]:
-        """Wrap this type as a Constant[TypeType] value."""
-        tt = TypeType(concrete=self)
-        return Constant(type=tt, value=Memory.from_json(tt, self._type_to_json()))
+    @cached_property
+    def type(self) -> TypeType:
+        return TypeType(concrete=self)
 
-    def _type_to_json(self) -> dict[str, object]:
-        """Serialize this type to a JSON-compatible dict for TypeType Memory."""
+    @property
+    def ready(self) -> bool:
+        return all(val.ready for _, val in self.parameters)
+
+    @cached_property
+    def __constant__(self) -> Memory[TypeType]:
+        tt = self.type
+        data: dict[str, object] = {"tag": self._asm_tag}
+        for name, val in self.parameters:
+            data[name] = val.__constant__.to_json()
+        return Memory.from_json(tt, data)
+
+    @cached_property
+    def _asm_tag(self) -> str:
         cls = type(self)
         dialect = getattr(cls, "dialect", None)
         prefix = (
@@ -64,93 +92,46 @@ class Type:
             if dialect is not None and dialect.name != "builtin"
             else ""
         )
-        tag = f"{prefix}{getattr(cls, '_asm_name', type(self).__name__)}"
-        result: dict[str, object] = {"tag": tag}
-        for name, _ in self.__params__:
-            val = getattr(self, name)
-            if isinstance(val, Type):
-                result[name] = val._type_to_json()
-            else:
-                result[name] = val.__constant__.to_json()
-        return result
-
-    @classmethod
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        super().__init_subclass__(**kwargs)
-        # TypeType's concrete param must stay a bare Type (no infinite wrapping)
-        if cls.__name__ == "TypeType":
-            return
-        type_kinded = [
-            name for name, ft in getattr(cls, "__params__", ()) if ft is Type
-        ]
-        if not type_kinded:
-            return
-
-        def _post_init(self: Type, _names: list[str] = type_kinded) -> None:
-            for name in _names:
-                val = getattr(self, name)
-                # Wrap bare Types as Constant[TypeType]. Skip if already wrapped.
-                # Bare Types don't have 'value' attr; Constants do.
-                if isinstance(val, Type) and not hasattr(val, "value"):
-                    object.__setattr__(self, name, val.as_value())
-
-        cls.__post_init__ = _post_init  # type: ignore[attr-defined]
+        return f"{prefix}{getattr(cls, '_asm_name', type(self).__name__)}"
 
     @property
     def type_layout(self) -> Record:
         """Layout for this type as a value (tag + params)."""
         fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
-        for name, _ in self.__params__:
-            val = getattr(self, name)
+        for name, val in self.parameters:
             if isinstance(val, Type):
-                # Type-kinded param: use its type_layout recursively
                 fields.append((name, val.type_layout))
             else:
-                # Value-kinded param: use the param value's type's __layout__
                 fields.append((name, val.__constant__.type.__layout__))
         return Record(fields)
 
     @property
-    def parameters(self) -> Iterator[tuple[str, Type]]:
+    def parameters(self) -> Iterator[tuple[str, Value]]:
         for name, field in self.__params__:
             yield name, getattr(self, name)
 
 
 @dataclass(eq=False, kw_only=True)
 class Constant(Value[T]):
-    ready: ClassVar[bool] = True
+    type: T
     value: Memory[T]
+
+    @property
+    def ready(self) -> bool:
+        return True
 
     @property
     def __constant__(self) -> Memory[T]:
         return self.value
-
-    @property
-    def __layout__(self) -> Layout:
-        """Transparent layout access for type-kinded params.
-
-        For TypeType constants, returns the concrete type's __layout__.
-        This means self.element_type.__layout__ works whether element_type
-        is a bare Type or a Constant[TypeType].
-        """
-        if isinstance(self.type, TypeType):
-            return self.type.concrete.__layout__
-        return self.type.__layout__
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Constant):
             return NotImplemented
         if self.type != other.type:
             return False
-        # For TypeType constants, compare concrete types directly
-        # (Memory buffer comparison fails because string pointers differ)
-        if isinstance(self.type, TypeType):
-            return self.type.concrete == other.type.concrete
         return self.value == other.value
 
     def __hash__(self) -> int:
-        if isinstance(self.type, TypeType):
-            return hash((type(self), self.type, self.type.concrete))
         return hash((type(self), self.type, self.value))
 
 
@@ -172,6 +153,10 @@ class TypeType(Type):
     @property
     def __layout__(self) -> Layout:
         return self.concrete.type_layout
+
+    @cached_property
+    def type(self) -> TypeType:
+        return self
 
 
 class Memory(Generic[T]):

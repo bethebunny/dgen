@@ -6,13 +6,14 @@ from typing import ClassVar, Iterable, Iterator
 from .block import Block
 from .dialect import Dialect
 from .type import Fields, Type
-from .type import Constant, Value
+from .type import Value
 
 
 @dataclass(eq=False)
 class Op(Value):
     """Base class for all dialect operations."""
 
+    name: str | None = None
     _asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
     __params__: ClassVar[Fields] = ()
@@ -46,6 +47,4 @@ class Op(Value):
 
     @property
     def ready(self) -> bool:
-        return all(
-            isinstance(getattr(self, name), Constant) for name, _ in self.__params__
-        )
+        return all(getattr(self, name).ready for name, _ in self.__params__)

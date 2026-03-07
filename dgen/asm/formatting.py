@@ -12,7 +12,7 @@ from collections.abc import Iterable, Sequence
 from dgen.dialects.builtin import Nil, PackOp
 
 from ..op import Op
-from ..type import Memory, Type, TypeType
+from ..type import Memory, Type
 from ..type import Constant, Value
 
 
@@ -93,9 +93,13 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, PackOp):
         return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
     if isinstance(value, Constant) and not isinstance(value, Op):
-        if isinstance(value.type, TypeType):
-            return format_expr(value.type.concrete, tracker)
         return format_expr(value.__constant__.to_json(), tracker)
+    if isinstance(value, Type):
+        if getattr(type(value), "_asm_name", None) is not None:
+            return type_asm(value, tracker)
+        # Types with hand-written asm (e.g. LLVM dialect types)
+        asm: str = getattr(value, "asm")
+        return asm
     if isinstance(value, Value):
         if tracker is not None:
             return f"%{tracker.track_name(value)}"
@@ -113,12 +117,6 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
         return f'"{value.decode("utf-8")}"'
     if isinstance(value, str):
         return f'"{value}"'
-    if isinstance(value, Type):
-        if getattr(type(value), "_asm_name", None) is not None:
-            return type_asm(value, tracker)
-        # Types with hand-written asm (e.g. LLVM dialect types)
-        asm: str = getattr(value, "asm")
-        return asm
     return str(value)
 
 
