@@ -136,6 +136,7 @@ def test_if_stmt():
         then_body=[ReturnStmt(value=LiteralExpr(value=0))],
         else_body=[],
     )
+    assert isinstance(s.condition, BinOpExpr)
     assert s.condition.op == "=="
 
 

@@ -287,6 +287,7 @@ def _compile_with_callbacks(
 
     # Derive callback LLVM signature from original function
     assert func.name is not None
+    assert isinstance(func.type, Function)
     callback_name = f"_stage2_{func.name}"
     orig_types = [arg.type for arg in func.body.args]
     orig_llvm_types = [_llvm_type(t.__layout__) for t in orig_types]

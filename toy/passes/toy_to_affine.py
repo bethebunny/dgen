@@ -40,6 +40,7 @@ class ToyToAffineLowering:
         # Register block args (function parameters) as themselves
         for arg in f.body.args:
             self.alloc_map[arg] = arg
+        assert isinstance(f.type, Function)
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
@@ -190,6 +191,7 @@ class ToyToAffineLowering:
         lhs_shape = op.lhs.type.unpack_shape()
         rhs_shape = op.rhs.type.unpack_shape()
         axis = op.axis.__constant__.to_json()
+        assert isinstance(axis, int)
 
         output_shape = list(lhs_shape)
         output_shape[axis] = lhs_shape[axis] + rhs_shape[axis]

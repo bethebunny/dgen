@@ -40,8 +40,10 @@ class Op(Value):
     @property
     def asm(self) -> Iterable[str]:
         from .asm.formatting import format_func, op_asm
+        from .dialects.builtin import FunctionOp
 
         if self.asm_name == "function":
+            assert isinstance(self, FunctionOp)
             return format_func(self)
         return op_asm(self)
 

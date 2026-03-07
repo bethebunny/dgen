@@ -94,7 +94,9 @@ def test_parse_simple_op():
     assert op.name == "transpose"
     assert len(op.operands) == 1
     assert op.operands[0].name == "input"
+    assert op.operands[0].type is not None
     assert op.operands[0].type.name == "Type"
+    assert op.return_type is not None
     assert op.return_type.name == "Type"
 
 
@@ -113,6 +115,7 @@ def test_parse_op_with_block():
     src = "op for<lo: Index, hi: Index>() -> Nil:\n    block body\n"
     op = parse(src).ops[0]
     assert op.blocks == ["body"]
+    assert op.return_type is not None
     assert op.return_type.name == "Nil"
     assert len(op.params) == 2
 
@@ -121,6 +124,7 @@ def test_parse_op_with_default_operand():
     result = parse("op return(value: Type = Nil) -> Nil\n")
     op = result.ops[0]
     assert op.operands[0].name == "value"
+    assert op.operands[0].type is not None
     assert op.operands[0].type.name == "Type"
     assert op.operands[0].default == "Nil"
 
@@ -129,6 +133,7 @@ def test_parse_list_operand():
     result = parse("op pack(values: list<Type>) -> List\n")
     op = result.ops[0]
     assert op.operands[0].variadic is True
+    assert op.operands[0].type is not None
     assert op.operands[0].type.name == "Type"
 
 
@@ -138,6 +143,7 @@ def test_parse_op_with_list_param():
     assert op.params[0].variadic is True
     assert op.params[0].type.name == "String"
     assert op.operands[0].variadic is True
+    assert op.operands[0].type is not None
     assert op.operands[0].type.name == "Type"
 
 
@@ -146,6 +152,7 @@ def test_parse_variadic_operand():
     result = parse("op pack(values: list<Type>) -> List\n")
     op = result.ops[0]
     assert op.operands[0].variadic is True
+    assert op.operands[0].type is not None
     assert op.operands[0].type.name == "Type"
 
 
@@ -171,6 +178,7 @@ def test_parse_op_no_params_no_operands_no_body():
     assert op.params == []
     assert op.operands == []
     assert op.blocks == []
+    assert op.return_type is not None
     assert op.return_type.name == "Nil"
 
 
@@ -357,7 +365,9 @@ def test_parse_metavar_operand():
     result = parse("op tile(x: $X) -> $Result\n")
     op = result.ops[0]
     assert op.operands[0].name == "x"
+    assert op.operands[0].type is not None
     assert op.operands[0].type.name == "$X"
+    assert op.return_type is not None
     assert op.return_type.name == "$Result"
 
 
@@ -440,6 +450,7 @@ type Shape:
     assert len(m.body) == 2
     assert isinstance(m.body[0], Assignment)
     assert m.body[0].name == "count"
+    assert m.body[0].type is not None
     assert m.body[0].type.name == "Index"
     assert isinstance(m.body[0].value, LiteralExpr)
     assert isinstance(m.body[1], ReturnStmt)

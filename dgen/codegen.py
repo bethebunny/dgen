@@ -12,7 +12,7 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
-from dgen.module import ConstantOp, Module, string_value
+from dgen.module import ConstantOp, Function, Module, string_value
 from dgen.layout import Layout
 from dgen.type import Memory
 
@@ -150,6 +150,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     assert f.name is not None
     func_name = tracker.track_name(f)
     # Derive LLVM return type from function signature
+    assert isinstance(f.type, Function)
     result_type = f.type.result
     if isinstance(result_type, builtin.Nil):
         llvm_ret = "void"
@@ -287,6 +288,7 @@ def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
     ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]
     assert main.name is not None
+    assert isinstance(main.type, Function)
     return Executable(
         ir=ir,
         input_types=[arg.type for arg in main.body.args],

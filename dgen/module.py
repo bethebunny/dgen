@@ -13,6 +13,7 @@ from typing import ClassVar
 from dgen import Constant, Dialect, Op, Type, TypeType, Value
 from dgen import layout
 from dgen.dialects.builtin import (
+    FunctionOp,
     HasSingleBlock,
     String,
     builtin,
@@ -87,7 +88,7 @@ def _walk_all_ops(op: Op) -> Iterable[Op]:
             yield from _walk_all_ops(child)
 
 
-def _collect_dialects(func: Op, dialects: set[Dialect]) -> None:
+def _collect_dialects(func: FunctionOp, dialects: set[Dialect]) -> None:
     """Collect all non-builtin dialects referenced by ops and types in a function."""
 
     def _check_type(t: Type) -> None:
@@ -100,12 +101,13 @@ def _collect_dialects(func: Op, dialects: set[Dialect]) -> None:
         _check_type(op.type)
     for arg in func.body.args:
         _check_type(arg.type)
+    assert isinstance(func.type, Function)
     _check_type(func.type.result)
 
 
 @dataclass
 class Module:
-    functions: list[Op]
+    functions: list[FunctionOp]
 
     @property
     def asm(self) -> Iterable[str]:

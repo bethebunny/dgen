@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from dgen.dialects.builtin import Nil, PackOp
+from dgen.dialects.builtin import FunctionOp, Nil, PackOp
 
 from ..op import Op
 from ..type import Memory, Type
@@ -188,7 +188,7 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
 # ===----------------------------------------------------------------------=== #
 
 
-def format_func(func: Op) -> Iterable[str]:
+def format_func(func: FunctionOp) -> Iterable[str]:
     """Format a function op with its signature and body.
 
     Unlike generic op_asm, this shows the function signature style:
@@ -208,7 +208,10 @@ def format_func(func: Op) -> Iterable[str]:
             arg_parts.append(f"%{n}: {format_expr(a.type, tracker)}")
         else:
             arg_parts.append(f"%{n}")
+    from dgen.module import Function
+
     args = ", ".join(arg_parts)
+    assert isinstance(func.type, Function)
     yield f"%{name} = function ({args}) -> {format_expr(func.type.result, tracker)}:"
     for op in func.body.ops:
         if _is_sugar_op(op):

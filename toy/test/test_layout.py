@@ -314,8 +314,8 @@ def test_type_constant_parametric():
     """Parametric type's __constant__ includes param values."""
     ty = builtin.List(element_type=builtin.Index())
     data = ty.__constant__.to_json()
-    assert data["tag"] == "builtin.List"
-    assert data["element_type"] == {"tag": "builtin.Index"}
+    expected = {"tag": "builtin.List", "element_type": {"tag": "builtin.Index"}}
+    assert data == expected
 
 
 def test_type_params_are_bare_types():

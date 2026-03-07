@@ -19,7 +19,9 @@ def _resolve_index_value(val: dgen.Value) -> int | None:
     a staging evaluator.
     """
     if isinstance(val, ConstantOp) and isinstance(val.type, builtin.Index):
-        return val.__constant__.to_json()
+        result = val.__constant__.to_json()
+        assert isinstance(result, int)
+        return result
     return None
 
 
@@ -63,6 +65,7 @@ def _infer_function(
                 rhs_dims = rhs.unpack_shape()
                 shape = list(lhs_dims)
                 axis = op.axis.__constant__.to_json()
+                assert isinstance(axis, int)
                 shape[axis] = lhs_dims[axis] + rhs_dims[axis]
                 t = toy.Tensor(shape=shape_constant(shape))
                 op.type = t

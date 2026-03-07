@@ -32,11 +32,13 @@ def shape_constant(dims: Sequence[int]) -> Constant:
 # ===----------------------------------------------------------------------=== #
 
 
-@property  # type: ignore[misc]
+@property
 def _tensor_layout(self: Tensor) -> Layout:
     assert self.shape.ready
     shape: Memory[Shape] = self.shape.__constant__
-    return layout.Array(layout.Float64(), prod(shape.to_json()))
+    dims = shape.to_json()
+    assert isinstance(dims, list)
+    return layout.Array(layout.Float64(), prod(dims))
 
 
 Tensor.__layout__ = _tensor_layout  # type: ignore[assignment, misc]
