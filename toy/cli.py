@@ -5,6 +5,7 @@ from pathlib import Path
 
 import click
 
+from dgen.asm.parser import IRParser, parse_expr
 from dgen.module import Module
 from dgen.staging import compile_and_run_staged
 from toy.dialects import shape_constant
@@ -23,8 +24,6 @@ def _lower(m: Module) -> Module:
 
 def _parse_arg(arg: str) -> object:
     """Parse a string arg to a Python value via ASM expr parser."""
-    from dgen.asm.parser import IRParser, parse_expr
-
     return parse_expr(IRParser(arg))
 
 

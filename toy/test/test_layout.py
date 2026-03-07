@@ -1,9 +1,16 @@
 """Tests for memory layout types."""
 
+import ctypes
+
 from dgen import layout
+from dgen.asm.formatting import type_asm
 from dgen.dialects import builtin
-from dgen.layout import Array, Byte, FatPointer, Float64, Pointer
+from dgen.layout import Array, Byte, FatPointer, Float64, Pointer, Record
+from dgen.layout import String as StringLayout
 from dgen.module import string_value
+from dgen.type import Memory
+from toy.dialects import shape_constant
+from toy.dialects.toy import Tensor
 
 
 def test_primitive_sizes():
@@ -43,8 +50,6 @@ def test_string_layout_is_string_layout():
 
 def test_string_constant_fatpointer():
     """String constant via FatPointer: data in origin, pointer in Memory."""
-    import ctypes
-
     c = builtin.String().constant("hello")
     mem = c.__constant__
     # Memory is 16 bytes (ptr + i64 length)
@@ -61,8 +66,6 @@ def test_string_constant_fatpointer():
 
 def test_string_type_asm_no_params():
     """String type formats as 'String' with no angle brackets."""
-    from dgen.asm.formatting import type_asm
-
     s = builtin.String()
     assert type_asm(s) == "String"
 
@@ -78,8 +81,6 @@ def test_list_fatpointer_layout():
 
 def test_list_constant_fatpointer():
     """List constant via FatPointer: data in origin, pointer in Memory."""
-    import ctypes
-
     list_type = builtin.List(element_type=builtin.Index())
     c = list_type.constant([10, 20, 30])
     mem = c.__constant__
@@ -97,22 +98,16 @@ def test_list_constant_fatpointer():
 
 def test_list_type_asm_one_param():
     """List type formats as 'List<index>' — just element_type, no count."""
-    from dgen.asm.formatting import type_asm
-
     list_type = builtin.List(element_type=builtin.Index())
     assert type_asm(list_type) == "List<Index>"
 
 
 def test_int_to_json():
-    from dgen.type import Memory
-
     mem = Memory.from_value(builtin.Index(), 42)
     assert mem.to_json() == 42
 
 
 def test_float_to_json():
-    from dgen.type import Memory
-
     mem = Memory.from_value(builtin.F64(), 3.14)
     assert mem.to_json() == 3.14
 
@@ -133,9 +128,6 @@ def test_index_type_layout():
 
 
 def test_tensor_type_layout():
-    from toy.dialects import shape_constant
-    from toy.dialects.toy import Tensor
-
     t = Tensor(shape=shape_constant([2, 3]))
     ly = t.__layout__
     assert ly.byte_size == 48  # 6 * 8 bytes
@@ -144,48 +136,34 @@ def test_tensor_type_layout():
 
 
 def test_array_to_json():
-    from dgen.type import Memory
-    from toy.dialects import shape_constant
-    from toy.dialects.toy import Tensor
-
     ty = Tensor(shape=shape_constant([3]))
     mem = Memory.from_value(ty, [1.0, 2.0, 3.0])
     assert mem.to_json() == [1.0, 2.0, 3.0]
 
 
 def test_fatpointer_to_json():
-    from dgen.type import Memory
-
     ty = builtin.List(element_type=builtin.Index())
     mem = Memory.from_value(ty, [10, 20, 30])
     assert mem.to_json() == [10, 20, 30]
 
 
 def test_string_to_json():
-    from dgen.type import Memory
-
     mem = Memory.from_value(builtin.String(), "hello")
     assert mem.to_json() == "hello"
 
 
 def test_int_from_json_roundtrip():
-    from dgen.type import Memory
-
     mem = Memory.from_json(builtin.Index(), 42)
     assert mem.to_json() == 42
 
 
 def test_list_from_json_roundtrip():
-    from dgen.type import Memory
-
     ty = builtin.List(element_type=builtin.Index())
     mem = Memory.from_json(ty, [10, 20, 30])
     assert mem.to_json() == [10, 20, 30]
 
 
 def test_string_from_json_roundtrip():
-    from dgen.type import Memory
-
     mem = Memory.from_json(builtin.String(), "hello")
     assert mem.to_json() == "hello"
 
@@ -198,8 +176,6 @@ def test_type_tag_layout():
 
 
 def test_nested_list_from_json_roundtrip():
-    from dgen.type import Memory
-
     inner = builtin.List(element_type=builtin.Index())
     outer = builtin.List(element_type=inner)
     mem = Memory.from_json(outer, [[1, 2], [3, 4, 5]])
@@ -208,8 +184,6 @@ def test_nested_list_from_json_roundtrip():
 
 def test_type_layout_non_parametric():
     """Non-parametric type has layout Record([("tag", String)])."""
-    from dgen.layout import Record, String as StringLayout
-
     ty = builtin.Index()
     tl = ty.type_layout
     assert isinstance(tl, Record)
@@ -220,8 +194,6 @@ def test_type_layout_non_parametric():
 
 def test_type_layout_parametric_value_param():
     """Parametric type with value param includes param's type layout."""
-    from dgen.layout import Record
-
     list_type = builtin.List(element_type=builtin.Index())
     tl = list_type.type_layout
     assert isinstance(tl, Record)
@@ -236,8 +208,6 @@ def test_type_layout_parametric_value_param():
 
 def test_type_layout_parametric_type_param_nested():
     """List<List<F64>> inlines nested type layouts."""
-    from dgen.layout import Record
-
     inner = builtin.List(element_type=builtin.F64())
     outer = builtin.List(element_type=inner)
     tl = outer.type_layout
@@ -255,8 +225,6 @@ def test_type_layout_parametric_type_param_nested():
 
 def test_type_value_memory_non_parametric():
     """Pack and unpack Index() as a type value through Memory."""
-    from dgen.type import Memory
-
     ty = builtin.Index()
     metatype = builtin.TypeType(concrete=ty)
     mem = Memory.from_json(metatype, {"tag": "builtin.Index"})
@@ -265,8 +233,6 @@ def test_type_value_memory_non_parametric():
 
 def test_type_value_memory_parametric():
     """Pack and unpack List<Index> as a type value through Memory."""
-    from dgen.type import Memory
-
     metatype = builtin.TypeType(concrete=builtin.List(element_type=builtin.Index()))
     data = {"tag": "builtin.List", "element_type": {"tag": "builtin.Index"}}
     mem = Memory.from_json(metatype, data)
@@ -275,8 +241,6 @@ def test_type_value_memory_parametric():
 
 def test_type_value_memory_pointer():
     """Pack and unpack Pointer<F64> as a type value through Memory."""
-    from dgen.type import Memory
-
     metatype = builtin.TypeType(concrete=builtin.Pointer(pointee=builtin.F64()))
     data = {"tag": "builtin.Pointer", "pointee": {"tag": "builtin.F64"}}
     mem = Memory.from_json(metatype, data)
@@ -285,8 +249,6 @@ def test_type_value_memory_pointer():
 
 def test_type_value_memory_nil():
     """Pack and unpack Nil as a type value through Memory."""
-    from dgen.type import Memory
-
     metatype = builtin.TypeType(concrete=builtin.Nil())
     mem = Memory.from_json(metatype, {"tag": "builtin.Nil"})
     assert mem.to_json() == {"tag": "builtin.Nil"}
@@ -294,8 +256,6 @@ def test_type_value_memory_nil():
 
 def test_type_value_memory_nested():
     """Pack and unpack List<List<F64>> as a type value through Memory."""
-    from dgen.type import Memory
-
     inner = builtin.List(element_type=builtin.F64())
     metatype = builtin.TypeType(concrete=builtin.List(element_type=inner))
     data = {

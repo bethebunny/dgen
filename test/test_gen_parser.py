@@ -1,5 +1,16 @@
 """Tests for .dgen file parser."""
 
+from dgen.gen.ast import (
+    Assignment,
+    AttrExpr,
+    BinOpExpr,
+    CallExpr,
+    ForStmt,
+    IfStmt,
+    LiteralExpr,
+    NameExpr,
+    ReturnStmt,
+)
 from dgen.gen.parser import parse
 
 
@@ -412,8 +423,6 @@ type Foo:
     assert m.name == "size"
     assert m.return_type.name == "Index"
     assert len(m.body) == 1
-    from dgen.gen.ast import ReturnStmt, LiteralExpr
-
     assert isinstance(m.body[0], ReturnStmt)
     assert isinstance(m.body[0].value, LiteralExpr)
     assert m.body[0].value.value == 42
@@ -428,8 +437,6 @@ type Shape:
 """
     t = parse(src).types[0]
     m = t.methods[0]
-    from dgen.gen.ast import Assignment, ReturnStmt, NameExpr, LiteralExpr
-
     assert len(m.body) == 2
     assert isinstance(m.body[0], Assignment)
     assert m.body[0].name == "count"
@@ -452,8 +459,6 @@ type Shape<rank: Index>:
 """
     t = parse(src).types[0]
     m = t.methods[0]
-    from dgen.gen.ast import Assignment, ForStmt, ReturnStmt, BinOpExpr
-
     assert len(m.body) == 3
     assert isinstance(m.body[0], Assignment)
     assert isinstance(m.body[1], ForStmt)
@@ -472,8 +477,6 @@ type Foo:
 """
     t = parse(src).types[0]
     m = t.methods[0]
-    from dgen.gen.ast import ReturnStmt, AttrExpr
-
     assert isinstance(m.body[0], ReturnStmt)
     assert isinstance(m.body[0].value, AttrExpr)
     assert m.body[0].value.attr == "y"
@@ -487,8 +490,6 @@ type Foo:
 """
     t = parse(src).types[0]
     m = t.methods[0]
-    from dgen.gen.ast import ReturnStmt, CallExpr
-
     assert isinstance(m.body[0], ReturnStmt)
     assert isinstance(m.body[0].value, CallExpr)
     assert len(m.body[0].value.args) == 1
@@ -504,8 +505,6 @@ type Foo:
 """
     t = parse(src).types[0]
     m = t.methods[0]
-    from dgen.gen.ast import IfStmt, ReturnStmt
-
     assert len(m.body) == 2
     assert isinstance(m.body[0], IfStmt)
     assert len(m.body[0].then_body) == 1

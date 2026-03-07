@@ -9,6 +9,8 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Iterable, Sequence
 
+from dgen.dialects.builtin import Nil, PackOp
+
 from ..op import Op
 from ..type import Memory, Type
 from ..value import Constant, Value
@@ -80,15 +82,11 @@ class SlotTracker:
 
 def _is_sugar_op(op: Op) -> bool:
     """PackOps are always inlined as [...] sugar, never emitted standalone."""
-    from dgen.dialects.builtin import PackOp
-
     return isinstance(op, PackOp)
 
 
 def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     """Format a value as an expression string, dispatching on runtime type."""
-    from dgen.dialects.builtin import Nil, PackOp, Value
-
     if isinstance(value, Nil):
         return "()"
     # Inline list sugar: PackOp → [elem0, elem1, ...]

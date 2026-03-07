@@ -2,6 +2,7 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from toy.passes.affine_to_llvm import lower_to_llvm
 from toy.test.helpers import strip_prefix
 
 
@@ -178,8 +179,6 @@ def test_ssa_shape_through_lowering():
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
-
-    from toy.passes.affine_to_llvm import lower_to_llvm
 
     llvm_module = lower_to_llvm(module)
     result = asm.format(llvm_module)

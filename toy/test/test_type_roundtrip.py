@@ -8,21 +8,24 @@ Each type is tested for:
 """
 
 import ctypes
+from copy import deepcopy
 
 import pytest
 
-from dgen import Block, Dialect
+from dgen import Block, Dialect, asm
 from dgen.asm.formatting import type_asm
-from dgen.asm.parser import IRParser, parse_expr
+from dgen.asm.parser import IRParser, parse_expr, parse_module
 from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
-from dgen.dialects.builtin import FunctionOp
-from dgen.module import ConstantOp, Function, Module
+from dgen.dialects.builtin import FunctionOp, String
+from dgen.module import ConstantOp, Function, Module, string_value
+from dgen.staging import compile_and_run_staged, compile_staged
 from dgen.type import Memory
 from toy.dialects import shape_constant
 from toy.dialects.affine import MemRef, Shape
 from toy.dialects.toy import InferredShapeTensor, Tensor
+from toy.test.helpers import strip_prefix
 
 # ---------------------------------------------------------------------------
 # Test data: (type, python_value, asm_literal, expected_unpack)
@@ -331,10 +334,6 @@ def test_list_of_strings_memory_roundtrip():
 
 def test_packop_mixed_constants_and_refs():
     """Parser handles [literal, %ref, literal] by creating ConstantOps."""
-    from dgen import asm
-    from dgen.asm.parser import parse_module
-    from toy.test.helpers import strip_prefix
-
     # Input: mixed integer literals and SSA refs in list sugar
     ir_input = strip_prefix("""
         | import affine
@@ -365,9 +364,6 @@ def test_packop_mixed_constants_and_refs():
 
 def test_string_constant_roundtrip():
     """String().constant creates a Constant[String], string_value extracts it."""
-    from dgen.dialects.builtin import String
-    from dgen.module import string_value
-
     c = String().constant("hello")
     assert string_value(c) == "hello"
 
@@ -382,10 +378,6 @@ def test_string_constant_different_lengths():
 
 def test_string_as_op_param():
     """String constants work as __params__ on ops — ASM round-trip."""
-    from dgen import asm
-    from dgen.asm.parser import parse_module
-    from toy.test.helpers import strip_prefix
-
     ir = strip_prefix("""
         | import llvm
         |
@@ -416,10 +408,6 @@ def test_string_param_staging():
     from a BlockArgument to a Constant[String] before final codegen.
     The String value directly controls the generated comparison.
     """
-    from dgen.asm.parser import parse_module
-    from dgen.staging import compile_and_run_staged
-    from toy.test.helpers import strip_prefix
-
     ir = strip_prefix("""
         | import llvm
         |
@@ -456,10 +444,6 @@ def test_compile_once_run_twice():
     calls a host callback that JIT-compiles stage-2 with the resolved values.
     This enables compile-once, run-many with different runtime inputs.
     """
-    from dgen.asm.parser import parse_module
-    from dgen.staging import compile_staged
-    from toy.test.helpers import strip_prefix
-
     ir = strip_prefix("""
         | import llvm
         |
@@ -493,8 +477,6 @@ def test_deepcopy_string_constant():
     Origins are shared (not deep-copied), so the copied buffer's pointers
     still reference valid backing data.
     """
-    from copy import deepcopy
-
     ty = builtin.String()
     mem = Memory.from_value(ty, "hello")
     copied = deepcopy(mem)
@@ -505,8 +487,6 @@ def test_deepcopy_string_constant():
 
 def test_deepcopy_list_of_strings():
     """Deepcopy of List<String> constant preserves nested pointer validity."""
-    from copy import deepcopy
-
     ty = builtin.List(element_type=builtin.String())
     mem = Memory.from_value(ty, ["hello", "world"])
     copied = deepcopy(mem)
@@ -515,8 +495,6 @@ def test_deepcopy_list_of_strings():
 
 def test_deepcopy_list_of_lists():
     """Deepcopy of List<List<index>> constant preserves nested pointer validity."""
-    from copy import deepcopy
-
     inner = builtin.List(element_type=builtin.Index())
     outer = builtin.List(element_type=inner)
     mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
@@ -530,8 +508,6 @@ def test_deepcopy_module_with_list_constant():
     This is what staging does — deepcopy the module, then JIT subgraphs.
     The list constant's backing data must survive the copy.
     """
-    from copy import deepcopy
-
     list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
     ret = builtin.ReturnOp(value=const)

@@ -1,18 +1,28 @@
 """Tests for Python code generator from .dgen AST."""
 
 from dgen.gen.ast import (
+    Assignment,
+    AttrExpr,
+    BinOpExpr,
+    CallExpr,
     Constraint,
     DataField,
     DgenFile,
+    ForStmt,
     ImportDecl,
+    LiteralExpr,
+    MethodDecl,
+    NameExpr,
     OpDecl,
     OperandDecl,
     ParamDecl,
+    ReturnStmt,
     StaticField,
     TraitDecl,
     TypeDecl,
     TypeRef,
 )
+from dgen.gen.parser import parse
 from dgen.gen.python import generate
 
 
@@ -413,8 +423,6 @@ def test_generate_nil_data_field():
 
 
 def test_parse_layout_keyword():
-    from dgen.gen.parser import parse
-
     f = parse("type Index:\n    layout Int\n")
     assert len(f.types) == 1
     assert f.types[0].name == "Index"
@@ -754,8 +762,6 @@ def test_generate_op_constraints():
 
 def test_generate_method_simple():
     """Simple method generates a Python method."""
-    from dgen.gen.ast import LiteralExpr, MethodDecl, ReturnStmt
-
     f = DgenFile(
         types=[
             TypeDecl(
@@ -779,17 +785,6 @@ def test_generate_method_simple():
 
 def test_generate_method_for_loop():
     """Method with for loop generates correct Python."""
-    from dgen.gen.ast import (
-        Assignment,
-        AttrExpr,
-        BinOpExpr,
-        ForStmt,
-        LiteralExpr,
-        MethodDecl,
-        NameExpr,
-        ReturnStmt,
-    )
-
     f = DgenFile(
         types=[
             TypeDecl(
@@ -843,8 +838,6 @@ def test_generate_method_for_loop():
 
 def test_generate_method_call():
     """Method with function call."""
-    from dgen.gen.ast import AttrExpr, CallExpr, MethodDecl, NameExpr, ReturnStmt
-
     f = DgenFile(
         types=[
             TypeDecl(

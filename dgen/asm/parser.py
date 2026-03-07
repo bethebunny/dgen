@@ -33,10 +33,8 @@ def parse_expr(parser: IRParser) -> object:
 
     if c == "(":
         # Nil literal: ()
-        from dgen.dialects.builtin import Nil
-
         parser.expect("()")
-        return Nil()
+        return builtin.Nil()
 
     if c == "[":
         # List: [expr, expr, ...]
@@ -99,10 +97,8 @@ def _expand_list_sugar(
 
     Non-Value elements (raw ints, floats) are wrapped as ConstantOps.
     """
-    from dgen.dialects.builtin import List, PackOp
-
     element_type = element_type_cls()
-    list_type = List(element_type=element_type)
+    list_type = builtin.List(element_type=element_type)
     values: list[Value] = []
     for v in elements:
         if isinstance(v, Value):
@@ -111,7 +107,7 @@ def _expand_list_sugar(
             const_op = ConstantOp(value=v, type=element_type)
             parser.pending_ops.append(const_op)
             values.append(const_op)
-    pack_op = PackOp(values=values, type=list_type)
+    pack_op = builtin.PackOp(values=values, type=list_type)
     parser.pending_ops.append(pack_op)
     return pack_op
 
