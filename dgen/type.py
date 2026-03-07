@@ -29,6 +29,55 @@ class Type:
 
         return Constant(type=self, value=Memory.from_value(self, value))
 
+    def as_value(self) -> Constant[Self]:
+        """Wrap this type as a Constant[TypeType] value."""
+        from .value import Constant
+        from dgen.dialects.builtin import TypeType
+
+        tt = TypeType(concrete=self)
+        return Constant(type=tt, value=Memory.from_json(tt, self._type_to_json()))
+
+    def _type_to_json(self) -> dict[str, object]:
+        """Serialize this type to a JSON-compatible dict for TypeType Memory."""
+        cls = type(self)
+        dialect = getattr(cls, "dialect", None)
+        prefix = (
+            f"{dialect.name}."
+            if dialect is not None and dialect.name != "builtin"
+            else ""
+        )
+        tag = f"{prefix}{getattr(cls, '_asm_name', type(self).__name__)}"
+        result: dict[str, object] = {"tag": tag}
+        for name, _ in self.__params__:
+            val = getattr(self, name)
+            if isinstance(val, Type):
+                result[name] = val._type_to_json()
+            else:
+                result[name] = val.__constant__.to_json()
+        return result
+
+    @classmethod
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        # TypeType's concrete param must stay a bare Type (no infinite wrapping)
+        if cls.__name__ == "TypeType":
+            return
+        type_kinded = [
+            name for name, ft in getattr(cls, "__params__", ()) if ft is Type
+        ]
+        if not type_kinded:
+            return
+
+        def _post_init(self: Type, _names: list[str] = type_kinded) -> None:
+            for name in _names:
+                val = getattr(self, name)
+                # Wrap bare Types as Constant[TypeType]. Skip if already wrapped.
+                # Bare Types don't have 'value' attr; Constants do.
+                if isinstance(val, Type) and not hasattr(val, "value"):
+                    object.__setattr__(self, name, val.as_value())
+
+        cls.__post_init__ = _post_init  # type: ignore[attr-defined]
+
     @property
     def type_layout(self) -> Record:
         """Layout for this type as a value (tag + params)."""

@@ -93,6 +93,10 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, PackOp):
         return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
     if isinstance(value, Constant) and not isinstance(value, Op):
+        from dgen.dialects.builtin import TypeType
+
+        if isinstance(value.type, TypeType):
+            return format_expr(value.type.concrete, tracker)
         return format_expr(value.__constant__.to_json(), tracker)
     if isinstance(value, Value):
         if tracker is not None:
