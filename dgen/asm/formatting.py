@@ -13,7 +13,7 @@ from dgen.dialects.builtin import Nil, PackOp
 
 from ..op import Op
 from ..type import Memory, Type, TypeType
-from ..value import Constant, Value
+from ..type import Constant, Value
 
 
 def indent(it: Iterable[str], prefix: str = "    ") -> Iterable[str]:

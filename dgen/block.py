@@ -6,7 +6,7 @@ from typing import Iterable
 import dgen
 
 from .type import Type
-from .value import Value
+from .type import Value
 
 
 @dataclass(eq=False, kw_only=True)

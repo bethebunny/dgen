@@ -3,13 +3,35 @@ from __future__ import annotations
 import ctypes
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
+from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar
+
+import dgen
 
 from .layout import Layout, Record, _bytearray_address
 from .layout import String as StringLayout
 
-if TYPE_CHECKING:
-    from .value import Constant
+T = TypeVar("T", bound="Type")
+
+
+@dataclass(eq=False, kw_only=True)
+class Value(Generic[T]):
+    """Base class for SSA values. An op or block argument."""
+
+    name: str | None = None
+    type: T
+    ready: ClassVar[bool] = False
+
+    @property
+    def operands(self) -> list[Value]:
+        return []
+
+    @property
+    def blocks(self) -> dict[str, dgen.Block]:
+        return {}
+
+    @property
+    def __constant__(self) -> Memory[T]:
+        raise NotImplementedError
 
 
 class Type:
@@ -26,14 +48,10 @@ class Type:
 
     def constant(self, value: object) -> Constant[Self]:
         """Create a Constant wrapping this type and a Python value."""
-        from .value import Constant
-
         return Constant(type=self, value=Memory.from_value(self, value))
 
     def as_value(self) -> Constant[Self]:
         """Wrap this type as a Constant[TypeType] value."""
-        from .value import Constant
-
         tt = TypeType(concrete=self)
         return Constant(type=tt, value=Memory.from_json(tt, self._type_to_json()))
 
@@ -98,6 +116,44 @@ class Type:
             yield name, getattr(self, name)
 
 
+@dataclass(eq=False, kw_only=True)
+class Constant(Value[T]):
+    ready: ClassVar[bool] = True
+    value: Memory[T]
+
+    @property
+    def __constant__(self) -> Memory[T]:
+        return self.value
+
+    @property
+    def __layout__(self) -> Layout:
+        """Transparent layout access for type-kinded params.
+
+        For TypeType constants, returns the concrete type's __layout__.
+        This means self.element_type.__layout__ works whether element_type
+        is a bare Type or a Constant[TypeType].
+        """
+        if isinstance(self.type, TypeType):
+            return self.type.concrete.__layout__
+        return self.type.__layout__
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Constant):
+            return NotImplemented
+        if self.type != other.type:
+            return False
+        # For TypeType constants, compare concrete types directly
+        # (Memory buffer comparison fails because string pointers differ)
+        if isinstance(self.type, TypeType):
+            return self.type.concrete == other.type.concrete
+        return self.value == other.value
+
+    def __hash__(self) -> int:
+        if isinstance(self.type, TypeType):
+            return hash((type(self), self.type, self.type.concrete))
+        return hash((type(self), self.type, self.value))
+
+
 Field = tuple[str, type[Type]]
 Fields = tuple[Field, ...]
 
@@ -116,9 +172,6 @@ class TypeType(Type):
     @property
     def __layout__(self) -> Layout:
         return self.concrete.type_layout
-
-
-T = TypeVar("T", bound=Type)
 
 
 class Memory(Generic[T]):

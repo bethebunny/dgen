@@ -6,7 +6,7 @@ from typing import ClassVar, Iterable, Iterator
 from .block import Block
 from .dialect import Dialect
 from .type import Fields, Type
-from .value import Constant, Value
+from .type import Constant, Value
 
 
 @dataclass(eq=False)

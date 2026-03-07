@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Op, Type, Value, layout
+from dgen import Dialect, Op, Type, Value
 from dgen.dialects.builtin import Index, Nil, F64, String
 import toy.dialects.affine as affine
 
@@ -16,7 +16,10 @@ toy = Dialect("toy")
 class Tensor(Type):
     shape: Value[affine.Shape]
     dtype: Type = F64()
-    __params__ = (("shape", affine.Shape), ("dtype", Type),)
+    __params__ = (
+        ("shape", affine.Shape),
+        ("dtype", Type),
+    )
 
     def unpack_shape(self):
         return self.shape.__constant__.to_json()
@@ -52,7 +55,10 @@ class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
+    __operands__ = (
+        ("lhs", Tensor),
+        ("rhs", Tensor),
+    )
 
 
 @toy.op("add")
@@ -61,7 +67,10 @@ class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
+    __operands__ = (
+        ("lhs", Tensor),
+        ("rhs", Tensor),
+    )
 
 
 @toy.op("generic_call")
@@ -82,7 +91,10 @@ class ConcatOp(Op):
     rhs: Value
     type: Type
     __params__ = (("axis", Index),)
-    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
+    __operands__ = (
+        ("lhs", Tensor),
+        ("rhs", Tensor),
+    )
     __constraints__ = ("axis < lhs.shape.rank",)
 
 
@@ -121,5 +133,3 @@ class PrintOp(Op):
     input: Value
     type: Type = Nil()
     __operands__ = (("input", Tensor),)
-
-

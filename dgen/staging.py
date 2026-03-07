@@ -14,7 +14,7 @@ from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, String
 from dgen.module import ConstantOp, Function, Module
 from dgen.type import Memory
-from dgen.value import Constant
+from dgen.type import Constant
 
 
 def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
