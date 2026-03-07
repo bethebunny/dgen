@@ -5,8 +5,7 @@ from typing import Iterable
 
 import dgen
 
-from .type import Type
-from .type import Value
+from .type import Memory, TypeType, Value
 
 
 @dataclass(eq=False, kw_only=True)
@@ -14,7 +13,11 @@ class BlockArgument(Value):
     """A block argument (function parameter)."""
 
     name: str | None = None
-    type: Type
+    type: Value[TypeType]
+
+    @property
+    def __constant__(self) -> Memory:
+        raise TypeError(f"BlockArgument %{self.name} is not a constant")
 
 
 @dataclass

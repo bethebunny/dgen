@@ -218,6 +218,172 @@ def test_type_constant_jit_return():
     assert result == {"tag": "builtin.Index"}
 
 
+def test_list_with_ssa_element_type():
+    """List<%t> — SSA type value as element_type param, round-trips through ASM."""
+    from dgen import layout
+
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %xs : List<%t> = [1, 2, 3]
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+    ops = module.functions[0].body.ops
+    t_op = ops[0]
+    xs_op = ops[1]
+    assert isinstance(xs_op.type, builtin.List)
+    assert xs_op.type.element_type is t_op
+    assert xs_op.type.ready
+    assert xs_op.type.__layout__ == layout.FatPointer(layout.Int())
+
+
+def test_fat_pointer_with_ssa_pointee():
+    """FatPointer<%t> — SSA type value as pointee param, round-trips through ASM."""
+    from dgen import layout
+
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<F64> = {"tag": "builtin.F64"}
+        |     %p : FatPointer<%t> = [0.0, 0.0]
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+    ops = module.functions[0].body.ops
+    t_op = ops[0]
+    p_op = ops[1]
+    assert isinstance(p_op.type, builtin.FatPointer)
+    assert p_op.type.pointee is t_op
+    assert p_op.type.ready
+    assert p_op.type.__layout__ == layout.FatPointer(layout.Float64())
+
+
+def test_function_with_ssa_result_type():
+    """function<%t> — SSA type value as result param, round-trips through ASM."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %f : Nil = function<%t>() (%x: Index):
+        |         %_ : Nil = return(%x)
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+    ops = module.functions[0].body.ops
+    t_op = ops[0]
+    f_op = ops[1]
+    assert isinstance(f_op, FunctionOp)
+    assert f_op.result is t_op
+
+
+def test_block_argument_constant_raises_type_error():
+    """BlockArgument.__constant__ raises TypeError — it's not a constant."""
+    import pytest
+
+    from dgen.type import type_constant
+
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%t: TypeType<Index>, %x: Index):
+        |     %y : %t = add_index(%x, %x)
+        |     %_ : Nil = return(%y)
+    """)
+    module = parse_module(ir)
+    ops = module.functions[0].body.ops
+    add_op = ops[0]
+
+    # op.type is a BlockArgument — not a constant
+    assert isinstance(add_op.type, BlockArgument)
+    with pytest.raises(TypeError):
+        add_op.type.__constant__
+
+    # type_constant also fails on a BlockArgument
+    with pytest.raises(TypeError):
+        type_constant(add_op.type)
+
+
+def test_type_constant_resolves_ssa_constant():
+    """type_constant resolves a ConstantOp TypeType value to a concrete Type."""
+    from dgen.type import type_constant
+
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %x : %t = 42
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    t_op = module.functions[0].body.ops[0]
+    resolved = type_constant(t_op)
+    assert isinstance(resolved, Index)
+
+
+def test_compile_with_ssa_function_result():
+    """compile() resolves FunctionOp.result when it's a ConstantOp type ref."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %f : Nil = function<%t>() (%x: Index):
+        |         %_ : Nil = return(%x)
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    inner_func = module.functions[0].body.ops[1]
+    assert isinstance(inner_func, FunctionOp)
+    # result is a ConstantOp (SSA ref), not a concrete Type
+    assert isinstance(inner_func.result, ConstantOp)
+
+
+def test_staging_resolves_block_arg_type():
+    """Staging resolves a BlockArgument TypeType at runtime, not compile time.
+
+    main(%t: TypeType<Index>, %x: Index) -> Index:
+        %y : %t = add_index(%x, %x)
+        return(%y)
+
+    %t is a function parameter — it can't be resolved at compile time
+    (BlockArgument.__constant__ raises TypeError). The staging system
+    compiles a callback-based thunk, then resolves %t from the runtime
+    arg when called.
+    """
+    from dgen.staging import compile_staged
+    from toy.passes.affine_to_llvm import lower_to_llvm
+
+    lower_calls: int = 0
+
+    def lower(m: Module) -> Module:
+        nonlocal lower_calls
+        lower_calls += 1
+        return lower_to_llvm(m)
+
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%t: TypeType<Index>, %x: Index):
+        |     %y : %t = add_index(%x, %x)
+        |     %_ : Nil = return(%y)
+    """)
+    module = parse_module(ir)
+
+    # Verify the op's type is a BlockArgument (not resolvable at compile time)
+    add_op = module.functions[0].body.ops[0]
+    assert isinstance(add_op.type, BlockArgument)
+
+    # Compile produces a callback-based thunk — lower is NOT called yet
+    exe = compile_staged(module, infer=lambda m: m, lower=lower)
+    compile_time_calls = lower_calls
+
+    # Each run() triggers runtime JIT — lower is called for each invocation
+    assert exe.run({"tag": "builtin.Index"}, 21) == 42
+    calls_after_first_run = lower_calls
+    assert calls_after_first_run > compile_time_calls
+
+    assert exe.run({"tag": "builtin.Index"}, 100) == 200
+    assert lower_calls > calls_after_first_run
+
+
 def test_staging_resolves_type_value():
     """Staging resolves a TypeType function param used as op type.
 

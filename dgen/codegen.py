@@ -87,13 +87,14 @@ def emit_llvm_ir(module: Module, *, externs: Sequence[str] = ()) -> tuple[str, l
     return "\n".join(lines), host_buffers
 
 
-def _result_type_str(ty: Type) -> str | None:
+def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
     """Derive LLVM IR type string from an op's type, or None for void ops."""
     if isinstance(ty, builtin.Nil):
         return None
-    if isinstance(ty, llvm.Int):
-        return f"i{ty.bits.__constant__.to_json()}"
-    return _llvm_type(ty.__layout__)
+    resolved = dgen.type.type_constant(ty)
+    if isinstance(resolved, llvm.Int):
+        return f"i{resolved.bits.__constant__.to_json()}"
+    return _llvm_type(resolved.__layout__)
 
 
 def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
@@ -154,7 +155,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     if isinstance(result_type, builtin.Nil):
         llvm_ret = "void"
     else:
-        llvm_ret = _llvm_type(result_type.__layout__)
+        llvm_ret = _llvm_type(dgen.type.type_constant(result_type).__layout__)
     # Build parameter list from block args
     params = []
     for arg in f.body.args:
@@ -287,11 +288,12 @@ def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
     ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]
     assert main.name is not None
+    result = dgen.type.type_constant(main.result)
     return Executable(
         ir=ir,
         input_types=[arg.type for arg in main.body.args],
         main_name=main.name,
-        result_type=main.result,
+        result_type=result,
         host_refs=host_buffers,
     )
 

@@ -49,7 +49,6 @@ class Value(Generic[T]):
 
 def type_constant(value: Value[TypeType]) -> Type:
     """Resolve a Value[TypeType] to a concrete Type."""
-    assert value.ready
     if isinstance(value, Type):
         return value
     data = value.__constant__.to_json()
