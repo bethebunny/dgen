@@ -46,6 +46,17 @@ class Type:
                 fields.append((name, val.__constant__.type.__layout__))
         return Record(fields)
 
+    def type_to_json(self) -> dict[str, object]:
+        """Serialize this type value to a JSON-compatible dict."""
+        result: dict[str, object] = {"tag": f"{self.dialect.name}.{self._asm_name}"}
+        for name, _ in self.__params__:
+            val = getattr(self, name)
+            if isinstance(val, Type):
+                result[name] = val.type_to_json()
+            else:
+                result[name] = val.__constant__.to_json()
+        return result
+
     @property
     def parameters(self) -> Iterator[tuple[str, Type]]:
         for name, field in self.__params__:

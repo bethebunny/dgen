@@ -251,3 +251,38 @@ def test_type_layout_parametric_type_param_nested():
     f64_tl = inner_tl.fields[1][1]
     assert isinstance(f64_tl, Record)
     assert len(f64_tl.fields) == 1
+
+
+def test_type_to_json_non_parametric():
+    """Non-parametric type serializes to just a tag."""
+    ty = builtin.Index()
+    result = ty.type_to_json()
+    assert result == {"tag": "builtin.Index"}
+
+
+def test_type_to_json_parametric():
+    """Parametric type with type-kinded param serializes recursively."""
+    ty = builtin.List(element_type=builtin.Index())
+    result = ty.type_to_json()
+    assert result == {
+        "tag": "builtin.List",
+        "element_type": {"tag": "builtin.Index"},
+    }
+
+
+def test_type_pack_roundtrip():
+    """Pack a type value into Memory and read it back via to_json."""
+    from dgen.type import Memory
+
+    ty = builtin.List(element_type=builtin.Index())
+    tl = ty.type_layout
+    mem = Memory.__new__(Memory)
+    mem.type = ty
+    mem.buffer = bytearray(tl.byte_size)
+    mem.origins = []
+    tl.from_json(mem.buffer, 0, ty.type_to_json(), mem.origins)
+    result = tl.to_json(mem.buffer, 0)
+    assert result == {
+        "tag": "builtin.List",
+        "element_type": {"tag": "builtin.Index"},
+    }
