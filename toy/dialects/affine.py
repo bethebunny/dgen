@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Block, Dialect, Op, Type, Value, layout
+from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
 from dgen.dialects.builtin import Index, Nil, F64, HasSingleBlock
 
 affine = Dialect("affine")
@@ -35,7 +35,7 @@ class MemRef(Type):
     dtype: Type = F64()
     __params__ = (
         ("shape", Shape),
-        ("dtype", Type),
+        ("dtype", TypeType),
     )
 
 

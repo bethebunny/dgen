@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Block, Dialect, Op, Type, Value, layout
+from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
 
 builtin = Dialect("builtin")
 
@@ -55,7 +55,7 @@ class Array(Type):
     element_type: Type
     n: Value[Index]
     __params__ = (
-        ("element_type", Type),
+        ("element_type", TypeType),
         ("n", Index),
     )
 
@@ -68,7 +68,7 @@ class Array(Type):
 @dataclass(frozen=True)
 class Pointer(Type):
     pointee: Type
-    __params__ = (("pointee", Type),)
+    __params__ = (("pointee", TypeType),)
 
     @property
     def __layout__(self) -> layout.Layout:
@@ -79,7 +79,7 @@ class Pointer(Type):
 @dataclass(frozen=True)
 class FatPointer(Type):
     pointee: Type
-    __params__ = (("pointee", Type),)
+    __params__ = (("pointee", TypeType),)
 
     @property
     def __layout__(self) -> layout.Layout:
@@ -90,7 +90,7 @@ class FatPointer(Type):
 @dataclass(frozen=True)
 class List(Type):
     element_type: Type
-    __params__ = (("element_type", Type),)
+    __params__ = (("element_type", TypeType),)
 
     @property
     def __layout__(self) -> layout.Layout:
