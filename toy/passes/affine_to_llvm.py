@@ -9,7 +9,7 @@ import dgen
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, PackOp, String
 from dgen import layout
-from dgen.module import ConstantOp, Function, Module
+from dgen.module import ConstantOp, Module
 from toy.dialects import affine, toy
 
 
@@ -53,7 +53,7 @@ class AffineToLLVMLowering:
         return FunctionOp(
             name=f.name,
             body=dgen.Block(ops=ops, args=f.body.args),
-            type=Function(result=f.type.result),
+            result=f.result,
         )
 
     def _map(self, old: dgen.Value) -> dgen.Value:

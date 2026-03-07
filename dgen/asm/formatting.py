@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from dgen.dialects.builtin import FunctionOp, Nil, PackOp
+from dgen.dialects.builtin import PackOp
 
 from ..op import Op
 from ..type import Memory, Type
@@ -86,8 +86,6 @@ def _is_sugar_op(op: Op) -> bool:
 
 def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     """Format a value as an expression string, dispatching on runtime type."""
-    if isinstance(value, Nil):
-        return "()"
     # Inline list sugar: PackOp → [elem0, elem1, ...]
     if isinstance(value, PackOp):
         return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
@@ -184,39 +182,3 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
             if _is_sugar_op(child_op):
                 continue
             yield from indent(op_asm(child_op, tracker))
-
-
-# ===----------------------------------------------------------------------=== #
-# Function-specific ASM formatter
-# ===----------------------------------------------------------------------=== #
-
-
-def format_func(func: FunctionOp) -> Iterable[str]:
-    """Format a function op with its signature and body.
-
-    Unlike generic op_asm, this shows the function signature style:
-      %name = function (%arg0: type, ...) -> result_type:
-          body ops...
-    """
-    tracker = SlotTracker()
-    for arg in func.body.args:
-        tracker.track_name(arg)
-    tracker.register(func.body.ops)
-
-    name = tracker.track_name(func)
-    arg_parts = []
-    for a in func.body.args:
-        n = tracker.track_name(a)
-        if a.type is not None:
-            arg_parts.append(f"%{n}: {format_expr(a.type, tracker)}")
-        else:
-            arg_parts.append(f"%{n}")
-    from dgen.module import Function
-
-    args = ", ".join(arg_parts)
-    assert isinstance(func.type, Function)
-    yield f"%{name} = function ({args}) -> {format_expr(func.type.result, tracker)}:"
-    for op in func.body.ops:
-        if _is_sugar_op(op):
-            continue
-        yield from indent(op_asm(op, tracker))

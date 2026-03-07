@@ -12,7 +12,7 @@ from dgen.block import BlockArgument
 from dgen.codegen import _ctype, _llvm_type
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, String
-from dgen.module import ConstantOp, Function, Module
+from dgen.module import ConstantOp, Module
 from dgen.type import Constant, Memory, _type_from_dict
 
 
@@ -79,7 +79,7 @@ def _jit_evaluate(
     func = FunctionOp(
         name="main",
         body=dgen.Block(ops=ops, args=list(block_args)),
-        type=Function(result=target.type),
+        result=target.type,
     )
     module = Module(functions=[func])
     lowered = lower(module)
@@ -301,16 +301,15 @@ def _compile_with_callbacks(
 
     # Derive callback LLVM signature from original function
     assert func.name is not None
-    assert isinstance(func.type, Function)
     callback_name = f"_stage2_{func.name}"
     orig_types = [arg.type for arg in func.body.args]
     orig_llvm_types = [_llvm_type(t.__layout__) for t in orig_types]
-    if isinstance(func.type.result, builtin.Nil):
+    if isinstance(func.result, builtin.Nil):
         ret_llvm = "void"
         result_ctype: type[ctypes._CData] | None = None
     else:
-        ret_llvm = _llvm_type(func.type.result.__layout__)
-        result_ctype = _ctype(func.type.result.__layout__)
+        ret_llvm = _llvm_type(func.result.__layout__)
+        result_ctype = _ctype(func.result.__layout__)
     extern_decl = f"declare {ret_llvm} @{callback_name}({', '.join(orig_llvm_types)})"
 
     # Build ctypes callback type
@@ -367,9 +366,9 @@ def _compile_with_callbacks(
     call_op = llvm.CallOp(
         callee=String().constant(callback_name),
         args=thunk_args,
-        type=func.type.result,
+        type=func.result,
     )
-    if isinstance(func.type.result, builtin.Nil):
+    if isinstance(func.result, builtin.Nil):
         ret_op = builtin.ReturnOp()
     else:
         ret_op = builtin.ReturnOp(value=call_op)
@@ -377,7 +376,7 @@ def _compile_with_callbacks(
     thunk_func = FunctionOp(
         name=func.name,
         body=dgen.Block(ops=[call_op, ret_op], args=thunk_args),
-        type=Function(result=func.type.result),
+        result=func.result,
     )
     thunk_module = Module(functions=[thunk_func])
 

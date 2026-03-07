@@ -7,7 +7,7 @@ from copy import deepcopy
 import dgen
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module, string_value
-from toy.dialects import FunctionType, shape_constant
+from toy.dialects import shape_constant
 from toy.dialects import toy
 
 
@@ -106,10 +106,7 @@ def _infer_function(
                     ):
                         ret_type = type_of.get(id(ret_op.value))
                         if ret_type is not None:
-                            callee.type = FunctionType(
-                                inputs=arg_types,
-                                result=ret_type,
-                            )
+                            callee.result = ret_type
                             op.type = toy.Tensor(
                                 shape=shape_constant(ret_type.unpack_shape())
                             )

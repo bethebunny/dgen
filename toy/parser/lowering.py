@@ -8,7 +8,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module
-from toy.dialects import FunctionType, shape_constant, toy
+from toy.dialects import shape_constant, toy
 from toy.parser.ast import (
     BinaryOp,
     CallExpr,
@@ -58,10 +58,9 @@ class Lowering:
             ):
                 result = toy.InferredShapeTensor()
 
-        func_type = FunctionType(inputs=[a.type for a in args], result=result)
         return builtin.FunctionOp(
             name=f.proto.name,
-            type=func_type,
+            result=result,
             body=dgen.Block(ops=ops, args=args),
         )
 

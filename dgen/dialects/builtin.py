@@ -142,6 +142,8 @@ class ReturnOp(Op):
 @builtin.op("function")
 @dataclass(eq=False, kw_only=True)
 class FunctionOp(HasSingleBlock, Op):
-    type: Type
+    result: Value[dgen.TypeType]
+    type: Type = Nil()
     body: Block
+    __params__ = (("result", dgen.TypeType),)
     __blocks__ = ("body",)

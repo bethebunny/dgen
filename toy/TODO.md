@@ -34,8 +34,6 @@
 - Formatter: clearly delineate names in sub-blocks
 
 ## Easy cleanup
-- `affine.load` / `affine.mul_f` / `affine.add_f` should return `f64` (not `()`)
-- Fix other ops which should return types but return `Nil` instead
 - Figure out why some ASM still doesn't have types, these should fail to parse
 - Update parser and formatter to support multi-block ops
 - Remove spurious utf8 decoding stuff from Memory/Value
@@ -46,7 +44,6 @@
 - Go through and rename files
 - Read, understand, clean passes
 - Function calls and GOTOs should use the SSA name, not a string
-- Function definitions should use the normal block syntax
 
 ## Misc
 - Write more down into design docs

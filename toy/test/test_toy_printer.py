@@ -8,7 +8,7 @@ from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.dialects.builtin import String
 from dgen.module import ConstantOp, Module
-from toy.dialects import FunctionType, shape_constant, toy
+from toy.dialects import shape_constant, toy
 from toy.test.helpers import strip_prefix
 
 
@@ -77,18 +77,18 @@ def test_print_op():
     v5 = dgen.Value(name="5", type=builtin.Nil())
     op = toy.PrintOp(input=v5)
     # PrintOp has no name -> auto-numbered as %0
-    assert asm.format(op) == "%0 : () = toy.print(%5)"
+    assert asm.format(op) == "%0 : Nil = toy.print(%5)"
 
 
 def test_return_op_with_value():
     v2 = dgen.Value(name="2", type=builtin.Nil())
     op = builtin.ReturnOp(value=v2)
-    assert asm.format(op) == "%0 : () = return(%2)"
+    assert asm.format(op) == "%0 : Nil = return(%2)"
 
 
 def test_return_op_void():
     op = builtin.ReturnOp()
-    assert asm.format(op) == "%0 : () = return(())"
+    assert asm.format(op) == "%0 : Nil = return(Nil)"
 
 
 def test_concat_op():
@@ -128,10 +128,9 @@ def test_full_module():
     m0 = toy.MulOp(lhs=t0, rhs=t1, type=inferred())
     ret_mt = builtin.ReturnOp(value=m0)
 
-    mt_func_type = FunctionType(inputs=[inferred(), inferred()], result=inferred())
     mt_func = builtin.FunctionOp(
         name="multiply_transpose",
-        type=mt_func_type,
+        result=inferred(),
         body=dgen.Block(ops=[t0, t1, m0, ret_mt], args=[mt_arg_a, mt_arg_b]),
     )
 
@@ -159,10 +158,9 @@ def test_full_module():
     print_op = toy.PrintOp(input=call5)
     ret_main = builtin.ReturnOp()
 
-    main_func_type = FunctionType(inputs=[], result=builtin.Nil())
     main_func = builtin.FunctionOp(
         name="main",
-        type=main_func_type,
+        result=builtin.Nil(),
         body=dgen.Block(
             ops=[c0, r1, c2, r3, call4, call5, print_op, ret_main], args=[]
         ),
@@ -173,20 +171,20 @@ def test_full_module():
     expected = strip_prefix("""
         | import toy
         |
-        | %multiply_transpose = function (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>) -> toy.InferredShapeTensor<F64>:
+        | %multiply_transpose : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>):
         |     %0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)
         |     %1 : toy.InferredShapeTensor<F64> = toy.transpose(%b)
         |     %2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)
-        |     %3 : () = return(%2)
+        |     %3 : Nil = return(%2)
         |
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)
         |     %2 : toy.Tensor<[6], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : toy.Tensor<[2, 3], F64> = toy.reshape(%2)
         |     %4 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%1, %3])
         |     %5 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%3, %1])
-        |     %6 : () = toy.print(%5)
-        |     %7 : () = return(())
+        |     %6 : Nil = toy.print(%5)
+        |     %7 : Nil = return(Nil)
     """)
     assert asm.format(module) == expected

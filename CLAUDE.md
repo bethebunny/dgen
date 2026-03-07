@@ -109,6 +109,7 @@ python -m dgen.gen toy/dialects/toy.dgen -I affine=toy.dialects.affine > toy/dia
 - **No function-level imports.** The only acceptable exception is breaking a genuine circular dependency between two modules (e.g. `type.py` ↔ `value.py`). If the import _can_ be top-level, it _must_ be top-level.
 - Avoid `for ... in range()`
 - Avoid `isinstance` specialization, this is generally design smell
+- Don't special case. Refuse to add special cases that aren't explicitly called out in designs. Explicitly ask before adding any special cases to a design.
 
 ## Version Control
 

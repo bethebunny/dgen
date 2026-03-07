@@ -9,7 +9,7 @@ from dgen.block import BlockArgument
 from dgen import layout
 from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index, List, Nil, PackOp
-from dgen.module import ConstantOp, Function, Module
+from dgen.module import ConstantOp, Module
 from toy.dialects import affine, shape_constant, toy
 
 
@@ -40,14 +40,13 @@ class ToyToAffineLowering:
         # Register block args (function parameters) as themselves
         for arg in f.body.args:
             self.alloc_map[arg] = arg
-        assert isinstance(f.type, Function)
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
         return FunctionOp(
             name=f.name,
             body=dgen.Block(ops=ops, args=f.body.args),
-            type=Function(result=f.type.result),
+            result=f.result,
         )
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:

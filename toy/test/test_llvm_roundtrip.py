@@ -9,9 +9,9 @@ def test_roundtrip_alloca():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %0 : () = llvm.alloca<3>()
-        |     %_ : () = return(())
+        | %f : Nil = function<Nil>() ():
+        |     %0 : Nil = llvm.alloca<3>()
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -21,14 +21,14 @@ def test_roundtrip_gep_load_store():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %0 : () = llvm.alloca<6>()
+        | %f : Nil = function<Nil>() ():
+        |     %0 : Nil = llvm.alloca<6>()
         |     %1 : Index = 0
-        |     %2 : () = llvm.gep(%0, %1)
+        |     %2 : Nil = llvm.gep(%0, %1)
         |     %3 : F64 = 1.0
-        |     %_ : () = llvm.store(%3, %2)
-        |     %4 : () = llvm.load(%2)
-        |     %_ : () = return(())
+        |     %_ : Nil = llvm.store(%3, %2)
+        |     %4 : Nil = llvm.load(%2)
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -38,12 +38,12 @@ def test_roundtrip_fadd_fmul():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
+        | %f : Nil = function<Nil>() ():
         |     %0 : F64 = 1.0
         |     %1 : F64 = 2.0
-        |     %2 : () = llvm.fadd(%0, %1)
-        |     %3 : () = llvm.fmul(%0, %1)
-        |     %_ : () = return(())
+        |     %2 : Nil = llvm.fadd(%0, %1)
+        |     %3 : Nil = llvm.fmul(%0, %1)
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -53,12 +53,12 @@ def test_roundtrip_add_mul_int():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
+        | %f : Nil = function<Nil>() ():
         |     %0 : Index = 3
         |     %1 : Index = 4
-        |     %2 : () = llvm.add(%0, %1)
-        |     %3 : () = llvm.mul(%0, %1)
-        |     %_ : () = return(())
+        |     %2 : Nil = llvm.add(%0, %1)
+        |     %3 : Nil = llvm.mul(%0, %1)
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -68,12 +68,12 @@ def test_roundtrip_icmp_condbr():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
+        | %f : Nil = function<Nil>() ():
         |     %0 : Index = 0
         |     %1 : Index = 10
-        |     %cmp : () = llvm.icmp<"slt">(%0, %1)
-        |     %_ : () = llvm.cond_br<"loop_body", "loop_exit">(%cmp)
-        |     %_ : () = return(())
+        |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
+        |     %_ : Nil = llvm.cond_br<"loop_body", "loop_exit">(%cmp)
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -83,10 +83,10 @@ def test_roundtrip_label_br():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %_ : () = llvm.br<"loop_header">()
-        |     %_ : () = llvm.label<"loop_header">()
-        |     %_ : () = return(())
+        | %f : Nil = function<Nil>() ():
+        |     %_ : Nil = llvm.br<"loop_header">()
+        |     %_ : Nil = llvm.label<"loop_header">()
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -96,9 +96,9 @@ def test_roundtrip_phi():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %i0 : () = llvm.phi<["entry", "loop_body"]>([%init, %next])
-        |     %_ : () = return(())
+        | %f : Nil = function<Nil>() ():
+        |     %i0 : Nil = llvm.phi<["entry", "loop_body"]>([%init, %next])
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -108,9 +108,9 @@ def test_roundtrip_call_with_result():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %0 : () = llvm.call<"foo">([%a, %b])
-        |     %_ : () = return(())
+        | %f : Nil = function<Nil>() ():
+        |     %0 : Nil = llvm.call<"foo">([%a, %b])
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -120,9 +120,9 @@ def test_roundtrip_call_void():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %_ : () = llvm.call<"print_memref">([%ptr, %size])
-        |     %_ : () = return(())
+        | %f : Nil = function<Nil>() ():
+        |     %_ : Nil = llvm.call<"print_memref">([%ptr, %size])
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -130,9 +130,9 @@ def test_roundtrip_call_void():
 
 def test_roundtrip_return_value():
     ir = strip_prefix("""
-        | %f = function () -> ():
+        | %f : Nil = function<Nil>() ():
         |     %0 : F64 = 42.0
-        |     %_ : () = return(%0)
+        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -143,24 +143,24 @@ def test_roundtrip_loop_pattern():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %0 : () = llvm.alloca<3>()
+        | %f : Nil = function<Nil>() ():
+        |     %0 : Nil = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %_ : () = llvm.br<"loop_header0">()
-        |     %_ : () = llvm.label<"loop_header0">()
-        |     %i0 : () = llvm.phi<["entry", "loop_body0"]>([%init, %next0])
+        |     %_ : Nil = llvm.br<"loop_header0">()
+        |     %_ : Nil = llvm.label<"loop_header0">()
+        |     %i0 : Nil = llvm.phi<["entry", "loop_body0"]>([%init, %next0])
         |     %hi : Index = 3
-        |     %cmp : () = llvm.icmp<"slt">(%i0, %hi)
-        |     %_ : () = llvm.cond_br<"loop_body0", "loop_exit0">(%cmp)
-        |     %_ : () = llvm.label<"loop_body0">()
+        |     %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
+        |     %_ : Nil = llvm.cond_br<"loop_body0", "loop_exit0">(%cmp)
+        |     %_ : Nil = llvm.label<"loop_body0">()
         |     %val : F64 = 1.0
-        |     %ptr : () = llvm.gep(%0, %i0)
-        |     %_ : () = llvm.store(%val, %ptr)
+        |     %ptr : Nil = llvm.gep(%0, %i0)
+        |     %_ : Nil = llvm.store(%val, %ptr)
         |     %one : Index = 1
-        |     %next0 : () = llvm.add(%i0, %one)
-        |     %_ : () = llvm.br<"loop_header0">()
-        |     %_ : () = llvm.label<"loop_exit0">()
-        |     %_ : () = return(())
+        |     %next0 : Nil = llvm.add(%i0, %one)
+        |     %_ : Nil = llvm.br<"loop_header0">()
+        |     %_ : Nil = llvm.label<"loop_exit0">()
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir

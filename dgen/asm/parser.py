@@ -14,7 +14,7 @@ from typing import Any
 from dgen import Block, Constant, Dialect, Op, Type, TypeType, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Function, Module
+from dgen.module import ConstantOp, Module
 
 
 def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
@@ -29,11 +29,6 @@ def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
 def parse_expr(parser: IRParser) -> object:
     """Parse a single expression, dispatching on syntax."""
     c = parser.peek()
-
-    if c == "(":
-        # Nil literal: ()
-        parser.expect("()")
-        return builtin.Nil()
 
     if c == "[":
         # List: [expr, expr, ...]
@@ -209,6 +204,7 @@ def parse_op_fields(
         parser.expect(">")
 
     # Parse runtime operand fields in (...)
+    # Skip empty operand parens for ops with blocks (block args use '(' too)
     parser.expect("(")
     parser.skip_whitespace()
     for i, (f_name, f_type) in enumerate(cls.__operands__):
@@ -216,11 +212,14 @@ def parse_op_fields(
             parser.expect(",")
             parser.skip_whitespace()
         raw_value = parse_expr(parser)
-        if isinstance(raw_value, list) and any(isinstance(v, Value) for v in raw_value):
+        if isinstance(raw_value, list) and any(
+            isinstance(v, Value) for v in raw_value
+        ):
             raw_value = _expand_list_sugar(parser, list(raw_value), f_type)
         kwargs[f_name] = raw_value
         parser.skip_whitespace()
     parser.expect(")")
+    parser.skip_whitespace()
 
     # Type annotation (already parsed before '=' if present)
     if pre_type is not None:
@@ -377,9 +376,6 @@ class IRParser:
 
     def parse_type(self) -> Type | Value:
         """Parse a type, or an SSA ref to a TypeType value."""
-        if self.peek() == "(":
-            self.expect("()")
-            return builtin.Nil()
         result = parse_expr(self)
         if isinstance(result, Type):
             return result
@@ -461,53 +457,11 @@ class IRParser:
             self.skip_whitespace_and_newlines()
             if self.at_end():
                 break
-            functions.append(self.parse_func())
+            op = self.parse_op()
+            assert isinstance(op, builtin.FunctionOp)
+            functions.append(op)
 
         return Module(functions=functions)
-
-    def parse_func(self) -> builtin.FunctionOp:
-        """Parse a function definition."""
-        func_name = self.parse_ssa_name()
-        self.skip_whitespace()
-        self.expect("=")
-        self.skip_whitespace()
-        self.expect("function")
-        self.skip_whitespace()
-        self.expect("(")
-
-        # Parse parameters
-        args: list[BlockArgument] = []
-        self.skip_whitespace()
-        if self.peek() != ")":
-            arg = self._parse_param()
-            args.append(arg)
-            self.skip_whitespace()
-            while self.peek() == ",":
-                self.expect(",")
-                self.skip_whitespace()
-                arg = self._parse_param()
-                args.append(arg)
-                self.skip_whitespace()
-        self.expect(")")
-
-        # Return type
-        self.skip_whitespace()
-        self.expect("->")
-        self.skip_whitespace()
-        result_type: Type = self.parse_type()
-
-        self.expect(":")
-        self.skip_line()
-
-        # Parse body (indented lines)
-        ops = self._parse_block(min_indent=1)
-
-        func_type = Function(result=result_type)
-        func_op = builtin.FunctionOp(
-            name=func_name, type=func_type, body=Block(ops=ops, args=args)
-        )
-        self.name_table[func_name] = func_op
-        return func_op
 
     def _parse_param(self) -> BlockArgument:
         """Parse %name or %name: Type"""

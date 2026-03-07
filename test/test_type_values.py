@@ -7,7 +7,7 @@ from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index
-from dgen.module import ConstantOp, Function, Module
+from dgen.module import ConstantOp, Module
 from dgen.type import Memory
 from toy.test.helpers import strip_prefix
 
@@ -28,9 +28,9 @@ def test_format_dict_literal():
 def test_typetype_constant_asm_roundtrip():
     """TypeType constant with dict literal round-trips through ASM."""
     ir = strip_prefix("""
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
-        |     %_ : () = return(())
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -39,10 +39,10 @@ def test_typetype_constant_asm_roundtrip():
 def test_ssa_ref_as_op_type():
     """SSA ref in type position: %x's type is the SSA value %t."""
     ir = strip_prefix("""
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %x : %t = 42
-        |     %_ : () = return(())
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     ops = module.functions[0].body.ops
@@ -56,10 +56,10 @@ def test_ssa_ref_as_op_type():
 def test_ssa_ref_as_op_type_roundtrip():
     """SSA ref in type position round-trips through ASM."""
     ir = strip_prefix("""
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %x : %t = 42
-        |     %_ : () = return(())
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -92,9 +92,9 @@ def test_parameterized_typetype_constant_roundtrip():
 
     # ASM round-trip with the parameterized TypeType
     ir = strip_prefix("""
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Array<Index, 4>> = {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
-        |     %_ : () = return(())
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -103,10 +103,10 @@ def test_parameterized_typetype_constant_roundtrip():
 def test_array_with_ssa_dimension():
     """Array<Index, %n> — SSA value as type parameter, round-trips through ASM."""
     ir = strip_prefix("""
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %n : Index = 4
         |     %arr : Array<Index, %n> = [1, 2, 3, 4]
-        |     %_ : () = return(())
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -122,10 +122,10 @@ def test_array_with_ssa_dimension():
 def test_array_with_ssa_element_type():
     """Array<%t, 4> — SSA type value as element_type param, round-trips through ASM."""
     ir = strip_prefix("""
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
-        |     %_ : () = return(())
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -143,10 +143,10 @@ def test_array_with_ssa_element_type_layout():
     from dgen import layout
 
     ir = strip_prefix("""
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
-        |     %_ : () = return(())
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     ops = module.functions[0].body.ops
@@ -165,10 +165,10 @@ def test_pointer_with_ssa_pointee():
     from dgen import layout
 
     ir = strip_prefix("""
-        | %main = function () -> ():
+        | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %p : Pointer<%t> = 0
-        |     %_ : () = return(())
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -193,7 +193,7 @@ def test_type_value_jit_identity():
     func = FunctionOp(
         name="main",
         body=Block(ops=[builtin.ReturnOp(value=arg)], args=[arg]),
-        type=Function(result=idx.type),
+        result=idx.type,
     )
     exe = compile_module(Module(functions=[func]))
     result = exe.run(mem)
@@ -209,7 +209,7 @@ def test_type_constant_jit_return():
     func = FunctionOp(
         name="main",
         body=Block(ops=[const, ret], args=[]),
-        type=Function(result=idx.type),
+        result=idx.type,
     )
     exe = compile_module(Module(functions=[func]))
     raw = exe.run()
@@ -251,9 +251,9 @@ def test_staging_resolves_type_value():
         return m
 
     ir = strip_prefix("""
-        | %main = function (%t : TypeType<Index>, %x : Index) -> Index:
+        | %main : Nil = function<Index>() (%t: TypeType<Index>, %x: Index):
         |     %y : %t = add_index(%x, %x)
-        |     %_ : () = return(%y)
+        |     %_ : Nil = return(%y)
     """)
     module = parse_module(ir)
 

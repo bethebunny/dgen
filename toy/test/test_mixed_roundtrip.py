@@ -10,11 +10,11 @@ def test_llvm_via_imports():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %0 : () = llvm.alloca<6>()
+        | %f : Nil = function<Nil>() ():
+        |     %0 : Nil = llvm.alloca<6>()
         |     %1 : F64 = 1.0
-        |     %_ : () = llvm.store(%1, %0)
-        |     %_ : () = return(())
+        |     %_ : Nil = llvm.store(%1, %0)
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -25,21 +25,21 @@ def test_llvm_full_loop():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f = function () -> ():
-        |     %0 : () = llvm.alloca<3>()
+        | %f : Nil = function<Nil>() ():
+        |     %0 : Nil = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %_ : () = llvm.br<"loop_header">()
-        |     %_ : () = llvm.label<"loop_header">()
-        |     %i0 : () = llvm.phi<["entry", "loop_body"]>([%init, %next])
+        |     %_ : Nil = llvm.br<"loop_header">()
+        |     %_ : Nil = llvm.label<"loop_header">()
+        |     %i0 : Nil = llvm.phi<["entry", "loop_body"]>([%init, %next])
         |     %hi : Index = 3
-        |     %cmp : () = llvm.icmp<"slt">(%i0, %hi)
-        |     %_ : () = llvm.cond_br<"loop_body", "loop_exit">(%cmp)
-        |     %_ : () = llvm.label<"loop_body">()
+        |     %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
+        |     %_ : Nil = llvm.cond_br<"loop_body", "loop_exit">(%cmp)
+        |     %_ : Nil = llvm.label<"loop_body">()
         |     %one : Index = 1
-        |     %next : () = llvm.add(%i0, %one)
-        |     %_ : () = llvm.br<"loop_header">()
-        |     %_ : () = llvm.label<"loop_exit">()
-        |     %_ : () = return(())
+        |     %next : Nil = llvm.add(%i0, %one)
+        |     %_ : Nil = llvm.br<"loop_header">()
+        |     %_ : Nil = llvm.label<"loop_exit">()
+        |     %_ : Nil = return(Nil)
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir

@@ -107,8 +107,7 @@ def _collect_dialects(func: FunctionOp, dialects: set[Dialect]) -> None:
         _check_type(op.type)
     for arg in func.body.args:
         _check_type(arg.type)
-    assert isinstance(func.type, Function)
-    _check_type(func.type.result)
+    _check_type(func.result)
 
 
 @dataclass

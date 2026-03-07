@@ -19,7 +19,7 @@ from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, String
-from dgen.module import ConstantOp, Function, Module, string_value
+from dgen.module import ConstantOp, Module, string_value
 from dgen.staging import compile_and_run_staged, compile_staged
 from dgen.type import Memory
 from toy.dialects import shape_constant
@@ -134,7 +134,7 @@ def _identity_exe(ty):
     func = FunctionOp(
         name="main",
         body=Block(ops=[builtin.ReturnOp(value=arg)], args=[arg]),
-        type=Function(result=ty),
+        result=ty,
     )
     return compile_module(Module(functions=[func]))
 
@@ -298,7 +298,7 @@ def test_list_constant_jit_return():
     func = FunctionOp(
         name="main",
         body=Block(ops=[const, ret], args=[]),
-        type=Function(result=list_type),
+        result=list_type,
     )
     exe = compile_module(Module(functions=[func]))
     raw = exe.run()
@@ -338,9 +338,9 @@ def test_packop_mixed_constants_and_refs():
     ir_input = strip_prefix("""
         | import affine
         |
-        | %main = function (%x: Index) -> ():
-        |     %_ : () = affine.store(%x, %x, [3, %x, 5])
-        |     %_ : () = return(())
+        | %main : Nil = function<Nil>() (%x: Index):
+        |     %_ : Nil = affine.store(%x, %x, [3, %x, 5])
+        |     %_ : Nil = return(Nil)
     """)
     parsed = parse_module(ir_input)
 
@@ -348,11 +348,11 @@ def test_packop_mixed_constants_and_refs():
     ir_expected = strip_prefix("""
         | import affine
         |
-        | %main = function (%x: Index) -> ():
+        | %main : Nil = function<Nil>() (%x: Index):
         |     %0 : Index = 3
         |     %1 : Index = 5
-        |     %_ : () = affine.store(%x, %x, [%0, %x, %1])
-        |     %_ : () = return(())
+        |     %_ : Nil = affine.store(%x, %x, [%0, %x, %1])
+        |     %_ : Nil = return(Nil)
     """)
     assert asm.format(parsed) == ir_expected
 
@@ -381,10 +381,10 @@ def test_string_as_op_param():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main = function () -> ():
-        |     %_ : () = llvm.br<"target">()
-        |     %_ : () = llvm.label<"target">()
-        |     %_ : () = return(())
+        | %main : Nil = function<Nil>() ():
+        |     %_ : Nil = llvm.br<"target">()
+        |     %_ : Nil = llvm.label<"target">()
+        |     %_ : Nil = return(Nil)
     """)
     parsed = parse_module(ir)
     assert asm.format(parsed) == ir
@@ -411,10 +411,10 @@ def test_string_param_staging():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main = function (%pred : String, %x : Index, %y : Index) -> Index:
-        |     %cmp : () = llvm.icmp<%pred>(%x, %y)
-        |     %ext : () = llvm.zext(%cmp)
-        |     %_ : () = return(%ext)
+        | %main : Nil = function<Index>() (%pred : String, %x : Index, %y : Index):
+        |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
+        |     %ext : Nil = llvm.zext(%cmp)
+        |     %_ : Nil = return(%ext)
     """)
     module = parse_module(ir)
 
@@ -447,10 +447,10 @@ def test_compile_once_run_twice():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main = function (%pred : String, %x : Index, %y : Index) -> Index:
-        |     %cmp : () = llvm.icmp<%pred>(%x, %y)
-        |     %ext : () = llvm.zext(%cmp)
-        |     %_ : () = return(%ext)
+        | %main : Nil = function<Index>() (%pred : String, %x : Index, %y : Index):
+        |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
+        |     %ext : Nil = llvm.zext(%cmp)
+        |     %_ : Nil = return(%ext)
     """)
     module = parse_module(ir)
 
@@ -514,7 +514,7 @@ def test_deepcopy_module_with_list_constant():
     func = FunctionOp(
         name="main",
         body=Block(ops=[const, ret], args=[]),
-        type=Function(result=list_type),
+        result=list_type,
     )
     module = Module(functions=[func])
     copied = deepcopy(module)
