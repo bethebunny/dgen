@@ -253,113 +253,60 @@ def test_type_layout_parametric_type_param_nested():
     assert len(f64_tl.fields) == 1
 
 
-def test_type_to_json_non_parametric():
-    """Non-parametric type serializes to just a tag."""
-    ty = builtin.Index()
-    result = ty.type_to_json()
-    assert result == {"tag": "builtin.Index"}
-
-
-def test_type_to_json_parametric():
-    """Parametric type with type-kinded param serializes recursively."""
-    ty = builtin.List(element_type=builtin.Index())
-    result = ty.type_to_json()
-    assert result == {
-        "tag": "builtin.List",
-        "element_type": {"tag": "builtin.Index"},
-    }
-
-
-def test_type_from_json_non_parametric():
-    """Reconstruct Index() from its JSON representation."""
-    from dgen.type import Type
-
-    result = Type.type_from_json({"tag": "builtin.Index"})
-    assert result == builtin.Index()
-
-
-def test_type_from_json_parametric():
-    """Reconstruct List<Index> from its JSON representation."""
-    from dgen.type import Type
-
-    result = Type.type_from_json(
-        {
-            "tag": "builtin.List",
-            "element_type": {"tag": "builtin.Index"},
-        }
-    )
-    assert result == builtin.List(element_type=builtin.Index())
-
-
-def test_type_value_full_roundtrip():
-    """type_to_json -> type_from_json round-trip."""
-    from dgen.type import Type
-
-    ty = builtin.List(element_type=builtin.F64())
-    json_val = ty.type_to_json()
-    reconstructed = Type.type_from_json(json_val)
-    assert reconstructed == ty
-
-
-def test_type_pack_roundtrip():
-    """Pack a type value into Memory and read it back via to_json."""
+def test_type_value_memory_non_parametric():
+    """Pack and unpack Index() as a type value through Memory."""
     from dgen.type import Memory
 
-    ty = builtin.List(element_type=builtin.Index())
-    tl = ty.type_layout
-    mem = Memory.__new__(Memory)
-    mem.type = ty
-    mem.buffer = bytearray(tl.byte_size)
-    mem.origins = []
-    tl.from_json(mem.buffer, 0, ty.type_to_json(), mem.origins)
-    result = tl.to_json(mem.buffer, 0)
-    assert result == {
-        "tag": "builtin.List",
-        "element_type": {"tag": "builtin.Index"},
-    }
+    ty = builtin.Index()
+    metatype = builtin.TypeType(concrete=ty)
+    mem = Memory.from_json(metatype, {"tag": "builtin.Index"})
+    assert mem.to_json() == {"tag": "builtin.Index"}
 
 
-def test_type_value_memory_roundtrip_nested():
-    """Round-trip List<List<F64>> through Memory buffer."""
-    from dgen.type import Memory, Type
+def test_type_value_memory_parametric():
+    """Pack and unpack List<Index> as a type value through Memory."""
+    from dgen.type import Memory
+
+    metatype = builtin.TypeType(concrete=builtin.List(element_type=builtin.Index()))
+    data = {"tag": "builtin.List", "element_type": {"tag": "builtin.Index"}}
+    mem = Memory.from_json(metatype, data)
+    assert mem.to_json() == data
+
+
+def test_type_value_memory_pointer():
+    """Pack and unpack Pointer<F64> as a type value through Memory."""
+    from dgen.type import Memory
+
+    metatype = builtin.TypeType(concrete=builtin.Pointer(pointee=builtin.F64()))
+    data = {"tag": "builtin.Pointer", "pointee": {"tag": "builtin.F64"}}
+    mem = Memory.from_json(metatype, data)
+    assert mem.to_json() == data
+
+
+def test_type_value_memory_nil():
+    """Pack and unpack Nil as a type value through Memory."""
+    from dgen.type import Memory
+
+    metatype = builtin.TypeType(concrete=builtin.Nil())
+    mem = Memory.from_json(metatype, {"tag": "builtin.Nil"})
+    assert mem.to_json() == {"tag": "builtin.Nil"}
+
+
+def test_type_value_memory_nested():
+    """Pack and unpack List<List<F64>> as a type value through Memory."""
+    from dgen.type import Memory
 
     inner = builtin.List(element_type=builtin.F64())
-    ty = builtin.List(element_type=inner)
-    tl = ty.type_layout
-    mem = Memory.__new__(Memory)
-    mem.type = ty
-    mem.buffer = bytearray(tl.byte_size)
-    mem.origins = []
-    tl.from_json(mem.buffer, 0, ty.type_to_json(), mem.origins)
-    result = tl.to_json(mem.buffer, 0)
-    reconstructed = Type.type_from_json(result)
-    assert reconstructed == ty
-
-
-def test_type_to_json_pointer():
-    """Pointer<F64> serializes with nested type param."""
-    ty = builtin.Pointer(pointee=builtin.F64())
-    result = ty.type_to_json()
-    assert result == {
-        "tag": "builtin.Pointer",
-        "pointee": {"tag": "builtin.F64"},
+    metatype = builtin.TypeType(concrete=builtin.List(element_type=inner))
+    data = {
+        "tag": "builtin.List",
+        "element_type": {
+            "tag": "builtin.List",
+            "element_type": {"tag": "builtin.F64"},
+        },
     }
-
-
-def test_type_from_json_pointer_roundtrip():
-    """Round-trip Pointer<Index> through JSON."""
-    from dgen.type import Type
-
-    ty = builtin.Pointer(pointee=builtin.Index())
-    reconstructed = Type.type_from_json(ty.type_to_json())
-    assert reconstructed == ty
-
-
-def test_type_to_json_nil():
-    """Nil type (zero-size layout) serializes correctly."""
-    ty = builtin.Nil()
-    result = ty.type_to_json()
-    assert result == {"tag": "builtin.Nil"}
+    mem = Memory.from_json(metatype, data)
+    assert mem.to_json() == data
 
 
 def test_type_type_layout_non_parametric():
@@ -381,44 +328,3 @@ def test_type_layout_size_varies_by_params():
     simple = builtin.List(element_type=builtin.Index())
     nested = builtin.List(element_type=builtin.List(element_type=builtin.F64()))
     assert simple.type_layout.byte_size < nested.type_layout.byte_size
-
-
-def test_type_value_through_memory():
-    """Store Index() as a type value in Memory via TypeType."""
-    from dgen.type import Memory, Type
-
-    ty = builtin.Index()
-    metatype = builtin.TypeType(concrete=ty)
-    mem = Memory.from_json(metatype, ty.type_to_json())
-    result = mem.to_json()
-    assert result == {"tag": "builtin.Index"}
-    reconstructed = Type.type_from_json(result)
-    assert reconstructed == ty
-
-
-def test_type_value_through_memory_parametric():
-    """Store List<F64> as a type value in Memory via TypeType."""
-    from dgen.type import Memory, Type
-
-    ty = builtin.List(element_type=builtin.F64())
-    metatype = builtin.TypeType(concrete=ty)
-    mem = Memory.from_json(metatype, ty.type_to_json())
-    result = mem.to_json()
-    assert result == {
-        "tag": "builtin.List",
-        "element_type": {"tag": "builtin.F64"},
-    }
-    reconstructed = Type.type_from_json(result)
-    assert reconstructed == ty
-
-
-def test_type_value_through_memory_nested():
-    """Store List<List<Index>> as a type value in Memory via TypeType."""
-    from dgen.type import Memory, Type
-
-    inner = builtin.List(element_type=builtin.Index())
-    ty = builtin.List(element_type=inner)
-    metatype = builtin.TypeType(concrete=ty)
-    mem = Memory.from_json(metatype, ty.type_to_json())
-    reconstructed = Type.type_from_json(mem.to_json())
-    assert reconstructed == ty
