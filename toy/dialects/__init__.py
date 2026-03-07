@@ -21,18 +21,6 @@ from toy.dialects.toy import DimSizeOp, Tensor
 # ===----------------------------------------------------------------------=== #
 
 
-@classmethod  # type: ignore[misc]
-def _shape_for_value(cls: type[Shape], value: object) -> Shape:
-    if isinstance(value, Constant):
-        assert isinstance(value.type, Index)
-        return cls(rank=Index().constant(value.__constant__.to_json()))
-    assert isinstance(value, list)
-    return cls(rank=Index().constant(len(value)))
-
-
-Shape.for_value = _shape_for_value  # type: ignore[assignment]
-
-
 def shape_constant(dims: Sequence[int]) -> Constant:
     """Create a Constant[Shape] from a list of dims."""
     rank = Index().constant(len(dims))

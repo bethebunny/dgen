@@ -370,8 +370,8 @@ def test_string_constant_roundtrip():
 
 def test_string_constant_different_lengths():
     """String type is the same regardless of value length (FatPointer)."""
-    s3 = builtin.String.for_value("abc")
-    s5 = builtin.String.for_value("hello")
+    s3 = builtin.String()
+    s5 = builtin.String()
     assert s3 == s5  # Same type — length is in the value, not the type
     assert s3.__layout__.byte_size == 16  # FatPointer is always 16 bytes
 

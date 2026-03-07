@@ -2,7 +2,7 @@
 
 These complement the generated builtin dialect but live outside the dialect
 file to keep it purely generated.  Import triggers monkey-patches for
-FunctionOp.asm and List.for_value.
+FunctionOp.asm.
 """
 
 from __future__ import annotations
@@ -17,8 +17,6 @@ from dgen import layout
 from dgen.dialects.builtin import (
     FunctionOp,
     HasSingleBlock,
-    Index,
-    List,
     String,
     builtin,
 )
@@ -134,15 +132,6 @@ class Module:
 # ===----------------------------------------------------------------------=== #
 
 HasSingleBlock.__annotations__["__blocks__"] = ClassVar[tuple[str, ...]]
-
-
-@classmethod  # type: ignore[misc]
-def _list_for_value(cls: type[List], value: object) -> List:
-    assert isinstance(value, list)
-    return cls(element_type=Index())
-
-
-List.for_value = _list_for_value  # type: ignore[assignment]
 
 
 @property  # type: ignore[misc]

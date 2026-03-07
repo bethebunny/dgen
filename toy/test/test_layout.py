@@ -35,7 +35,7 @@ def test_fat_pointer():
 
 
 def test_string_layout():
-    s = builtin.String.for_value("hello")
+    s = builtin.String()
     assert isinstance(s.__layout__, FatPointer)
     assert s.__layout__.byte_size == 16
 

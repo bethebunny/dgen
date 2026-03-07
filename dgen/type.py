@@ -29,10 +29,6 @@ class Type:
 
         return Constant(type=self, value=Memory.from_value(self, value))
 
-    @classmethod
-    def for_value(cls, value: object) -> Type:
-        return cls()
-
     @property
     def type_layout(self) -> Record:
         """Layout for this type as a value (tag + params)."""

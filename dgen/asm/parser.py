@@ -11,7 +11,7 @@ import dataclasses
 import importlib
 from typing import Any
 
-from dgen import Block, Dialect, Op, Type, Value
+from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Function, Module
@@ -90,6 +90,24 @@ def parse_expr(parser: IRParser) -> object:
     return cls(**kwargs)
 
 
+def _wrap_constant(field_type: type[Type], raw_value: object) -> Constant:
+    """Wrap a raw Python value as a Constant of the given field type.
+
+    For non-parameterized types, constructs field_type() directly.
+    For parameterized types, derives parameters from the raw value.
+    """
+    if field_type.__params__:
+        # Build kwargs by wrapping each param as a constant from raw_value
+        kwargs: dict[str, object] = {}
+        for param_name, param_type in field_type.__params__:
+            # Infer param value: for "rank"-like params on array-valued types,
+            # the param is len(raw_value)
+            assert isinstance(raw_value, list)
+            kwargs[param_name] = param_type().constant(len(raw_value))
+        return field_type(**kwargs).constant(raw_value)
+    return field_type().constant(raw_value)
+
+
 def _expand_list_sugar(
     parser: IRParser, elements: list[object], element_type_cls: type[Type]
 ) -> Value:
@@ -116,7 +134,7 @@ def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, obj
     """Parse comma-separated exprs and map them to the type's declared fields.
 
     Iterates __params__. Raw Python values are wrapped via
-    field_type.for_value().constant(); values that are already Value or Type
+    field_type().constant(); values that are already Value or Type
     instances are kept as-is.
     """
     kwargs = {}
@@ -127,7 +145,7 @@ def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, obj
             parser.skip_whitespace()
         raw_value = parse_expr(parser)
         if not isinstance(raw_value, (Value, Type)):
-            raw_value = field_type.for_value(raw_value).constant(raw_value)
+            raw_value = _wrap_constant(field_type, raw_value)
         kwargs[name] = raw_value
         parser.skip_whitespace()
     return kwargs
@@ -154,13 +172,13 @@ def parse_op_fields(
             if not isinstance(raw_value, (Value, Type)):
                 if isinstance(raw_value, list):
                     raw_value = [
-                        f_type.for_value(v).constant(v)
+                        _wrap_constant(f_type, v)
                         if not isinstance(v, (Value, Type))
                         else v
                         for v in raw_value
                     ]
                 else:
-                    raw_value = f_type.for_value(raw_value).constant(raw_value)
+                    raw_value = _wrap_constant(f_type, raw_value)
             kwargs[f_name] = raw_value
             parser.skip_whitespace()
         parser.expect(">")
