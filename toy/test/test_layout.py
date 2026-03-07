@@ -381,3 +381,44 @@ def test_type_layout_size_varies_by_params():
     simple = builtin.List(element_type=builtin.Index())
     nested = builtin.List(element_type=builtin.List(element_type=builtin.F64()))
     assert simple.type_layout.byte_size < nested.type_layout.byte_size
+
+
+def test_type_value_through_memory():
+    """Store Index() as a type value in Memory via TypeType."""
+    from dgen.type import Memory, Type
+
+    ty = builtin.Index()
+    metatype = builtin.TypeType(concrete=ty)
+    mem = Memory.from_json(metatype, ty.type_to_json())
+    result = mem.to_json()
+    assert result == {"tag": "builtin.Index"}
+    reconstructed = Type.type_from_json(result)
+    assert reconstructed == ty
+
+
+def test_type_value_through_memory_parametric():
+    """Store List<F64> as a type value in Memory via TypeType."""
+    from dgen.type import Memory, Type
+
+    ty = builtin.List(element_type=builtin.F64())
+    metatype = builtin.TypeType(concrete=ty)
+    mem = Memory.from_json(metatype, ty.type_to_json())
+    result = mem.to_json()
+    assert result == {
+        "tag": "builtin.List",
+        "element_type": {"tag": "builtin.F64"},
+    }
+    reconstructed = Type.type_from_json(result)
+    assert reconstructed == ty
+
+
+def test_type_value_through_memory_nested():
+    """Store List<List<Index>> as a type value in Memory via TypeType."""
+    from dgen.type import Memory, Type
+
+    inner = builtin.List(element_type=builtin.Index())
+    ty = builtin.List(element_type=inner)
+    metatype = builtin.TypeType(concrete=ty)
+    mem = Memory.from_json(metatype, ty.type_to_json())
+    reconstructed = Type.type_from_json(mem.to_json())
+    assert reconstructed == ty
