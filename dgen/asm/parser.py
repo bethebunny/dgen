@@ -144,7 +144,7 @@ def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, obj
             parser.expect(",")
             parser.skip_whitespace()
         raw_value = parse_expr(parser)
-        if not isinstance(raw_value, (Value, Type)):
+        if not isinstance(raw_value, Value):
             raw_value = _wrap_constant(field_type, raw_value)
         kwargs[name] = raw_value
         parser.skip_whitespace()
@@ -169,12 +169,10 @@ def parse_op_fields(
                 parser.expect(",")
                 parser.skip_whitespace()
             raw_value = parse_expr(parser)
-            if not isinstance(raw_value, (Value, Type)):
+            if not isinstance(raw_value, Value):
                 if isinstance(raw_value, list):
                     raw_value = [
-                        _wrap_constant(f_type, v)
-                        if not isinstance(v, (Value, Type))
-                        else v
+                        _wrap_constant(f_type, v) if not isinstance(v, Value) else v
                         for v in raw_value
                     ]
                 else:
