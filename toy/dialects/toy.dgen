@@ -5,6 +5,9 @@ type Tensor<shape: affine.Shape, dtype: Type = F64>:
     # TODO: layout requires math.prod of shape dims, not yet expressible in .dgen.
     # Temporary workaround: __layout__ monkey-patched in toy/dialects/__init__.py
 
+    method unpack_shape(self) -> list:
+        return self.shape.__constant__.to_json()
+
 type InferredShapeTensor<dtype: Type = F64>:
     data: Nil
 

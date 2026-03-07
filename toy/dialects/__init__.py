@@ -32,14 +32,6 @@ def shape_constant(dims: Sequence[int]) -> Constant:
 # ===----------------------------------------------------------------------=== #
 
 
-def _tensor_unpack_shape(self: Tensor) -> list[int]:
-    """Extract concrete shape dimensions as a list of ints."""
-    return self.shape.__constant__.to_json()
-
-
-Tensor.unpack_shape = _tensor_unpack_shape  # type: ignore[assignment]
-
-
 @property  # type: ignore[misc]
 def _tensor_layout(self: Tensor) -> Layout:
     assert self.shape.ready

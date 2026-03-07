@@ -21,6 +21,9 @@ class Tensor(Type):
         ("dtype", Type),
     )
 
+    def unpack_shape(self) -> list[int]:
+        return self.shape.__constant__.to_json()
+
 
 @toy.type("InferredShapeTensor")
 @dataclass(frozen=True)
