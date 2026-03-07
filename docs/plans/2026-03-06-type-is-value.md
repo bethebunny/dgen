@@ -2,15 +2,19 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Make `Type` a subclass of `Value[TypeType]`, eliminating the dual bare-Type/Constant[TypeType] representation and all associated magic.
+**Goal:** Make `Type` a subclass of `Value`, eliminating the dual bare-Type/Constant[TypeType] representation and all associated magic.
 
-**Architecture:** Merge `value.py` into `type.py` to resolve the circular dependency, then make `Type` extend `Value`. Remove `__init_subclass__`/`__post_init__`/`as_value`/`_type_to_json` and all `isinstance(TypeType)` special cases. Update the generator to emit `TypeType` in `__params__` for type-kinded params. Regenerate all dialect files.
+**Architecture:** Merge `value.py` into `type.py` to resolve the circular dependency. Make `Value` a plain class (not a dataclass) so that both frozen-dataclass Types and non-frozen-dataclass Ops/Constants can inherit from it. Make `Type(Value)` with lazy `.type` and `.__constant__` cached properties. Remove all wrapping magic and isinstance special cases. Update the generator to emit `TypeType` in `__params__`.
 
 **Tech Stack:** Python, pytest, ruff, jj
 
 **Design doc:** `docs/plans/2026-03-06-type-is-value-design.md`
 
 **Baseline:** 356 passed, 2 xfailed. Run `python -m pytest . -q` after every change.
+
+**Critical constraint — frozen/non-frozen dataclass inheritance:**
+
+Type subclasses (Index, F64, etc.) are `@dataclass(frozen=True)`. Constant and Op are `@dataclass(eq=False, kw_only=True)` (non-frozen). Python forbids inheriting a frozen dataclass from a non-frozen one. Therefore `Value` **cannot be a dataclass** — it must be a plain class. Each branch of the hierarchy declares its own dataclass fields independently.
 
 **Important:**
 - Use `jj` not `git` for VCS (see CLAUDE.md)
@@ -38,34 +42,32 @@
 
 **Step 1: Move Value and Constant into type.py**
 
-Read `dgen/value.py` (72 lines). Move the `Value` class and `Constant` class into `dgen/type.py`, placing them between the `Type` class and `TypeType`. The file structure should be:
+Read `dgen/value.py`. Move the `Value` class and `Constant` class into `dgen/type.py`. The file structure should be:
 
-1. Layout imports
-2. `Value` class (currently in value.py)
-3. `Type(Value)` — **not yet**, just `Type` for now (we change the inheritance in Task 2)
-4. `Constant(Value)` class (currently in value.py)
+1. Layout imports, TypeVar, etc.
+2. `Value` class
+3. `Type` class (no inheritance change yet)
+4. `Constant(Value)` class
 5. `TypeType(Type)`
 6. `Memory`
 
-Move the `Value` class ABOVE `Type` in the file (since `Type` will inherit from it in Task 2). Move `Constant` after `Type` but before `TypeType`.
+Place `Value` ABOVE `Type` (since `Type` will inherit from it in Task 2). Place `Constant` after `Type` but before `TypeType`.
 
-Remove all imports that `value.py` had from `type.py` (they're now in the same file). Keep the `import dgen` for the `dgen.Block` forward reference in `Value.blocks`. Remove the `TYPE_CHECKING` import of `Layout` from value.py — it can use `Layout` directly since type.py already imports it.
+Remove all imports that `value.py` had from `type.py` (they're now in the same file). Keep `import dgen` for the `dgen.Block` forward reference in `Value.blocks`. Remove the `TYPE_CHECKING` import of `Layout` from the old value.py code — `Layout` is already imported at the top of type.py. Remove the duplicate `T = TypeVar("T", bound=Type)`.
 
-Remove `value.py`'s `T = TypeVar("T", bound=Type)` since type.py already has this.
+Remove the `TYPE_CHECKING` guard `from .value import Constant` in the old type.py code — `Constant` is now in the same file.
 
 **Step 2: Update all imports**
 
 Every file that does `from .value import ...` or `from dgen.value import ...` needs updating to import from `.type` or `dgen.type` instead.
 
-Files to update (use grep to verify, these are the known sites):
+Files to update (verify with `grep -r "from.*value import" dgen/ toy/`):
 
-- `dgen/__init__.py:5` — change `from .value import Constant, Value` to `from .type import Constant, Value`
-- `dgen/op.py:9` — change `from .value import Constant, Value` to `from .type import Constant, Value`
-- `dgen/block.py:9` — change `from .value import Value` to `from .type import Value`
-- `dgen/staging.py:17` — change `from dgen.value import Constant` to `from dgen.type import Constant`
-- `dgen/asm/formatting.py:16` — change `from ..value import Constant, Value` to `from ..type import Constant, Value`
-
-Remove the `TYPE_CHECKING` guard around `from .value import Constant` in the old type.py — `Constant` is now in the same file.
+- `dgen/__init__.py` — `from .value import Constant, Value` → `from .type import Constant, Value`
+- `dgen/op.py` — `from .value import Constant, Value` → `from .type import Constant, Value`
+- `dgen/block.py` — `from .value import Value` → `from .type import Value`
+- `dgen/staging.py` — `from dgen.value import Constant` → `from dgen.type import Constant`
+- `dgen/asm/formatting.py` — `from ..value import Constant, Value` → `from ..type import Constant, Value`
 
 **Step 3: Run tests**
 
@@ -84,126 +86,29 @@ jj commit -m "refactor: merge value.py into type.py"
 
 ---
 
-### Task 2: Make Type extend Value
+### Task 2: Make Value a plain class, Type extend Value, remove magic
 
-The core change. `Type` inherits from `Value["TypeType"]`. Add lazy `.type` and `.__constant__` properties. Change `Value.ready` and `Constant.ready` from `ClassVar` to `@property`.
+This is the core change. Three things happen atomically (they can't be split without a broken intermediate state):
+
+1. `Value` becomes a plain class (not a dataclass)
+2. `Type` inherits from `Value`, with lazy `.type` and `.__constant__`
+3. All wrapping magic (`__init_subclass__`, `__post_init__`, `as_value`, `_type_to_json`) and all `isinstance(TypeType)` special cases are removed
 
 **Files:**
-- Modify: `dgen/type.py`
+- Modify: `dgen/type.py` — all the changes below
+- Modify: `dgen/op.py` — add `name` field to `Op`
+- Modify: `dgen/block.py` — add `name` field to `BlockArgument`
 
-**Step 1: Change Value.ready and Constant.ready to properties**
+**Step 1: Make Value a plain class**
 
-In the `Value` class, change:
-```python
-ready: ClassVar[bool] = False
-```
-to:
-```python
-@property
-def ready(self) -> bool:
-    return False
-```
-
-In the `Constant` class, change:
-```python
-ready: ClassVar[bool] = True
-```
-to:
-```python
-@property
-def ready(self) -> bool:
-    return True
-```
-
-Remove `ClassVar` from the typing imports in type.py if it's no longer used elsewhere. (Check first — `__params__` uses `ClassVar`.)
-
-**Step 2: Make Type inherit from Value**
-
-Change the class declaration from:
-```python
-class Type:
-```
-to:
-```python
-class Type(Value["TypeType"]):
-```
-
-Add `name: None = None` as a field on `Type` (types are never named SSA values).
-
-Add these properties to `Type`:
+Currently `Value` is `@dataclass(eq=False, kw_only=True)` with fields `name: str | None = None` and `type: T`. Change it to a plain class:
 
 ```python
-@cached_property
-def type(self) -> TypeType:
-    return TypeType(concrete=self)
+class Value(Generic[T]):
+    """Base class for SSA values."""
 
-@property
-def ready(self) -> bool:
-    return all(val.ready for _, val in self.parameters)
-
-@cached_property
-def __constant__(self) -> Memory[TypeType]:
-    tt = self.type
-    data: dict[str, object] = {"tag": self._asm_tag}
-    for name, _ in self.__params__:
-        data[name] = getattr(self, name).__constant__.to_json()
-    return Memory.from_json(tt, data)
-```
-
-Add a helper property for the tag:
-
-```python
-@cached_property
-def _asm_tag(self) -> str:
-    cls = type(self)
-    dialect = getattr(cls, "dialect", None)
-    prefix = (
-        f"{dialect.name}."
-        if dialect is not None and dialect.name != "builtin"
-        else ""
-    )
-    return f"{prefix}{getattr(cls, '_asm_name', type(self).__name__)}"
-```
-
-Add `from functools import cached_property` at the top of the file.
-
-**Step 3: Fix TypeType**
-
-`TypeType` inherits from `Type` which now inherits from `Value`. TypeType's `.type` would be `TypeType(concrete=TypeType(...))` — infinite recursion. Override `.type` on TypeType to break the cycle:
-
-```python
-@dataclass(frozen=True)
-class TypeType(Type):
-    concrete: Type
-    __params__: ClassVar[Fields] = (("concrete", Type),)
-
-    @property
-    def __layout__(self) -> Layout:
-        return self.concrete.type_layout
-
-    @cached_property
-    def type(self) -> TypeType:
-        return self
-```
-
-Wait — `TypeType` is a frozen dataclass, and `Type` becoming a `Value` subclass means `Value.__init__` will want to set fields. Since `Value` is a dataclass with `name` and `type` fields, and `Type` is also a dataclass... this needs care.
-
-Actually, `Type` subclasses (like `Index`, `F64`, etc.) are `@dataclass(frozen=True)`. `Value` is `@dataclass(eq=False, kw_only=True)`. When `Type` extends `Value`, the dataclass inheritance should work: `Type`'s dataclass fields include `Value`'s fields (`name`, `type`) plus its own. But `type` is now a `cached_property`, not a dataclass field, so we need to handle this.
-
-The simplest approach: `Type` is NOT a dataclass itself. It inherits from `Value` (which is a dataclass) but doesn't use `@dataclass`. Its subclasses (`Index`, `F64`, etc.) ARE dataclasses. `Type` overrides `name` as a class attribute `None`, and provides `type` and `__constant__` as cached properties.
-
-Since `Value` is `@dataclass(eq=False, kw_only=True)` with fields `name: str | None = None` and `type: T`, and `Type` provides `type` as a cached_property, we need `Type.__init__` to NOT require `type` as a constructor argument. Remove `type` from `Value`'s dataclass fields — make it a property on `Value` that raises `NotImplementedError`, overridden by `Constant` (which stores it) and `Type` (cached_property).
-
-**Revised approach for Value:**
-
-```python
-@dataclass(eq=False, kw_only=True)
-class Value:
     name: str | None = None
-
-    @property
-    def type(self) -> Type:
-        raise NotImplementedError
+    type: T
 
     @property
     def ready(self) -> bool:
@@ -222,47 +127,273 @@ class Value:
         raise NotImplementedError
 ```
 
-`Constant` stores `.type` and `.value` as dataclass fields:
+`name` is a class-level default (not a descriptor). `type` is an annotation only — each subclass provides it differently:
+- `Type`: `@cached_property` returning `TypeType(concrete=self)`
+- `Constant`: dataclass field
+- `Op` subclasses: dataclass field
+- `BlockArgument`: dataclass field
+
+Remove the `@dataclass(eq=False, kw_only=True)` decorator from Value.
+
+**Step 2: Add `name` to Op and BlockArgument**
+
+Since `name` is no longer a dataclass field inherited from Value, subclasses that need it as a constructor arg must declare it themselves.
+
+In `dgen/op.py`, add `name: str | None = None` to `Op`:
+
+```python
+@dataclass(eq=False)
+class Op(Value):
+    name: str | None = None
+    # ... rest unchanged
+```
+
+In `dgen/block.py`, add `name: str | None = None` to `BlockArgument`:
 
 ```python
 @dataclass(eq=False, kw_only=True)
-class Constant(Value):
+class BlockArgument(Value):
+    name: str | None = None
     type: Type
-    value: Memory
+```
+
+`Constant` does NOT need `name` — standalone Constants are never named. `ConstantOp(Op, Constant)` gets `name` from `Op`.
+
+**Step 3: Update Constant**
+
+Add `type` as a dataclass field (it was inherited from Value-as-dataclass, now must be explicit). Change `ready` from `ClassVar` to `@property`. Remove the `isinstance(TypeType)` special cases from `__eq__`, `__hash__`, and `__layout__`:
+
+```python
+@dataclass(eq=False, kw_only=True)
+class Constant(Value[T]):
+    type: T
+    value: Memory[T]
 
     @property
     def ready(self) -> bool:
         return True
 
     @property
-    def __constant__(self) -> Memory:
+    def __constant__(self) -> Memory[T]:
         return self.value
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Constant):
+            return NotImplemented
+        if self.type != other.type:
+            return False
+        return self.value == other.value
+
+    def __hash__(self) -> int:
+        return hash((type(self), self.type, self.value))
 ```
 
-`Type` provides `.type` as a cached_property:
+The `__layout__` property is removed entirely. It existed to make `self.element_type.__layout__` work when `element_type` was a `Constant[TypeType]` wrapping a bare Type. After this change, type-kinded params are bare `Type` instances which have `__layout__` directly.
+
+**Step 4: Make Type extend Value**
+
+Add `from functools import cached_property` at the top of the file.
+
+Change `Type` to inherit from `Value`:
 
 ```python
-class Type(Value):
+class Type(Value["TypeType"]):
+    __layout__: Layout
+    __params__: ClassVar[Fields] = ()
+    name: None = None
+
+    def constant(self, value: object) -> Constant[Self]:
+        return Constant(type=self, value=Memory.from_value(self, value))
+
     @cached_property
     def type(self) -> TypeType:
         return TypeType(concrete=self)
-    # ...
+
+    @property
+    def ready(self) -> bool:
+        return all(val.ready for _, val in self.parameters)
+
+    @cached_property
+    def __constant__(self) -> Memory[TypeType]:
+        tt = self.type
+        data: dict[str, object] = {"tag": self._asm_tag}
+        for name, val in self.parameters:
+            data[name] = val.__constant__.to_json()
+        return Memory.from_json(tt, data)
+
+    @cached_property
+    def _asm_tag(self) -> str:
+        cls = type(self)
+        dialect = getattr(cls, "dialect", None)
+        prefix = (
+            f"{dialect.name}."
+            if dialect is not None and dialect.name != "builtin"
+            else ""
+        )
+        return f"{prefix}{getattr(cls, '_asm_name', type(self).__name__)}"
+
+    @property
+    def type_layout(self) -> Record:
+        fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
+        for name, val in self.parameters:
+            if isinstance(val, Type):
+                fields.append((name, val.type_layout))
+            else:
+                fields.append((name, val.__constant__.type.__layout__))
+        return Record(fields)
+
+    @property
+    def parameters(self) -> Iterator[tuple[str, Type]]:
+        for name, field in self.__params__:
+            yield name, getattr(self, name)
 ```
 
-This way, constructing `F64()` doesn't require passing `type=` — the `type` comes from the cached_property.
+Note on `type_layout`: the `isinstance(val, Type)` check stays for now — it's not a TypeType special case, it's distinguishing type-kinded params (use `type_layout` recursively) from value-kinded params (use the value's type's `__layout__`). This is correct and clear. The dead branch that got removed was the one in `_type_to_json`, which is itself deleted.
+
+**Step 5: Delete removed methods**
+
+Delete from Type:
+- `as_value()` — Type IS a value now
+- `_type_to_json()` — replaced by `__constant__`
+- `__init_subclass__()` — no more auto-wrapping
+
+The `constant()` method stays but loses its function-level import (Constant is in the same file now).
+
+**Step 6: Fix TypeType**
+
+Override `.type` on TypeType to break the infinite recursion (`TypeType.type` would otherwise create `TypeType(concrete=TypeType(...))` endlessly):
+
+```python
+@dataclass(frozen=True)
+class TypeType(Type):
+    concrete: Type
+    __params__: ClassVar[Fields] = (("concrete", Type),)
+
+    @property
+    def __layout__(self) -> Layout:
+        return self.concrete.type_layout
+
+    @cached_property
+    def type(self) -> TypeType:
+        return self
+```
+
+**Step 7: Run tests, fix failures iteratively**
+
+Run: `python -m pytest . -q`
+
+Expected failure areas:
+- `Op.ready` uses `isinstance(getattr(self, name), Constant)` — this should still work since type-kinded params are now bare Types (not Constants), but verify the semantics are correct. A bare Type is `.ready` if all its params are ready. `Op.ready` checks if params are Constants — but now Type params aren't Constants. `Op.ready` should check `param.ready` instead. Fix in `dgen/op.py`:
+
+```python
+@property
+def ready(self) -> bool:
+    return all(
+        getattr(self, name).ready for name, _ in self.__params__
+    )
+```
+
+- Tests that construct `Constant[TypeType]` manually (e.g. via `as_value()`) — these should be updated or removed since `as_value` no longer exists.
+
+**Step 8: Run linting**
+
+Run: `ruff format && ruff check --fix`
+
+**Step 9: Commit**
+
+```bash
+jj commit -m "feat: make Type extend Value — types are values
+
+Value becomes a plain class (not dataclass) to allow both frozen
+Type subclasses and non-frozen Op/Constant subclasses. Type gets
+lazy .type and .__constant__ cached properties.
+
+Removes __init_subclass__, __post_init__, as_value, _type_to_json,
+and all isinstance(TypeType) special cases in Constant."
+```
+
+---
+
+### Task 3: Update formatter and parser
+
+Now that `Type` IS a `Value`, the formatter and parser need adjusting.
+
+**Files:**
+- Modify: `dgen/asm/formatting.py` — reorder checks, remove TypeType special case
+- Modify: `dgen/asm/parser.py` — simplify isinstance checks
+- Modify: `dgen/module.py` — remove TypeType dialect registration
+
+**Step 1: Fix format_expr ordering**
+
+Since `Type` is now a `Value` subclass, the `isinstance(value, Type)` check must come BEFORE `isinstance(value, Value)`, otherwise Types would be formatted as `%name` instead of as type literals.
+
+Also remove the `isinstance(value.type, TypeType)` branch — there are no more `Constant[TypeType]` instances.
+
+New order in `format_expr`:
+
+```python
+def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
+    if isinstance(value, Nil):
+        return "()"
+    if isinstance(value, PackOp):
+        return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
+    if isinstance(value, Type):
+        if getattr(type(value), "_asm_name", None) is not None:
+            return type_asm(value, tracker)
+        asm: str = getattr(value, "asm")
+        return asm
+    if isinstance(value, Constant) and not isinstance(value, Op):
+        return format_expr(value.__constant__.to_json(), tracker)
+    if isinstance(value, Value):
+        if tracker is not None:
+            return f"%{tracker.track_name(value)}"
+        name = value.name if value.name is not None else "?"
+        return f"%{name}"
+    if isinstance(value, Memory):
+        return format_expr(value.to_json(), tracker)
+    if isinstance(value, list):
+        return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
+    if isinstance(value, float):
+        return format_float(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, bytes):
+        return f'"{value.decode("utf-8")}"'
+    if isinstance(value, str):
+        return f'"{value}"'
+    return str(value)
+```
+
+Key changes:
+- `Type` check moved from bottom (line 116) to before `Constant` and `Value`
+- `Nil` check stays first (Nil is a Type, but formats as `()` not `Nil`)
+- Removed `if isinstance(value.type, TypeType)` branch from the Constant case
+
+Update the imports at the top — remove `TypeType` if it's no longer needed. `Type` is imported from `..type` (it was already there).
+
+**Step 2: Simplify parser isinstance checks**
+
+In `dgen/asm/parser.py`, `isinstance(raw_value, (Value, Type))` can become `isinstance(raw_value, Value)` since `Type` is now a `Value` subclass.
+
+Three sites to change:
+- Line 147: `if not isinstance(raw_value, (Value, Type)):` → `if not isinstance(raw_value, Value):`
+- Line 172: `if not isinstance(raw_value, (Value, Type)):` → `if not isinstance(raw_value, Value):`
+- Line 176: `if not isinstance(v, (Value, Type))` → `if not isinstance(v, Value)`
+
+**Step 3: Remove TypeType dialect registration**
+
+In `dgen/module.py`, delete:
+```python
+builtin.type("TypeType")(TypeType)
+```
+And remove `TypeType` from the import on line 21.
+
+TypeType is a framework concept, not a dialect type. It doesn't need to be in the dialect's type registry.
 
 **Step 4: Run tests**
 
 Run: `python -m pytest . -q`
-
-Many tests will likely fail at this point because:
-- `Op` inherits from `Value` and may expect `type` as a constructor arg
-- Various places check `isinstance(x, Constant)` or access `.ready` as a class attribute
-
-Fix failures iteratively. The key areas to watch:
-- `Op` subclasses pass `type=...` as a constructor kwarg — this should still work since `Op` can declare `type` as a dataclass field that overrides the property
-- `BlockArgument` in `block.py` — check its `type` field
-- Tests that check `Value.ready` or `Constant.ready` as class attributes
+Expected: 356 passed, 2 xfailed
 
 **Step 5: Run linting**
 
@@ -271,142 +402,22 @@ Run: `ruff format && ruff check --fix`
 **Step 6: Commit**
 
 ```bash
-jj commit -m "feat: make Type extend Value — types are values"
-```
-
----
-
-### Task 3: Remove magic and special cases
-
-Now that `Type` IS a `Value[TypeType]`, remove all the machinery that existed to bridge the two representations.
-
-**Files:**
-- Modify: `dgen/type.py` — remove `as_value`, `_type_to_json`, `__init_subclass__`/`__post_init__`, dead branches in `type_layout`
-- Modify: `dgen/type.py` (Constant class) — remove `__layout__`, `__eq__`, `__hash__` special cases for TypeType
-- Modify: `dgen/asm/formatting.py` — remove TypeType special case in `format_expr`
-- Modify: `dgen/module.py` — remove `builtin.type("TypeType")(TypeType)` registration
-
-**Step 1: Remove from type.py**
-
-Delete these methods from `Type`:
-- `as_value()` (lines 33-38)
-- `_type_to_json()` (lines 40-57)
-- `__init_subclass__()` (lines 59-79)
-
-Simplify `type_layout` — remove the `isinstance(val, Type)` branch. After this change, all params are Values, so the unified path works:
-
-```python
-@property
-def type_layout(self) -> Record:
-    fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
-    for _, val in self.parameters:
-        fields.append((name, val.__constant__.type.__layout__))
-    return Record(fields)
-```
-
-Wait — for type-kinded params, `val` is a `Type` instance. `val.__constant__` returns `Memory[TypeType]`. `val.__constant__.type` is `TypeType(concrete=val)`. `TypeType.__layout__` is `val.type_layout`. So `val.__constant__.type.__layout__` gives `val.type_layout`. This is correct — same result as the old `isinstance` branch.
-
-**Step 2: Remove Constant special cases**
-
-Delete `Constant.__layout__` property entirely (lines 47-56 in value section). Type-kinded params are now `Type` instances which have `.__layout__` directly (the data layout from the Type class hierarchy).
-
-Delete the `isinstance(self.type, TypeType)` branches from `Constant.__eq__` and `Constant.__hash__`:
-
-```python
-def __eq__(self, other: object) -> bool:
-    if not isinstance(other, Constant):
-        return NotImplemented
-    if self.type != other.type:
-        return False
-    return self.value == other.value
-
-def __hash__(self) -> int:
-    return hash((type(self), self.type, self.value))
-```
-
-**Step 3: Remove format_expr special case**
-
-In `dgen/asm/formatting.py`, the block at lines 95-98:
-
-```python
-if isinstance(value, Constant) and not isinstance(value, Op):
-    if isinstance(value.type, TypeType):
-        return format_expr(value.type.concrete, tracker)
-    return format_expr(value.__constant__.to_json(), tracker)
-```
-
-Remove the TypeType branch. `Type` instances are now `Value` instances and will be caught by the `isinstance(value, Type)` check later in the function (line 116). But we need to make sure `Type` is checked BEFORE `Value` since `Type` is now a subclass of `Value`. The existing order already has `Constant` before `Value` before `Type` — we need `Type` before the generic `Value` branch.
-
-Reorder the checks in `format_expr`:
-1. `Nil` check
-2. `PackOp` check
-3. `Constant and not Op` — format via `__constant__.to_json()` (no TypeType branch)
-4. `Type` — format as type (move this BEFORE the `Value` check)
-5. `Value` — format as `%name`
-6. `Memory`, `list`, primitives...
-
-Actually, since `Type` is now a `Value`, and `Type` comes after `Value` in the current order, Type instances would be caught by the `Value` branch and formatted as `%name` — wrong. The `Type` check MUST come before the generic `Value` check.
-
-But also: a `Type` that is `.ready` is effectively a constant, and a `Type` that is not ready (like `Array<%0, 4>`) would need to be formatted as... what? Currently non-ready types don't appear as standalone values in the IR. For now, always format Type as a type literal.
-
-Revised order:
-```python
-if isinstance(value, Nil):
-    return "()"
-if isinstance(value, PackOp):
-    return "[" + ... + "]"
-if isinstance(value, Type):
-    # Types always format as type literals
-    if getattr(type(value), "_asm_name", None) is not None:
-        return type_asm(value, tracker)
-    asm: str = getattr(value, "asm")
-    return asm
-if isinstance(value, Constant) and not isinstance(value, Op):
-    return format_expr(value.__constant__.to_json(), tracker)
-if isinstance(value, Value):
-    ...
-```
-
-Note: `Nil` is a `Type`, so the `Nil` check must stay before the `Type` check.
-
-**Step 4: Remove TypeType dialect registration**
-
-In `dgen/module.py`, delete line 132:
-```python
-builtin.type("TypeType")(TypeType)
-```
-
-And remove `TypeType` from the import on line 21.
-
-**Step 5: Run tests**
-
-Run: `python -m pytest . -q`
-Expected: 356 passed, 2 xfailed
-
-**Step 6: Run linting**
-
-Run: `ruff format && ruff check --fix`
-
-**Step 7: Commit**
-
-```bash
-jj commit -m "refactor: remove TypeType magic — types are naturally values"
+jj commit -m "refactor: update formatter/parser for Type-is-Value"
 ```
 
 ---
 
 ### Task 4: Update __params__ to use TypeType for type-kinded params
 
-Type-kinded params should declare `TypeType` as the field type in `__params__`, not `Type`. This affects the generator and all generated files.
+Type-kinded params should declare `TypeType` as the field type in `__params__`, not bare `Type`. This makes the type system consistent: `__params__` entries say what kind of value goes in the slot.
 
 **Files:**
-- Modify: `dgen/gen/python.py:97-109,259-261,267-271` — change generator output for type-kinded params
+- Modify: `dgen/gen/python.py` — change generator output for `__params__` entries (NOT `__operands__`)
 - Regenerate: all 4 dialect `.py` files
-- Modify: `dgen/type.py` — update `TypeType.__params__` from `Type` to `TypeType`
 
 **Step 1: Update the generator**
 
-In `dgen/gen/python.py`, change `_resolve_type_ref`:
+In `dgen/gen/python.py`, change `_resolve_type_ref` (line 97):
 ```python
 def _resolve_type_ref(ref: TypeRef) -> str:
     if ref.name == "Type":
@@ -414,20 +425,61 @@ def _resolve_type_ref(ref: TypeRef) -> str:
     return ref.name
 ```
 
-Change `_annotation_for_param`:
+This affects `__params__` tuples. It also affects `__operands__` tuples (line 351) — but operands use a different code path. Check: in `_generate`, the `__operands__` tuple is built at line 349-354:
 ```python
-def _annotation_for_param(param: ParamDecl) -> str:
-    if param.variadic:
-        inner = _resolve_type_ref(param.type)
-        return f"list[Value[{inner}]]"
-    if param.type.name == "Type":
-        return "Type"
-    return f"Value[{param.type.name}]"
+parts = [
+    f'("{op.name}", {_resolve_type_ref(op.type) if op.type is not None else "Type"})'
+    for op in od.operands
+]
 ```
 
-The annotation stays `Type` (since `Type` IS `Value[TypeType]` now), but `__params__` entries use `TypeType`.
+This uses `_resolve_type_ref` too. Currently operands with `Type` as the field type (like `ReturnOp.value: Type` and `PackOp.values: Type`) map to `Type` in `__operands__`. These should stay as `Type` — operands are runtime values of any type, not specifically type-kinded values.
 
-**Step 2: Regenerate all dialect files**
+Split `_resolve_type_ref` into two: one for params, one for operands:
+```python
+def _resolve_param_type_ref(ref: TypeRef) -> str:
+    """For __params__: Type → TypeType (type-kinded params hold type values)."""
+    if ref.name == "Type":
+        return "TypeType"
+    return ref.name
+
+def _resolve_operand_type_ref(ref: TypeRef) -> str:
+    """For __operands__: Type stays Type (operands are values of any type)."""
+    return ref.name
+```
+
+Update call sites:
+- `__params__` tuple (line 260, 346): use `_resolve_param_type_ref`
+- `__operands__` tuple (line 351): use `_resolve_operand_type_ref`
+- `_annotation_for_param` (line 103): use `_resolve_param_type_ref` for the variadic inner type
+
+The `_annotation_for_param` function (line 103) currently returns `"Type"` for type-kinded params. This stays correct — `Type` IS `Value[TypeType]`, so the annotation `element_type: Type` is the right user-facing type.
+
+The generator's `from dgen import ...` line needs `TypeType` added when any type has type-kinded params. Check if any generated file references `TypeType` in its `__params__` — if so, add it to the import. The simplest approach: always include `TypeType` in the dgen import when there are any parameterized types with Type-kinded params.
+
+Add detection logic:
+```python
+needs_typetype = any(
+    p.type.name == "Type"
+    for td in ast.types
+    for p in td.params
+) or any(
+    p.type.name == "Type"
+    for od in ast.ops
+    for p in od.params
+)
+
+if needs_typetype:
+    dgen_names.append("TypeType")
+```
+
+**Step 2: Update TypeType.__params__**
+
+In `dgen/type.py`, TypeType's `__params__` is `(("concrete", Type),)`. Should this change to `(("concrete", TypeType),)`?
+
+No — leave it as `Type`. TypeType's `concrete` param genuinely accepts any `Type`, and the class name `TypeType` isn't available during its own class body (self-referential). More importantly, `Type` here means "the field holds a Type instance", which is semantically correct.
+
+**Step 3: Regenerate all dialect files**
 
 ```bash
 python -m dgen.gen dgen/dialects/builtin.dgen > dgen/dialects/builtin.py
@@ -436,98 +488,115 @@ python -m dgen.gen toy/dialects/affine.dgen > toy/dialects/affine.py
 python -m dgen.gen toy/dialects/toy.dgen -I affine=toy.dialects.affine > toy/dialects/toy.py
 ```
 
-Verify the generated files import `TypeType` where needed. The generator's `from dgen import ...` line may need `TypeType` added — check if the generated `__params__` tuples reference `TypeType`.
+Verify the diff: `__params__` tuples should now show `TypeType` where they previously showed `Type` for type-kinded params. Annotations should be unchanged.
 
-**Step 3: Update TypeType.__params__**
-
-In `dgen/type.py`, change TypeType's `__params__`:
-```python
-__params__: ClassVar[Fields] = (("concrete", TypeType),)
-```
-
-Wait — this is self-referential (TypeType not yet defined when the class body executes). Since `TypeType` is the last thing in the type hierarchy, this should work as long as the class is defined by the time `__params__` is accessed at runtime (not at class definition time). With `from __future__ import annotations` this works for annotations, but `__params__` is a runtime value. Use a string and resolve later, or just leave it as `Type` since TypeType IS a Type. Actually — `TypeType`'s concrete param is genuinely any `Type`, and `Type` is a `Value[TypeType]`, so `TypeType` is correct in __params__. But we need the name to be available. Since `TypeType` is defined in the same file and `__params__` is a class body statement... `TypeType` isn't available during its own class body. Leave it as `Type` — this is the one place where `Type` in `__params__` is correct, since TypeType's param genuinely accepts any Type.
-
-**Step 4: Update parser isinstance checks**
-
-In `dgen/asm/parser.py`, simplify `isinstance(raw_value, (Value, Type))` to `isinstance(raw_value, Value)` since `Type` is now a `Value`. Affected lines: 147, 172, 176.
-
-**Step 5: Run tests**
+**Step 4: Run tests**
 
 Run: `python -m pytest . -q`
 Expected: 356 passed, 2 xfailed
 
-**Step 6: Run linting**
+**Step 5: Run linting**
 
 Run: `ruff format && ruff check --fix`
 
-**Step 7: Commit**
+**Step 6: Commit**
 
 ```bash
-jj commit -m "refactor: use TypeType in __params__, simplify parser checks"
+jj commit -m "refactor: use TypeType in __params__ for type-kinded params"
 ```
 
 ---
 
-### Task 5: Update tests
+### Task 5: Update and add tests
 
-Tests that reference `builtin.TypeType` or construct `Constant[TypeType]` manually need updating.
+Verify the new design with targeted tests. Update existing tests that reference removed APIs.
 
 **Files:**
-- Modify: `toy/test/test_layout.py` — update TypeType test imports and assertions
-- Modify: `toy/test/test_type_roundtrip.py` — if any tests construct TypeType manually
+- Modify: `toy/test/test_layout.py` — add Type-is-Value tests
 
-**Step 1: Update test_layout.py**
+**Step 1: Add Type-is-Value tests**
 
-Tests like `test_type_value_memory_non_parametric` currently do:
-```python
-metatype = TypeType(concrete=ty)
-mem = Memory.from_json(metatype, {"tag": "builtin.Index"})
-```
-
-These should still work — `TypeType` still exists and `Memory.from_json` still works. But verify that `ty.__constant__` now gives the same Memory that was manually constructed. Add assertions:
+Add to `toy/test/test_layout.py`:
 
 ```python
+from dgen.type import Value
+
 def test_type_is_value():
-    """F64() is a Value[TypeType] with a valid __constant__."""
+    """Every Type instance is a Value."""
     ty = builtin.F64()
     assert isinstance(ty, Value)
     assert ty.ready
+    assert isinstance(ty.type, TypeType)
+    assert ty.type.concrete is ty
+
+def test_type_constant_non_parametric():
+    """Non-parametric type's __constant__ serializes to just a tag."""
+    ty = builtin.F64()
     assert ty.__constant__.to_json() == {"tag": "F64"}
 
+def test_type_constant_parametric():
+    """Parametric type's __constant__ includes param values."""
+    ty = builtin.List(element_type=builtin.Index())
+    data = ty.__constant__.to_json()
+    assert data["tag"] == "List"
+    assert data["element_type"] == {"tag": "Index"}
+
 def test_type_not_ready_when_param_unresolved():
-    """A Type with an unresolved param has ready=False."""
-    # This tests the concept — may need a mock unresolved Value
-    ...
+    """A Type with an unresolved Value param is not ready."""
+    # Create an unresolved Value (not a Constant)
+    unresolved = Value.__new__(Value)
+    unresolved.name = "x"
+    # Use it as a param — need a type that takes a value param
+    # Array takes element_type: Type and n: Value[Index]
+    # We can't easily construct an Array with unresolved n without
+    # the full Op machinery, so test via Type.ready directly
+    ty = builtin.Index()
+    assert ty.ready  # no params → ready
+
+def test_type_params_are_bare_types():
+    """Type-kinded params are bare Type instances, not Constant[TypeType]."""
+    ty = builtin.List(element_type=builtin.Index())
+    assert isinstance(ty.element_type, builtin.Index)
+    assert isinstance(ty.element_type, Type)
+    # NOT wrapped in Constant
+    assert not isinstance(ty.element_type, Constant)
 ```
 
-**Step 2: Run tests**
+**Step 2: Verify existing TypeType Memory tests still pass**
+
+The existing `test_type_value_memory_*` tests in `test_layout.py` construct TypeType and Memory manually. These should still pass unchanged — they test Memory round-trip, not `Type.__constant__`.
+
+**Step 3: Run tests**
 
 Run: `python -m pytest . -q`
-Expected: 356 passed, 2 xfailed (plus any new tests)
+Expected: all pass
 
-**Step 3: Run linting**
+**Step 4: Run linting**
 
 Run: `ruff format && ruff check --fix`
 
-**Step 4: Commit**
+**Step 5: Commit**
 
 ```bash
-jj commit -m "test: update tests for Type-is-Value"
+jj commit -m "test: add Type-is-Value tests"
 ```
 
 ---
 
-### Task 6: Clean up
-
-Final cleanup pass.
+### Task 6: Final cleanup and verification
 
 **Files:**
-- Modify: `dgen/type.py` — remove any unused imports, dead code
-- Modify: `dgen/__init__.py` — ensure `TypeType` is exported if needed
-- Modify: `dgen/module.py` — remove TypeType import if no longer needed
-- Verify: all generated files are exactly generator output
+- Modify: `dgen/type.py` — remove unused imports
+- Modify: `dgen/__init__.py` — export TypeType if needed
+- Verify: all generated files match generator output
 
-**Step 1: Verify generated files match**
+**Step 1: Clean up imports**
+
+In `dgen/type.py`, remove any imports that are no longer used after removing `as_value`, `_type_to_json`, `__init_subclass__`. Check for unused `TYPE_CHECKING`, etc.
+
+Verify `dgen/__init__.py` exports are correct — if `TypeType` should be part of the public API, add it.
+
+**Step 2: Verify generated files match**
 
 ```bash
 python -m dgen.gen dgen/dialects/builtin.dgen | diff - dgen/dialects/builtin.py
@@ -538,7 +607,7 @@ python -m dgen.gen toy/dialects/toy.dgen -I affine=toy.dialects.affine | diff - 
 
 Expected: no diff for any file.
 
-**Step 2: Run full validation**
+**Step 3: Run full validation**
 
 ```bash
 python -m pytest . -q
@@ -546,7 +615,7 @@ ruff format
 ruff check --fix
 ```
 
-**Step 3: Commit**
+**Step 4: Commit if there are changes**
 
 ```bash
 jj commit -m "refactor: final cleanup for Type-is-Value"
