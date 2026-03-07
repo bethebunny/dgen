@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Op, Type, Value
+from math import prod
+
+from dgen import Dialect, Op, Type, Value, layout
 from dgen.dialects.builtin import Index, Nil, F64, String
+from dgen.type import Memory
 from toy.dialects.affine import Shape
 
 toy = Dialect("toy")
@@ -20,6 +23,12 @@ class Tensor(Type):
         ("shape", Shape),
         ("dtype", Type),
     )
+
+    @property
+    def __layout__(self) -> layout.Layout:
+        assert self.shape.ready
+        shape: Memory[Shape] = self.shape.__constant__
+        return layout.Array(layout.Float64(), prod(shape.to_json()))
 
     def unpack_shape(self) -> list[int]:
         return self.shape.__constant__.to_json()
