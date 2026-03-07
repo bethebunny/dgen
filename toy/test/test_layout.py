@@ -8,7 +8,7 @@ from dgen.dialects import builtin
 from dgen.layout import Array, Byte, FatPointer, Float64, Pointer, Record
 from dgen.layout import String as StringLayout
 from dgen.module import string_value
-from dgen.type import Memory, TypeType
+from dgen.type import Constant, Memory, Type, TypeType, Value
 from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
 
@@ -288,3 +288,39 @@ def test_type_layout_size_varies_by_params():
     simple = builtin.List(element_type=builtin.Index())
     nested = builtin.List(element_type=builtin.List(element_type=builtin.F64()))
     assert simple.type_layout.byte_size < nested.type_layout.byte_size
+
+
+# ===----------------------------------------------------------------------=== #
+# Type-is-Value tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_type_is_value():
+    """Every Type instance is a Value."""
+    ty = builtin.F64()
+    assert isinstance(ty, Value)
+    assert ty.ready
+    assert isinstance(ty.type, TypeType)
+    assert ty.type.concrete is ty
+
+
+def test_type_constant_non_parametric():
+    """Non-parametric type's __constant__ serializes to just a tag."""
+    ty = builtin.F64()
+    assert ty.__constant__.to_json() == {"tag": "F64"}
+
+
+def test_type_constant_parametric():
+    """Parametric type's __constant__ includes param values."""
+    ty = builtin.List(element_type=builtin.Index())
+    data = ty.__constant__.to_json()
+    assert data["tag"] == "List"
+    assert data["element_type"] == {"tag": "Index"}
+
+
+def test_type_params_are_bare_types():
+    """Type-kinded params are bare Type instances, not Constant[TypeType]."""
+    ty = builtin.List(element_type=builtin.Index())
+    assert isinstance(ty.element_type, builtin.Index)
+    assert isinstance(ty.element_type, Type)
+    assert not isinstance(ty.element_type, Constant)
