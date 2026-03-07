@@ -340,7 +340,7 @@ def test_packop_mixed_constants_and_refs():
         |
         | %main : Nil = function<Nil>() (%x: Index):
         |     %_ : Nil = affine.store(%x, %x, [3, %x, 5])
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     parsed = parse_module(ir_input)
 
@@ -352,7 +352,7 @@ def test_packop_mixed_constants_and_refs():
         |     %0 : Index = 3
         |     %1 : Index = 5
         |     %_ : Nil = affine.store(%x, %x, [%0, %x, %1])
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     assert asm.format(parsed) == ir_expected
 
@@ -384,7 +384,7 @@ def test_string_as_op_param():
         | %main : Nil = function<Nil>() ():
         |     %_ : Nil = llvm.br<"target">()
         |     %_ : Nil = llvm.label<"target">()
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     parsed = parse_module(ir)
     assert asm.format(parsed) == ir

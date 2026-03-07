@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from dgen.dialects.builtin import PackOp
+from dgen.dialects.builtin import Nil, PackOp
 
 from ..op import Op
 from ..type import Memory, Type
@@ -86,6 +86,8 @@ def _is_sugar_op(op: Op) -> bool:
 
 def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     """Format a value as an expression string, dispatching on runtime type."""
+    if isinstance(value, Nil):
+        return "()"
     # Inline list sugar: PackOp → [elem0, elem1, ...]
     if isinstance(value, PackOp):
         return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
@@ -149,12 +151,16 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         tracker.register([op])
 
     # Build args from declared fields (constants first, then runtime)
-    param_parts = [format_expr(param, tracker) for _, param in op.parameters]
+    param_parts = [
+        type_asm(param, tracker) if isinstance(param, Type) else format_expr(param, tracker)
+        for _, param in op.parameters
+    ]
     operand_parts = [format_expr(operand, tracker) for _, operand in op.operands]
 
     # Build the line
     result_name = tracker.track_name(op)
-    parts = [f"%{result_name} : {format_expr(op.type, tracker)} = "]
+    type_str = type_asm(op.type, tracker) if isinstance(op.type, Type) else format_expr(op.type, tracker)
+    parts = [f"%{result_name} : {type_str} = "]
     prefix = _dialect_prefix(dialect_name)
     if asm_name == "constant" and dialect_name == "builtin":
         parts.append(", ".join(param_parts + operand_parts))
@@ -167,7 +173,7 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     blocks = list(op.blocks)
     for _, block in blocks:
         block_args = ", ".join(
-            f"%{tracker.track_name(a)}: {format_expr(a.type, tracker)}"
+            f"%{tracker.track_name(a)}: {type_asm(a.type, tracker) if isinstance(a.type, Type) else format_expr(a.type, tracker)}"
             for a in block.args
         )
         parts.append(f" ({block_args})")

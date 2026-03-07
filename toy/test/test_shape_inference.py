@@ -32,7 +32,7 @@ def test_transpose():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
         |     %2 : Nil = toy.print(%1)
-        |     %3 : Nil = return(Nil)
+        |     %3 : Nil = return(())
     """)
     assert result == expected
 
@@ -56,7 +56,7 @@ def test_mul():
         |     %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
         |     %2 : toy.Tensor<[2, 2], F64> = toy.mul(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(Nil)
+        |     %4 : Nil = return(())
     """)
     assert result == expected
 
@@ -80,7 +80,7 @@ def test_3d_add():
         |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.add(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(Nil)
+        |     %4 : Nil = return(())
     """)
     assert result == expected
 
@@ -104,7 +104,7 @@ def test_3d_mul():
         |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.mul(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(Nil)
+        |     %4 : Nil = return(())
     """)
     assert result == expected
 
@@ -138,7 +138,7 @@ def test_generic_call():
         |     %1 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %2 : toy.Tensor<[3, 2], F64> = toy.generic_call<"multiply_transpose">([%0, %1])
         |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(Nil)
+        |     %4 : Nil = return(())
     """)
     assert result == expected
 
@@ -153,7 +153,7 @@ def test_concat():
         |     %1 : toy.Tensor<[3, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.InferredShapeTensor<F64> = toy.concat<0>(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     result = infer_shapes(module)
@@ -166,7 +166,7 @@ def test_concat():
         |     %1 : toy.Tensor<[3, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor<[5, 3], F64> = toy.concat<0>(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     assert out == expected
 
@@ -181,7 +181,7 @@ def test_concat_axis1():
         |     %1 : toy.Tensor<[2, 5], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
         |     %2 : toy.InferredShapeTensor<F64> = toy.concat<1>(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     result = infer_shapes(module)
@@ -194,7 +194,7 @@ def test_concat_axis1():
         |     %1 : toy.Tensor<[2, 5], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
         |     %2 : toy.Tensor<[2, 8], F64> = toy.concat<1>(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     assert out == expected
 
@@ -209,7 +209,7 @@ def test_tile_with_constant_count():
         |     %1 : Index = 4
         |     %2 : toy.InferredShapeTensor<F64> = toy.tile<%1>(%0)
         |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     result = infer_shapes(module)
@@ -222,7 +222,7 @@ def test_tile_with_constant_count():
         |     %1 : Index = 4
         |     %2 : toy.Tensor<[4, 3], F64> = toy.tile<%1>(%0)
         |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     assert out == expected
 
@@ -243,7 +243,7 @@ def test_tile_with_computed_count():
         |     %3 : Index = add_index(%1, %2)
         |     %4 : toy.InferredShapeTensor<F64> = toy.tile<%0>(%3)
         |     %5 : Nil = toy.print(%4)
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     result = infer_shapes(module)
@@ -287,6 +287,6 @@ def test_full_tutorial_example():
         |     %4 : toy.Tensor<[3, 2], F64> = toy.generic_call<"multiply_transpose">([%1, %3])
         |     %5 : toy.Tensor<[3, 2], F64> = toy.generic_call<"multiply_transpose">([%3, %1])
         |     %6 : Nil = toy.print(%5)
-        |     %7 : Nil = return(Nil)
+        |     %7 : Nil = return(())
     """)
     assert result == expected

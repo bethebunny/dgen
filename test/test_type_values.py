@@ -30,7 +30,7 @@ def test_typetype_constant_asm_roundtrip():
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -42,7 +42,7 @@ def test_ssa_ref_as_op_type():
         | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %x : %t = 42
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     ops = module.functions[0].body.ops
@@ -59,7 +59,7 @@ def test_ssa_ref_as_op_type_roundtrip():
         | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %x : %t = 42
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -94,7 +94,7 @@ def test_parameterized_typetype_constant_roundtrip():
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Array<Index, 4>> = {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -106,7 +106,7 @@ def test_array_with_ssa_dimension():
         | %main : Nil = function<Nil>() ():
         |     %n : Index = 4
         |     %arr : Array<Index, %n> = [1, 2, 3, 4]
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -125,7 +125,7 @@ def test_array_with_ssa_element_type():
         | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
@@ -146,7 +146,7 @@ def test_array_with_ssa_element_type_layout():
         | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     ops = module.functions[0].body.ops
@@ -168,7 +168,7 @@ def test_pointer_with_ssa_pointee():
         | %main : Nil = function<Nil>() ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
         |     %p : Pointer<%t> = 0
-        |     %_ : Nil = return(Nil)
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir

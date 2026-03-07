@@ -30,6 +30,11 @@ def parse_expr(parser: IRParser) -> object:
     """Parse a single expression, dispatching on syntax."""
     c = parser.peek()
 
+    if c == "(":
+        # Nil value literal: ()
+        parser.expect("()")
+        return builtin.Nil()
+
     if c == "[":
         # List: [expr, expr, ...]
         parser.expect("[")

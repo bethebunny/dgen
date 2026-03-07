@@ -8,6 +8,7 @@
 
 ## Experiments / scope creep
 - Tuple type
+  - `Nil` becomes an alias for `Tuple<[]>`
 - DTypes
 - See if we can make `Block` an op in a generic way.
 - Make `call` a generic op in builtin
