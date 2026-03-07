@@ -43,6 +43,17 @@ class TypeTag(Type):
     __layout__ = layout.String()
 
 
+@builtin.type("TypeType")
+@dataclass(frozen=True)
+class TypeType(Type):
+    concrete: Type
+    __params__ = (("concrete", Type),)
+
+    @property
+    def __layout__(self) -> layout.Layout:
+        return self.concrete.type_layout
+
+
 @builtin.type("Byte")
 @dataclass(frozen=True)
 class Byte(Type):

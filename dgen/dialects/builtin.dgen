@@ -15,6 +15,9 @@ type String:
 type TypeTag:
     storage: String
 
+type TypeType<concrete: Type>:
+    layout: concrete.type_layout
+
 type Byte:
     layout Byte
 

@@ -362,6 +362,19 @@ def test_type_to_json_nil():
     assert result == {"tag": "builtin.Nil"}
 
 
+def test_type_type_layout_non_parametric():
+    """TypeType(concrete=Index()) layout matches Index().type_layout."""
+    tt = builtin.TypeType(concrete=builtin.Index())
+    assert tt.__layout__ == builtin.Index().type_layout
+
+
+def test_type_type_layout_parametric():
+    """TypeType(concrete=List(Index())) layout matches the list's type_layout."""
+    inner = builtin.List(element_type=builtin.Index())
+    tt = builtin.TypeType(concrete=inner)
+    assert tt.__layout__ == inner.type_layout
+
+
 def test_type_layout_size_varies_by_params():
     """Type layout size depends on concrete params (inline design)."""
     # List<Index> and List<List<F64>> have different type_layout sizes

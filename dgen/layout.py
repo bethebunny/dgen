@@ -29,6 +29,14 @@ class Layout:
     def byte_size(self) -> int:
         return self.struct.size
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Layout):
+            return NotImplemented
+        return type(self) is type(other) and self.struct.format == other.struct.format
+
+    def __hash__(self) -> int:
+        return hash((type(self).__name__, self.struct.format))
+
     def to_json(self, buf: bytes | bytearray, offset: int) -> object:
         raise NotImplementedError
 
@@ -185,6 +193,19 @@ class Record(Layout):
         self._total_size = offset
         # Use a raw byte format for the total size
         self.struct = Struct(f"{offset}s") if offset > 0 else Struct("0s")
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Record):
+            return NotImplemented
+        if len(self.fields) != len(other.fields):
+            return False
+        return all(
+            n1 == n2 and l1 == l2
+            for (n1, l1), (n2, l2) in zip(self.fields, other.fields)
+        )
+
+    def __hash__(self) -> int:
+        return hash(tuple((name, type(lay).__name__) for name, lay in self.fields))
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
         result: dict[str, object] = {}
