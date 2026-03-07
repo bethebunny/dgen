@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from math import prod
 
 from dgen import Constant, Type, Value
+from dgen import layout
 from dgen.dialects.builtin import Index
 from dgen.module import Function
+from dgen.layout import Layout
+from dgen.type import Memory
 
 from toy.dialects.affine import Shape
 from toy.dialects.toy import DimSizeOp, Tensor
@@ -26,6 +30,16 @@ def shape_constant(dims: Sequence[int]) -> Constant:
 # ===----------------------------------------------------------------------=== #
 # Tensor helpers
 # ===----------------------------------------------------------------------=== #
+
+
+@property  # type: ignore[misc]
+def _tensor_layout(self: Tensor) -> Layout:
+    assert self.shape.ready
+    shape: Memory[Shape] = self.shape.__constant__
+    return layout.Array(layout.Float64(), prod(shape.to_json()))
+
+
+Tensor.__layout__ = _tensor_layout  # type: ignore[assignment, misc]
 
 
 # ===----------------------------------------------------------------------=== #

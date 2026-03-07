@@ -12,7 +12,7 @@ from collections.abc import Iterable, Sequence
 from dgen.dialects.builtin import Nil, PackOp
 
 from ..op import Op
-from ..type import Memory, Type
+from ..type import Memory, Type, TypeType
 from ..value import Constant, Value
 
 
@@ -93,8 +93,6 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, PackOp):
         return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
     if isinstance(value, Constant) and not isinstance(value, Op):
-        from dgen.dialects.builtin import TypeType
-
         if isinstance(value.type, TypeType):
             return format_expr(value.type.concrete, tracker)
         return format_expr(value.__constant__.to_json(), tracker)

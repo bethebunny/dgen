@@ -178,8 +178,11 @@ def _generate(
         dgen_names.append("layout")
     yield f"from dgen import {', '.join(sorted(dgen_names))}"
 
+    # builtin always maps to dgen.dialects.builtin
+    effective_map = {"builtin": "dgen.dialects.builtin", **import_map}
+
     for imp in ast.imports:
-        python_module = import_map.get(imp.module)
+        python_module = effective_map.get(imp.module)
         if python_module:
             if imp.names:
                 yield f"from {python_module} import {', '.join(imp.names)}"

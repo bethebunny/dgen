@@ -18,7 +18,7 @@ from dgen.dialects.builtin import (
     builtin,
 )
 
-from dgen.type import Memory
+from dgen.type import Memory, TypeType
 
 # ===----------------------------------------------------------------------=== #
 # Function type (not dialect-registered)
@@ -129,3 +129,4 @@ class Module:
 # ===----------------------------------------------------------------------=== #
 
 HasSingleBlock.__annotations__["__blocks__"] = ClassVar[tuple[str, ...]]
+builtin.type("TypeType")(TypeType)

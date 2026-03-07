@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 from copy import deepcopy as _deepcopy
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
 
 from .layout import Layout, Record, _bytearray_address
@@ -32,7 +33,6 @@ class Type:
     def as_value(self) -> Constant[Self]:
         """Wrap this type as a Constant[TypeType] value."""
         from .value import Constant
-        from dgen.dialects.builtin import TypeType
 
         tt = TypeType(concrete=self)
         return Constant(type=tt, value=Memory.from_json(tt, self._type_to_json()))
@@ -100,6 +100,22 @@ class Type:
 
 Field = tuple[str, type[Type]]
 Fields = tuple[Field, ...]
+
+
+@dataclass(frozen=True)
+class TypeType(Type):
+    """A type whose values are themselves types.
+
+    TypeType(concrete=Index()) wraps Index as a first-class value.
+    Its __layout__ delegates to the concrete type's type_layout.
+    """
+
+    concrete: Type
+    __params__: ClassVar[Fields] = (("concrete", Type),)
+
+    @property
+    def __layout__(self) -> Layout:
+        return self.concrete.type_layout
 
 
 T = TypeVar("T", bound=Type)

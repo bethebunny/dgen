@@ -8,7 +8,7 @@ from dgen.dialects import builtin
 from dgen.layout import Array, Byte, FatPointer, Float64, Pointer, Record
 from dgen.layout import String as StringLayout
 from dgen.module import string_value
-from dgen.type import Memory
+from dgen.type import Memory, TypeType
 from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
 
@@ -226,14 +226,14 @@ def test_type_layout_parametric_type_param_nested():
 def test_type_value_memory_non_parametric():
     """Pack and unpack Index() as a type value through Memory."""
     ty = builtin.Index()
-    metatype = builtin.TypeType(concrete=ty)
+    metatype = TypeType(concrete=ty)
     mem = Memory.from_json(metatype, {"tag": "builtin.Index"})
     assert mem.to_json() == {"tag": "builtin.Index"}
 
 
 def test_type_value_memory_parametric():
     """Pack and unpack List<Index> as a type value through Memory."""
-    metatype = builtin.TypeType(concrete=builtin.List(element_type=builtin.Index()))
+    metatype = TypeType(concrete=builtin.List(element_type=builtin.Index()))
     data = {"tag": "builtin.List", "element_type": {"tag": "builtin.Index"}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
@@ -241,7 +241,7 @@ def test_type_value_memory_parametric():
 
 def test_type_value_memory_pointer():
     """Pack and unpack Pointer<F64> as a type value through Memory."""
-    metatype = builtin.TypeType(concrete=builtin.Pointer(pointee=builtin.F64()))
+    metatype = TypeType(concrete=builtin.Pointer(pointee=builtin.F64()))
     data = {"tag": "builtin.Pointer", "pointee": {"tag": "builtin.F64"}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
@@ -249,7 +249,7 @@ def test_type_value_memory_pointer():
 
 def test_type_value_memory_nil():
     """Pack and unpack Nil as a type value through Memory."""
-    metatype = builtin.TypeType(concrete=builtin.Nil())
+    metatype = TypeType(concrete=builtin.Nil())
     mem = Memory.from_json(metatype, {"tag": "builtin.Nil"})
     assert mem.to_json() == {"tag": "builtin.Nil"}
 
@@ -257,7 +257,7 @@ def test_type_value_memory_nil():
 def test_type_value_memory_nested():
     """Pack and unpack List<List<F64>> as a type value through Memory."""
     inner = builtin.List(element_type=builtin.F64())
-    metatype = builtin.TypeType(concrete=builtin.List(element_type=inner))
+    metatype = TypeType(concrete=builtin.List(element_type=inner))
     data = {
         "tag": "builtin.List",
         "element_type": {
@@ -271,14 +271,14 @@ def test_type_value_memory_nested():
 
 def test_type_type_layout_non_parametric():
     """TypeType(concrete=Index()) layout matches Index().type_layout."""
-    tt = builtin.TypeType(concrete=builtin.Index())
+    tt = TypeType(concrete=builtin.Index())
     assert tt.__layout__ == builtin.Index().type_layout
 
 
 def test_type_type_layout_parametric():
     """TypeType(concrete=List(Index())) layout matches the list's type_layout."""
     inner = builtin.List(element_type=builtin.Index())
-    tt = builtin.TypeType(concrete=inner)
+    tt = TypeType(concrete=inner)
     assert tt.__layout__ == inner.type_layout
 
 

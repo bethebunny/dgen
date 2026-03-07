@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from math import prod
-
 from dgen import Dialect, Op, Type, Value, layout
 from dgen.dialects.builtin import Index, Nil, F64, String
-from dgen.type import Memory
-from toy.dialects.affine import Shape
+import toy.dialects.affine as affine
 
 toy = Dialect("toy")
 
@@ -17,20 +14,11 @@ toy = Dialect("toy")
 @toy.type("Tensor")
 @dataclass(frozen=True)
 class Tensor(Type):
-    shape: Value[Shape]
+    shape: Value[affine.Shape]
     dtype: Type = F64()
-    __params__ = (
-        ("shape", Shape),
-        ("dtype", Type),
-    )
+    __params__ = (("shape", affine.Shape), ("dtype", Type),)
 
-    @property
-    def __layout__(self) -> layout.Layout:
-        assert self.shape.ready
-        shape: Memory[Shape] = self.shape.__constant__
-        return layout.Array(layout.Float64(), prod(shape.to_json()))
-
-    def unpack_shape(self) -> list[int]:
+    def unpack_shape(self):
         return self.shape.__constant__.to_json()
 
 
@@ -47,7 +35,7 @@ class InferredShapeTensor(Type):
 class TransposeOp(Op):
     input: Value
     type: Type
-    __operands__ = (("input", Type),)
+    __operands__ = (("input", Tensor),)
 
 
 @toy.op("reshape")
@@ -55,7 +43,7 @@ class TransposeOp(Op):
 class ReshapeOp(Op):
     input: Value
     type: Type
-    __operands__ = (("input", Type),)
+    __operands__ = (("input", Tensor),)
 
 
 @toy.op("mul")
@@ -64,10 +52,7 @@ class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
 
 
 @toy.op("add")
@@ -76,10 +61,7 @@ class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
 
 
 @toy.op("generic_call")
@@ -100,10 +82,8 @@ class ConcatOp(Op):
     rhs: Value
     type: Type
     __params__ = (("axis", Index),)
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
+    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
+    __constraints__ = ("axis < lhs.shape.rank",)
 
 
 @toy.op("tile")
@@ -113,7 +93,7 @@ class TileOp(Op):
     input: Value
     type: Type
     __params__ = (("count", Index),)
-    __operands__ = (("input", Type),)
+    __operands__ = (("input", Tensor),)
 
 
 @toy.op("nonzero_count")
@@ -121,7 +101,7 @@ class TileOp(Op):
 class NonzeroCountOp(Op):
     input: Value
     type: Type = Index()
-    __operands__ = (("input", Type),)
+    __operands__ = (("input", Tensor),)
 
 
 @toy.op("dim_size")
@@ -131,7 +111,8 @@ class DimSizeOp(Op):
     input: Value
     type: Type = Index()
     __params__ = (("axis", Index),)
-    __operands__ = (("input", Type),)
+    __operands__ = (("input", Tensor),)
+    __constraints__ = ("axis < input.shape.rank",)
 
 
 @toy.op("print")
@@ -139,4 +120,6 @@ class DimSizeOp(Op):
 class PrintOp(Op):
     input: Value
     type: Type = Nil()
-    __operands__ = (("input", Type),)
+    __operands__ = (("input", Tensor),)
+
+

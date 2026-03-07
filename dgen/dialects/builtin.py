@@ -40,18 +40,7 @@ class String(Type):
 @builtin.type("TypeTag")
 @dataclass(frozen=True)
 class TypeTag(Type):
-    __layout__ = layout.String()
-
-
-@builtin.type("TypeType")
-@dataclass(frozen=True)
-class TypeType(Type):
-    concrete: Type
-    __params__ = (("concrete", Type),)
-
-    @property
-    def __layout__(self) -> layout.Layout:
-        return self.concrete.type_layout
+    __layout__ = String.__layout__
 
 
 @builtin.type("Byte")
@@ -65,10 +54,7 @@ class Byte(Type):
 class Array(Type):
     element_type: Type
     n: Value[Index]
-    __params__ = (
-        ("element_type", Type),
-        ("n", Index),
-    )
+    __params__ = (("element_type", Type), ("n", Index),)
 
     @property
     def __layout__(self) -> layout.Layout:
@@ -132,10 +118,7 @@ class AddIndexOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Index()
-    __operands__ = (
-        ("lhs", Index),
-        ("rhs", Index),
-    )
+    __operands__ = (("lhs", Index), ("rhs", Index),)
 
 
 @builtin.op("return")
@@ -152,3 +135,5 @@ class FunctionOp(HasSingleBlock, Op):
     type: Type
     body: Block
     __blocks__ = ("body",)
+
+

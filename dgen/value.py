@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, ClassVar, Generic, TypeVar
 
 import dgen
 
-from .type import Memory, Type
+from .type import Memory, Type, TypeType
 
 if TYPE_CHECKING:
     from .layout import Layout
@@ -51,8 +51,6 @@ class Constant(Value[T]):
         This means self.element_type.__layout__ works whether element_type
         is a bare Type or a Constant[TypeType].
         """
-        from dgen.dialects.builtin import TypeType
-
         if isinstance(self.type, TypeType):
             return self.type.concrete.__layout__
         return self.type.__layout__
@@ -64,15 +62,11 @@ class Constant(Value[T]):
             return False
         # For TypeType constants, compare concrete types directly
         # (Memory buffer comparison fails because string pointers differ)
-        from dgen.dialects.builtin import TypeType
-
         if isinstance(self.type, TypeType):
             return self.type.concrete == other.type.concrete
         return self.value == other.value
 
     def __hash__(self) -> int:
-        from dgen.dialects.builtin import TypeType
-
         if isinstance(self.type, TypeType):
             return hash((type(self), self.type, self.type.concrete))
         return hash((type(self), self.type, self.value))
