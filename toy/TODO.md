@@ -1,26 +1,12 @@
 ## Make the JIT work in the general case
-- list fields to List
-- Do less packing and unpacking
 - Memory layout for types
-  - Define a memory layout for types
   - Make `type: Type` an honorary `__params__` on `Op`
-  - SSA types via JIT
-  - Add tests for types
-      - Round trip through ASM literals
-      - Round trip through JIT
 - Generalize `compile_and_run_staged` to not need an `infer` stage
-- Move `List` and `String` back to `FatPointer` layouts, ie. not statically-known sizes
 - Remove any "if stage0/stage1" logic
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 - Delete `DimSizeOp.resolve_constant` monkey-patch and the `getattr(op, "resolve_constant")` pattern in `staging.py` — declare it as an optional method on `Op` or remove entirely
-- Get rid of `for_value`
-
-## dgen dialect definition files + generation
-- Create dialect files
-- Generate dialects from dialect files
 
 ## Experiments / scope creep
-- Struct literals
 - Tuple type
 - DTypes
 - See if we can make `Block` an op in a generic way.
@@ -46,19 +32,13 @@
 - Add parser failure tests
 - Formatter: use %_ for unused outputs
 - Formatter: clearly delineate names in sub-blocks
-- Support broader set of literals
 
 ## Easy cleanup
 - `affine.load` / `affine.mul_f` / `affine.add_f` should return `f64` (not `()`)
 - Fix other ops which should return types but return `Nil` instead
 - Figure out why some ASM still doesn't have types, these should fail to parse
-- Remove the janky `if args` stuff from `cli.run`
-- Remove remaining `hasattr` checks (if any)
-- Remove `cast`s
-- Remove `Any`s
-- Remove `type: ignore`s
 - Update parser and formatter to support multi-block ops
-- `Bytes` layout currently does utf8 encoding. This is definitely wrong.
+- Remove spurious utf8 decoding stuff from Memory/Value
 - Move `type_asm` to `Type.asm`
 - Move `op_asm` to `Op.asm`
 
