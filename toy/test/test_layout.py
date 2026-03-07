@@ -204,3 +204,50 @@ def test_nested_list_from_json_roundtrip():
     outer = builtin.List(element_type=inner)
     mem = Memory.from_json(outer, [[1, 2], [3, 4, 5]])
     assert mem.to_json() == [[1, 2], [3, 4, 5]]
+
+
+def test_type_layout_non_parametric():
+    """Non-parametric type has layout Record([("tag", String)])."""
+    from dgen.layout import Record, String as StringLayout
+
+    ty = builtin.Index()
+    tl = ty.type_layout
+    assert isinstance(tl, Record)
+    assert len(tl.fields) == 1
+    assert tl.fields[0][0] == "tag"
+    assert isinstance(tl.fields[0][1], StringLayout)
+
+
+def test_type_layout_parametric_value_param():
+    """Parametric type with value param includes param's type layout."""
+    from dgen.layout import Record
+
+    list_type = builtin.List(element_type=builtin.Index())
+    tl = list_type.type_layout
+    assert isinstance(tl, Record)
+    # tag + element_type
+    assert len(tl.fields) == 2
+    assert tl.fields[0][0] == "tag"
+    assert tl.fields[1][0] == "element_type"
+    # element_type is Type-kinded, so it's Index's type_layout (a Record)
+    inner = tl.fields[1][1]
+    assert isinstance(inner, Record)
+
+
+def test_type_layout_parametric_type_param_nested():
+    """List<List<F64>> inlines nested type layouts."""
+    from dgen.layout import Record
+
+    inner = builtin.List(element_type=builtin.F64())
+    outer = builtin.List(element_type=inner)
+    tl = outer.type_layout
+    assert isinstance(tl, Record)
+    assert len(tl.fields) == 2
+    # element_type field is inner's type_layout
+    inner_tl = tl.fields[1][1]
+    assert isinstance(inner_tl, Record)
+    assert len(inner_tl.fields) == 2
+    # inner's element_type is F64's type_layout (just a tag)
+    f64_tl = inner_tl.fields[1][1]
+    assert isinstance(f64_tl, Record)
+    assert len(f64_tl.fields) == 1

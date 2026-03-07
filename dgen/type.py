@@ -4,7 +4,7 @@ import ctypes
 from copy import deepcopy as _deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
 
-from .layout import Layout, _bytearray_address
+from .layout import Layout, Record, String as StringLayout, _bytearray_address
 
 if TYPE_CHECKING:
     from .value import Constant
@@ -31,6 +31,20 @@ class Type:
     @classmethod
     def for_value(cls, value: object) -> Type:
         return cls()
+
+    @property
+    def type_layout(self) -> Record:
+        """Layout for this type as a value (tag + params)."""
+        fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
+        for name, param_type in self.__params__:
+            val = getattr(self, name)
+            if isinstance(val, Type):
+                # Type-kinded param: use its type_layout recursively
+                fields.append((name, val.type_layout))
+            else:
+                # Value-kinded param: use the param value's type's __layout__
+                fields.append((name, val.__constant__.type.__layout__))
+        return Record(fields)
 
     @property
     def parameters(self) -> Iterator[tuple[str, Type]]:
