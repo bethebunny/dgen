@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64, String
+from dgen.dialects.builtin import Index, Nil, F64, String, Pointer
 
 llvm = Dialect("llvm")
 

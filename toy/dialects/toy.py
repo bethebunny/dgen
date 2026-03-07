@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Op, Type, TypeType, Value
+from dgen import Dialect, Op, Type, TypeType, Value, layout
 from dgen.dialects.builtin import Index, Nil, F64, String
 import toy.dialects.affine as affine
 
