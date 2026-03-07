@@ -270,6 +270,37 @@ def test_type_to_json_parametric():
     }
 
 
+def test_type_from_json_non_parametric():
+    """Reconstruct Index() from its JSON representation."""
+    from dgen.type import Type
+
+    result = Type.type_from_json({"tag": "builtin.Index"})
+    assert result == builtin.Index()
+
+
+def test_type_from_json_parametric():
+    """Reconstruct List<Index> from its JSON representation."""
+    from dgen.type import Type
+
+    result = Type.type_from_json(
+        {
+            "tag": "builtin.List",
+            "element_type": {"tag": "builtin.Index"},
+        }
+    )
+    assert result == builtin.List(element_type=builtin.Index())
+
+
+def test_type_value_full_roundtrip():
+    """type_to_json -> type_from_json round-trip."""
+    from dgen.type import Type
+
+    ty = builtin.List(element_type=builtin.F64())
+    json_val = ty.type_to_json()
+    reconstructed = Type.type_from_json(json_val)
+    assert reconstructed == ty
+
+
 def test_type_pack_roundtrip():
     """Pack a type value into Memory and read it back via to_json."""
     from dgen.type import Memory
