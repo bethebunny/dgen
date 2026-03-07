@@ -38,8 +38,10 @@ class Op(Value):
 
     @property
     def asm(self) -> Iterable[str]:
-        from .asm.formatting import op_asm
+        from .asm.formatting import format_func, op_asm
 
+        if self._asm_name == "function":
+            return format_func(self)
         return op_asm(self)
 
     @property

@@ -1,8 +1,7 @@
 """Framework-level IR items: Module, ConstantOp, Function, and helpers.
 
 These complement the generated builtin dialect but live outside the dialect
-file to keep it purely generated.  Import triggers monkey-patches for
-FunctionOp.asm.
+file to keep it purely generated.
 """
 
 from __future__ import annotations
@@ -12,10 +11,8 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from dgen import Constant, Dialect, Op, Type, Value
-from dgen.asm.formatting import format_func
 from dgen import layout
 from dgen.dialects.builtin import (
-    FunctionOp,
     HasSingleBlock,
     String,
     builtin,
@@ -132,11 +129,3 @@ class Module:
 # ===----------------------------------------------------------------------=== #
 
 HasSingleBlock.__annotations__["__blocks__"] = ClassVar[tuple[str, ...]]
-
-
-@property  # type: ignore[misc]
-def _function_asm(self: FunctionOp) -> Iterable[str]:
-    return format_func(self)
-
-
-FunctionOp.asm = _function_asm  # type: ignore[assignment, misc]
