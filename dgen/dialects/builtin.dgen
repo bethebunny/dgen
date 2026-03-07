@@ -12,6 +12,9 @@ type Nil:
 type String:
     layout String
 
+type TypeTag:
+    storage: String
+
 type Byte:
     layout Byte
 

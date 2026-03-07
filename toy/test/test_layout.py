@@ -190,6 +190,13 @@ def test_string_from_json_roundtrip():
     assert mem.to_json() == "hello"
 
 
+def test_type_tag_layout():
+    """TypeTag wraps a String layout — 16 bytes."""
+    tag = builtin.TypeTag()
+    assert tag.__layout__.byte_size == 16
+    assert isinstance(tag.__layout__, layout.String)
+
+
 def test_nested_list_from_json_roundtrip():
     from dgen.type import Memory
 

@@ -37,6 +37,12 @@ class String(Type):
     __layout__ = layout.String()
 
 
+@builtin.type("TypeTag")
+@dataclass(frozen=True)
+class TypeTag(Type):
+    __layout__ = layout.String()
+
+
 @builtin.type("Byte")
 @dataclass(frozen=True)
 class Byte(Type):
