@@ -138,7 +138,7 @@ def test_generate_type_fatpointer_param():
     code = generate(f, dialect_name="test")
     assert "class List(Type):" in code
     assert "def __layout__(self)" in code
-    assert "self.element_type.__layout__" in code
+    assert "dgen.type.type_constant(self.element_type).__layout__" in code
 
 
 def test_generate_type_default_param():
@@ -155,7 +155,7 @@ def test_generate_type_default_param():
     )
     code = generate(f, dialect_name="test")
     assert "shape: Value[Shape]" in code
-    assert "dtype: Value[TypeType]" in code
+    assert "dtype: Value[dgen.TypeType]" in code
     assert "F64()" in code
 
 
@@ -467,7 +467,10 @@ def test_generate_parametric_layout_keyword():
     )
     code = generate(f, dialect_name="test")
     assert "def __layout__(self)" in code
-    assert "layout.Array(self.elem.__layout__, self.n.__constant__.to_json())" in code
+    assert (
+        "layout.Array(dgen.type.type_constant(self.elem).__layout__, self.n.__constant__.to_json())"
+        in code
+    )
 
 
 def test_generate_parametric_layout_pointer():
@@ -483,7 +486,7 @@ def test_generate_parametric_layout_pointer():
     )
     code = generate(f, dialect_name="test")
     assert "def __layout__(self)" in code
-    assert "layout.Pointer(self.pointee.__layout__)" in code
+    assert "layout.Pointer(dgen.type.type_constant(self.pointee).__layout__)" in code
 
 
 def test_generate_untyped_operand():
@@ -734,7 +737,7 @@ def test_generate_type_multi_field_parametric_record():
     code = generate(f, dialect_name="test")
     assert "def __layout__(self)" in code
     assert "layout.Record" in code
-    assert "self.t.__layout__" in code
+    assert "dgen.type.type_constant(self.t).__layout__" in code
 
 
 def test_generate_op_constraints():

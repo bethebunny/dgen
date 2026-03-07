@@ -37,7 +37,7 @@ def test_typetype_constant_asm_roundtrip():
 
 
 def test_ssa_ref_as_op_type():
-    """SSA ref in type position: %x's type is unresolved Value, op not ready."""
+    """SSA ref in type position: %x's type is the SSA value %t."""
     ir = strip_prefix("""
         | %main = function () -> ():
         |     %t : TypeType<Index> = {"tag": "builtin.Index"}
@@ -48,9 +48,9 @@ def test_ssa_ref_as_op_type():
     ops = module.functions[0].body.ops
     t_op = ops[0]  # %t = TypeType constant
     x_op = ops[1]  # %x : %t = 42
-    # %x's type is the SSA value %t, not a resolved Type
+    # %x's type is the SSA value %t (a resolved ConstantOp)
     assert x_op.type is t_op
-    assert not x_op.ready
+    assert x_op.ready
 
 
 def test_ssa_ref_as_op_type_roundtrip():
@@ -136,6 +136,51 @@ def test_array_with_ssa_element_type():
     arr_op = ops[1]
     assert isinstance(arr_op.type, builtin.Array)
     assert arr_op.type.element_type is t_op
+
+
+def test_array_with_ssa_element_type_layout():
+    """Array<%t, 4> — type_constant resolves the element type for layout computation."""
+    from dgen import layout
+
+    ir = strip_prefix("""
+        | %main = function () -> ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %arr : Array<%t, 4> = [1, 2, 3, 4]
+        |     %_ : () = return(())
+    """)
+    module = parse_module(ir)
+    ops = module.functions[0].body.ops
+    arr_op = ops[1]
+    assert isinstance(arr_op.type, builtin.Array)
+    # element_type is an SSA ref but the type is ready (ConstantOp is resolved)
+    assert arr_op.type.ready
+    assert arr_op.ready
+    # type_constant resolves the element_type to compute the layout
+    arr_layout = arr_op.type.__layout__
+    assert arr_layout == layout.Array(layout.Int(), 4)
+
+
+def test_pointer_with_ssa_pointee():
+    """Pointer<%t> — SSA type value as pointee param, round-trips through ASM."""
+    from dgen import layout
+
+    ir = strip_prefix("""
+        | %main = function () -> ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %p : Pointer<%t> = 0
+        |     %_ : () = return(())
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+    ops = module.functions[0].body.ops
+    t_op = ops[0]
+    p_op = ops[1]
+    assert isinstance(p_op.type, builtin.Pointer)
+    assert p_op.type.pointee is t_op
+    assert p_op.type.ready
+    assert p_op.ready
+    assert p_op.type.__layout__ == layout.Pointer(layout.Int())
 
 
 def test_type_value_jit_identity():

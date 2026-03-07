@@ -17,16 +17,18 @@ T = TypeVar("T", bound="Type")
 class Value(Generic[T]):
     """Base class for SSA values."""
 
+    __params__: ClassVar[Fields] = ()
     name: str | None = None
-    type: T
+    type: Value[TypeType]
 
     def __init__(self, *, name: str | None = None, type: T) -> None:
         self.name = name
         self.type = type
 
     @property
-    def ready(self) -> bool:
-        return False
+    def parameters(self) -> Iterator[tuple[str, Value[TypeType]]]:
+        for name, field in self.__params__:
+            yield name, getattr(self, name)
 
     @property
     def operands(self) -> list[Value]:
@@ -39,6 +41,44 @@ class Value(Generic[T]):
     @property
     def __constant__(self) -> Memory[T]:
         raise NotImplementedError
+
+    @property
+    def ready(self) -> bool:
+        return self.type.ready and all(val.ready for _, val in self.parameters)
+
+
+def type_constant(value: Value[TypeType]) -> Type:
+    """Resolve a Value[TypeType] to a concrete Type."""
+    assert value.ready
+    if isinstance(value, Type):
+        return value
+    data = value.__constant__.to_json()
+    assert isinstance(data, dict)
+    return _type_from_dict(data)
+
+
+def _type_from_dict(data: dict[str, object]) -> Type:
+    """Reconstruct a Type from its serialized TypeType dict."""
+    from .dialect import Dialect
+
+    tag = data["tag"]
+    assert isinstance(tag, str)
+    dialect_name, type_name = tag.split(".")
+    dialect = Dialect.get(dialect_name)
+    cls = dialect.types[type_name]
+    params = {k: v for k, v in data.items() if k != "tag"}
+    if not params:
+        return cls()
+    kwargs: dict[str, object] = {}
+    for param_name, param_value in params.items():
+        for field_name, field_type in cls.__params__:
+            if field_name == param_name:
+                if isinstance(param_value, dict):
+                    kwargs[param_name] = _type_from_dict(param_value)
+                else:
+                    kwargs[param_name] = field_type().constant(param_value)
+                break
+    return cls(**kwargs)
 
 
 class Type(Value["TypeType"]):
@@ -73,24 +113,13 @@ class Type(Value["TypeType"]):
     def type(self) -> TypeType:
         return TypeType(concrete=self)
 
-    @property
-    def ready(self) -> bool:
-        for name, kind in self.__params__:
-            val = getattr(self, name)
-            if kind is TypeType and not isinstance(val, Type):
-                return False
-            if not val.ready:
-                return False
-        return True
-
     @cached_property
     def __constant__(self) -> Memory[TypeType]:
-        tt = self.type
         data = {
             "tag": self.qualified_name,
             **{name: param.__constant__.to_json() for name, param in self.parameters},
         }
-        return Memory.from_json(tt, data)
+        return Memory.from_json(self.type, data)
 
     @cached_property
     def qualified_name(self) -> str:
@@ -137,7 +166,7 @@ class TypeType(Type):
     TypeType(concrete=Index()) wraps Index as a first-class value.
     """
 
-    concrete: Type
+    concrete: Value[TypeType]
     __params__: ClassVar[Fields] = (("concrete", Type),)
 
     @property
@@ -152,6 +181,10 @@ class TypeType(Type):
                 ),
             ]
         )
+
+    @property
+    def ready(self) -> bool:
+        return isinstance(self.concrete, Type) or self.concrete.ready
 
     @cached_property
     def type(self) -> TypeType:

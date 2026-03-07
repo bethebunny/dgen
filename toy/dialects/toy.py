@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Op, Type, TypeType, Value
+import dgen
+from dgen import Dialect, Op, Type, Value
 from dgen.dialects.builtin import Index, Nil, F64, String
 import toy.dialects.affine as affine
 
@@ -15,10 +16,10 @@ toy = Dialect("toy")
 @dataclass(frozen=True)
 class Tensor(Type):
     shape: Value[affine.Shape]
-    dtype: Value[TypeType] = F64()
+    dtype: Value[dgen.TypeType] = F64()
     __params__ = (
         ("shape", affine.Shape),
-        ("dtype", TypeType),
+        ("dtype", dgen.TypeType),
     )
 
     def unpack_shape(self):
@@ -29,8 +30,8 @@ class Tensor(Type):
 @dataclass(frozen=True)
 class InferredShapeTensor(Type):
     __layout__ = Nil.__layout__
-    dtype: Value[TypeType] = F64()
-    __params__ = (("dtype", TypeType),)
+    dtype: Value[dgen.TypeType] = F64()
+    __params__ = (("dtype", dgen.TypeType),)
 
 
 @toy.op("transpose")

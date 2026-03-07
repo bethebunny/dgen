@@ -13,8 +13,7 @@ from dgen.codegen import _ctype, _llvm_type
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, String
 from dgen.module import ConstantOp, Function, Module
-from dgen.type import Memory
-from dgen.type import Constant
+from dgen.type import Constant, Memory, _type_from_dict
 
 
 def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
@@ -117,7 +116,7 @@ def _resolve_comptime_field(
     if field_name == "type":
         tag = result if isinstance(result, dict) else value.type.to_json()
         assert isinstance(tag, dict)
-        op.type = _reconstruct_type(tag)
+        op.type = _type_from_dict(tag)
     else:
         const_op = ConstantOp(value=result, type=value.type)
         idx = func.body.ops.index(op)
@@ -212,28 +211,6 @@ def compute_stages(func: FunctionOp) -> dict[int, int]:
     for op in func.body.ops:
         _stage(op)
     return stages
-
-
-def _reconstruct_type(data: dict[str, object]) -> dgen.Type:
-    """Reconstruct a Type from its serialized TypeType dict."""
-    tag = data["tag"]
-    assert isinstance(tag, str)
-    dialect_name, type_name = tag.split(".")
-    dialect = dgen.Dialect.get(dialect_name)
-    cls = dialect.types[type_name]
-    params = {k: v for k, v in data.items() if k != "tag"}
-    if not params:
-        return cls()
-    kwargs: dict[str, object] = {}
-    for param_name, param_value in params.items():
-        for field_name, field_type in cls.__params__:
-            if field_name == param_name:
-                if isinstance(param_value, dict):
-                    kwargs[param_name] = _reconstruct_type(param_value)
-                else:
-                    kwargs[param_name] = field_type().constant(param_value)
-                break
-    return cls(**kwargs)
 
 
 def _unresolved_boundaries(

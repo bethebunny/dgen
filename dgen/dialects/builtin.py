@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
+import dgen
+from dgen import Block, Dialect, Op, Type, Value, layout
 
 builtin = Dialect("builtin")
 
@@ -52,49 +53,52 @@ class Byte(Type):
 @builtin.type("Array")
 @dataclass(frozen=True)
 class Array(Type):
-    element_type: Value[TypeType]
+    element_type: Value[dgen.TypeType]
     n: Value[Index]
     __params__ = (
-        ("element_type", TypeType),
+        ("element_type", dgen.TypeType),
         ("n", Index),
     )
 
     @property
     def __layout__(self) -> layout.Layout:
-        return layout.Array(self.element_type.__layout__, self.n.__constant__.to_json())
+        return layout.Array(
+            dgen.type.type_constant(self.element_type).__layout__,
+            self.n.__constant__.to_json(),
+        )
 
 
 @builtin.type("Pointer")
 @dataclass(frozen=True)
 class Pointer(Type):
-    pointee: Value[TypeType]
-    __params__ = (("pointee", TypeType),)
+    pointee: Value[dgen.TypeType]
+    __params__ = (("pointee", dgen.TypeType),)
 
     @property
     def __layout__(self) -> layout.Layout:
-        return layout.Pointer(self.pointee.__layout__)
+        return layout.Pointer(dgen.type.type_constant(self.pointee).__layout__)
 
 
 @builtin.type("FatPointer")
 @dataclass(frozen=True)
 class FatPointer(Type):
-    pointee: Value[TypeType]
-    __params__ = (("pointee", TypeType),)
+    pointee: Value[dgen.TypeType]
+    __params__ = (("pointee", dgen.TypeType),)
 
     @property
     def __layout__(self) -> layout.Layout:
-        return layout.FatPointer(self.pointee.__layout__)
+        return layout.FatPointer(dgen.type.type_constant(self.pointee).__layout__)
 
 
 @builtin.type("List")
 @dataclass(frozen=True)
 class List(Type):
-    element_type: Value[TypeType]
-    __params__ = (("element_type", TypeType),)
+    element_type: Value[dgen.TypeType]
+    __params__ = (("element_type", dgen.TypeType),)
 
     @property
     def __layout__(self) -> layout.Layout:
-        return layout.FatPointer(self.element_type.__layout__)
+        return layout.FatPointer(dgen.type.type_constant(self.element_type).__layout__)
 
 
 @builtin.op("pack")
