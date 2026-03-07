@@ -111,7 +111,7 @@ def _annotation_for_param(param: ParamDecl) -> str:
         inner = _resolve_param_type_ref(param.type)
         return f"list[Value[{inner}]]"
     if param.type.name == "Type":
-        return "Type"
+        return "Value[TypeType]"
     return f"Value[{param.type.name}]"
 
 

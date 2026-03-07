@@ -75,7 +75,13 @@ class Type(Value["TypeType"]):
 
     @property
     def ready(self) -> bool:
-        return all(val.ready for _, val in self.parameters)
+        for name, kind in self.__params__:
+            val = getattr(self, name)
+            if kind is TypeType and not isinstance(val, Type):
+                return False
+            if not val.ready:
+                return False
+        return True
 
     @cached_property
     def __constant__(self) -> Memory[TypeType]:

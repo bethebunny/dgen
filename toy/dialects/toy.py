@@ -15,7 +15,7 @@ toy = Dialect("toy")
 @dataclass(frozen=True)
 class Tensor(Type):
     shape: Value[affine.Shape]
-    dtype: Type = F64()
+    dtype: Value[TypeType] = F64()
     __params__ = (
         ("shape", affine.Shape),
         ("dtype", TypeType),
@@ -29,7 +29,7 @@ class Tensor(Type):
 @dataclass(frozen=True)
 class InferredShapeTensor(Type):
     __layout__ = Nil.__layout__
-    dtype: Type = F64()
+    dtype: Value[TypeType] = F64()
     __params__ = (("dtype", TypeType),)
 
 

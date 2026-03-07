@@ -119,6 +119,25 @@ def test_array_with_ssa_dimension():
     assert arr_op.type.n is n_op
 
 
+def test_array_with_ssa_element_type():
+    """Array<%t, 4> — SSA type value as element_type param, round-trips through ASM."""
+    ir = strip_prefix("""
+        | %main = function () -> ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %arr : Array<%t, 4> = [1, 2, 3, 4]
+        |     %_ : () = return(())
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
+
+    # Verify the Array type's element_type param is the SSA value %t
+    ops = module.functions[0].body.ops
+    t_op = ops[0]
+    arr_op = ops[1]
+    assert isinstance(arr_op.type, builtin.Array)
+    assert arr_op.type.element_type is t_op
+
+
 def test_type_value_jit_identity():
     """TypeType value survives JIT identity function (passed as pointer)."""
     idx = Index()

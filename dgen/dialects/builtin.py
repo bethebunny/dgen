@@ -52,7 +52,7 @@ class Byte(Type):
 @builtin.type("Array")
 @dataclass(frozen=True)
 class Array(Type):
-    element_type: Type
+    element_type: Value[TypeType]
     n: Value[Index]
     __params__ = (
         ("element_type", TypeType),
@@ -67,7 +67,7 @@ class Array(Type):
 @builtin.type("Pointer")
 @dataclass(frozen=True)
 class Pointer(Type):
-    pointee: Type
+    pointee: Value[TypeType]
     __params__ = (("pointee", TypeType),)
 
     @property
@@ -78,7 +78,7 @@ class Pointer(Type):
 @builtin.type("FatPointer")
 @dataclass(frozen=True)
 class FatPointer(Type):
-    pointee: Type
+    pointee: Value[TypeType]
     __params__ = (("pointee", TypeType),)
 
     @property
@@ -89,7 +89,7 @@ class FatPointer(Type):
 @builtin.type("List")
 @dataclass(frozen=True)
 class List(Type):
-    element_type: Type
+    element_type: Value[TypeType]
     __params__ = (("element_type", TypeType),)
 
     @property

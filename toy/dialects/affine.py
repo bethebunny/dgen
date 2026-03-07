@@ -32,7 +32,7 @@ class Shape(Type):
 class MemRef(Type):
     __layout__ = layout.Pointer(Nil.__layout__)
     shape: Value[Shape]
-    dtype: Type = F64()
+    dtype: Value[TypeType] = F64()
     __params__ = (
         ("shape", Shape),
         ("dtype", TypeType),

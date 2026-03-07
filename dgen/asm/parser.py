@@ -15,7 +15,6 @@ from dgen import Block, Constant, Dialect, Op, Type, TypeType, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Function, Module
-from dgen.type import Memory
 
 
 def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
@@ -603,18 +602,11 @@ class IRParser:
             value = parse_expr(self)
             if pre_type is None:
                 raise RuntimeError(f"constant %{op_name_str} missing type annotation")
-            if not isinstance(pre_type, Type):
-                # SSA ref as type — op is not ready, store raw value
-                op = ConstantOp.__new__(ConstantOp)
-                op.name = op_name_str
-                op.type = pre_type  # type: ignore[assignment]
-                op.value = value  # type: ignore[assignment]
-            else:
-                op = ConstantOp(
-                    name=op_name_str,
-                    value=Memory.from_value(pre_type, value),
-                    type=pre_type,
-                )
+            op = ConstantOp(
+                name=op_name_str,
+                value=value,
+                type=pre_type,
+            )
             self.name_table[op_name_str] = op
             return op
         name = self.parse_qualified_name()

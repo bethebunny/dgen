@@ -33,7 +33,7 @@ class Function(Type):
 
     __layout__ = layout.Void()
     __params__: ClassVar[Fields] = (("result", Type),)
-    result: Type
+    result: Value[TypeType]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -49,12 +49,18 @@ class ConstantOp(Op, Constant):
 
     __operands__ = (("value", Type),)
 
-    def __init__(self, *, value: object, type: Type, name: str | None = None) -> None:
+    def __init__(
+        self, *, value: object, type: Value[TypeType], name: str | None = None
+    ) -> None:
         self.name = name
         self.type = type
-        self.value = (
-            value if isinstance(value, Memory) else Memory.from_value(type, value)
-        )
+        if isinstance(value, Memory):
+            self.value = value
+        elif isinstance(type, Type) and type.ready:
+            self.value = Memory.from_value(type, value)
+        else:
+            # Unresolved type ref — store raw value, staging resolves later
+            self.value = value  # type: ignore[assignment]
 
     def __eq__(self, other: object) -> bool:
         return self is other
@@ -91,8 +97,8 @@ def _walk_all_ops(op: Op) -> Iterable[Op]:
 def _collect_dialects(func: FunctionOp, dialects: set[Dialect]) -> None:
     """Collect all non-builtin dialects referenced by ops and types in a function."""
 
-    def _check_type(t: Type) -> None:
-        if t.dialect.name != "builtin":
+    def _check_type(t: Value) -> None:
+        if isinstance(t, Type) and t.dialect.name != "builtin":
             dialects.add(t.dialect)
 
     for op in _walk_all_ops(func):

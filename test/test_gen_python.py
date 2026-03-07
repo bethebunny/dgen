@@ -155,7 +155,7 @@ def test_generate_type_default_param():
     )
     code = generate(f, dialect_name="test")
     assert "shape: Value[Shape]" in code
-    assert "dtype: Type" in code
+    assert "dtype: Value[TypeType]" in code
     assert "F64()" in code
 
 
