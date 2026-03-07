@@ -84,7 +84,11 @@ def test_parameterized_typetype_constant_roundtrip():
     )
     mem = arr_ty.__constant__
     data = mem.to_json()
-    assert data == {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
+    assert data == {
+        "tag": "builtin.Array",
+        "element_type": {"tag": "builtin.Index"},
+        "n": 4,
+    }
 
     # ASM round-trip with the parameterized TypeType
     ir = strip_prefix("""
@@ -148,3 +152,51 @@ def test_type_constant_jit_return():
     assert isinstance(raw, int)
     result = Memory.from_raw(idx.type, raw).to_json()
     assert result == {"tag": "builtin.Index"}
+
+
+def test_staging_resolves_type_value():
+    """Staging resolves a TypeType function param used as op type.
+
+    main(%t: TypeType<Index>, %x: Index) -> Index:
+        %y : %t = add_index(%x, %x)
+        return(%y)
+
+    The staging system resolves %t to Index, then codegen proceeds normally.
+    """
+    from copy import deepcopy
+
+    from dgen.dialects import llvm
+    from dgen.staging import compile_and_run_staged
+
+    def lower(m: Module) -> Module:
+        """Lower add_index to llvm.add."""
+        m = deepcopy(m)
+        for func in m.functions:
+            for i, op in enumerate(func.body.ops):
+                if isinstance(op, builtin.AddIndexOp):
+                    new_op = llvm.AddOp(
+                        name=op.name, lhs=op.lhs, rhs=op.rhs, type=op.type
+                    )
+                    func.body.ops[i] = new_op
+                    # Patch references
+                    for other in func.body.ops:
+                        for field_name, _ in other.__operands__:
+                            val = getattr(other, field_name)
+                            if val is op:
+                                setattr(other, field_name, new_op)
+        return m
+
+    ir = strip_prefix("""
+        | %main = function (%t : TypeType<Index>, %x : Index) -> Index:
+        |     %y : %t = add_index(%x, %x)
+        |     %_ : () = return(%y)
+    """)
+    module = parse_module(ir)
+
+    result = compile_and_run_staged(
+        module,
+        infer=lambda m: m,
+        lower=lower,
+        args=[{"tag": "builtin.Index"}, 21],
+    )
+    assert result == 42

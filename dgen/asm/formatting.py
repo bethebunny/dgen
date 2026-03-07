@@ -105,9 +105,7 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
     if isinstance(value, dict):
-        items = ", ".join(
-            f'"{k}": {format_expr(v, tracker)}' for k, v in value.items()
-        )
+        items = ", ".join(f'"{k}": {format_expr(v, tracker)}' for k, v in value.items())
         return "{" + items + "}"
     if isinstance(value, float):
         return format_float(value)

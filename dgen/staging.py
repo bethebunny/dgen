@@ -114,10 +114,15 @@ def _resolve_comptime_field(
     if block_args:
         subgraph_ids = {id(o) for o in subgraph}
         func.body.ops = [o for o in func.body.ops if id(o) not in subgraph_ids]
-    const_op = ConstantOp(value=result, type=value.type)
-    idx = func.body.ops.index(op)
-    func.body.ops.insert(idx, const_op)
-    setattr(op, field_name, const_op)
+    if field_name == "type":
+        tag = result if isinstance(result, dict) else value.type.to_json()
+        assert isinstance(tag, dict)
+        op.type = _reconstruct_type(tag)
+    else:
+        const_op = ConstantOp(value=result, type=value.type)
+        idx = func.body.ops.index(op)
+        func.body.ops.insert(idx, const_op)
+        setattr(op, field_name, const_op)
 
 
 def _resolve_constant_ops(func: FunctionOp) -> None:
@@ -193,6 +198,11 @@ def compute_stages(func: FunctionOp) -> dict[int, int]:
             parts.append(1 + _stage(pv))
         for ov in _field_values(value, value.__operands__):
             parts.append(_stage(ov))
+        # Unresolved type ref counts as a param boundary
+        if isinstance(value.type, dgen.Value) and not isinstance(
+            value.type, (Constant, dgen.Type)
+        ):
+            parts.append(1 + _stage(value.type))
         result = max(parts, default=0)
         stages[vid] = result
         return result
@@ -202,6 +212,28 @@ def compute_stages(func: FunctionOp) -> dict[int, int]:
     for op in func.body.ops:
         _stage(op)
     return stages
+
+
+def _reconstruct_type(data: dict[str, object]) -> dgen.Type:
+    """Reconstruct a Type from its serialized TypeType dict."""
+    tag = data["tag"]
+    assert isinstance(tag, str)
+    dialect_name, type_name = tag.split(".")
+    dialect = dgen.Dialect.get(dialect_name)
+    cls = dialect.types[type_name]
+    params = {k: v for k, v in data.items() if k != "tag"}
+    if not params:
+        return cls()
+    kwargs: dict[str, object] = {}
+    for param_name, param_value in params.items():
+        for field_name, field_type in cls.__params__:
+            if field_name == param_name:
+                if isinstance(param_value, dict):
+                    kwargs[param_name] = _reconstruct_type(param_value)
+                else:
+                    kwargs[param_name] = field_type().constant(param_value)
+                break
+    return cls(**kwargs)
 
 
 def _unresolved_boundaries(
@@ -220,6 +252,11 @@ def _unresolved_boundaries(
                 value, (Constant, dgen.Type)
             ):
                 boundaries.append((stages.get(id(op), 0), op, field_name, value))
+        # Also check op.type — if it's an unresolved SSA ref (Value, not Type)
+        if isinstance(op.type, dgen.Value) and not isinstance(
+            op.type, (Constant, dgen.Type)
+        ):
+            boundaries.append((stages.get(id(op), 0), op, "type", op.type))
     boundaries.sort(key=lambda t: t[0])
     return boundaries
 
