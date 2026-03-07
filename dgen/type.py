@@ -95,17 +95,6 @@ class Type(Value["TypeType"]):
         return f"{prefix}{getattr(cls, '_asm_name', type(self).__name__)}"
 
     @property
-    def type_layout(self) -> Record:
-        """Layout for this type as a value (tag + params)."""
-        fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
-        for name, val in self.parameters:
-            if isinstance(val, Type):
-                fields.append((name, val.type_layout))
-            else:
-                fields.append((name, val.__constant__.type.__layout__))
-        return Record(fields)
-
-    @property
     def parameters(self) -> Iterator[tuple[str, Value]]:
         for name, field in self.__params__:
             yield name, getattr(self, name)
@@ -144,15 +133,23 @@ class TypeType(Type):
     """A type whose values are themselves types.
 
     TypeType(concrete=Index()) wraps Index as a first-class value.
-    Its __layout__ delegates to the concrete type's type_layout.
     """
 
     concrete: Type
     __params__: ClassVar[Fields] = (("concrete", Type),)
 
     @property
-    def __layout__(self) -> Layout:
-        return self.concrete.type_layout
+    def __layout__(self) -> Record:
+        """Layout for this type as a value (tag + params)."""
+        return Record(
+            [
+                ("tag", StringLayout()),
+                *(
+                    (name, param.type.__layout__)
+                    for name, param in self.concrete.parameters
+                ),
+            ]
+        )
 
     @cached_property
     def type(self) -> TypeType:
