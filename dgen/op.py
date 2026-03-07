@@ -14,7 +14,7 @@ class Op(Value):
     """Base class for all dialect operations."""
 
     name: str | None = None
-    _asm_name: ClassVar[str]
+    asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
     __params__: ClassVar[Fields] = ()
     __operands__: ClassVar[Fields] = ()
@@ -41,7 +41,7 @@ class Op(Value):
     def asm(self) -> Iterable[str]:
         from .asm.formatting import format_func, op_asm
 
-        if self._asm_name == "function":
+        if self.asm_name == "function":
             return format_func(self)
         return op_asm(self)
 

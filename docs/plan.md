@@ -28,9 +28,8 @@ File: `toy/cli.py`
 
 ### 1c. Remove hasattr checks
 
-One remaining: `formatting.py:129` uses `hasattr(value, "_asm_name")` to detect
-registered types. Replace with `isinstance(value, Type)` check (all registered
-types inherit from Type and have `_asm_name` set by `@dialect.type`).
+Done — all types are now registered with `@dialect.type()` and have `asm_name`
+set. The `format_expr` Type branch directly calls `type_asm()`.
 
 File: `dgen/asm/formatting.py`
 

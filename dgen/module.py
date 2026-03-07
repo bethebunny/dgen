@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import ClassVar
 
-from dgen import Constant, Dialect, Op, Type, Value
+from dgen import Constant, Dialect, Op, Type, TypeType, Value
 from dgen import layout
 from dgen.dialects.builtin import (
     HasSingleBlock,
@@ -18,18 +18,20 @@ from dgen.dialects.builtin import (
     builtin,
 )
 
-from dgen.type import Memory
+from dgen.type import Fields, Memory
 
 # ===----------------------------------------------------------------------=== #
-# Function type (not dialect-registered)
+# Function type
 # ===----------------------------------------------------------------------=== #
 
 
+@builtin.type("Function")
 @dataclass
 class Function(Type):
     """A function signature."""
 
     __layout__ = layout.Void()
+    __params__: ClassVar[Fields] = (("result", Type),)
     result: Type
 
 
@@ -88,12 +90,9 @@ def _walk_all_ops(op: Op) -> Iterable[Op]:
 def _collect_dialects(func: Op, dialects: set[Dialect]) -> None:
     """Collect all non-builtin dialects referenced by ops and types in a function."""
 
-    def _check_type(t: object) -> None:
-        if t is None:
-            return
-        d = getattr(t, "dialect", None)
-        if d is not None and d.name != "builtin":
-            dialects.add(d)
+    def _check_type(t: Type) -> None:
+        if t.dialect.name != "builtin":
+            dialects.add(t.dialect)
 
     for op in _walk_all_ops(func):
         if op.dialect.name != "builtin":
@@ -129,3 +128,4 @@ class Module:
 # ===----------------------------------------------------------------------=== #
 
 HasSingleBlock.__annotations__["__blocks__"] = ClassVar[tuple[str, ...]]
+builtin.type("TypeType")(TypeType)

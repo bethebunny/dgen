@@ -12,7 +12,7 @@
 - Move `List` and `String` back to `FatPointer` layouts, ie. not statically-known sizes
 - Remove any "if stage0/stage1" logic
 - Batch multiple subgraphs in the same staging pass rather than serializing them
-- Figure out what `resolve_constant` does and whether we need it
+- Delete `DimSizeOp.resolve_constant` monkey-patch and the `getattr(op, "resolve_constant")` pattern in `staging.py` — declare it as an optional method on `Op` or remove entirely
 - Get rid of `for_value`
 
 ## dgen dialect definition files + generation
@@ -53,7 +53,7 @@
 - Fix other ops which should return types but return `Nil` instead
 - Figure out why some ASM still doesn't have types, these should fail to parse
 - Remove the janky `if args` stuff from `cli.run`
-- Remove `hasattr` checks
+- Remove remaining `hasattr` checks (if any)
 - Remove `cast`s
 - Remove `Any`s
 - Remove `type: ignore`s

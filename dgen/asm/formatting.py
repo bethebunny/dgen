@@ -6,7 +6,6 @@ from dataclass field declarations alone — no per-op asm/parse code needed.
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Iterable, Sequence
 
 from dgen.dialects.builtin import Nil, PackOp
@@ -95,11 +94,7 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, Constant) and not isinstance(value, Op):
         return format_expr(value.__constant__.to_json(), tracker)
     if isinstance(value, Type):
-        if getattr(type(value), "asm_name", None) is not None:
-            return type_asm(value, tracker)
-        # Types with hand-written asm (e.g. LLVM dialect types)
-        asm: str = getattr(value, "asm")
-        return asm
+        return type_asm(value, tracker)
     if isinstance(value, Value):
         if tracker is not None:
             return f"%{tracker.track_name(value)}"
@@ -125,19 +120,14 @@ def _dialect_prefix(dialect_name: str) -> str:
     return "" if dialect_name == "builtin" else f"{dialect_name}."
 
 
-def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
+def type_asm(type_obj: Type, tracker: SlotTracker | None = None) -> str:
     """Generic type formatter via field introspection."""
-    cls = type(type_obj)
-    dialect = getattr(cls, "dialect", None)
-    prefix = _dialect_prefix(dialect.name if dialect is not None else "builtin")
-    name = f"{prefix}{getattr(cls, 'asm_name', '')}"
-    if dataclasses.is_dataclass(cls):
-        fields = dataclasses.fields(cls)
-    else:
-        fields = ()
-    if not fields:
+    prefix = _dialect_prefix(type_obj.dialect.name)
+    name = f"{prefix}{type_obj.asm_name}"
+    params = list(type_obj.parameters)
+    if not params:
         return name
-    args = ", ".join(format_expr(getattr(type_obj, f.name), tracker) for f in fields)
+    args = ", ".join(format_expr(val, tracker) for _, val in params)
     return f"{name}<{args}>"
 
 
@@ -149,7 +139,7 @@ def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
 def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
     """Generic asm emitter driven by field declarations."""
     cls = type(op)
-    asm_name = cls._asm_name
+    asm_name = cls.asm_name
     dialect_name = op.dialect.name
 
     # If no tracker provided, create one and register this op

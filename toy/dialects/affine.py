@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64, HasSingleBlock, Array, Pointer
+from dgen.dialects.builtin import Index, Nil, F64, HasSingleBlock
 
 affine = Dialect("affine")
 
