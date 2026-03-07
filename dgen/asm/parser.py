@@ -11,7 +11,7 @@ import dataclasses
 import importlib
 from typing import Any
 
-from dgen import Block, Constant, Dialect, Op, Type, Value
+from dgen import Block, Constant, Dialect, Op, Type, TypeType, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Function, Module
@@ -51,6 +51,34 @@ def parse_expr(parser: IRParser) -> object:
                 parser.skip_whitespace()
         parser.expect("]")
         return items
+
+    if c == "{":
+        # Dict: {key: value, key: value, ...}
+        parser.expect("{")
+        parser.skip_whitespace()
+        result: dict[str, object] = {}
+        if parser.peek() != "}":
+            key = parse_expr(parser)
+            parser.skip_whitespace()
+            parser.expect(":")
+            parser.skip_whitespace()
+            val = parse_expr(parser)
+            assert isinstance(key, str)
+            result[key] = val
+            parser.skip_whitespace()
+            while parser.peek() == ",":
+                parser.expect(",")
+                parser.skip_whitespace()
+                key = parse_expr(parser)
+                parser.skip_whitespace()
+                parser.expect(":")
+                parser.skip_whitespace()
+                val = parse_expr(parser)
+                assert isinstance(key, str)
+                result[key] = val
+                parser.skip_whitespace()
+        parser.expect("}")
+        return result
 
     if c == "%":
         # SSA reference
@@ -348,14 +376,17 @@ class IRParser:
             raise RuntimeError(f"Expected integer at position {self.pos}")
         return int(self.text[start : self.pos])
 
-    def parse_type(self) -> Type:
-        """Parse a type via the registered type table, or () for Nil."""
+    def parse_type(self) -> Type | Value:
+        """Parse a type, or an SSA ref to a TypeType value."""
         if self.peek() == "(":
             self.expect("()")
             return builtin.Nil()
         result = parse_expr(self)
-        assert isinstance(result, Type)
-        return result
+        if isinstance(result, Type):
+            return result
+        if isinstance(result, Value) and isinstance(result.type, TypeType):
+            return result
+        raise RuntimeError(f"Expected type, got {result}")
 
     def skip_line(self) -> None:
         """Skip to the next line."""
@@ -568,15 +599,22 @@ class IRParser:
         self.expect("=")
         self.skip_whitespace()
         # Implicit constant: value starts with '[' or digit/minus
-        if self.peek() in "[-0123456789":
+        if self.peek() in "{[-0123456789":
             value = parse_expr(self)
             if pre_type is None:
                 raise RuntimeError(f"constant %{op_name_str} missing type annotation")
-            op = ConstantOp(
-                name=op_name_str,
-                value=Memory.from_value(pre_type, value),
-                type=pre_type,
-            )
+            if not isinstance(pre_type, Type):
+                # SSA ref as type — op is not ready, store raw value
+                op = ConstantOp.__new__(ConstantOp)
+                op.name = op_name_str
+                op.type = pre_type  # type: ignore[assignment]
+                op.value = value  # type: ignore[assignment]
+            else:
+                op = ConstantOp(
+                    name=op_name_str,
+                    value=Memory.from_value(pre_type, value),
+                    type=pre_type,
+                )
             self.name_table[op_name_str] = op
             return op
         name = self.parse_qualified_name()

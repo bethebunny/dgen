@@ -49,4 +49,6 @@ class Op(Value):
 
     @property
     def ready(self) -> bool:
+        if not isinstance(self.type, Type):
+            return False
         return all(getattr(self, name).ready for name, _ in self.__params__)
