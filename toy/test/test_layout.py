@@ -317,3 +317,54 @@ def test_type_pack_roundtrip():
         "tag": "builtin.List",
         "element_type": {"tag": "builtin.Index"},
     }
+
+
+def test_type_value_memory_roundtrip_nested():
+    """Round-trip List<List<F64>> through Memory buffer."""
+    from dgen.type import Memory, Type
+
+    inner = builtin.List(element_type=builtin.F64())
+    ty = builtin.List(element_type=inner)
+    tl = ty.type_layout
+    mem = Memory.__new__(Memory)
+    mem.type = ty
+    mem.buffer = bytearray(tl.byte_size)
+    mem.origins = []
+    tl.from_json(mem.buffer, 0, ty.type_to_json(), mem.origins)
+    result = tl.to_json(mem.buffer, 0)
+    reconstructed = Type.type_from_json(result)
+    assert reconstructed == ty
+
+
+def test_type_to_json_pointer():
+    """Pointer<F64> serializes with nested type param."""
+    ty = builtin.Pointer(pointee=builtin.F64())
+    result = ty.type_to_json()
+    assert result == {
+        "tag": "builtin.Pointer",
+        "pointee": {"tag": "builtin.F64"},
+    }
+
+
+def test_type_from_json_pointer_roundtrip():
+    """Round-trip Pointer<Index> through JSON."""
+    from dgen.type import Type
+
+    ty = builtin.Pointer(pointee=builtin.Index())
+    reconstructed = Type.type_from_json(ty.type_to_json())
+    assert reconstructed == ty
+
+
+def test_type_to_json_nil():
+    """Nil type (zero-size layout) serializes correctly."""
+    ty = builtin.Nil()
+    result = ty.type_to_json()
+    assert result == {"tag": "builtin.Nil"}
+
+
+def test_type_layout_size_varies_by_params():
+    """Type layout size depends on concrete params (inline design)."""
+    # List<Index> and List<List<F64>> have different type_layout sizes
+    simple = builtin.List(element_type=builtin.Index())
+    nested = builtin.List(element_type=builtin.List(element_type=builtin.F64()))
+    assert simple.type_layout.byte_size < nested.type_layout.byte_size
