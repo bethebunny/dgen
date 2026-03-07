@@ -522,7 +522,7 @@ def test_deepcopy_module_with_list_constant():
     # The copied module's constant should still be readable
     copied_const = copied.functions[0].body.ops[0]
     assert isinstance(copied_const, ConstantOp)
-    assert copied_const.value.to_json() == [3, 5, 7]
+    assert copied_const.memory.to_json() == [3, 5, 7]
 
 
 # ---------------------------------------------------------------------------

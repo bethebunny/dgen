@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import cached_property
 from typing import ClassVar
 
 from dgen import Constant, Dialect, Op, Type, TypeType, Value
@@ -19,7 +20,7 @@ from dgen.dialects.builtin import (
     builtin,
 )
 
-from dgen.type import Fields, Memory
+from dgen.type import Fields, Memory, type_constant
 
 # ===----------------------------------------------------------------------=== #
 # Function type
@@ -42,25 +43,22 @@ class Function(Type):
 
 
 @builtin.op("constant")
-@dataclass(eq=False, kw_only=True, init=False)
+@dataclass(eq=False, kw_only=True)
 class ConstantOp(Op, Constant):
-    value: Memory
-    type: Type
+    value: object
+    type: Value[TypeType]
 
     __operands__ = (("value", Type),)
 
-    def __init__(
-        self, *, value: object, type: Value[TypeType], name: str | None = None
-    ) -> None:
-        self.name = name
-        self.type = type
-        if isinstance(value, Memory):
-            self.value = value
-        elif isinstance(type, Type) and type.ready:
-            self.value = Memory.from_value(type, value)
-        else:
-            # Unresolved type ref — store raw value, staging resolves later
-            self.value = value  # type: ignore[assignment]
+    @cached_property
+    def memory(self) -> Memory:
+        if isinstance(self.value, Memory):
+            return self.value
+        return Memory.from_value(type_constant(self.type), self.value)
+
+    @property
+    def __constant__(self) -> Memory:
+        return self.memory
 
     def __eq__(self, other: object) -> bool:
         return self is other

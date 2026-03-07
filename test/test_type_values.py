@@ -8,7 +8,7 @@ from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index
 from dgen.module import ConstantOp, Module
-from dgen.type import Memory
+from dgen.type import Memory, TypeType
 from toy.test.helpers import strip_prefix
 
 
@@ -338,6 +338,74 @@ def test_compile_with_ssa_function_result():
     assert isinstance(inner_func.result, ConstantOp)
 
 
+def test_compile_function_with_ssa_typed_block_arg():
+    """compile() handles block args whose type is a ConstantOp (SSA ref).
+
+    If a function's block arg has type = ConstantOp (not a concrete Type),
+    codegen must resolve it via type_constant before accessing __layout__.
+    """
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %f : Nil = function<Nil>() (%x: %t):
+        |         %_ : Nil = return(())
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    inner_func = module.functions[0].body.ops[1]
+    assert isinstance(inner_func, FunctionOp)
+    # The block arg %x has type = ConstantOp (SSA ref %t), not a concrete Type
+    x_arg = inner_func.body.args[0]
+    assert isinstance(x_arg.type, ConstantOp)
+    # compile() must resolve this via type_constant (not crash on __layout__)
+    exe = compile_module(Module(functions=[inner_func]))
+    exe.run(42)
+
+
+def test_compile_constant_with_ssa_type():
+    """compile() handles ConstantOp whose type is an SSA ref (ConstantOp).
+
+    %t : TypeType<Index> = {"tag": "builtin.Index"}
+    %x : %t = 42
+
+    codegen must resolve %x's type via type_constant to get __layout__.
+    """
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %x : %t = 42
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    x_op = module.functions[0].body.ops[1]
+    assert isinstance(x_op, ConstantOp)
+    assert isinstance(x_op.type, ConstantOp)  # type is SSA ref, not Type
+    # compile must handle this
+    exe = compile_module(module)
+    exe.run()
+
+
+def test_compile_input_types_resolved_from_ssa():
+    """compile() resolves input_types via type_constant for ConstantOp-typed args.
+
+    Executable.run() uses input_types to convert Python values to Memory,
+    so they must be concrete Types, not ConstantOps.
+    """
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %f : Nil = function<%t>() (%x: %t):
+        |         %_ : Nil = return(%x)
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    inner_func = module.functions[0].body.ops[1]
+    assert isinstance(inner_func, FunctionOp)
+    exe = compile_module(Module(functions=[inner_func]))
+    # input_types must be concrete Types for Memory.from_value to work
+    assert all(isinstance(t, builtin.Index) for t in exe.input_types)
+
+
 def test_staging_resolves_block_arg_type():
     """Staging resolves a BlockArgument TypeType at runtime, not compile time.
 
@@ -382,6 +450,83 @@ def test_staging_resolves_block_arg_type():
 
     assert exe.run({"tag": "builtin.Index"}, 100) == 200
     assert lower_calls > calls_after_first_run
+
+
+def test_typetype_layout_with_block_arg_raises():
+    """TypeType.__layout__ raises TypeError when concrete is a BlockArgument.
+
+    TypeType(concrete=block_arg) can't resolve the concrete type at
+    compile time, so type_constant raises TypeError via __constant__.
+    """
+    import pytest
+
+    arr_ty = builtin.Array(
+        element_type=Index(),
+        n=Index().constant(4),
+    )
+    arg = BlockArgument(name="arr_ty", type=TypeType(concrete=arr_ty))
+    tt = TypeType(concrete=arg)
+    with pytest.raises(TypeError):
+        tt.__layout__
+
+
+def test_parse_typetype_block_arg_constant_deferred():
+    """ConstantOp with TypeType<%arr_ty> parses but .memory raises TypeError.
+
+    The parser stores the raw value. Materializing memory requires resolving
+    the BlockArgument via type_constant, which raises TypeError.
+    """
+    import pytest
+
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() (%arr_ty: TypeType<Array<Index, 4>>):
+        |     %tt : TypeType<%arr_ty> = {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    tt_op = module.functions[0].body.ops[0]
+    assert isinstance(tt_op, ConstantOp)
+    # Raw value is stored, but memory can't be materialized
+    assert isinstance(tt_op.value, dict)
+    with pytest.raises(TypeError):
+        tt_op.memory
+
+
+def test_staging_with_ssa_result_type():
+    """Staging resolves func.result when it's a ConstantOp SSA ref.
+
+    main() -> Nil:
+        %t : TypeType<Index> = {"tag": "builtin.Index"}
+        %f : Nil = function<%t>() (%rt: TypeType<Index>, %x: Index):
+            %y : %rt = add_index(%x, %x)
+            %_ : Nil = return(%y)
+        %_ : Nil = return(())
+
+    The inner function %f has result = %t (ConstantOp), and its block arg
+    %rt is a TypeType<Index>. The staging system must resolve both %t and %rt.
+    """
+    from dgen.staging import compile_staged
+    from toy.passes.affine_to_llvm import lower_to_llvm
+
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : TypeType<Index> = {"tag": "builtin.Index"}
+        |     %f : Nil = function<%t>() (%rt: TypeType<Index>, %x: Index):
+        |         %y : %rt = add_index(%x, %x)
+        |         %_ : Nil = return(%y)
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    inner_func = module.functions[0].body.ops[1]
+    assert isinstance(inner_func, FunctionOp)
+    assert isinstance(inner_func.result, ConstantOp)
+
+    exe = compile_staged(
+        Module(functions=[inner_func]),
+        infer=lambda m: m,
+        lower=lower_to_llvm,
+    )
+    assert exe.run({"tag": "builtin.Index"}, 21) == 42
 
 
 def test_staging_resolves_type_value():

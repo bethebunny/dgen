@@ -171,12 +171,13 @@ class TypeType(Type):
     @property
     def __layout__(self) -> Record:
         """Layout for this type as a value (tag + params)."""
+        resolved = type_constant(self.concrete)
         return Record(
             [
                 ("tag", StringLayout()),
                 *(
-                    (name, param.type.__layout__)
-                    for name, param in self.concrete.parameters
+                    (name, type_constant(param.type).__layout__)
+                    for name, param in resolved.parameters
                 ),
             ]
         )

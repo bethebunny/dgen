@@ -14,7 +14,7 @@ from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 from dgen.module import ConstantOp, Module, string_value
 from dgen.layout import Layout
-from dgen.type import Memory
+from dgen.type import Memory, Value
 
 # ---------------------------------------------------------------------------
 # struct.format → LLVM / ctypes mapping
@@ -111,20 +111,21 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
 
     # Register block arg types
     for arg in f.body.args:
-        types[id(arg)] = _llvm_type(arg.type.__layout__)
+        types[id(arg)] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
     for op in f.body.ops:
         vid = id(op)
         if isinstance(op, ConstantOp):
-            layout = op.type.__layout__
+            mem = op.memory
+            layout = mem.layout
             if _ctype(layout) is ctypes.c_void_p:
                 # Pointer-passed layout (Array, FatPointer): emit buffer address
-                host_buffers.append(op.value)
-                constants[vid] = f"ptr inttoptr (i64 {op.value.address} to ptr)"
+                host_buffers.append(mem)
+                constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
                 types[vid] = "ptr"
             else:
                 lt = _llvm_type(layout)
-                raw = op.value.unpack()[0]
+                raw = mem.unpack()[0]
                 val_str = format_float(raw) if isinstance(raw, float) else str(raw)
                 constants[vid] = f"{lt} {val_str}"
                 types[vid] = lt
@@ -291,7 +292,7 @@ def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
     result = dgen.type.type_constant(main.result)
     return Executable(
         ir=ir,
-        input_types=[arg.type for arg in main.body.args],
+        input_types=[dgen.type.type_constant(arg.type) for arg in main.body.args],
         main_name=main.name,
         result_type=result,
         host_refs=host_buffers,

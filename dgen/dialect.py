@@ -20,7 +20,7 @@ class Dialect:
     def __init__(self, name: str) -> None:
         self.name = name
         self.ops: dict[str, builtins.type[Op]] = {}
-        self.types: dict[str, Callable] = {}
+        self.types: dict[str, builtins.type[Type]] = {}
         Dialect._registry[name] = self
 
     @classmethod

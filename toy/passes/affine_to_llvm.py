@@ -75,7 +75,7 @@ class AffineToLLVMLowering:
             new_op = ConstantOp(value=op.value, type=op.type)
             yield new_op
             self.value_map[op] = new_op
-            if isinstance(op.value.layout, layout.Array) and isinstance(
+            if isinstance(op.memory.layout, layout.Array) and isinstance(
                 op.type, toy.Tensor
             ):
                 shape = op.type.unpack_shape()

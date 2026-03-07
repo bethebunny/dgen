@@ -182,7 +182,7 @@ def parse_op_fields(
     parser: IRParser,
     cls: type[Op],
     name: str | None = None,
-    pre_type: Type | None = None,
+    pre_type: Value[TypeType] | None = None,
 ) -> Op:
     """Generic op field parser driven by field declarations."""
     kwargs: dict[str, Any] = {"name": name}  # noqa: ANN401

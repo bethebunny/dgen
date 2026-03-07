@@ -50,7 +50,7 @@ class ToyToAffineLowering:
         )
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
-        if isinstance(op, ConstantOp) and isinstance(op.value.layout, layout.Array):
+        if isinstance(op, ConstantOp) and isinstance(op.memory.layout, layout.Array):
             yield from self._lower_constant(op)
         elif isinstance(op, ConstantOp):
             yield op

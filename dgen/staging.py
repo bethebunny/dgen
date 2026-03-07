@@ -13,7 +13,7 @@ from dgen.codegen import _ctype, _llvm_type
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, String
 from dgen.module import ConstantOp, Module
-from dgen.type import Constant, Memory, _type_from_dict
+from dgen.type import Constant, Memory
 
 
 def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
@@ -75,6 +75,7 @@ def _jit_evaluate(
     args: Sequence = (),
 ) -> object:
     """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
+    assert target.ready
     ops = list(subgraph) + [builtin.ReturnOp(value=target)]
     func = FunctionOp(
         name="main",
@@ -88,7 +89,7 @@ def _jit_evaluate(
     raw = exe.run(*memories)
 
     # Convert result back to Python while JIT buffers are still alive
-    return _raw_to_json(raw, target.type)
+    return _raw_to_json(raw, dgen.type.type_constant(target.type))
 
 
 def _resolve_comptime_field(
@@ -113,15 +114,10 @@ def _resolve_comptime_field(
     if block_args:
         subgraph_ids = {id(o) for o in subgraph}
         func.body.ops = [o for o in func.body.ops if id(o) not in subgraph_ids]
-    if field_name == "type":
-        tag = result if isinstance(result, dict) else value.type.to_json()
-        assert isinstance(tag, dict)
-        op.type = _type_from_dict(tag)
-    else:
-        const_op = ConstantOp(value=result, type=value.type)
-        idx = func.body.ops.index(op)
-        func.body.ops.insert(idx, const_op)
-        setattr(op, field_name, const_op)
+    const_op = ConstantOp(value=result, type=value.type)
+    idx = func.body.ops.index(op)
+    func.body.ops.insert(idx, const_op)
+    setattr(op, field_name, const_op)
 
 
 def _resolve_constant_ops(func: FunctionOp) -> None:
@@ -302,14 +298,15 @@ def _compile_with_callbacks(
     # Derive callback LLVM signature from original function
     assert func.name is not None
     callback_name = f"_stage2_{func.name}"
-    orig_types = [arg.type for arg in func.body.args]
+    orig_types = [dgen.type.type_constant(arg.type) for arg in func.body.args]
     orig_llvm_types = [_llvm_type(t.__layout__) for t in orig_types]
-    if isinstance(func.result, builtin.Nil):
+    result_type = dgen.type.type_constant(func.result)
+    if isinstance(result_type, builtin.Nil):
         ret_llvm = "void"
         result_ctype: type[ctypes._CData] | None = None
     else:
-        ret_llvm = _llvm_type(func.result.__layout__)
-        result_ctype = _ctype(func.result.__layout__)
+        ret_llvm = _llvm_type(result_type.__layout__)
+        result_ctype = _ctype(result_type.__layout__)
     extern_decl = f"declare {ret_llvm} @{callback_name}({', '.join(orig_llvm_types)})"
 
     # Build ctypes callback type
@@ -366,9 +363,9 @@ def _compile_with_callbacks(
     call_op = llvm.CallOp(
         callee=String().constant(callback_name),
         args=thunk_args,
-        type=func.result,
+        type=result_type,
     )
-    if isinstance(func.result, builtin.Nil):
+    if isinstance(result_type, builtin.Nil):
         ret_op = builtin.ReturnOp()
     else:
         ret_op = builtin.ReturnOp(value=call_op)
@@ -376,7 +373,7 @@ def _compile_with_callbacks(
     thunk_func = FunctionOp(
         name=func.name,
         body=dgen.Block(ops=[call_op, ret_op], args=thunk_args),
-        result=func.result,
+        result=result_type,
     )
     thunk_module = Module(functions=[thunk_func])
 
