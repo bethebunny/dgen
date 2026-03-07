@@ -4,7 +4,8 @@ import ctypes
 from copy import deepcopy as _deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterator, Self, TypeVar
 
-from .layout import Layout, Record, String as StringLayout, _bytearray_address
+from .layout import Layout, Record, _bytearray_address
+from .layout import String as StringLayout
 
 if TYPE_CHECKING:
     from .value import Constant
@@ -19,7 +20,7 @@ class Type:
     with hand-written formatting (e.g. llvm types).
     """
 
-    __layout__: ClassVar[Layout]
+    __layout__: Layout
     __params__: ClassVar[Fields] = ()
 
     def constant(self, value: object) -> Constant[Self]:
@@ -36,7 +37,7 @@ class Type:
     def type_layout(self) -> Record:
         """Layout for this type as a value (tag + params)."""
         fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
-        for name, param_type in self.__params__:
+        for name, _ in self.__params__:
             val = getattr(self, name)
             if isinstance(val, Type):
                 # Type-kinded param: use its type_layout recursively
