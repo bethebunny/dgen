@@ -307,15 +307,15 @@ def test_type_is_value():
 def test_type_constant_non_parametric():
     """Non-parametric type's __constant__ serializes to just a tag."""
     ty = builtin.F64()
-    assert ty.__constant__.to_json() == {"tag": "F64"}
+    assert ty.__constant__.to_json() == {"tag": "builtin.F64"}
 
 
 def test_type_constant_parametric():
     """Parametric type's __constant__ includes param values."""
     ty = builtin.List(element_type=builtin.Index())
     data = ty.__constant__.to_json()
-    assert data["tag"] == "List"
-    assert data["element_type"] == {"tag": "Index"}
+    assert data["tag"] == "builtin.List"
+    assert data["element_type"] == {"tag": "builtin.Index"}
 
 
 def test_type_params_are_bare_types():

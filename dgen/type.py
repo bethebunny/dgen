@@ -44,7 +44,7 @@ class Value(Generic[T]):
 class Type(Value["TypeType"]):
     """Any dialect type.
 
-    Types registered via @dialect.type() get _asm_name and dialect set
+    Types registered via @dialect.type() get asm_name and dialect set
     automatically. The format_expr() function handles formatting via
     type_asm() for registered types, or falls back to .asm for types
     with hand-written formatting (e.g. llvm types).
@@ -57,6 +57,8 @@ class Type(Value["TypeType"]):
     __layout__: Layout
     __params__: ClassVar[Fields] = ()
     name: None = None
+    dialect: dgen.Dialect
+    asm_name: str
 
     # Type subclasses are @dataclass(frozen=True) with their own __init__.
     # This prevents falling through to Value.__init__ for bare Type().
@@ -78,21 +80,15 @@ class Type(Value["TypeType"]):
     @cached_property
     def __constant__(self) -> Memory[TypeType]:
         tt = self.type
-        data: dict[str, object] = {"tag": self._asm_tag}
-        for name, val in self.parameters:
-            data[name] = val.__constant__.to_json()
+        data = {
+            "tag": self.qualified_name,
+            **{name: param.__constant__.to_json() for name, param in self.parameters},
+        }
         return Memory.from_json(tt, data)
 
     @cached_property
-    def _asm_tag(self) -> str:
-        cls = type(self)
-        dialect = getattr(cls, "dialect", None)
-        prefix = (
-            f"{dialect.name}."
-            if dialect is not None and dialect.name != "builtin"
-            else ""
-        )
-        return f"{prefix}{getattr(cls, '_asm_name', type(self).__name__)}"
+    def qualified_name(self) -> str:
+        return f"{self.dialect.name}.{self.asm_name}"
 
     @property
     def parameters(self) -> Iterator[tuple[str, Value]]:

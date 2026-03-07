@@ -35,7 +35,7 @@ class Dialect:
 
     def type(self, name: str) -> Callable[[_T], _T]:
         def decorator(cls: _T) -> _T:
-            setattr(cls, "_asm_name", name)
+            setattr(cls, "asm_name", name)
             setattr(cls, "dialect", self)
             self.types[name] = cls  # type: ignore[arg-type]
             return cls

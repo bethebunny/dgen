@@ -95,7 +95,7 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, Constant) and not isinstance(value, Op):
         return format_expr(value.__constant__.to_json(), tracker)
     if isinstance(value, Type):
-        if getattr(type(value), "_asm_name", None) is not None:
+        if getattr(type(value), "asm_name", None) is not None:
             return type_asm(value, tracker)
         # Types with hand-written asm (e.g. LLVM dialect types)
         asm: str = getattr(value, "asm")
@@ -130,7 +130,7 @@ def type_asm(type_obj: object, tracker: SlotTracker | None = None) -> str:
     cls = type(type_obj)
     dialect = getattr(cls, "dialect", None)
     prefix = _dialect_prefix(dialect.name if dialect is not None else "builtin")
-    name = f"{prefix}{getattr(cls, '_asm_name', '')}"
+    name = f"{prefix}{getattr(cls, 'asm_name', '')}"
     if dataclasses.is_dataclass(cls):
         fields = dataclasses.fields(cls)
     else:
