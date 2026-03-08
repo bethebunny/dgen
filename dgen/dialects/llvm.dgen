@@ -19,6 +19,7 @@ op store(value: Float, ptr: Ptr) -> Nil
 op fadd(lhs: Float, rhs: Float) -> Float
 op fmul(lhs: Float, rhs: Float) -> Float
 op add(lhs: Int<64>, rhs: Int<64>) -> Int<64>
+op sub(lhs: Int<64>, rhs: Int<64>) -> Int<64>
 op mul(lhs: Int<64>, rhs: Int<64>) -> Int<64>
 op icmp<pred: String>(lhs: Int<64>, rhs: Int<64>) -> Int<1>
 op br<dest: String>() -> Nil

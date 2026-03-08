@@ -138,14 +138,14 @@ def _lower_peano_func(func: builtin.FunctionOp) -> None:
                 new_values = [replacements.get(id(a), a) for a in op.args.values]
                 new_pack = builtin.PackOp(values=new_values, type=op.args.type)
                 new_ops.append(new_pack)
-                new_ops.append(
-                    builtin.CallOp(
-                        callee=op.callee,
-                        args=new_pack,
-                        type=op.type,
-                        name=op.name,
-                    )
+                new_call = builtin.CallOp(
+                    callee=op.callee,
+                    args=new_pack,
+                    type=op.type,
+                    name=op.name,
                 )
+                new_ops.append(new_call)
+                replacements[id(op)] = new_call
             else:
                 new_ops.append(op)
         else:
