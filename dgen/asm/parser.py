@@ -8,7 +8,6 @@ at the top of the IR text.
 from __future__ import annotations
 
 import dataclasses
-import enum
 import importlib
 import re
 from typing import Any
@@ -27,72 +26,514 @@ _INT = re.compile(r"\d+")
 _NUMBER = re.compile(r"-?\d+\.\d*|-?\d*\.\d+|-?\d+")
 
 
-class Token(enum.Enum):
-    IDENTIFIER = r"[a-zA-Z_][a-zA-Z0-9_]*"
+def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
+    """Resolve an SSA name to a Value, creating a forward reference if needed."""
+    if ssa_name not in parser.name_table:
+        val = Value(name=ssa_name, type=builtin.Nil())
+        parser.name_table[ssa_name] = val
+        return val
+    return parser.name_table[ssa_name]
 
 
-def parse_module(asm: str) -> Module:
-    module = Module()
-    namespace = {}
+def parse_expr(parser: IRParser) -> object:
+    """Parse a single expression, dispatching on syntax."""
+    parser.skip_whitespace()
+    c = parser.peek()
 
-    parser = ASMParser(asm)
-    while not parser.done:
-        if (imports := parser.try_read(ImportStatement)) is not None:
-            namespace.update(imports.namespace)
+    if c == "(":
+        # Nil value literal: ()
+        parser.expect("()")
+        return builtin.Nil()
+
+    if c == "[":
+        # List: [expr, expr, ...]
+        parser.expect("[")
+        items = []
+        if not parser.parse_punct("]"):
+            items.append(parse_expr(parser))
+            while parser.parse_punct(","):
+                items.append(parse_expr(parser))
+            parser.expect_punct("]")
+        return items
+
+    if c == "{":
+        # Dict: {key: value, key: value, ...}
+        parser.expect("{")
+        result: dict[str, object] = {}
+        if not parser.parse_punct("}"):
+            key = parse_expr(parser)
+            parser.expect_punct(":")
+            val = parse_expr(parser)
+            assert isinstance(key, str)
+            result[key] = val
+            while parser.parse_punct(","):
+                key = parse_expr(parser)
+                parser.expect_punct(":")
+                val = parse_expr(parser)
+                assert isinstance(key, str)
+                result[key] = val
+            parser.expect_punct("}")
+        return result
+
+    if c == "%":
+        # SSA reference
+        return _resolve_or_create(parser, parser.parse_ssa_name())
+
+    if c == '"':
+        # String literal
+        return parser.parse_string_literal()
+
+    if c in "-0123456789":
+        # Unified number parse: float if '.' present, else int
+        token = parser.expect_token(_NUMBER, "number")
+        return float(token) if "." in token else int(token)
+
+    # Identifier -> type reference or qualified name
+    name = parser.parse_qualified_name()
+    cls = parser._types.get(name)
+    if cls is None:
+        raise RuntimeError(f"Unknown name: {name}")
+    if dataclasses.is_dataclass(cls):
+        fields = dataclasses.fields(cls)
+    else:
+        fields = ()
+    if not fields:
+        return cls()
+    # If all fields have defaults and no '<' follows, use defaults
+    all_have_defaults = all(
+        f.default is not dataclasses.MISSING
+        or f.default_factory is not dataclasses.MISSING
+        for f in fields
+    )
+    if all_have_defaults and parser.peek() != "<":
+        return cls()
+    # Parameterized type: Name<expr, expr, ...>
+    parser.expect_punct("<")
+    kwargs = _parse_fields_from_exprs(parser, cls)
+    parser.expect_punct(">")
+    return cls(**kwargs)
+
+
+def _wrap_constant(field_type: type[Type], raw_value: object) -> Constant:
+    """Wrap a raw Python value as a Constant of the given field type.
+
+    For non-parameterized types, constructs field_type() directly.
+    For parameterized types, derives parameters from the raw value.
+    """
+    if field_type.__params__:
+        # Build kwargs by wrapping each param as a constant from raw_value
+        kwargs: dict[str, object] = {}
+        for param_name, param_type in field_type.__params__:
+            # Infer param value: for "rank"-like params on array-valued types,
+            # the param is len(raw_value)
+            assert isinstance(raw_value, list)
+            kwargs[param_name] = param_type().constant(len(raw_value))
+        return field_type(**kwargs).constant(raw_value)
+    return field_type().constant(raw_value)
+
+
+def _expand_list_sugar(
+    parser: IRParser, elements: list[object], element_type_cls: type[Type]
+) -> Value:
+    """Expand [expr, expr, ...] into a PackOp.
+
+    Non-Value elements (raw ints, floats) are wrapped as ConstantOps.
+    """
+    element_type = element_type_cls()
+    list_type = builtin.List(element_type=element_type)
+    values: list[Value] = []
+    for v in elements:
+        if isinstance(v, Value):
+            values.append(v)
         else:
-            module.functions.append(parser.read(OpStatement).op)
-
-    return module
-
-
-class ImportStatement:
-    @classmethod
-    def read(cls, parser: ASMParser) -> ImportStatement:
-        pass
-
-    @property
-    def namespace(self) -> dict[str, Op]: ...
+            const_op = ConstantOp(value=v, type=element_type)
+            parser.pending_ops.append(const_op)
+            values.append(const_op)
+    pack_op = builtin.PackOp(values=values, type=list_type)
+    parser.pending_ops.append(pack_op)
+    return pack_op
 
 
-class OpStatement:
-    @classmethod
-    def read(cls, parser: ASMParser) -> OpStatement:
-        name = parser.read(SSAName)
-        type = parser.read(TypeExpression) if parser.try_read(":") else None
-        parser.read("=")
-        op = parser.read(OpExpression)
-        return OpStatement(op, type, name)
+def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, object]:
+    """Parse comma-separated exprs and map them to the type's declared fields.
 
-    @property
-    def op(self) -> Op: ...
-
-
-class LiteralExpression:
-    @classmethod
-    def read(cls, parser: ASMParser) -> LiteralExpression:
-        pass
-
-
-class TypeExpression:
-    @classmethod
-    def read(cls, parser: ASMParser) -> TypeExpression:
-        if (literal := parser.try_read(DictLiteral)) is not None:
-            # TODO: probably turn this into a type immediately
-            return literal
-        name = parser.read(QualifiedName)
-        type = namespace.lookup(name.name)
-        parameters = []
-        if type.__params__:
-            parser.read("<")
-            parameters = parser.read_list((TypeExpression, LiteralExpression))
-            parser.read(">")
-        return TypeExpression(type, parameters)
-
-    @property
-    def type(self) -> Type: ...
+    Iterates __params__. Raw Python values are wrapped via
+    field_type().constant(); values that are already Value or Type
+    instances are kept as-is.
+    """
+    kwargs = {}
+    all_fields = cls.__params__
+    for i, (name, field_type) in enumerate(all_fields):
+        if i > 0:
+            parser.expect_punct(",")
+        raw_value = parse_expr(parser)
+        if not isinstance(raw_value, Value):
+            raw_value = _wrap_constant(field_type, raw_value)
+        kwargs[name] = raw_value
+    return kwargs
 
 
-class OpExpression:
-    @classmethod
-    def read(cls, parser: ASMParser) -> OpExpression:
-        pass
+def parse_op_fields(
+    parser: IRParser,
+    cls: type[Op],
+    name: str | None = None,
+    pre_type: Value[TypeType] | None = None,
+) -> Op:
+    """Generic op field parser driven by field declarations."""
+    kwargs: dict[str, Any] = {"name": name}  # noqa: ANN401
+
+    # Parse constant fields in <...>
+    if cls.__params__:
+        parser.expect_punct("<")
+        for i, (f_name, f_type) in enumerate(cls.__params__):
+            if i > 0:
+                parser.expect_punct(",")
+            raw_value = parse_expr(parser)
+            if not isinstance(raw_value, Value):
+                if isinstance(raw_value, list):
+                    raw_value = [
+                        _wrap_constant(f_type, v) if not isinstance(v, Value) else v
+                        for v in raw_value
+                    ]
+                else:
+                    raw_value = _wrap_constant(f_type, raw_value)
+            kwargs[f_name] = raw_value
+        parser.expect_punct(">")
+
+    # Parse runtime operand fields in (...)
+    parser.expect_punct("(")
+    for i, (f_name, f_type) in enumerate(cls.__operands__):
+        if i > 0:
+            parser.expect_punct(",")
+        raw_value = parse_expr(parser)
+        if isinstance(raw_value, list) and any(isinstance(v, Value) for v in raw_value):
+            raw_value = _expand_list_sugar(parser, list(raw_value), f_type)
+        elif not isinstance(raw_value, (Value, list)) and not issubclass(
+            cls, ConstantOp
+        ):
+            raw_value = _wrap_constant(f_type, raw_value)
+        kwargs[f_name] = raw_value
+    parser.expect_punct(")")
+
+    # Type annotation (already parsed before '=' if present)
+    if pre_type is not None:
+        kwargs["type"] = pre_type
+
+    # Body (indented blocks)
+    if cls.__blocks__:
+        for block_idx, block_name in enumerate(cls.__blocks__):
+            if block_idx > 0:
+                # Subsequent blocks: expect keyword at parent indent level
+                keyword = block_name.removesuffix("_body")
+                parser.skip_whitespace_and_newlines()
+                saved_pos = parser.pos
+                try:
+                    word = parser.parse_identifier()
+                except RuntimeError:
+                    parser.pos = saved_pos
+                    break
+                if word != keyword:
+                    parser.pos = saved_pos
+                    break
+            args = []
+            if parser.parse_punct("("):
+                if not parser.parse_punct(")"):
+                    args.append(parser._parse_param())
+                    while parser.parse_punct(","):
+                        args.append(parser._parse_param())
+                    parser.expect_punct(")")
+            parser.expect_punct(":")
+            ops = parser.parse_indented_block()
+            kwargs[block_name] = Block(ops=ops, args=args)
+
+    op = cls(**kwargs)
+
+    # Register op in name table if it has a name
+    if name is not None:
+        parser.name_table[name] = op
+
+    return op
+
+
+class IRParser:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.pos = 0
+        self._ops: dict[str, type[Op]] = {}
+        self._types: dict = {}
+        self.name_table: dict[str, Value] = {}
+        self.pending_ops: list[Op] = []
+
+        # Implicit: from builtin import *
+        builtin_dialect = Dialect.get("builtin")
+        self._ops.update(builtin_dialect.ops)
+        self._types.update(builtin_dialect.types)
+
+    def at_end(self) -> bool:
+        return self.pos >= len(self.text)
+
+    def peek(self) -> str:
+        if self.at_end():
+            return ""
+        return self.text[self.pos]
+
+    def advance(self) -> str:
+        c = self.text[self.pos]
+        self.pos += 1
+        return c
+
+    def skip_whitespace(self) -> None:
+        while not self.at_end() and self.text[self.pos] in " \t":
+            self.pos += 1
+
+    def skip_whitespace_and_newlines(self) -> None:
+        while not self.at_end() and self.text[self.pos] in " \t\n\r":
+            self.pos += 1
+
+    def expect(self, expected: str) -> None:
+        for ch in expected:
+            if self.at_end() or self.text[self.pos] != ch:
+                raise RuntimeError(f"Expected '{expected}' at position {self.pos}")
+            self.pos += 1
+
+    def parse_punct(self, char: str) -> bool:
+        """Skip whitespace, then consume char if present."""
+        self.skip_whitespace()
+        if not self.at_end() and self.text[self.pos] == char:
+            self.pos += 1
+            return True
+        return False
+
+    def expect_punct(self, char: str) -> None:
+        """Skip whitespace, then expect a punctuation character."""
+        self.skip_whitespace()
+        if self.at_end() or self.text[self.pos] != char:
+            raise RuntimeError(f"Expected '{char}' at position {self.pos}")
+        self.pos += 1
+
+    def parse_token(self, regex: re.Pattern[str]) -> str | None:
+        self.skip_whitespace()
+        if match := regex.match(self.text, pos=self.pos):
+            self.pos = match.end()
+            return match.group()
+        return None
+
+    def expect_token(self, expected: re.Pattern[str], token_name: str) -> str:
+        token = self.parse_token(expected)
+        if token is None:
+            raise RuntimeError(
+                f"Expected {token_name} ({expected!r}) at position {self.pos}"
+            )
+        return token
+
+    def parse_identifier(self) -> str:
+        """Parse an identifier: [a-zA-Z_][a-zA-Z0-9_]*"""
+        return self.expect_token(_IDENT, "identifier")
+
+    def parse_qualified_name(self) -> str:
+        """Parse a possibly-qualified name: ident or ident.ident"""
+        return self.expect_token(_QUALIFIED, "qualified name")
+
+    def parse_string_literal(self) -> str:
+        """Parse a double-quoted string literal, return the contents."""
+        token = self.expect_token(_STRING, "string literal")
+        return token[1:-1]
+
+    def parse_ssa_name(self) -> str:
+        """Parse %name, return the name part."""
+        token = self.expect_token(_SSA, "SSA name")
+        return token[1:]
+
+    def parse_number(self) -> float:
+        """Parse a floating point number."""
+        return float(self.expect_token(_FLOAT, "number"))
+
+    def parse_int(self) -> int:
+        """Parse a non-negative integer."""
+        return int(self.expect_token(_INT, "integer"))
+
+    def parse_type(self) -> Type | Value:
+        """Parse a type, or an SSA ref to a TypeType value."""
+        result = parse_expr(self)
+        if isinstance(result, Type):
+            return result
+        if isinstance(result, Value) and isinstance(result.type, TypeType):
+            return result
+        raise RuntimeError(f"Expected type, got {result}")
+
+    def skip_line(self) -> None:
+        """Skip to the next line."""
+        while not self.at_end() and self.peek() != "\n":
+            self.pos += 1
+        if not self.at_end():
+            self.pos += 1  # skip \n
+
+    # ===------------------------------------------------------------------=== #
+    # Import header parsing
+    # ===------------------------------------------------------------------=== #
+
+    def _parse_imports(self) -> None:
+        """Parse import headers at the top of the module."""
+        while not self.at_end():
+            self.skip_whitespace_and_newlines()
+            if self.at_end():
+                break
+            # Quick check: imports start with 'f' (from) or 'i' (import)
+            if self.peek() not in ("f", "i"):
+                break
+            saved = self.pos
+            word = self.parse_identifier()
+
+            if word == "from":
+                # from builtin import ... — no-op (builtin is implicit)
+                mod_name = self.parse_identifier()
+                if mod_name != "builtin":
+                    raise RuntimeError(
+                        f"Expected 'builtin' after 'from', got '{mod_name}'"
+                    )
+                import_kw = self.parse_identifier()
+                if import_kw != "import":
+                    raise RuntimeError(
+                        f"Expected 'import' after 'from builtin', got '{import_kw}'"
+                    )
+                # Skip the rest of the line (name list)
+                self.skip_line()
+
+            elif word == "import":
+                dialect_name = self.parse_identifier()
+                self.skip_line()
+                for _pfx in ("toy.dialects", "dgen.dialects"):
+                    try:
+                        importlib.import_module(f"{_pfx}.{dialect_name}")
+                        break
+                    except ModuleNotFoundError:
+                        continue
+                d = Dialect.get(dialect_name)
+                for op_name, cls in d.ops.items():
+                    self._ops[f"{dialect_name}.{op_name}"] = cls
+                for tname, tcls in d.types.items():
+                    self._types[f"{dialect_name}.{tname}"] = tcls
+            else:
+                # Not an import line — rewind
+                self.pos = saved
+                break
+
+    # ===------------------------------------------------------------------=== #
+    # Module / function / block parsing
+    # ===------------------------------------------------------------------=== #
+
+    def parse_module(self) -> Module:
+        """Parse a complete module from IR text."""
+        self._parse_imports()
+        self.skip_whitespace_and_newlines()
+
+        functions: list[builtin.FunctionOp] = []
+        while not self.at_end():
+            self.skip_whitespace_and_newlines()
+            if self.at_end():
+                break
+            op = self.parse_op()
+            assert isinstance(op, builtin.FunctionOp)
+            functions.append(op)
+
+        return Module(functions=functions)
+
+    def _parse_param(self) -> BlockArgument:
+        """Parse %name: Type"""
+        param_name = self.parse_ssa_name()
+        self.expect_punct(":")
+        type_ = self.parse_type()
+        arg = BlockArgument(name=param_name, type=type_)
+        self.name_table[param_name] = arg
+        return arg
+
+    def _parse_block(self, min_indent: int) -> list[Op]:
+        """Parse a block of indented ops."""
+        ops: list[Op] = []
+        while not self.at_end():
+            line_start = self.pos
+            indent = 0
+            while not self.at_end() and self.text[self.pos] in " \t":
+                if self.text[self.pos] == " ":
+                    indent += 1
+                else:
+                    indent += 4
+                self.pos += 1
+
+            # Empty line
+            if self.at_end() or self.peek() == "\n":
+                if not self.at_end():
+                    self.pos += 1  # skip \n
+                continue
+
+            # Not enough indent -> end of block
+            if indent < min_indent:
+                self.pos = line_start
+                break
+
+            # Find the newline ending this line (before parsing) so we can
+            # detect whether parse_op consumed past it (body-bearing ops).
+            eol = self.text.find("\n", self.pos)
+            if eol == -1:
+                eol = len(self.text)
+
+            op = self.parse_op()
+            # Drain pending ops created during parsing (e.g. list sugar ConstantOps)
+            # — these must appear before the op that references them
+            ops.extend(self.pending_ops)
+            self.pending_ops.clear()
+            ops.append(op)
+
+            # If parse_op consumed past the original newline (body-bearing op),
+            # the cursor is already at the next line's start — don't skip.
+            if self.pos <= eol:
+                self.skip_line()
+        return ops
+
+    def parse_indented_block(self) -> list[Op]:
+        """Parse an indented block after a ':' (for ops with body)."""
+        self.skip_line()
+        # Determine indent of first line
+        start = self.pos
+        indent = 0
+        while not self.at_end() and self.text[self.pos] in " \t":
+            if self.text[self.pos] == " ":
+                indent += 1
+            else:
+                indent += 4
+            self.pos += 1
+        self.pos = start
+        if indent == 0:
+            return []
+        return self._parse_block(min_indent=indent)
+
+    def parse_op(self) -> Op:
+        """Parse a single operation: %result [: type] = [dialect.]op(...)"""
+        op_name_str = self.parse_ssa_name()
+        pre_type = None
+        if self.parse_punct(":"):
+            pre_type = self.parse_type()
+        self.expect_punct("=")
+        self.skip_whitespace()
+        # Implicit constant: value starts with '[' or digit/minus
+        if self.peek() in "{[-0123456789":
+            value = parse_expr(self)
+            if pre_type is None:
+                raise RuntimeError(f"constant %{op_name_str} missing type annotation")
+            op = ConstantOp(
+                name=op_name_str,
+                value=value,
+                type=pre_type,
+            )
+            self.name_table[op_name_str] = op
+            return op
+        name = self.parse_qualified_name()
+        cls = self._ops.get(name)
+        if cls is None:
+            raise RuntimeError(f"Unknown op: {name}")
+        return parse_op_fields(self, cls, name=op_name_str, pre_type=pre_type)
+
+
+def parse_module(text: str) -> Module:
+    parser = IRParser(text)
+    return parser.parse_module()
