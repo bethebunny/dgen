@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import ctypes
+import itertools
 from collections.abc import Callable, Sequence
 from copy import deepcopy
+from typing import Iterator
 
 import dgen
 from dgen import codegen
@@ -16,18 +18,14 @@ from dgen.module import ConstantOp, Module
 from dgen.type import Constant, Memory
 
 
-def _walk_inputs(op: dgen.Op, worklist: list[dgen.Value]) -> None:
+def _walk_inputs(op: dgen.Op) -> Iterator[dgen.Value]:
     """Append all parameter and operand Values to worklist, flattening lists."""
-    for _, val in op.parameters:
+    for _, val in itertools.chain(op.parameters, op.operands):
         if isinstance(val, list):
-            worklist.extend(v for v in val if isinstance(v, dgen.Value))
+            # TODO: remove this case once we push through Tuple types
+            yield from val
         else:
-            worklist.append(val)
-    for _, val in op.operands:
-        if isinstance(val, list):
-            worklist.extend(v for v in val if isinstance(v, dgen.Value))
-        else:
-            worklist.append(val)
+            yield val
 
 
 def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
@@ -40,7 +38,7 @@ def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
             continue
         needed.add(id(val))
         if isinstance(val, dgen.Op):
-            _walk_inputs(val, worklist)
+            worklist.extend(_walk_inputs(val))
     return [op for op in func.body.ops if id(op) in needed]
 
 
@@ -60,7 +58,7 @@ def _is_stage0_evaluable(target: dgen.Value) -> bool:
         if isinstance(val, BlockArgument):
             return False
         if isinstance(val, dgen.Op):
-            _walk_inputs(val, worklist)
+            worklist.extend(_walk_inputs(val))
     return True
 
 

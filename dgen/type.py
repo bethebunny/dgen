@@ -31,14 +31,6 @@ class Value(Generic[T]):
             yield name, getattr(self, name)
 
     @property
-    def operands(self) -> list[Value]:
-        return []
-
-    @property
-    def blocks(self) -> dict[str, dgen.Block]:
-        return {}
-
-    @property
     def __constant__(self) -> Memory[T]:
         raise NotImplementedError
 
