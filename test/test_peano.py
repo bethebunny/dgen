@@ -232,6 +232,28 @@ def test_if_else_parse_roundtrip():
     assert asm_text == asm_text2
 
 
+def test_if_else_jit():
+    """if/else executes correctly via JIT."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%n: Index):
+        |     %cond : Index = equal_index(%n, 0)
+        |     %one : Index = 1
+        |     %result : Index = if(%cond) ():
+        |         %_ : Nil = return(%one)
+        |     else ():
+        |         %val : Index = subtract_index(%n, 1)
+        |         %_ : Nil = return(%val)
+        |     %_ : Nil = return(%result)
+    """)
+    module = parse_module(ir)
+    from dgen import codegen
+
+    exe = codegen.compile(module)
+    assert exe.run(0) == 1
+    assert exe.run(5) == 4
+    assert exe.run(1) == 0
+
+
 def test_equal_jit():
     """equal_index returns 1 when equal, 0 otherwise."""
     ir = strip_prefix("""

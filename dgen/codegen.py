@@ -147,6 +147,24 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 if isinstance(operand, Constant):
                     _register_constant(operand)
 
+    # Pre-scan ops inside blocks (e.g., if/else bodies)
+    def _prescan_blocks(parent_op: dgen.Op) -> None:
+        for _, block in parent_op.blocks:
+            for child in block.ops:
+                vid = id(child)
+                if isinstance(child, ConstantOp):
+                    _register_constant(child)
+                elif (rt := _result_type_str(child.type)) is not None:
+                    types[vid] = rt
+                for operand_name, _ in child.__operands__:
+                    operand = getattr(child, operand_name)
+                    if isinstance(operand, Constant):
+                        _register_constant(operand)
+                _prescan_blocks(child)
+
+    for op in f.body.ops:
+        _prescan_blocks(op)
+
     def typed_ref(val: dgen.Value) -> str:
         """'type value' — e.g. 'double 1.0' or 'ptr %v3'."""
         vid = id(val)
@@ -249,6 +267,72 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             lines.append(f"  %{name} = zext i1 %{name}_raw to i64")
         elif isinstance(op, builtin.SubtractIndexOp):
             lines.append(f"  %{name} = sub i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
+        elif isinstance(op, builtin.AddIndexOp):
+            lines.append(f"  %{name} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
+        elif isinstance(op, builtin.IfOp):
+            then_label = f"then_{name}"
+            else_label = f"else_{name}"
+            merge_label = f"merge_{name}"
+            # Truncate i64 condition to i1
+            lines.append(f"  %{name}_cond = trunc i64 {bare_ref(op.cond)} to i1")
+            lines.append(
+                f"  br i1 %{name}_cond, label %{then_label}, label %{else_label}"
+            )
+            # Then block
+            lines.append(f"{then_label}:")
+            then_result = None
+            for child in op.then_body.ops:
+                if isinstance(child, ConstantOp):
+                    continue
+                child_name = tracker.track_name(child)
+                if isinstance(child, builtin.ReturnOp):
+                    then_result = child.value
+                    lines.append(f"  br label %{merge_label}")
+                elif isinstance(child, builtin.EqualIndexOp):
+                    lines.append(
+                        f"  %{child_name}_raw = icmp eq i64 {bare_ref(child.lhs)}, {bare_ref(child.rhs)}"
+                    )
+                    lines.append(f"  %{child_name} = zext i1 %{child_name}_raw to i64")
+                elif isinstance(child, builtin.SubtractIndexOp):
+                    lines.append(
+                        f"  %{child_name} = sub i64 {bare_ref(child.lhs)}, {bare_ref(child.rhs)}"
+                    )
+                elif isinstance(child, builtin.AddIndexOp):
+                    lines.append(
+                        f"  %{child_name} = add i64 {bare_ref(child.lhs)}, {bare_ref(child.rhs)}"
+                    )
+            # Else block
+            lines.append(f"{else_label}:")
+            else_result = None
+            for child in op.else_body.ops:
+                if isinstance(child, ConstantOp):
+                    continue
+                child_name = tracker.track_name(child)
+                if isinstance(child, builtin.ReturnOp):
+                    else_result = child.value
+                    lines.append(f"  br label %{merge_label}")
+                elif isinstance(child, builtin.EqualIndexOp):
+                    lines.append(
+                        f"  %{child_name}_raw = icmp eq i64 {bare_ref(child.lhs)}, {bare_ref(child.rhs)}"
+                    )
+                    lines.append(f"  %{child_name} = zext i1 %{child_name}_raw to i64")
+                elif isinstance(child, builtin.SubtractIndexOp):
+                    lines.append(
+                        f"  %{child_name} = sub i64 {bare_ref(child.lhs)}, {bare_ref(child.rhs)}"
+                    )
+                elif isinstance(child, builtin.AddIndexOp):
+                    lines.append(
+                        f"  %{child_name} = add i64 {bare_ref(child.lhs)}, {bare_ref(child.rhs)}"
+                    )
+            # Merge with phi
+            lines.append(f"{merge_label}:")
+            ty = types.get(id(op), "i64")
+            assert then_result is not None and else_result is not None
+            lines.append(
+                f"  %{name} = phi {ty}"
+                f" [ {bare_ref(then_result)}, %{then_label} ],"
+                f" [ {bare_ref(else_result)}, %{else_label} ]"
+            )
         elif isinstance(op, builtin.ReturnOp):
             if isinstance(op.value, builtin.Nil):
                 lines.append("  ret void")
