@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from dgen.asm.parser import ASMParser, Namespace
+
+_IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 
 
 class TestNamespace:
@@ -102,25 +106,25 @@ class TestTryRead:
 
 
 class TestTokenMethods:
-    def test_read_token(self) -> None:
+    def test_parse_token(self) -> None:
         p = ASMParser("  hello world")
-        token = p.read_token()
+        token = p.parse_token(_IDENT)
         assert token == "hello"
 
-    def test_read_token_at_end(self) -> None:
+    def test_parse_token_at_end(self) -> None:
         p = ASMParser("   ")
-        with pytest.raises(RuntimeError):
-            p.read_token()
+        token = p.parse_token(_IDENT)
+        assert token is None
 
     def test_expect_token(self) -> None:
         p = ASMParser("  hello")
-        token = p.expect_token("hello")
+        token = p.expect_token(_IDENT, "identifier")
         assert token == "hello"
 
-    def test_expect_token_wrong(self) -> None:
-        p = ASMParser("  world")
-        with pytest.raises(RuntimeError, match="Expected 'hello'"):
-            p.expect_token("hello")
+    def test_expect_token_fails(self) -> None:
+        p = ASMParser("   ")
+        with pytest.raises(RuntimeError, match="Expected identifier"):
+            p.expect_token(_IDENT, "identifier")
 
     def test_parse_identifier(self) -> None:
         p = ASMParser("  foo_bar")
@@ -145,7 +149,7 @@ class TestReadWithGrammarClass:
         class IdentGrammar:
             @classmethod
             def read(cls, parser: ASMParser) -> str:
-                return parser.read_token()
+                return parser.expect_token(_IDENT, "identifier")
 
         p = ASMParser("  hello")
         result = p.read(IdentGrammar)
@@ -155,7 +159,7 @@ class TestReadWithGrammarClass:
         class IdentGrammar:
             @classmethod
             def read(cls, parser: ASMParser) -> str:
-                return parser.read_token()
+                return parser.expect_token(_IDENT, "identifier")
 
         p = ASMParser("  hello")
         result = p.try_read(IdentGrammar)

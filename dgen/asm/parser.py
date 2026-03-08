@@ -651,21 +651,20 @@ class ASMParser:
             self.pos += 1
         return punct
 
-    def read_token(self) -> str:
-        """Read an identifier token (skips whitespace first). Raises if none found."""
+    def parse_token(self, regex: re.Pattern[str]) -> str | None:
+        """Try to match a regex token after skipping whitespace. Returns None on failure."""
         self._skip_whitespace()
-        match = _IDENT.match(self.text, pos=self.pos)
-        if match is None:
-            raise RuntimeError(f"Expected token at position {self.pos}")
-        self.pos = match.end()
-        return match.group()
+        if match := regex.match(self.text, pos=self.pos):
+            self.pos = match.end()
+            return match.group()
+        return None
 
-    def expect_token(self, expected: str) -> str:
-        """Read a token and verify it matches expected. Raises on mismatch."""
-        token = self.read_token()
-        if token != expected:
+    def expect_token(self, regex: re.Pattern[str], token_name: str) -> str:
+        """Match a regex token after skipping whitespace. Raises on failure."""
+        token = self.parse_token(regex)
+        if token is None:
             raise RuntimeError(
-                f"Expected '{expected}' at position {self.pos}, got '{token}'"
+                f"Expected {token_name} at position {self.pos}"
             )
         return token
 
@@ -680,4 +679,4 @@ class ASMParser:
 
     def _parse_identifier(self) -> str:
         """Parse an identifier: [a-zA-Z_][a-zA-Z0-9_]*"""
-        return self.read_token()
+        return self.expect_token(_IDENT, "identifier")
