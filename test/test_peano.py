@@ -254,6 +254,42 @@ def test_if_else_jit():
     assert exe.run(1) == 0
 
 
+def test_call_op_roundtrip():
+    """call op parses and round-trips."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%x: Index):
+        |     %result : Index = call<%add_one>([%x])
+        |     %_ : Nil = return(%result)
+        |
+        | %add_one : Nil = function<Index>() (%n: Index):
+        |     %r : Index = add_index(%n, 1)
+        |     %_ : Nil = return(%r)
+    """)
+    module = parse_module(ir)
+    asm_text = "\n".join(module.asm)
+    print(asm_text)
+    assert "call<%add_one>" in asm_text
+
+
+def test_call_jit():
+    """call op executes a helper function via JIT."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%x: Index):
+        |     %result : Index = call<%add_one>([%x])
+        |     %_ : Nil = return(%result)
+        |
+        | %add_one : Nil = function<Index>() (%n: Index):
+        |     %r : Index = add_index(%n, 1)
+        |     %_ : Nil = return(%r)
+    """)
+    module = parse_module(ir)
+    from dgen import codegen
+
+    exe = codegen.compile(module)
+    assert exe.run(5) == 6
+    assert exe.run(0) == 1
+
+
 def test_equal_jit():
     """equal_index returns 1 when equal, 0 otherwise."""
     ir = strip_prefix("""

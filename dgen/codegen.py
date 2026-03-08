@@ -135,6 +135,8 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         vid = id(op)
         if isinstance(op, ConstantOp):
             _register_constant(op)
+        elif isinstance(op, builtin.PackOp):
+            continue
         elif isinstance(op, llvm.PhiOp):
             first_val = op.values[0]
             types[vid] = types.get(id(first_val), "i64")
@@ -154,6 +156,8 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 vid = id(child)
                 if isinstance(child, ConstantOp):
                     _register_constant(child)
+                elif isinstance(child, builtin.PackOp):
+                    continue
                 elif (rt := _result_type_str(child.type)) is not None:
                     types[vid] = rt
                 for operand_name, _ in child.__operands__:
@@ -197,7 +201,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     lines = [f"define {llvm_ret} @{func_name}({param_str}) {{", "entry:"]
 
     for op in f.body.ops:
-        if isinstance(op, ConstantOp):
+        if isinstance(op, (ConstantOp, builtin.PackOp)):
             continue
 
         name = tracker.track_name(op)
@@ -333,6 +337,16 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 f" [ {bare_ref(then_result)}, %{then_label} ],"
                 f" [ {bare_ref(else_result)}, %{else_label} ]"
             )
+        elif isinstance(op, builtin.CallOp):
+            callee_name = op.callee.name
+            assert callee_name is not None
+            args = op.args.values if isinstance(op.args, builtin.PackOp) else op.args
+            a = ", ".join(typed_ref(arg) for arg in args)
+            if isinstance(op.type, builtin.Nil):
+                lines.append(f"  call void @{callee_name}({a})")
+            else:
+                ret_ty = types.get(id(op), "i64")
+                lines.append(f"  %{name} = call {ret_ty} @{callee_name}({a})")
         elif isinstance(op, builtin.ReturnOp):
             if isinstance(op.value, builtin.Nil):
                 lines.append("  ret void")

@@ -185,3 +185,13 @@ class IfOp(Op):
         "then_body",
         "else_body",
     )
+
+
+@builtin.op("call")
+@dataclass(eq=False, kw_only=True)
+class CallOp(Op):
+    callee: Value[dgen.TypeType]
+    args: list[Value]
+    type: Type
+    __params__ = (("callee", dgen.TypeType),)
+    __operands__ = (("args", Type),)
