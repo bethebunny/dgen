@@ -9,12 +9,21 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+import re
 from typing import Any
 
 from dgen import Block, Constant, Dialect, Op, Type, TypeType, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module
+
+_IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
+_QUALIFIED = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*")
+_STRING = re.compile(r'"[^"]*"')
+_SSA = re.compile(r"%[a-zA-Z0-9_]+")
+_FLOAT = re.compile(r"-?\d+\.\d*|-?\d*\.\d+")
+_INT = re.compile(r"\d+")
+_NUMBER = re.compile(r"-?\d+\.\d*|-?\d*\.\d+|-?\d+")
 
 
 def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
@@ -28,6 +37,7 @@ def _resolve_or_create(parser: IRParser, ssa_name: str) -> Value:
 
 def parse_expr(parser: IRParser) -> object:
     """Parse a single expression, dispatching on syntax."""
+    parser.skip_whitespace()
     c = parser.peek()
 
     if c == "(":
@@ -38,45 +48,31 @@ def parse_expr(parser: IRParser) -> object:
     if c == "[":
         # List: [expr, expr, ...]
         parser.expect("[")
-        parser.skip_whitespace()
         items = []
-        if parser.peek() != "]":
+        if not parser.parse_punct("]"):
             items.append(parse_expr(parser))
-            parser.skip_whitespace()
-            while parser.peek() == ",":
-                parser.expect(",")
-                parser.skip_whitespace()
+            while parser.parse_punct(","):
                 items.append(parse_expr(parser))
-                parser.skip_whitespace()
-        parser.expect("]")
+            parser.expect_punct("]")
         return items
 
     if c == "{":
         # Dict: {key: value, key: value, ...}
         parser.expect("{")
-        parser.skip_whitespace()
         result: dict[str, object] = {}
-        if parser.peek() != "}":
+        if not parser.parse_punct("}"):
             key = parse_expr(parser)
-            parser.skip_whitespace()
-            parser.expect(":")
-            parser.skip_whitespace()
+            parser.expect_punct(":")
             val = parse_expr(parser)
             assert isinstance(key, str)
             result[key] = val
-            parser.skip_whitespace()
-            while parser.peek() == ",":
-                parser.expect(",")
-                parser.skip_whitespace()
+            while parser.parse_punct(","):
                 key = parse_expr(parser)
-                parser.skip_whitespace()
-                parser.expect(":")
-                parser.skip_whitespace()
+                parser.expect_punct(":")
                 val = parse_expr(parser)
                 assert isinstance(key, str)
                 result[key] = val
-                parser.skip_whitespace()
-        parser.expect("}")
+            parser.expect_punct("}")
         return result
 
     if c == "%":
@@ -88,15 +84,9 @@ def parse_expr(parser: IRParser) -> object:
         return parser.parse_string_literal()
 
     if c in "-0123456789":
-        # Number: peek for "." to distinguish int vs float
-        p = parser.pos
-        if p < len(parser.text) and parser.text[p] == "-":
-            p += 1
-        while p < len(parser.text) and parser.text[p].isdigit():
-            p += 1
-        if p < len(parser.text) and parser.text[p] == ".":
-            return parser.parse_number()
-        return parser.parse_int()
+        # Unified number parse: float if '.' present, else int
+        token = parser.expect_token(_NUMBER, "number")
+        return float(token) if "." in token else int(token)
 
     # Identifier -> type reference or qualified name
     name = parser.parse_qualified_name()
@@ -118,10 +108,9 @@ def parse_expr(parser: IRParser) -> object:
     if all_have_defaults and parser.peek() != "<":
         return cls()
     # Parameterized type: Name<expr, expr, ...>
-    parser.expect("<")
-    parser.skip_whitespace()
+    parser.expect_punct("<")
     kwargs = _parse_fields_from_exprs(parser, cls)
-    parser.expect(">")
+    parser.expect_punct(">")
     return cls(**kwargs)
 
 
@@ -176,13 +165,11 @@ def _parse_fields_from_exprs(parser: IRParser, cls: type[Type]) -> dict[str, obj
     all_fields = cls.__params__
     for i, (name, field_type) in enumerate(all_fields):
         if i > 0:
-            parser.expect(",")
-            parser.skip_whitespace()
+            parser.expect_punct(",")
         raw_value = parse_expr(parser)
         if not isinstance(raw_value, Value):
             raw_value = _wrap_constant(field_type, raw_value)
         kwargs[name] = raw_value
-        parser.skip_whitespace()
     return kwargs
 
 
@@ -197,12 +184,10 @@ def parse_op_fields(
 
     # Parse constant fields in <...>
     if cls.__params__:
-        parser.expect("<")
-        parser.skip_whitespace()
+        parser.expect_punct("<")
         for i, (f_name, f_type) in enumerate(cls.__params__):
             if i > 0:
-                parser.expect(",")
-                parser.skip_whitespace()
+                parser.expect_punct(",")
             raw_value = parse_expr(parser)
             if not isinstance(raw_value, Value):
                 if isinstance(raw_value, list):
@@ -213,17 +198,13 @@ def parse_op_fields(
                 else:
                     raw_value = _wrap_constant(f_type, raw_value)
             kwargs[f_name] = raw_value
-            parser.skip_whitespace()
-        parser.expect(">")
+        parser.expect_punct(">")
 
     # Parse runtime operand fields in (...)
-    # Skip empty operand parens for ops with blocks (block args use '(' too)
-    parser.expect("(")
-    parser.skip_whitespace()
+    parser.expect_punct("(")
     for i, (f_name, f_type) in enumerate(cls.__operands__):
         if i > 0:
-            parser.expect(",")
-            parser.skip_whitespace()
+            parser.expect_punct(",")
         raw_value = parse_expr(parser)
         if isinstance(raw_value, list) and any(isinstance(v, Value) for v in raw_value):
             raw_value = _expand_list_sugar(parser, list(raw_value), f_type)
@@ -232,9 +213,7 @@ def parse_op_fields(
         ):
             raw_value = _wrap_constant(f_type, raw_value)
         kwargs[f_name] = raw_value
-        parser.skip_whitespace()
-    parser.expect(")")
-    parser.skip_whitespace()
+    parser.expect_punct(")")
 
     # Type annotation (already parsed before '=' if present)
     if pre_type is not None:
@@ -256,23 +235,14 @@ def parse_op_fields(
                 if word != keyword:
                     parser.pos = saved_pos
                     break
-            parser.skip_whitespace()
-            # Parse optional block args: (%name: type, ...)
             args = []
-            if parser.peek() == "(":
-                parser.expect("(")
-                parser.skip_whitespace()
-                if parser.peek() != ")":
+            if parser.parse_punct("("):
+                if not parser.parse_punct(")"):
                     args.append(parser._parse_param())
-                    parser.skip_whitespace()
-                    while parser.peek() == ",":
-                        parser.expect(",")
-                        parser.skip_whitespace()
+                    while parser.parse_punct(","):
                         args.append(parser._parse_param())
-                        parser.skip_whitespace()
-                parser.expect(")")
-            parser.skip_whitespace()
-            parser.expect(":")
+                    parser.expect_punct(")")
+            parser.expect_punct(":")
             ops = parser.parse_indented_block()
             kwargs[block_name] = Block(ops=ops, args=args)
 
@@ -326,82 +296,61 @@ class IRParser:
                 raise RuntimeError(f"Expected '{expected}' at position {self.pos}")
             self.pos += 1
 
+    def parse_punct(self, char: str) -> bool:
+        """Skip whitespace, then consume char if present."""
+        self.skip_whitespace()
+        if not self.at_end() and self.text[self.pos] == char:
+            self.pos += 1
+            return True
+        return False
+
+    def expect_punct(self, char: str) -> None:
+        """Skip whitespace, then expect a punctuation character."""
+        self.skip_whitespace()
+        if self.at_end() or self.text[self.pos] != char:
+            raise RuntimeError(f"Expected '{char}' at position {self.pos}")
+        self.pos += 1
+
+    def parse_token(self, regex: re.Pattern[str]) -> str | None:
+        self.skip_whitespace()
+        if match := regex.match(self.text, pos=self.pos):
+            self.pos = match.end()
+            return match.group()
+        return None
+
+    def expect_token(self, expected: re.Pattern[str], token_name: str) -> str:
+        token = self.parse_token(expected)
+        if token is None:
+            raise RuntimeError(
+                f"Expected {token_name} ({expected!r}) at position {self.pos}"
+            )
+        return token
+
     def parse_identifier(self) -> str:
         """Parse an identifier: [a-zA-Z_][a-zA-Z0-9_]*"""
-        start = self.pos
-        if self.at_end():
-            raise RuntimeError(f"Expected identifier at position {self.pos}")
-        c = self.peek()
-        if not (c.isalpha() or c == "_"):
-            raise RuntimeError(f"Expected identifier at position {self.pos}")
-        self.pos += 1
-        while not self.at_end():
-            c = self.peek()
-            if c.isalnum() or c == "_":
-                self.pos += 1
-            else:
-                break
-        return self.text[start : self.pos]
+        return self.expect_token(_IDENT, "identifier")
 
     def parse_qualified_name(self) -> str:
         """Parse a possibly-qualified name: ident or ident.ident"""
-        name = self.parse_identifier()
-        if not self.at_end() and self.peek() == ".":
-            self.advance()
-            name += "." + self.parse_identifier()
-        return name
+        return self.expect_token(_QUALIFIED, "qualified name")
 
     def parse_string_literal(self) -> str:
         """Parse a double-quoted string literal, return the contents."""
-        self.expect('"')
-        start = self.pos
-        while not self.at_end() and self.peek() != '"':
-            self.pos += 1
-        result = self.text[start : self.pos]
-        self.expect('"')
-        return result
+        token = self.expect_token(_STRING, "string literal")
+        return token[1:-1]
 
     def parse_ssa_name(self) -> str:
         """Parse %name, return the name part."""
-        self.expect("%")
-        return self._parse_name_chars()
-
-    def _parse_name_chars(self) -> str:
-        """Parse [a-zA-Z0-9_]+"""
-        start = self.pos
-        while not self.at_end():
-            c = self.peek()
-            if c.isalnum() or c == "_":
-                self.pos += 1
-            else:
-                break
-        if self.pos == start:
-            raise RuntimeError(f"Expected name at position {self.pos}")
-        return self.text[start : self.pos]
+        token = self.expect_token(_SSA, "SSA name")
+        return token[1:]
 
     def parse_number(self) -> float:
         """Parse a floating point number."""
-        start = self.pos
-        if not self.at_end() and self.peek() == "-":
-            self.pos += 1
-        while not self.at_end() and self.peek().isdigit():
-            self.pos += 1
-        if not self.at_end() and self.peek() == ".":
-            self.pos += 1
-            while not self.at_end() and self.peek().isdigit():
-                self.pos += 1
-        if self.pos == start:
-            raise RuntimeError(f"Expected number at position {self.pos}")
-        return float(self.text[start : self.pos])
+        return float(self.expect_token(_FLOAT, "number"))
 
     def parse_int(self) -> int:
         """Parse a non-negative integer."""
-        start = self.pos
-        while not self.at_end() and self.peek().isdigit():
-            self.pos += 1
-        if self.pos == start:
-            raise RuntimeError(f"Expected integer at position {self.pos}")
-        return int(self.text[start : self.pos])
+        return int(self.expect_token(_INT, "integer"))
 
     def parse_type(self) -> Type | Value:
         """Parse a type, or an SSA ref to a TypeType value."""
@@ -437,13 +386,11 @@ class IRParser:
 
             if word == "from":
                 # from builtin import ... — no-op (builtin is implicit)
-                self.skip_whitespace()
                 mod_name = self.parse_identifier()
                 if mod_name != "builtin":
                     raise RuntimeError(
                         f"Expected 'builtin' after 'from', got '{mod_name}'"
                     )
-                self.skip_whitespace()
                 import_kw = self.parse_identifier()
                 if import_kw != "import":
                     raise RuntimeError(
@@ -453,7 +400,6 @@ class IRParser:
                 self.skip_line()
 
             elif word == "import":
-                self.skip_whitespace()
                 dialect_name = self.parse_identifier()
                 self.skip_line()
                 for _pfx in ("toy.dialects", "dgen.dialects"):
@@ -493,16 +439,10 @@ class IRParser:
         return Module(functions=functions)
 
     def _parse_param(self) -> BlockArgument:
-        """Parse %name or %name: Type"""
+        """Parse %name: Type"""
         param_name = self.parse_ssa_name()
-        self.skip_whitespace()
-        type_ = None
-        if not self.at_end() and self.peek() == ":":
-            self.expect(":")
-            self.skip_whitespace()
-            type_ = self.parse_type()
-        if type_ is None:
-            raise RuntimeError(f"parameter %{param_name} missing type annotation")
+        self.expect_punct(":")
+        type_ = self.parse_type()
         arg = BlockArgument(name=param_name, type=type_)
         self.name_table[param_name] = arg
         return arg
@@ -570,15 +510,10 @@ class IRParser:
     def parse_op(self) -> Op:
         """Parse a single operation: %result [: type] = [dialect.]op(...)"""
         op_name_str = self.parse_ssa_name()
-        self.skip_whitespace()
-        # Optional type annotation before '='
         pre_type = None
-        if self.peek() == ":":
-            self.expect(":")
-            self.skip_whitespace()
+        if self.parse_punct(":"):
             pre_type = self.parse_type()
-            self.skip_whitespace()
-        self.expect("=")
+        self.expect_punct("=")
         self.skip_whitespace()
         # Implicit constant: value starts with '[' or digit/minus
         if self.peek() in "{[-0123456789":
