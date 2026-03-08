@@ -177,19 +177,29 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         op_str += f"({', '.join(operand_parts)})"
         parts.append(op_str)
     blocks = list(op.blocks)
-    for _, block in blocks:
+    if blocks:
+        # First block args on the op line
+        _, first_block = blocks[0]
         block_args = ", ".join(
             f"%{tracker.track_name(a)}: {type_asm(a.type, tracker) if isinstance(a.type, Type) else format_expr(a.type, tracker)}"
-            for a in block.args
+            for a in first_block.args
         )
-        parts.append(f" ({block_args})")
-    if blocks:
-        parts.append(":")
+        parts.append(f" ({block_args}):")
+    else:
+        parts.append("")
 
     line = "".join(parts)
     yield line
 
-    for _, block in blocks:
+    for block_idx, (block_name, block) in enumerate(blocks):
+        if block_idx > 0:
+            # Emit keyword line for subsequent blocks
+            keyword = block_name.removesuffix("_body")
+            block_args = ", ".join(
+                f"%{tracker.track_name(a)}: {type_asm(a.type, tracker) if isinstance(a.type, Type) else format_expr(a.type, tracker)}"
+                for a in block.args
+            )
+            yield f"{keyword} ({block_args}):"
         for child_op in block.ops:
             if _is_sugar_op(child_op):
                 continue

@@ -39,3 +39,6 @@ op return(value = Nil) -> Nil
 op function<result: Type>() -> Nil:
     block body
     has trait HasSingleBlock
+op if(cond: Index) -> Type:
+    block then_body
+    block else_body

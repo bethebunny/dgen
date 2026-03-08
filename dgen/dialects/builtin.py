@@ -171,3 +171,17 @@ class FunctionOp(HasSingleBlock, Op):
     body: Block
     __params__ = (("result", dgen.TypeType),)
     __blocks__ = ("body",)
+
+
+@builtin.op("if")
+@dataclass(eq=False, kw_only=True)
+class IfOp(Op):
+    cond: Value
+    type: Type
+    then_body: Block
+    else_body: Block
+    __operands__ = (("cond", Index),)
+    __blocks__ = (
+        "then_body",
+        "else_body",
+    )

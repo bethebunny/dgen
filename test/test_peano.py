@@ -208,6 +208,30 @@ def test_subtract_jit():
     assert exe.run(5) == 4
 
 
+def test_if_else_parse_roundtrip():
+    """if/else op with two blocks parses and round-trips."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%n: Index):
+        |     %cond : Index = equal_index(%n, 0)
+        |     %ten : Index = 10
+        |     %twenty : Index = 20
+        |     %result : Index = if(%cond) ():
+        |         %_ : Nil = return(%ten)
+        |     else ():
+        |         %_ : Nil = return(%twenty)
+        |     %_ : Nil = return(%result)
+    """)
+    module = parse_module(ir)
+    asm_text = "\n".join(module.asm)
+    print(asm_text)
+    assert "if(" in asm_text or "if (" in asm_text
+    assert "else" in asm_text
+    # Round-trip: parse the output again
+    module2 = parse_module(asm_text)
+    asm_text2 = "\n".join(module2.asm)
+    assert asm_text == asm_text2
+
+
 def test_equal_jit():
     """equal_index returns 1 when equal, 0 otherwise."""
     ir = strip_prefix("""

@@ -232,27 +232,41 @@ def parse_op_fields(
     if pre_type is not None:
         kwargs["type"] = pre_type
 
-    # Body (indented block)
+    # Body (indented blocks)
     if cls.__blocks__:
-        parser.skip_whitespace()
-        # Parse optional block args: (%name: type, ...)
-        args = []
-        if parser.peek() == "(":
-            parser.expect("(")
+        for block_idx, block_name in enumerate(cls.__blocks__):
+            if block_idx > 0:
+                # Subsequent blocks: expect keyword at parent indent level
+                keyword = block_name.removesuffix("_body")
+                parser.skip_whitespace_and_newlines()
+                saved_pos = parser.pos
+                try:
+                    word = parser.parse_identifier()
+                except RuntimeError:
+                    parser.pos = saved_pos
+                    break
+                if word != keyword:
+                    parser.pos = saved_pos
+                    break
             parser.skip_whitespace()
-            if parser.peek() != ")":
-                args.append(parser._parse_param())
+            # Parse optional block args: (%name: type, ...)
+            args = []
+            if parser.peek() == "(":
+                parser.expect("(")
                 parser.skip_whitespace()
-                while parser.peek() == ",":
-                    parser.expect(",")
-                    parser.skip_whitespace()
+                if parser.peek() != ")":
                     args.append(parser._parse_param())
                     parser.skip_whitespace()
-            parser.expect(")")
-        parser.skip_whitespace()
-        parser.expect(":")
-        ops = parser.parse_indented_block()
-        kwargs[cls.__blocks__[0]] = Block(ops=ops, args=args)
+                    while parser.peek() == ",":
+                        parser.expect(",")
+                        parser.skip_whitespace()
+                        args.append(parser._parse_param())
+                        parser.skip_whitespace()
+                parser.expect(")")
+            parser.skip_whitespace()
+            parser.expect(":")
+            ops = parser.parse_indented_block()
+            kwargs[block_name] = Block(ops=ops, args=args)
 
     op = cls(**kwargs)
 
