@@ -96,12 +96,13 @@ class ValueOp(Op):
 # ============================================================================
 
 
-def _lower_peano_func(func: builtin.FunctionOp) -> None:
-    """Lower peano ops in a single function."""
-    replacements: dict[int, Value] = {}
+def _lower_peano_ops(
+    ops: list[dgen.Op], replacements: dict[int, Value]
+) -> list[dgen.Op]:
+    """Lower peano ops in a list, descending into blocks."""
     new_ops: list[dgen.Op] = []
 
-    for op in func.body.ops:
+    for op in ops:
         if isinstance(op, ZeroOp):
             z = Zero()
             print(f"  lower: peano.zero -> {type_asm(z)}")
@@ -149,9 +150,18 @@ def _lower_peano_func(func: builtin.FunctionOp) -> None:
             else:
                 new_ops.append(op)
         else:
+            # Descend into blocks (e.g., if/else bodies)
+            for block_name, block in op.blocks:
+                block.ops = _lower_peano_ops(block.ops, replacements)
             new_ops.append(op)
 
-    func.body.ops = new_ops
+    return new_ops
+
+
+def _lower_peano_func(func: builtin.FunctionOp) -> None:
+    """Lower peano ops in a single function."""
+    replacements: dict[int, Value] = {}
+    func.body.ops = _lower_peano_ops(func.body.ops, replacements)
 
 
 def lower_peano(module: Module) -> Module:
@@ -399,3 +409,44 @@ def test_equal_jit():
     exe = codegen.compile(module)
     assert exe.run(0) == 1
     assert exe.run(5) == 0
+
+
+def test_recursive_peano():
+    """Recursive natural(n) builds Successor^(n+1)(Zero) from a runtime Index.
+
+    natural(n):
+        if n == 0: return successor(zero())
+        else: return successor(natural(n-1))
+
+    So natural(n) = Successor^(n+1)(Zero), and main(x) = value(natural(x)) = x+1.
+    """
+    ir = strip_prefix("""
+        | import peano
+        |
+        | %main : Nil = function<Index>() (%x: Index):
+        |     %n : peano.Natural = call<%natural>([%x])
+        |     %result : Index = peano.value<%n>()
+        |     %_ : Nil = return(%result)
+        |
+        | %natural : Nil = function<peano.Natural>() (%n: Index):
+        |     %base_case : Index = equal_index(%n, 0)
+        |     %value : peano.Natural = if(%base_case) ():
+        |         %z : TypeType<peano.Zero> = peano.zero()
+        |         %s : TypeType<peano.Successor<peano.Zero>> = peano.successor<%z>()
+        |         %_ : Nil = return(%s)
+        |     else ():
+        |         %n_minus_one : Index = subtract_index(%n, 1)
+        |         %predecessor : peano.Natural = call<%natural>([%n_minus_one])
+        |         %s : peano.Natural = peano.successor<%predecessor>()
+        |         %_ : Nil = return(%s)
+        |     %_ : Nil = return(%value)
+    """)
+    module = parse_module(ir)
+    exe = compile_staged(module, infer=lambda m: m, lower=lower_peano)
+
+    # natural(0) = Successor(Zero) → value = 1, so main(0) = 1
+    assert exe.run(0) == 1
+    # natural(2) = Successor(Successor(Successor(Zero))) → value = 3, so main(2) = 3
+    assert exe.run(2) == 3
+    # natural(4) = Successor^5(Zero) → value = 5, so main(4) = 5
+    assert exe.run(4) == 5
