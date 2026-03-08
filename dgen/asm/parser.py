@@ -537,3 +537,147 @@ class IRParser:
 def parse_module(text: str) -> Module:
     parser = IRParser(text)
     return parser.parse_module()
+
+
+# ===----------------------------------------------------------------------=== #
+# New ASMParser with read/try_read protocol
+# ===----------------------------------------------------------------------=== #
+
+
+class Namespace:
+    """Holds op/type registries populated from dialects."""
+
+    def __init__(self) -> None:
+        self.ops: dict[str, type[Op]] = {}
+        self.types: dict[str, type[Type]] = {}
+
+        # Implicit: builtin dialect (unqualified names)
+        builtin_dialect = Dialect.get("builtin")
+        self.ops.update(builtin_dialect.ops)
+        self.types.update(builtin_dialect.types)
+
+    def import_dialect(self, name: str) -> None:
+        """Import a dialect module and register its ops/types with qualified names."""
+        for prefix in ("dgen.dialects", "toy.dialects"):
+            try:
+                importlib.import_module(f"{prefix}.{name}")
+                break
+            except ModuleNotFoundError:
+                continue
+        else:
+            raise RuntimeError(f"Unknown dialect: {name}")
+
+        dialect = Dialect.get(name)
+        for op_name, cls in dialect.ops.items():
+            self.ops[f"{name}.{op_name}"] = cls
+        for type_name, tcls in dialect.types.items():
+            self.types[f"{name}.{type_name}"] = tcls
+
+
+class ASMParser:
+    """Low-level tokenizer with grammar-class dispatch via read/try_read."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.pos: int = 0
+        self.namespace: Namespace = Namespace()
+        self.name_table: dict[str, Value] = {}
+
+    @property
+    def done(self) -> bool:
+        """Skip whitespace and newlines, return True if at end."""
+        self._skip_whitespace_and_newlines()
+        return self.pos >= len(self.text)
+
+    def peek(self) -> str:
+        """Return current char or empty string if at end."""
+        if self.pos >= len(self.text):
+            return ""
+        return self.text[self.pos]
+
+    def read(self, grammar: str | type) -> Any:  # noqa: ANN401
+        """Read a grammar element.
+
+        If grammar is a str, consume it as punctuation (skip whitespace first).
+        If grammar is a class, call grammar.read(self).
+        """
+        if isinstance(grammar, str):
+            return self._read_punct(grammar)
+        return grammar.read(self)
+
+    def try_read(self, grammar: str | type) -> Any | None:  # noqa: ANN401
+        """Try to read a grammar element; restore position on failure."""
+        saved = self.pos
+        try:
+            return self.read(grammar)
+        except RuntimeError:
+            self.pos = saved
+            return None
+
+    # ===------------------------------------------------------------------=== #
+    # Low-level token methods
+    # ===------------------------------------------------------------------=== #
+
+    def _skip_whitespace(self) -> None:
+        """Skip spaces and tabs (not newlines)."""
+        while self.pos < len(self.text) and self.text[self.pos] in " \t":
+            self.pos += 1
+
+    def _skip_whitespace_and_newlines(self) -> None:
+        """Skip spaces, tabs, and newlines."""
+        while self.pos < len(self.text) and self.text[self.pos] in " \t\n\r":
+            self.pos += 1
+
+    def _skip_line(self) -> None:
+        """Skip to the next line."""
+        while self.pos < len(self.text) and self.text[self.pos] != "\n":
+            self.pos += 1
+        if self.pos < len(self.text):
+            self.pos += 1  # skip \n
+
+    def _expect(self, expected: str) -> None:
+        """Consume exact characters without skipping whitespace."""
+        for ch in expected:
+            if self.pos >= len(self.text) or self.text[self.pos] != ch:
+                raise RuntimeError(f"Expected '{expected}' at position {self.pos}")
+            self.pos += 1
+
+    def _read_punct(self, punct: str) -> str:
+        """Skip whitespace, then match punctuation string. Raises on failure."""
+        self._skip_whitespace()
+        for ch in punct:
+            if self.pos >= len(self.text) or self.text[self.pos] != ch:
+                raise RuntimeError(f"Expected '{punct}' at position {self.pos}")
+            self.pos += 1
+        return punct
+
+    def read_token(self) -> str:
+        """Read an identifier token (skips whitespace first). Raises if none found."""
+        self._skip_whitespace()
+        match = _IDENT.match(self.text, pos=self.pos)
+        if match is None:
+            raise RuntimeError(f"Expected token at position {self.pos}")
+        self.pos = match.end()
+        return match.group()
+
+    def expect_token(self, expected: str) -> str:
+        """Read a token and verify it matches expected. Raises on mismatch."""
+        token = self.read_token()
+        if token != expected:
+            raise RuntimeError(
+                f"Expected '{expected}' at position {self.pos}, got '{token}'"
+            )
+        return token
+
+    def _parse_string_literal(self) -> str:
+        """Parse a double-quoted string literal, return the contents."""
+        self._skip_whitespace()
+        match = _STRING.match(self.text, pos=self.pos)
+        if match is None:
+            raise RuntimeError(f"Expected string literal at position {self.pos}")
+        self.pos = match.end()
+        return match.group()[1:-1]
+
+    def _parse_identifier(self) -> str:
+        """Parse an identifier: [a-zA-Z_][a-zA-Z0-9_]*"""
+        return self.read_token()
