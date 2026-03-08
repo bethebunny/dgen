@@ -12,9 +12,9 @@ from copy import deepcopy
 
 import pytest
 
-from dgen import Block, Dialect, asm
+from dgen import Block, asm
 from dgen.asm.formatting import type_asm
-from dgen.asm.parser import IRParser, parse_expr, parse_module
+from dgen.asm.parser import ASMParser, _parse_raw_expr, parse_module
 from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
@@ -120,12 +120,10 @@ ALL_TYPES = BUILTIN_TYPES + LLVM_TYPES + TOY_TYPES + AFFINE_TYPES
 
 def _parse_type(text: str) -> object:
     """Parse a type from ASM text, with all dialects registered."""
-    parser = IRParser(text)
+    parser = ASMParser(text)
     for name in ("toy", "affine"):
-        d = Dialect.get(name)
-        for tname, tcls in d.types.items():
-            parser._types[f"{name}.{tname}"] = tcls
-    return parse_expr(parser)
+        parser.namespace.import_dialect(name)
+    return _parse_raw_expr(parser)
 
 
 def _identity_exe(ty):
