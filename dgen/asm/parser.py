@@ -217,10 +217,12 @@ def parse_op_fields(
             parser.expect(",")
             parser.skip_whitespace()
         raw_value = parse_expr(parser)
-        if isinstance(raw_value, list) and any(
-            isinstance(v, Value) for v in raw_value
-        ):
+        if isinstance(raw_value, list) and any(isinstance(v, Value) for v in raw_value):
             raw_value = _expand_list_sugar(parser, list(raw_value), f_type)
+        elif not isinstance(raw_value, (Value, list)) and not issubclass(
+            cls, ConstantOp
+        ):
+            raw_value = _wrap_constant(f_type, raw_value)
         kwargs[f_name] = raw_value
         parser.skip_whitespace()
     parser.expect(")")

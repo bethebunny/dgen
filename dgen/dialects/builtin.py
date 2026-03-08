@@ -131,6 +131,30 @@ class AddIndexOp(Op):
     )
 
 
+@builtin.op("equal_index")
+@dataclass(eq=False, kw_only=True)
+class EqualIndexOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = Index()
+    __operands__ = (
+        ("lhs", Index),
+        ("rhs", Index),
+    )
+
+
+@builtin.op("subtract_index")
+@dataclass(eq=False, kw_only=True)
+class SubtractIndexOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = Index()
+    __operands__ = (
+        ("lhs", Index),
+        ("rhs", Index),
+    )
+
+
 @builtin.op("return")
 @dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):

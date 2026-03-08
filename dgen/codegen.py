@@ -14,7 +14,7 @@ from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 from dgen.module import ConstantOp, Module, string_value
 from dgen.layout import Layout
-from dgen.type import Memory, Value
+from dgen.type import Constant, Memory, Value
 
 # ---------------------------------------------------------------------------
 # struct.format → LLVM / ctypes mapping
@@ -109,6 +109,24 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     constants: dict[int, str] = {}  # id(op) -> typed literal
     types: dict[int, str] = {}  # id(op) -> LLVM type
 
+    def _register_constant(c: Constant) -> None:
+        vid = id(c)
+        if vid in constants:
+            return
+        mem = c.__constant__
+        layout = mem.layout
+        if _ctype(layout) is ctypes.c_void_p:
+            # Pointer-passed layout (Array, FatPointer): emit buffer address
+            host_buffers.append(mem)
+            constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
+            types[vid] = "ptr"
+        else:
+            lt = _llvm_type(layout)
+            raw = mem.unpack()[0]
+            val_str = format_float(raw) if isinstance(raw, float) else str(raw)
+            constants[vid] = f"{lt} {val_str}"
+            types[vid] = lt
+
     # Register block arg types
     for arg in f.body.args:
         types[id(arg)] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
@@ -116,24 +134,18 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for op in f.body.ops:
         vid = id(op)
         if isinstance(op, ConstantOp):
-            mem = op.memory
-            layout = mem.layout
-            if _ctype(layout) is ctypes.c_void_p:
-                # Pointer-passed layout (Array, FatPointer): emit buffer address
-                host_buffers.append(mem)
-                constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
-                types[vid] = "ptr"
-            else:
-                lt = _llvm_type(layout)
-                raw = mem.unpack()[0]
-                val_str = format_float(raw) if isinstance(raw, float) else str(raw)
-                constants[vid] = f"{lt} {val_str}"
-                types[vid] = lt
+            _register_constant(op)
         elif isinstance(op, llvm.PhiOp):
             first_val = op.values[0]
             types[vid] = types.get(id(first_val), "i64")
-        elif (rt := _result_type_str(op.type)) is not None:
-            types[vid] = rt
+        else:
+            if (rt := _result_type_str(op.type)) is not None:
+                types[vid] = rt
+            # Register inline Constant operands (e.g. literal args)
+            for operand_name, _ in op.__operands__:
+                operand = getattr(op, operand_name)
+                if isinstance(operand, Constant):
+                    _register_constant(operand)
 
     def typed_ref(val: dgen.Value) -> str:
         """'type value' — e.g. 'double 1.0' or 'ptr %v3'."""
@@ -230,6 +242,13 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             else:
                 ret_ty = types[id(op)]
                 lines.append(f"  %{name} = call {ret_ty} @{callee}({a})")
+        elif isinstance(op, builtin.EqualIndexOp):
+            lines.append(
+                f"  %{name}_raw = icmp eq i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+            )
+            lines.append(f"  %{name} = zext i1 %{name}_raw to i64")
+        elif isinstance(op, builtin.SubtractIndexOp):
+            lines.append(f"  %{name} = sub i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
         elif isinstance(op, builtin.ReturnOp):
             if isinstance(op.value, builtin.Nil):
                 lines.append("  ret void")

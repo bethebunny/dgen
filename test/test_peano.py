@@ -15,11 +15,11 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 import dgen
-from dgen import Block, Dialect, Op, Type, Value, layout
+from dgen import Dialect, Op, Type, Value, layout
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin
-from dgen.dialects.builtin import FunctionOp, Index, Nil
+from dgen.dialects.builtin import Index
 from dgen.module import ConstantOp, Module
 from dgen.staging import compile_staged
 from dgen.type import Fields, TypeType, type_constant
@@ -106,7 +106,9 @@ def lower_peano(module: Module) -> Module:
             pred = replacements.get(id(op.pred), op.pred)
             pred_type = type_constant(pred)
             succ = Successor(pred=pred_type)
-            print(f"  lower: peano.successor<{type_asm(pred_type)}> -> {type_asm(succ)}")
+            print(
+                f"  lower: peano.successor<{type_asm(pred_type)}> -> {type_asm(succ)}"
+            )
             const = ConstantOp(
                 value=succ.__constant__.to_json(), type=TypeType(concrete=succ)
             )
@@ -174,3 +176,48 @@ def test_peano_constant():
     print(f"result = {result}")
 
     assert result == 3
+
+
+def test_equal_and_subtract_roundtrip():
+    """equal_index and subtract_index ops round-trip through ASM."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%n: Index):
+        |     %eq : Index = equal_index(%n, 0)
+        |     %sub : Index = subtract_index(%n, 1)
+        |     %result : Index = add_index(%eq, %sub)
+        |     %_ : Nil = return(%result)
+    """)
+    module = parse_module(ir)
+    asm_lines = list(module.asm)
+    asm_text = "\n".join(asm_lines)
+    assert "equal_index" in asm_text
+    assert "subtract_index" in asm_text
+
+
+def test_subtract_jit():
+    """subtract_index executes correctly via JIT."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%n: Index):
+        |     %sub : Index = subtract_index(%n, 1)
+        |     %_ : Nil = return(%sub)
+    """)
+    module = parse_module(ir)
+    from dgen import codegen
+
+    exe = codegen.compile(module)
+    assert exe.run(5) == 4
+
+
+def test_equal_jit():
+    """equal_index returns 1 when equal, 0 otherwise."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Index>() (%n: Index):
+        |     %eq : Index = equal_index(%n, 0)
+        |     %_ : Nil = return(%eq)
+    """)
+    module = parse_module(ir)
+    from dgen import codegen
+
+    exe = codegen.compile(module)
+    assert exe.run(0) == 1
+    assert exe.run(5) == 0

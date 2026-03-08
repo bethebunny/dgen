@@ -33,6 +33,8 @@ type List<element_type: Type>:
 op pack(values: list) -> List
 op list_get<index: Index>(list: List)
 op add_index(lhs: Index, rhs: Index) -> Index
+op equal_index(lhs: Index, rhs: Index) -> Index
+op subtract_index(lhs: Index, rhs: Index) -> Index
 op return(value = Nil) -> Nil
 op function<result: Type>() -> Nil:
     block body

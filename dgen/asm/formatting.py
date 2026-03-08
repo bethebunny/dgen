@@ -152,14 +152,20 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
 
     # Build args from declared fields (constants first, then runtime)
     param_parts = [
-        type_asm(param, tracker) if isinstance(param, Type) else format_expr(param, tracker)
+        type_asm(param, tracker)
+        if isinstance(param, Type)
+        else format_expr(param, tracker)
         for _, param in op.parameters
     ]
     operand_parts = [format_expr(operand, tracker) for _, operand in op.operands]
 
     # Build the line
     result_name = tracker.track_name(op)
-    type_str = type_asm(op.type, tracker) if isinstance(op.type, Type) else format_expr(op.type, tracker)
+    type_str = (
+        type_asm(op.type, tracker)
+        if isinstance(op.type, Type)
+        else format_expr(op.type, tracker)
+    )
     parts = [f"%{result_name} : {type_str} = "]
     prefix = _dialect_prefix(dialect_name)
     if asm_name == "constant" and dialect_name == "builtin":
