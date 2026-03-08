@@ -244,10 +244,10 @@ class Memory(Generic[T]):
     @classmethod
     def from_asm(cls, type: Type, text: str) -> Memory:
         """Create Memory from a Type and an ASM literal string."""
-        from dgen.asm.parser import IRParser, parse_expr
+        from dgen.asm.parser import ASMParser, _parse_raw_expr
 
-        parser = IRParser(text)
-        value = parse_expr(parser)
+        parser = ASMParser(text)
+        value = _parse_raw_expr(parser)
         return cls.from_value(type, value)
 
     def __deepcopy__(self, memo: dict) -> Memory[T]:
