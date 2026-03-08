@@ -44,3 +44,12 @@ class Dialect:
             return cls
 
         return decorator
+
+    def trait(self, name: str) -> Callable[[builtins.type[_T]], builtins.type[_T]]:
+        def decorator(cls: builtins.type[_T]) -> builtins.type[_T]:
+            cls.asm_name = name
+            cls.dialect = self
+            self.types[name] = cls
+            return cls
+
+        return decorator

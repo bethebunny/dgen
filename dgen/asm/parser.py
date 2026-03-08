@@ -109,6 +109,14 @@ def parse_expr(parser: IRParser) -> object:
         fields = ()
     if not fields:
         return cls()
+    # If all fields have defaults and no '<' follows, use defaults
+    all_have_defaults = all(
+        f.default is not dataclasses.MISSING
+        or f.default_factory is not dataclasses.MISSING
+        for f in fields
+    )
+    if all_have_defaults and parser.peek() != "<":
+        return cls()
     # Parameterized type: Name<expr, expr, ...>
     parser.expect("<")
     parser.skip_whitespace()

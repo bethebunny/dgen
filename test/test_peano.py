@@ -32,9 +32,18 @@ from toy.test.helpers import strip_prefix
 peano = Dialect("peano")
 
 
+@peano.trait("Natural")
+@dataclass(frozen=True)
+class Natural(TypeType):
+    """A TypeType constrained to Zero or Successor."""
+
+    concrete: Value[TypeType] = builtin.Nil()
+
+
 @peano.type("Zero")
 @dataclass(frozen=True)
 class Zero(Type):
+    __traits__: ClassVar[tuple[type, ...]] = (Natural,)
     __layout__ = layout.Void()
 
 
@@ -43,6 +52,7 @@ class Zero(Type):
 class Successor(Type):
     pred: Value[TypeType]
     __params__: ClassVar[Fields] = (("pred", Type),)
+    __traits__: ClassVar[tuple[type, ...]] = (Natural,)
     __layout__ = layout.Void()
 
 
@@ -135,6 +145,50 @@ def lower_peano(module: Module) -> Module:
 # ============================================================================
 # Tests
 # ============================================================================
+
+
+def test_natural_trait_is_registered():
+    """Natural trait is a TypeType subclass registered in peano dialect."""
+    assert issubclass(Natural, TypeType)
+    assert "Natural" in peano.types
+    assert peano.types["Natural"] is Natural
+
+
+def test_natural_trait_wraps_concrete():
+    """Natural(concrete=Zero()) resolves concrete to Zero."""
+    nat = Natural(concrete=Zero())
+    assert type_constant(nat.concrete) == Zero()
+
+
+def test_natural_default_concrete():
+    """Natural() is constructible without args (for bare type annotations)."""
+    nat = Natural()
+    assert isinstance(nat, TypeType)
+
+
+def test_zero_has_natural_trait():
+    """Zero declares Natural in its __traits__."""
+    assert Natural in Zero.__traits__
+
+
+def test_successor_has_natural_trait():
+    """Successor declares Natural in its __traits__."""
+    assert Natural in Successor.__traits__
+
+
+def test_natural_in_asm():
+    """peano.Natural parses as a type annotation."""
+    ir = strip_prefix("""
+        | import peano
+        |
+        | %main : Nil = function<Index>() ():
+        |     %z : peano.Natural = peano.zero()
+        |     %_ : Nil = return(%z)
+    """)
+    module = parse_module(ir)
+    func = module.functions[0]
+    zero_op = func.body.ops[0]
+    assert isinstance(zero_op.type, Natural)
 
 
 def test_recursive_type_roundtrip():
