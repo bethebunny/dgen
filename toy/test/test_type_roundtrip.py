@@ -14,7 +14,7 @@ import pytest
 
 from dgen import Block, asm
 from dgen.asm.formatting import type_asm
-from dgen.asm.parser import ASMParser, _parse_raw_expr, parse_module
+from dgen.asm.parser import ASMParser, TypeExpression, parse_module
 from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
@@ -123,7 +123,7 @@ def _parse_type(text: str) -> object:
     parser = ASMParser(text)
     for name in ("toy", "affine"):
         parser.namespace.import_dialect(name)
-    return _parse_raw_expr(parser)
+    return TypeExpression.read(parser)
 
 
 def _identity_exe(ty):
