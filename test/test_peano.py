@@ -96,10 +96,8 @@ class ValueOp(Op):
 # ============================================================================
 
 
-def lower_peano(module: Module) -> Module:
-    """Lower peano ops to constants. Prints each resolution step."""
-    module = deepcopy(module)
-    func = module.functions[0]
+def _lower_peano_func(func: builtin.FunctionOp) -> None:
+    """Lower peano ops in a single function."""
     replacements: dict[int, Value] = {}
     new_ops: list[dgen.Op] = []
 
@@ -135,10 +133,32 @@ def lower_peano(module: Module) -> Module:
         elif isinstance(op, builtin.ReturnOp):
             val = replacements.get(id(op.value), op.value)
             new_ops.append(builtin.ReturnOp(value=val, type=op.type))
+        elif isinstance(op, builtin.CallOp):
+            if isinstance(op.args, builtin.PackOp):
+                new_values = [replacements.get(id(a), a) for a in op.args.values]
+                new_pack = builtin.PackOp(values=new_values, type=op.args.type)
+                new_ops.append(new_pack)
+                new_ops.append(
+                    builtin.CallOp(
+                        callee=op.callee,
+                        args=new_pack,
+                        type=op.type,
+                        name=op.name,
+                    )
+                )
+            else:
+                new_ops.append(op)
         else:
             new_ops.append(op)
 
     func.body.ops = new_ops
+
+
+def lower_peano(module: Module) -> Module:
+    """Lower peano ops to constants. Prints each resolution step."""
+    module = deepcopy(module)
+    for func in module.functions:
+        _lower_peano_func(func)
     return module
 
 
@@ -342,6 +362,28 @@ def test_call_jit():
     exe = codegen.compile(module)
     assert exe.run(5) == 6
     assert exe.run(0) == 1
+
+
+def test_multi_function_staged():
+    """Multi-function module: helper with staging, called from main."""
+    ir = strip_prefix("""
+        | import peano
+        |
+        | %main : Nil = function<Index>() ():
+        |     %z : TypeType<peano.Zero> = peano.zero()
+        |     %s1 : TypeType<peano.Successor<peano.Zero>> = peano.successor<%z>()
+        |     %n : Index = peano.value<%s1>()
+        |     %result : Index = call<%add_one>([%n])
+        |     %_ : Nil = return(%result)
+        |
+        | %add_one : Nil = function<Index>() (%x: Index):
+        |     %r : Index = add_index(%x, 1)
+        |     %_ : Nil = return(%r)
+    """)
+    module = parse_module(ir)
+    exe = compile_staged(module, infer=lambda m: m, lower=lower_peano)
+    result = exe.run()
+    assert result == 2  # value(Successor(Zero)) = 1, then add 1 = 2
 
 
 def test_equal_jit():

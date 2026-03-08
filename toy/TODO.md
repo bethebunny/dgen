@@ -45,6 +45,7 @@
 - Go through and rename files
 - Read, understand, clean passes
 - Function calls and GOTOs should use the SSA name, not a string
+- `TypeType<T>` -> `Type` in asm
 
 ## Misc
 - Write more down into design docs

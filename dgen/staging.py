@@ -187,7 +187,10 @@ def compute_stages(func: FunctionOp) -> dict[int, int]:
         if isinstance(value, BlockArgument):
             stages[vid] = 1
             return 1
-        assert isinstance(value, dgen.Op)
+        if not isinstance(value, dgen.Op):
+            # Forward reference to a module-level entity (e.g. function name)
+            stages[vid] = 0
+            return 0
         parts: list[int] = []
         for pv in _field_values(value, value.__params__):
             parts.append(1 + _stage(pv))
@@ -221,7 +224,7 @@ def _unresolved_boundaries(
     boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
     for op in func.body.ops:
         for field_name, value in op.parameters:
-            if isinstance(value, dgen.Value) and not isinstance(
+            if isinstance(value, (dgen.Op, BlockArgument)) and not isinstance(
                 value, (Constant, dgen.Type)
             ):
                 boundaries.append((stages.get(id(op), 0), op, field_name, value))
@@ -253,17 +256,23 @@ def _resolve_all_comptime(
     """
     module = deepcopy(module)
     while True:
-        func = module.functions[0]
-        stages = compute_stages(func)
-        boundaries = _unresolved_boundaries(func, stages)
-        if not boundaries:
+        resolved_any = False
+        for func in module.functions:
+            stages = compute_stages(func)
+            boundaries = _unresolved_boundaries(func, stages)
+            if not boundaries:
+                continue
+            _stage_num, op, field_name, value = boundaries[0]
+            if not _is_stage0_evaluable(value):
+                continue
+            _resolve_comptime_field(func, op, field_name, value, lower)
+            module = infer(module)
+            for f in module.functions:
+                _resolve_constant_ops(f)
+            resolved_any = True
+            break  # re-iterate from the start after each resolution
+        if not resolved_any:
             break
-        _stage_num, op, field_name, value = boundaries[0]
-        if not _is_stage0_evaluable(value):
-            break  # remaining boundaries need runtime args
-        _resolve_comptime_field(func, op, field_name, value, lower)
-        module = infer(module)
-        _resolve_constant_ops(module.functions[0])
     return module
 
 
@@ -395,10 +404,17 @@ def compile_staged(
     that JIT-compiles stage-2 code when runtime values become available.
     """
     resolved = _resolve_all_comptime(module, infer=infer, lower=lower)
-    func = resolved.functions[0]
 
-    stages = compute_stages(func)
-    if _unresolved_boundaries(func, stages):
+    # Check if any function still has unresolved boundaries
+    has_unresolved = False
+    for func in resolved.functions:
+        stages = compute_stages(func)
+        if _unresolved_boundaries(func, stages):
+            has_unresolved = True
+            break
+
+    if has_unresolved:
+        func = resolved.functions[0]
         return _compile_with_callbacks(resolved, func, infer=infer, lower=lower)
 
     typed = infer(resolved)
