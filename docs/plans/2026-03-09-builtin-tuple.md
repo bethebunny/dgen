@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add `Tuple<types: list<Type>>` as a builtin type with Record layout, enabling heterogeneous product types.
+**Goal:** Add `Tuple<types: List<Type>>` as a builtin type with Record layout, enabling heterogeneous product types.
 
-**Architecture:** Tuple is a parameterized builtin type with a variadic `list<Type>` parameter. Its layout is a Record whose fields are numbered "0", "1", ... with layouts derived from each type. The code generator needs a new `Record` layout entry and handling for variadic-type-param → Record layout generation. The ASM parser's `_coerce_param` needs a fix to handle lists of Values for parameterized field types. `Type.__constant__` and `_type_from_dict` need list param support.
+**Architecture:** Tuple is a parameterized builtin type with a `List<Type>` parameter — NOT a variadic `list<Type>` parameter. `List<Type>` is the uppercase builtin List type parameterized on Type. The code generator needs to handle this new param pattern: `_annotation_for_param` produces `list[Type]`, `__params__` entry uses `List`, and a `layout Record` + `List<Type>` param combination generates a Record-building `__layout__` property. The ASM parser, type serialization, and type reconstruction all need list param support.
 
 **Tech Stack:** Python, pytest, dgen code generator
 
@@ -67,17 +67,41 @@ Expected: ImportError — `Tuple` doesn't exist yet.
 Add to `dgen/dialects/builtin.dgen` before the ops:
 
 ```
-type Tuple<types: list<Type>>:
+type Tuple<types: List<Type>>:
     layout Record
 ```
 
-**Step 4: Add Record to \_LAYOUTS and handle Record codegen**
+**Step 4: Code gen changes in `dgen/gen/python.py`**
 
-In `dgen/gen/python.py`:
+1. Add `"Record": "layout.Record"` to `_LAYOUTS` dict.
 
-1. Add `"Record": "layout.Record"` to `_LAYOUTS`.
+2. Handle `List<Type>` in `_annotation_for_param` — when param type is `List<Type>`, generate `list[Type]`:
 
-2. In the `is_parametric_layout` branch (around line 272), handle the Record case. When layout is Record and the param is variadic (list<Type>), generate:
+```python
+def _annotation_for_param(param: ParamDecl) -> str:
+    if param.variadic:
+        inner = _resolve_param_type_ref(param.type)
+        return f"list[Value[{inner}]]"
+    if param.type.name == "List" and param.type.args:
+        inner = _resolve_param_type_ref(param.type.args[0])
+        return f"list[Value[{inner}]]"
+    if param.type.name == "Type":
+        return "Value[dgen.TypeType]"
+    return f"Value[{param.type.name}]"
+```
+
+3. Handle `List<Type>` in `_resolve_param_type_ref` — return `List` for the `__params__` entry:
+
+```python
+def _resolve_param_type_ref(ref: TypeRef) -> str:
+    if ref.name == "Type":
+        return "dgen.TypeType"
+    if ref.name == "List":
+        return "List"
+    return ref.name
+```
+
+4. Handle `layout Record` with `List<Type>` param in the parametric layout codegen (around line 272). The current codegen passes each param as a positional arg to the layout constructor. For Record + List<Type>, we need to generate a list comprehension:
 
 ```python
     @property
@@ -88,20 +112,13 @@ In `dgen/gen/python.py`:
         ])
 ```
 
-The current codegen for parametric layouts does:
-```python
-entry = _LAYOUTS[td.layout]  # "layout.Record"
-args = [...]  # one arg per param
-body.append(f"        return {entry}({', '.join(args)})")
-```
-
-This doesn't work for Record since Record takes `list[tuple[str, Layout]]`, not positional Layout args. Need to detect when layout is "Record" and a param is variadic+Type, then generate the list comprehension form.
+Detect this case: `td.layout == "Record"` and any param has `type.name == "List"` with `type.args[0].name == "Type"`. Generate the comprehension instead of the generic `entry(args)` form.
 
 **Step 5: Regenerate builtin.py**
 
 Run: `python -m dgen.gen dgen/dialects/builtin.dgen > dgen/dialects/builtin.py`
 
-Verify the generated Tuple class looks correct.
+Verify the generated Tuple class has `types: list[Value[dgen.TypeType]]`, `__params__ = (("types", List),)`, and the Record-building `__layout__` property.
 
 **Step 6: Run test to verify it passes**
 
@@ -129,27 +146,24 @@ Add to `test/test_tuple.py`:
 
 ```python
 from dgen import asm
+from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
 from toy.test.helpers import strip_prefix
 
 
 def test_tuple_type_asm_format():
     """Tuple<[Index, String]> formats as Tuple<[Index, String]>."""
-    from dgen.asm.formatting import type_asm
-
     t = Tuple(types=[Index(), String()])
     assert type_asm(t) == "Tuple<[Index, String]>"
 
 
 def test_empty_tuple_asm_format():
     """Tuple<[]> formats as Tuple<[]>."""
-    from dgen.asm.formatting import type_asm
-
     t = Tuple(types=[])
     assert type_asm(t) == "Tuple<[]>"
 
 
-def test_tuple_type_roundtrip():
+def test_tuple_constant_roundtrip():
     """Tuple type in IR round-trips through ASM."""
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
@@ -162,10 +176,10 @@ def test_tuple_type_roundtrip():
 
 **Step 2: Run test to verify it fails**
 
-Run: `python -m pytest test/test_tuple.py::test_tuple_type_roundtrip -q`
-Expected: FAIL — parser can't coerce list of types for Tuple param.
+Run: `python -m pytest test/test_tuple.py::test_tuple_constant_roundtrip -q`
+Expected: FAIL — parser can't coerce list of types for Tuple param; `Type.__constant__` can't handle list params.
 
-**Step 3: Fix \_coerce\_param to handle list of Values**
+**Step 3: Fix `_coerce_param` to handle list of Values**
 
 In `dgen/asm/parser.py`, `_coerce_param` (line 294-300):
 
@@ -181,13 +195,13 @@ if isinstance(value, list):
     return [_coerce_param(v, field_type) for v in value]
 ```
 
-The `not field_type.__params__` guard isn't needed — if the list elements are Values they pass through the `isinstance(value, Value)` check; if they're raw values they get wrapped as constants. No existing code path passes a raw list as a param to a parameterized type.
+The `not field_type.__params__` guard prevented recursion for parameterized types. This isn't needed — list elements that are Values pass through unchanged, and raw values get wrapped as constants.
 
-**Step 4: Fix Type.\_\_constant\_\_ for list params**
+**Step 4: Fix `Type.__constant__` for list params**
 
 In `dgen/type.py`, `Type.__constant__` (line 108-113):
 
-The current code does `param.__constant__.to_json()` for each param value. For a list param, `param` is a Python list, not a Value. Fix:
+The current code does `param.__constant__.to_json()` for each param. For a list param, `param` is a Python list, not a Value. Change:
 
 ```python
 @cached_property
@@ -201,11 +215,11 @@ def __constant__(self) -> Memory[TypeType]:
     return Memory.from_json(self.type, data)
 ```
 
-**Step 5: Fix \_type\_from\_dict for list param values**
+**Step 5: Fix `_type_from_dict` for list param values**
 
 In `dgen/type.py`, `_type_from_dict` (line 51-72):
 
-The current code handles dict values (nested types) and scalar values. Add list handling:
+The current code handles dict values (nested types) and scalar values. Add list handling before the dict check:
 
 ```python
 if isinstance(param_value, list):
@@ -219,17 +233,38 @@ else:
     kwargs[param_name] = field_type().constant(param_value)
 ```
 
-**Step 6: Run tests to verify they pass**
+**Step 6: Fix `TypeType.__layout__` for list params**
+
+In `dgen/type.py`, `TypeType.__layout__` (line 164-175), the property iterates params to build the layout Record. For a list param, `param.type` doesn't exist on a Python list. Need to handle this:
+
+```python
+@property
+def __layout__(self) -> Record:
+    resolved = type_constant(self.concrete)
+    fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
+    for name, param in resolved.parameters:
+        if isinstance(param, list):
+            # List of types → FatPointer of type value Records
+            # Use generic string-based serialization for now
+            fields.append((name, FatPointer(StringLayout())))
+        else:
+            fields.append((name, type_constant(param.type).__layout__))
+    return Record(fields)
+```
+
+Note: The exact layout for serialized list-of-type params may need iteration. The key is that `to_json`/`from_json` roundtrip correctly — the Record layout must match the dict structure produced by `__constant__`.
+
+**Step 7: Run tests to verify they pass**
 
 Run: `python -m pytest test/test_tuple.py -q`
 Expected: PASS
 
-**Step 7: Run full test suite**
+**Step 8: Run full test suite**
 
 Run: `python -m pytest . -q`
 Expected: All tests pass.
 
-**Step 8: Commit**
+**Step 9: Commit**
 
 ```
 jj commit -m "Tuple ASM round-trip: fix coerce_param, Type.__constant__, _type_from_dict"
@@ -248,20 +283,17 @@ Add to `test/test_tuple.py`:
 
 ```python
 def test_tuple_type_values():
-    """Tuple of type values: %types : Tuple<[Type, Type]> = [Index, String]."""
-    from dgen.dialects.builtin import TypeTag
-    from dgen.type import TypeType
-
+    """Tuple of type values: %types : Tuple<[TypeTag, TypeTag]> = [Index, String]."""
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
-        |     %types : Tuple<[TypeTag, TypeTag]> = [Index, String]
+        |     %types : Tuple<[TypeTag, TypeTag]> = ["builtin.Index", "builtin.String"]
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 ```
 
-Note: This test validates that Tuple works with TypeTag values (type names as strings). The exact form depends on how type values serialize — may need adjustment based on how TypeTag constants work.
+This validates Tuple can hold heterogeneous constant values. The exact serialization of type names depends on how TypeTag constants work (TypeTag stores strings via String layout).
 
 **Step 2: Run test**
 
