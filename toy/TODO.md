@@ -46,6 +46,7 @@
 - Go through and rename files
 - Read, understand, clean passes
 - Function calls and GOTOs should use the SSA name, not a string
+- Disambiguate `Type` — it means 3 things: "type value" (in `__params__`), "any type" wildcard (in `__operands__`), and "polymorphic return" (in `-> Type`). The `__operands__` wildcard and `-> Type` should use a different name or mechanism so `Type` consistently means "type value" per `docs/dialect-files.md`
 
 ## Misc
 - Write more down into design docs
