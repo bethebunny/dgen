@@ -37,7 +37,7 @@ peano = Dialect("peano")
 class Natural(TypeType):
     """A TypeType constrained to Zero or Successor."""
 
-    concrete: Value[TypeType] = builtin.Nil()
+    pass
 
 
 @peano.type("Zero")
@@ -180,14 +180,8 @@ def test_natural_trait_is_registered():
     assert peano.types["Natural"] is Natural
 
 
-def test_natural_trait_wraps_concrete():
-    """Natural(concrete=Zero()) resolves concrete to Zero."""
-    nat = Natural(concrete=Zero())
-    assert type_constant(nat.concrete) == Zero()
-
-
-def test_natural_default_concrete():
-    """Natural() is constructible without args (for bare type annotations)."""
+def test_natural_is_typetype():
+    """Natural() is a TypeType subclass."""
     nat = Natural()
     assert isinstance(nat, TypeType)
 
