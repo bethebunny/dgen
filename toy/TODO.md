@@ -49,3 +49,4 @@
 
 ## Misc
 - Write more down into design docs
+- test_peano's `test_call_jit` _should not_ call the jit, let's verify that it doesn't and put it somewhere more sensible

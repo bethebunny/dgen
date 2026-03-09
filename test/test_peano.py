@@ -51,7 +51,7 @@ class Zero(Type):
 @dataclass(frozen=True)
 class Successor(Type):
     pred: Value[TypeType]
-    __params__: ClassVar[Fields] = (("pred", Type),)
+    __params__: ClassVar[Fields] = (("pred", TypeType),)
     __traits__: ClassVar[tuple[type, ...]] = (Natural,)
     __layout__ = layout.Void()
 
@@ -78,7 +78,7 @@ class SuccessorOp(Op):
 
     pred: Value[TypeType]
     type: Value[TypeType] = TypeType()  # overridden by ASM annotation
-    __params__: ClassVar[Fields] = (("pred", Type),)
+    __params__: ClassVar[Fields] = (("pred", TypeType),)
 
 
 @peano.op("value")
@@ -88,7 +88,7 @@ class ValueOp(Op):
 
     nat: Value[TypeType]
     type: Type = Index()
-    __params__: ClassVar[Fields] = (("nat", Type),)
+    __params__: ClassVar[Fields] = (("nat", TypeType),)
 
 
 # ============================================================================
