@@ -9,7 +9,7 @@ from math import prod
 from dgen import Constant, Type, Value
 from dgen import layout
 from dgen.dialects.builtin import Index
-from dgen.module import Function
+from dgen.dialects.builtin import Function
 from dgen.layout import Layout
 from dgen.type import Memory
 
@@ -67,7 +67,7 @@ DimSizeOp.resolve_constant = _dim_size_resolve_constant  # type: ignore[assignme
 # ===----------------------------------------------------------------------=== #
 
 
-@dataclass
+@dataclass(frozen=True)
 class FunctionType(Function):
     """Toy function signature with explicit input types."""
 

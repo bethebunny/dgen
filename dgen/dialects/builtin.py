@@ -117,6 +117,14 @@ class Tuple(Type):
         )
 
 
+@builtin.type("Function")
+@dataclass(frozen=True)
+class Function(Type):
+    __layout__ = layout.Void()
+    result: Value[dgen.TypeType]
+    __params__ = (("result", dgen.TypeType),)
+
+
 @builtin.op("pack")
 @dataclass(eq=False, kw_only=True)
 class PackOp(Op):
@@ -206,8 +214,8 @@ class IfOp(Op):
 @builtin.op("call")
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):
-    callee: Value[dgen.TypeType]
+    callee: Value[Function]
     args: list[Value]
     type: Type
-    __params__ = (("callee", dgen.TypeType),)
+    __params__ = (("callee", Function),)
     __operands__ = (("args", Type),)

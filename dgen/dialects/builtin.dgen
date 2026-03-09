@@ -33,6 +33,9 @@ type List<element_type: Type>:
 type Tuple<types: List<Type>>:
     layout Record
 
+type Function<result: Type>:
+    layout Void
+
 op pack(values: list) -> List
 op list_get<index: Index>(list: List)
 op add_index(lhs: Index, rhs: Index) -> Index
@@ -45,4 +48,4 @@ op function<result: Type>() -> Nil:
 op if(cond: Index) -> Type:
     block then_body
     block else_body
-op call<callee: Type>(args: list) -> Type
+op call<callee: Function>(args: list) -> Type

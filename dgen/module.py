@@ -1,4 +1,4 @@
-"""Framework-level IR items: Module, ConstantOp, Function, and helpers.
+"""Framework-level IR items: Module, ConstantOp, and helpers.
 
 These complement the generated builtin dialect but live outside the dialect
 file to keep it purely generated.
@@ -12,7 +12,6 @@ from functools import cached_property
 from typing import ClassVar
 
 from dgen import Constant, Dialect, Op, Type, TypeType, Value
-from dgen import layout
 from dgen.dialects.builtin import (
     FunctionOp,
     HasSingleBlock,
@@ -20,22 +19,7 @@ from dgen.dialects.builtin import (
     builtin,
 )
 
-from dgen.type import Fields, Memory, type_constant
-
-# ===----------------------------------------------------------------------=== #
-# Function type
-# ===----------------------------------------------------------------------=== #
-
-
-@builtin.type("Function")
-@dataclass
-class Function(Type):
-    """A function signature."""
-
-    __layout__ = layout.Void()
-    __params__: ClassVar[Fields] = (("result", Type),)
-    result: Value[TypeType]
-
+from dgen.type import Memory, type_constant
 
 # ===----------------------------------------------------------------------=== #
 # ConstantOp (custom __init__, multiple inheritance)
