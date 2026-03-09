@@ -9,6 +9,7 @@
 ## Experiments / scope creep
 - Tuple type
   - `Nil` becomes an alias for `Tuple<[]>`
+  - Add a `Sequence` trait so Tuple's type parameter could accept `Array<Type, ...>` or `List<Type>`
 - DTypes
 - See if we can make `Block` an op in a generic way.
 - Make `call` a generic op in builtin
