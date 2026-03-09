@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass
 from functools import cached_property
@@ -64,7 +65,23 @@ def _type_from_dict(data: dict[str, object]) -> Type:
     for param_name, param_value in params.items():
         for field_name, field_type in cls.__params__:
             if field_name == param_name:
-                if isinstance(param_value, dict):
+                if isinstance(param_value, str) and param_value.startswith("["):
+                    decoded = json.loads(param_value)
+                    assert isinstance(decoded, list)
+                    kwargs[param_name] = [
+                        _type_from_dict(v)
+                        if isinstance(v, dict)
+                        else field_type().constant(v)
+                        for v in decoded
+                    ]
+                elif isinstance(param_value, list):
+                    kwargs[param_name] = [
+                        _type_from_dict(v)
+                        if isinstance(v, dict)
+                        else field_type().constant(v)
+                        for v in param_value
+                    ]
+                elif isinstance(param_value, dict):
                     kwargs[param_name] = _type_from_dict(param_value)
                 else:
                     kwargs[param_name] = field_type().constant(param_value)
@@ -106,10 +123,12 @@ class Type(Value["TypeType"]):
 
     @cached_property
     def __constant__(self) -> Memory[TypeType]:
-        data = {
-            "tag": self.qualified_name,
-            **{name: param.__constant__.to_json() for name, param in self.parameters},
-        }
+        data: dict[str, object] = {"tag": self.qualified_name}
+        for name, param in self.parameters:
+            if isinstance(param, list):
+                data[name] = json.dumps([p.__constant__.to_json() for p in param])
+            else:
+                data[name] = param.__constant__.to_json()
         return Memory.from_json(self.type, data)
 
     @cached_property
@@ -164,15 +183,13 @@ class TypeType(Type):
     def __layout__(self) -> Record:
         """Layout for this type as a value (tag + params)."""
         resolved = type_constant(self.concrete)
-        return Record(
-            [
-                ("tag", StringLayout()),
-                *(
-                    (name, type_constant(param.type).__layout__)
-                    for name, param in resolved.parameters
-                ),
-            ]
-        )
+        fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
+        for name, param in resolved.parameters:
+            if isinstance(param, list):
+                fields.append((name, StringLayout()))
+            else:
+                fields.append((name, type_constant(param.type).__layout__))
+        return Record(fields)
 
     @property
     def ready(self) -> bool:

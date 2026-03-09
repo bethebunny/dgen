@@ -295,7 +295,9 @@ def _coerce_param(value: object, field_type: type[Type]) -> object:
     """Wrap a parsed value to match an expected param type."""
     if isinstance(value, Value):
         return value
-    if isinstance(value, list) and not field_type.__params__:
+    if isinstance(value, list) and (
+        not field_type.__params__ or any(isinstance(v, Value) for v in value)
+    ):
         return [_coerce_param(v, field_type) for v in value]
     return _wrap_constant(field_type, value)
 
