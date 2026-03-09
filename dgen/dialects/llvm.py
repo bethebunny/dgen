@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64, String
+from dgen.dialects.builtin import Index, Nil, F64, String, List
 
 llvm = Dialect("llvm")
 
@@ -224,7 +224,7 @@ class ZextOp(Op):
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):
     callee: Value[String]
-    args: list[Value]
+    args: Value
     type: Type = Nil()
     __params__ = (("callee", String),)
-    __operands__ = (("args", Type),)
+    __operands__ = (("args", List),)

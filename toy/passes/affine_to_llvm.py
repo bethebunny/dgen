@@ -265,9 +265,13 @@ class AffineToLLVMLowering:
         size = self.alloc_sizes[input_val]
         size_op = ConstantOp(value=size, type=builtin.Index())
         yield size_op
+        pack = builtin.PackOp(
+            values=[input_val, size_op], type=builtin.List(element_type=input_val.type)
+        )
+        yield pack
         yield llvm.CallOp(
             callee=String().constant("print_memref"),
-            args=[input_val, size_op],
+            args=pack,
         )
 
 

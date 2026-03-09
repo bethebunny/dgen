@@ -239,7 +239,10 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             )
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
-            a = ", ".join(typed_ref(arg) for arg in op.args)
+            call_args = (
+                op.args.values if isinstance(op.args, builtin.PackOp) else [op.args]
+            )
+            a = ", ".join(typed_ref(arg) for arg in call_args)
             if isinstance(op.type, builtin.Nil):
                 lines.append(f"  call void @{callee}({a})")
             else:

@@ -48,4 +48,4 @@ op function<result: Type>() -> Nil:
 op if(cond: Index) -> Type:
     block then_body
     block else_body
-op call<callee: Function>(args: list) -> Type
+op call<callee: Function>(args: List) -> Type

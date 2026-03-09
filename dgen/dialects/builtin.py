@@ -215,7 +215,7 @@ class IfOp(Op):
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):
     callee: Value[Function]
-    args: list[Value]
+    args: Value
     type: Type
     __params__ = (("callee", Function),)
-    __operands__ = (("args", Type),)
+    __operands__ = (("args", List),)

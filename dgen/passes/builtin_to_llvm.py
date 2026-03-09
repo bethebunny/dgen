@@ -144,9 +144,11 @@ class BuiltinToLLVMLowering:
             mapped_args = [self._map(v) for v in op.args.values]
         else:
             mapped_args = [self._map(op.args)]
+        pack = PackOp(values=mapped_args, type=op.args.type)
+        yield pack
         llvm_call = llvm.CallOp(
             callee=String().constant(callee_name),
-            args=mapped_args,
+            args=pack,
             type=op.type,
         )
         yield llvm_call

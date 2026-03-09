@@ -92,8 +92,6 @@ def _extern_declarations(subgraph: list[dgen.Op]) -> list[str]:
         # Derive param types from the call args
         if isinstance(op.args, builtin.PackOp):
             arg_values = op.args.values
-        elif isinstance(op.args, list):
-            arg_values = op.args
         else:
             arg_values = [op.args]
         param_types = [
@@ -498,9 +496,12 @@ def _compile_with_callbacks(
 
     # Build stage-1 thunk: call callback with all original params, return result
     thunk_args = [BlockArgument(name=arg.name, type=arg.type) for arg in func.body.args]
+    pack = builtin.PackOp(
+        values=thunk_args, type=builtin.List(element_type=builtin.Index())
+    )
     call_op = llvm.CallOp(
         callee=String().constant(callback_name),
-        args=thunk_args,
+        args=pack,
         type=result_type,
     )
     if isinstance(result_type, builtin.Nil):
@@ -510,7 +511,7 @@ def _compile_with_callbacks(
 
     thunk_func = FunctionOp(
         name=func.name,
-        body=dgen.Block(ops=[call_op, ret_op], args=thunk_args),
+        body=dgen.Block(ops=[pack, call_op, ret_op], args=thunk_args),
         result=result_type,
     )
     thunk_module = Module(functions=[thunk_func])

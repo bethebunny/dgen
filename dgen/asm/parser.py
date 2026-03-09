@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+import dgen.type
 from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
@@ -330,7 +331,17 @@ def _wrap_constant(field_type: type[Type], raw: object) -> Constant:
 def _pack_list(
     parser: ASMParser, elems: list[object], field_type: type[Type]
 ) -> builtin.PackOp:
-    element_type = field_type()
+    if field_type is builtin.List or field_type.__params__:
+        # List is parameterized; infer element type from first Value element
+        element_type: Type | None = None
+        for elem in elems:
+            if isinstance(elem, Value):
+                element_type = elem.type
+                break
+        if element_type is None:
+            element_type = dgen.type.TypeType()
+    else:
+        element_type = field_type()
     values: list[Value] = []
     for elem in elems:
         if isinstance(elem, Value):
