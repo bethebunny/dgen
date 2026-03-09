@@ -402,61 +402,14 @@ def _raw_to_json(raw: object, ty: dgen.Type) -> object:
     Scalars (int, float) pass through. Pointer types are read from memory
     via Memory.from_raw().to_json().
 
-    For TypeType values, reads the tag first to determine the actual concrete
-    type, then re-reads with the correct layout (since trait types like Natural
-    may have a narrower layout than the actual Successor/etc. value).
+    TypeType values use the self-describing TypeValue layout which reads
+    through the pointer and resolves the tag to determine the full Record.
     """
     layout = ty.__layout__
     if _ctype(layout) is ctypes.c_void_p:
         assert isinstance(raw, int)
-        if isinstance(ty, dgen.type.TypeType):
-            return _read_typetype_from_ptr(raw)
         return Memory.from_raw(ty, raw).to_json()
     return raw
-
-
-def _read_typetype_from_ptr(address: int) -> dict[str, object]:
-    """Read a TypeType value from a pointer by first reading the tag.
-
-    TypeType values are self-describing: the tag determines the concrete type
-    and thus the full layout. This handles the case where the declared type
-    (e.g. Natural) has a narrower layout than the actual value (e.g. Successor).
-    """
-    data, _size = _read_typetype_at(address)
-    return data
-
-
-def _read_typetype_at(address: int) -> tuple[dict[str, object], int]:
-    """Read a TypeType value at address, returning (data_dict, bytes_consumed).
-
-    Recursively reads nested TypeType params by reading the tag first to
-    determine the concrete type, then reading each param field sequentially.
-    """
-    from dgen.dialect import Dialect
-    from dgen.layout import String as StringLayout
-
-    tag_layout = StringLayout()
-    tag_size = tag_layout.byte_size  # 16 bytes (FatPointer)
-
-    # Read the tag
-    tag_buf = bytes((ctypes.c_char * tag_size).from_address(address))
-    tag = tag_layout.to_json(tag_buf, 0)
-    assert isinstance(tag, str)
-
-    dialect_name, type_name = tag.split(".")
-    dialect = Dialect.get(dialect_name)
-    cls = dialect.types[type_name]
-
-    result: dict[str, object] = {"tag": tag}
-    offset = tag_size
-
-    # Recursively read each TypeType param
-    for param_name, _param_type in cls.__params__:
-        nested_data, nested_size = _read_typetype_at(address + offset)
-        result[param_name] = nested_data
-        offset += nested_size
-
-    return result, offset
 
 
 def _compile_with_callbacks(

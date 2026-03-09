@@ -452,13 +452,14 @@ def test_staging_resolves_block_arg_type():
     assert lower_calls > calls_after_first_run
 
 
-def test_typetype_layout_with_block_arg_raises():
-    """TypeType.__layout__ raises TypeError when concrete is a BlockArgument.
+def test_typetype_layout_with_block_arg_is_fixed():
+    """TypeType.__layout__ returns TypeValue regardless of concrete.
 
-    TypeType(concrete=block_arg) can't resolve the concrete type at
-    compile time, so type_constant raises TypeError via __constant__.
+    TypeValue is a fixed-size pointer layout — it doesn't need to resolve
+    the concrete type at layout time. Resolution happens at read time via
+    the self-describing tag.
     """
-    import pytest
+    from dgen.layout import TypeValue
 
     arr_ty = builtin.Array(
         element_type=Index(),
@@ -466,18 +467,17 @@ def test_typetype_layout_with_block_arg_raises():
     )
     arg = BlockArgument(name="arr_ty", type=TypeType(concrete=arr_ty))
     tt = TypeType(concrete=arg)
-    with pytest.raises(TypeError):
-        tt.__layout__
+    assert isinstance(tt.__layout__, TypeValue)
+    assert tt.__layout__.byte_size == 8
 
 
-def test_parse_typetype_block_arg_constant_deferred():
-    """ConstantOp with TypeType<%arr_ty> parses but .memory raises TypeError.
+def test_parse_typetype_block_arg_constant_materializes():
+    """ConstantOp with TypeType<%arr_ty> can materialize memory.
 
-    The parser stores the raw value. Materializing memory requires resolving
-    the BlockArgument via type_constant, which raises TypeError.
+    TypeValue is a fixed-size pointer layout, so memory can be materialized
+    even when the declared type references a BlockArgument — the self-describing
+    tag in the value dict is sufficient for the TypeValue layout to serialize.
     """
-    import pytest
-
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() (%arr_ty: TypeType<Array<Index, 4>>):
         |     %tt : TypeType<%arr_ty> = {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
@@ -486,10 +486,14 @@ def test_parse_typetype_block_arg_constant_deferred():
     module = parse_module(ir)
     tt_op = module.functions[0].body.ops[0]
     assert isinstance(tt_op, ConstantOp)
-    # Raw value is stored, but memory can't be materialized
     assert isinstance(tt_op.value, dict)
-    with pytest.raises(TypeError):
-        tt_op.memory
+    # Memory materializes fine — TypeValue layout is self-describing
+    mem = tt_op.memory
+    assert mem.to_json() == {
+        "tag": "builtin.Array",
+        "element_type": {"tag": "builtin.Index"},
+        "n": 4,
+    }
 
 
 def test_staging_with_ssa_result_type():

@@ -5,8 +5,7 @@ import ctypes
 from dgen import layout
 from dgen.asm.formatting import type_asm
 from dgen.dialects import builtin
-from dgen.layout import Array, Byte, FatPointer, Float64, Pointer, Record
-from dgen.layout import String as StringLayout
+from dgen.layout import Array, Byte, FatPointer, Float64, Pointer
 from dgen.module import string_value
 from dgen.type import Constant, Memory, Type, TypeType, Value
 from toy.dialects import shape_constant
@@ -183,44 +182,34 @@ def test_nested_list_from_json_roundtrip():
 
 
 def test_type_layout_non_parametric():
-    """Non-parametric type has layout Record([("tag", String)])."""
+    """Non-parametric type layout is a fixed-size TypeValue pointer (8 bytes)."""
+    from dgen.layout import TypeValue
+
     ty = builtin.Index()
     tl = ty.type.__layout__
-    assert isinstance(tl, Record)
-    assert len(tl.fields) == 1
-    assert tl.fields[0][0] == "tag"
-    assert isinstance(tl.fields[0][1], StringLayout)
+    assert isinstance(tl, TypeValue)
+    assert tl.byte_size == 8
 
 
 def test_type_layout_parametric_value_param():
-    """Parametric type with value param includes param's type layout."""
+    """Parametric type layout is a fixed-size TypeValue pointer (8 bytes)."""
+    from dgen.layout import TypeValue
+
     list_type = builtin.List(element_type=builtin.Index())
     tl = list_type.type.__layout__
-    assert isinstance(tl, Record)
-    # tag + element_type
-    assert len(tl.fields) == 2
-    assert tl.fields[0][0] == "tag"
-    assert tl.fields[1][0] == "element_type"
-    # element_type is Type-kinded, so it's Index's type.__layout__ (a Record)
-    inner = tl.fields[1][1]
-    assert isinstance(inner, Record)
+    assert isinstance(tl, TypeValue)
+    assert tl.byte_size == 8
 
 
 def test_type_layout_parametric_type_param_nested():
-    """List<List<F64>> inlines nested type layouts."""
+    """Nested parametric type layout is still a fixed-size TypeValue pointer."""
+    from dgen.layout import TypeValue
+
     inner = builtin.List(element_type=builtin.F64())
     outer = builtin.List(element_type=inner)
     tl = outer.type.__layout__
-    assert isinstance(tl, Record)
-    assert len(tl.fields) == 2
-    # element_type field is inner's type.__layout__
-    inner_tl = tl.fields[1][1]
-    assert isinstance(inner_tl, Record)
-    assert len(inner_tl.fields) == 2
-    # inner's element_type is F64's type.__layout__ (just a tag)
-    f64_tl = inner_tl.fields[1][1]
-    assert isinstance(f64_tl, Record)
-    assert len(f64_tl.fields) == 1
+    assert isinstance(tl, TypeValue)
+    assert tl.byte_size == 8
 
 
 def test_type_value_memory_non_parametric():
@@ -282,12 +271,13 @@ def test_type_type_layout_parametric():
     assert tt.__layout__ == inner.type.__layout__
 
 
-def test_type_layout_size_varies_by_params():
-    """Type layout size depends on concrete params (inline design)."""
-    # List<Index> and List<List<F64>> have different type.__layout__ sizes
+def test_type_layout_size_fixed():
+    """Type layout size is fixed (8-byte pointer) regardless of params."""
     simple = builtin.List(element_type=builtin.Index())
     nested = builtin.List(element_type=builtin.List(element_type=builtin.F64()))
-    assert simple.type.__layout__.byte_size < nested.type.__layout__.byte_size
+    assert simple.type.__layout__.byte_size == 8
+    assert nested.type.__layout__.byte_size == 8
+    assert simple.type.__layout__.byte_size == nested.type.__layout__.byte_size
 
 
 # ===----------------------------------------------------------------------=== #

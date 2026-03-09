@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ctypes
-import json
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass
 from functools import cached_property
@@ -9,8 +8,7 @@ from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar
 
 import dgen
 
-from .layout import Layout, Record, _bytearray_address
-from .layout import String as StringLayout
+from .layout import Layout, TypeValue, _bytearray_address
 
 T = TypeVar("T", bound="Type")
 
@@ -65,16 +63,7 @@ def _type_from_dict(data: dict[str, object]) -> Type:
     for param_name, param_value in params.items():
         for field_name, field_type in cls.__params__:
             if field_name == param_name:
-                if isinstance(param_value, str) and param_value.startswith("["):
-                    decoded = json.loads(param_value)
-                    assert isinstance(decoded, list)
-                    kwargs[param_name] = [
-                        _type_from_dict(v)
-                        if isinstance(v, dict)
-                        else field_type().constant(v)
-                        for v in decoded
-                    ]
-                elif isinstance(param_value, list):
+                if isinstance(param_value, list):
                     kwargs[param_name] = [
                         _type_from_dict(v)
                         if isinstance(v, dict)
@@ -126,7 +115,7 @@ class Type(Value["TypeType"]):
         data: dict[str, object] = {"tag": self.qualified_name}
         for name, param in self.parameters:
             if isinstance(param, list):
-                data[name] = json.dumps([p.__constant__.to_json() for p in param])
+                data[name] = [p.__constant__.to_json() for p in param]
             else:
                 data[name] = param.__constant__.to_json()
         return Memory.from_json(self.type, data)
@@ -180,16 +169,9 @@ class TypeType(Type):
     __params__: ClassVar[Fields] = (("concrete", Type),)
 
     @property
-    def __layout__(self) -> Record:
-        """Layout for this type as a value (tag + params)."""
-        resolved = type_constant(self.concrete)
-        fields: list[tuple[str, Layout]] = [("tag", StringLayout())]
-        for name, param in resolved.parameters:
-            if isinstance(param, list):
-                fields.append((name, StringLayout()))
-            else:
-                fields.append((name, type_constant(param.type).__layout__))
-        return Record(fields)
+    def __layout__(self) -> TypeValue:
+        """Layout for this type as a value — a pointer to a self-describing Record."""
+        return TypeValue()
 
     @property
     def ready(self) -> bool:

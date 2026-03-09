@@ -1,7 +1,5 @@
 """Tests for builtin.Tuple type."""
 
-import json
-
 from dgen import asm, layout
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
@@ -55,24 +53,19 @@ def test_tuple_constant_roundtrip():
 
 
 def test_tuple_type_constant_serialization():
-    """Tuple.__constant__ serializes list params as JSON string."""
+    """Tuple.__constant__ serializes types list as a proper list of dicts."""
     t = Tuple(types=[Index(), String()])
     data = t.__constant__.to_json()
-    assert isinstance(data, dict)
-    assert data["tag"] == "builtin.Tuple"
-    # List params are stored as JSON strings in the binary layout.
-    assert isinstance(data["types"], str)
-    decoded = json.loads(data["types"])
-    assert len(decoded) == 2
-    assert decoded[0]["tag"] == "builtin.Index"
-    assert decoded[1]["tag"] == "builtin.String"
+    assert data == {
+        "tag": "builtin.Tuple",
+        "types": [{"tag": "builtin.Index"}, {"tag": "builtin.String"}],
+    }
 
 
 def test_tuple_type_from_dict_roundtrip():
     """Tuple type round-trips through __constant__ → _type_from_dict."""
     t = Tuple(types=[Index(), String()])
     data = t.__constant__.to_json()
-    assert isinstance(data, dict)
     reconstructed = _type_from_dict(data)
     assert isinstance(reconstructed, Tuple)
     assert len(reconstructed.types) == 2
