@@ -46,6 +46,7 @@
 - Read, understand, clean passes
 - Function calls and GOTOs should use the SSA name, not a string
 - `TypeType<T>` -> `Type` in asm
+- Register `Type` as an ASM type name (alias for `TypeType`) so `Tuple<[Type, Type]>` works instead of requiring `Tuple<[TypeType<Index>, TypeType<String>]>`
 
 ## Misc
 - Write more down into design docs

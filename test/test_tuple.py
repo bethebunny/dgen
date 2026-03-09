@@ -91,3 +91,14 @@ def test_tuple_three_types():
         ]
     )
     assert t.__layout__ == expected
+
+
+def test_tuple_type_values():
+    """Tuple of type values: %types : Tuple<[TypeType<Index>, TypeType<String>]> = [Index, String]."""
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %types : Tuple<[TypeType<Index>, TypeType<String>]> = [Index, String]
+        |     %_ : Nil = return(())
+    """)
+    module = parse_module(ir)
+    assert asm.format(module) == ir
