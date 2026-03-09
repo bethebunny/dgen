@@ -6,7 +6,7 @@ from copy import deepcopy
 
 import dgen
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module, string_value
+from dgen.module import ConstantOp, Module
 from toy.dialects import shape_constant
 from toy.dialects import toy
 
@@ -87,11 +87,14 @@ def _infer_function(
                     op.type = t
                     type_of[id(op)] = t
 
-        elif isinstance(op, toy.GenericCallOp):
-            resolved = [type_of.get(id(a)) for a in op.args]
+        elif isinstance(op, builtin.CallOp):
+            args_list = (
+                op.args.values if isinstance(op.args, builtin.PackOp) else [op.args]
+            )
+            resolved = [type_of.get(id(a)) for a in args_list]
             arg_types = [t for t in resolved if t is not None]
             if len(arg_types) == len(resolved):
-                callee = func_map.get(string_value(op.callee))
+                callee = func_map.get(op.callee.name)
                 if callee is not None:
                     # Set callee param types from call-site args
                     for param, atype in zip(callee.body.args, arg_types):

@@ -6,7 +6,6 @@ import dgen
 from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.dialects.builtin import String
 from dgen.module import ConstantOp, Module
 from toy.dialects import shape_constant, toy
 from toy.test.helpers import strip_prefix
@@ -58,18 +57,24 @@ def test_add_op():
     assert asm.format(op) == "%2 : toy.InferredShapeTensor<F64> = toy.add(%0, %1)"
 
 
-def test_generic_call_op():
+def test_call_op():
     v1 = dgen.Value(name="1", type=builtin.Nil())
     v3 = dgen.Value(name="3", type=builtin.Nil())
-    op = toy.GenericCallOp(
+    callee = dgen.Value(name="multiply_transpose", type=builtin.Nil())
+    pack = builtin.PackOp(
+        name="p",
+        values=[v1, v3],
+        type=builtin.List(element_type=inferred()),
+    )
+    op = builtin.CallOp(
         name="4",
-        callee=String().constant("multiply_transpose"),
-        args=[v1, v3],
+        callee=callee,
+        args=pack,
         type=inferred(),
     )
     assert (
         asm.format(op)
-        == '%4 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%1, %3])'
+        == "%4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])"
     )
 
 
@@ -145,14 +150,23 @@ def test_full_module():
         type=ranked([6]),
     )
     r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
-    call4 = toy.GenericCallOp(
-        callee=String().constant("multiply_transpose"),
-        args=[r1, r3],
+    mt_ref = dgen.Value(name="multiply_transpose", type=builtin.Nil())
+    pack4 = builtin.PackOp(
+        values=[r1, r3],
+        type=builtin.List(element_type=inferred()),
+    )
+    call4 = builtin.CallOp(
+        callee=mt_ref,
+        args=pack4,
         type=inferred(),
     )
-    call5 = toy.GenericCallOp(
-        callee=String().constant("multiply_transpose"),
-        args=[r3, r1],
+    pack5 = builtin.PackOp(
+        values=[r3, r1],
+        type=builtin.List(element_type=inferred()),
+    )
+    call5 = builtin.CallOp(
+        callee=mt_ref,
+        args=pack5,
         type=inferred(),
     )
     print_op = toy.PrintOp(input=call5)
@@ -162,7 +176,8 @@ def test_full_module():
         name="main",
         result=builtin.Nil(),
         body=dgen.Block(
-            ops=[c0, r1, c2, r3, call4, call5, print_op, ret_main], args=[]
+            ops=[c0, r1, c2, r3, pack4, call4, pack5, call5, print_op, ret_main],
+            args=[],
         ),
     )
 
@@ -182,8 +197,8 @@ def test_full_module():
         |     %1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)
         |     %2 : toy.Tensor<[6], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : toy.Tensor<[2, 3], F64> = toy.reshape(%2)
-        |     %4 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%1, %3])
-        |     %5 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%3, %1])
+        |     %4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])
+        |     %5 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%3, %1])
         |     %6 : Nil = toy.print(%5)
         |     %7 : Nil = return(())
     """)

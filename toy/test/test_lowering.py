@@ -127,7 +127,7 @@ def test_generic_call():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %2 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%0, %1])
+        |     %2 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%0, %1])
         |     %3 : Nil = toy.print(%2)
         |     %4 : Nil = return(())
     """)
@@ -209,8 +209,8 @@ def test_full_tutorial_example():
         |     %1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)
         |     %2 : toy.Tensor<[6], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : toy.Tensor<[2, 3], F64> = toy.reshape(%2)
-        |     %4 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%1, %3])
-        |     %5 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%3, %1])
+        |     %4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])
+        |     %5 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%3, %1])
         |     %6 : Nil = toy.print(%5)
         |     %7 : Nil = return(())
     """)

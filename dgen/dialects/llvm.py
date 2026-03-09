@@ -183,11 +183,19 @@ class LabelOp(Op):
 @llvm.op("phi")
 @dataclass(eq=False, kw_only=True)
 class PhiOp(Op):
-    labels: list[Value[String]]
-    values: list[Value]
+    label_a: Value[String]
+    label_b: Value[String]
+    a: Value
+    b: Value
     type: Type = Nil()
-    __params__ = (("labels", String),)
-    __operands__ = (("values", Type),)
+    __params__ = (
+        ("label_a", String),
+        ("label_b", String),
+    )
+    __operands__ = (
+        ("a", Type),
+        ("b", Type),
+    )
 
 
 @llvm.op("fcmp")

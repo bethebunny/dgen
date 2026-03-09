@@ -108,7 +108,7 @@ def test_load_store_linearization():
         |     %2 : Index = 0
         |     %3 : Nil = llvm.br<"loop_header0">()
         |     %4 : Nil = llvm.label<"loop_header0">()
-        |     %5 : Nil = llvm.phi<["entry", "loop_exit1"]>([%2, %33])
+        |     %5 : Nil = llvm.phi<"entry", "loop_exit1">(%2, %33)
         |     %6 : Index = 2
         |     %7 : llvm.Int<1> = llvm.icmp<"slt">(%5, %6)
         |     %8 : Nil = llvm.cond_br<"loop_body0", "loop_exit0">(%7)
@@ -116,7 +116,7 @@ def test_load_store_linearization():
         |     %10 : Index = 0
         |     %11 : Nil = llvm.br<"loop_header1">()
         |     %12 : Nil = llvm.label<"loop_header1">()
-        |     %13 : Nil = llvm.phi<["loop_body0", "loop_body1"]>([%10, %29])
+        |     %13 : Nil = llvm.phi<"loop_body0", "loop_body1">(%10, %29)
         |     %14 : Index = 3
         |     %15 : llvm.Int<1> = llvm.icmp<"slt">(%13, %14)
         |     %16 : Nil = llvm.cond_br<"loop_body1", "loop_exit1">(%15)
@@ -194,7 +194,7 @@ def test_3d_load_store_linearization():
         |     %3 : Index = 0
         |     %4 : Nil = llvm.br<"loop_header0">()
         |     %5 : Nil = llvm.label<"loop_header0">()
-        |     %6 : Nil = llvm.phi<["entry", "loop_exit1"]>([%3, %61])
+        |     %6 : Nil = llvm.phi<"entry", "loop_exit1">(%3, %61)
         |     %7 : Index = 2
         |     %8 : llvm.Int<1> = llvm.icmp<"slt">(%6, %7)
         |     %9 : Nil = llvm.cond_br<"loop_body0", "loop_exit0">(%8)
@@ -202,7 +202,7 @@ def test_3d_load_store_linearization():
         |     %11 : Index = 0
         |     %12 : Nil = llvm.br<"loop_header1">()
         |     %13 : Nil = llvm.label<"loop_header1">()
-        |     %14 : Nil = llvm.phi<["loop_body0", "loop_exit2"]>([%11, %57])
+        |     %14 : Nil = llvm.phi<"loop_body0", "loop_exit2">(%11, %57)
         |     %15 : Index = 2
         |     %16 : llvm.Int<1> = llvm.icmp<"slt">(%14, %15)
         |     %17 : Nil = llvm.cond_br<"loop_body1", "loop_exit1">(%16)
@@ -210,7 +210,7 @@ def test_3d_load_store_linearization():
         |     %19 : Index = 0
         |     %20 : Nil = llvm.br<"loop_header2">()
         |     %21 : Nil = llvm.label<"loop_header2">()
-        |     %22 : Nil = llvm.phi<["loop_body1", "loop_body2"]>([%19, %53])
+        |     %22 : Nil = llvm.phi<"loop_body1", "loop_body2">(%19, %53)
         |     %23 : Index = 2
         |     %24 : llvm.Int<1> = llvm.icmp<"slt">(%22, %23)
         |     %25 : Nil = llvm.cond_br<"loop_body2", "loop_exit2">(%24)
@@ -284,7 +284,7 @@ def test_full_example():
         |     %2 : Index = 0
         |     %3 : Nil = llvm.br<"loop_header0">()
         |     %4 : Nil = llvm.label<"loop_header0">()
-        |     %5 : Nil = llvm.phi<["entry", "loop_exit1"]>([%2, %33])
+        |     %5 : Nil = llvm.phi<"entry", "loop_exit1">(%2, %33)
         |     %6 : Index = 2
         |     %7 : llvm.Int<1> = llvm.icmp<"slt">(%5, %6)
         |     %8 : Nil = llvm.cond_br<"loop_body0", "loop_exit0">(%7)
@@ -292,7 +292,7 @@ def test_full_example():
         |     %10 : Index = 0
         |     %11 : Nil = llvm.br<"loop_header1">()
         |     %12 : Nil = llvm.label<"loop_header1">()
-        |     %13 : Nil = llvm.phi<["loop_body0", "loop_body1"]>([%10, %29])
+        |     %13 : Nil = llvm.phi<"loop_body0", "loop_body1">(%10, %29)
         |     %14 : Index = 3
         |     %15 : llvm.Int<1> = llvm.icmp<"slt">(%13, %14)
         |     %16 : Nil = llvm.cond_br<"loop_body1", "loop_exit1">(%15)
@@ -320,7 +320,7 @@ def test_full_example():
         |     %38 : Index = 0
         |     %39 : Nil = llvm.br<"loop_header2">()
         |     %40 : Nil = llvm.label<"loop_header2">()
-        |     %41 : Nil = llvm.phi<["loop_exit0", "loop_exit3"]>([%38, %69])
+        |     %41 : Nil = llvm.phi<"loop_exit0", "loop_exit3">(%38, %69)
         |     %42 : Index = 2
         |     %43 : llvm.Int<1> = llvm.icmp<"slt">(%41, %42)
         |     %44 : Nil = llvm.cond_br<"loop_body2", "loop_exit2">(%43)
@@ -328,7 +328,7 @@ def test_full_example():
         |     %46 : Index = 0
         |     %47 : Nil = llvm.br<"loop_header3">()
         |     %48 : Nil = llvm.label<"loop_header3">()
-        |     %49 : Nil = llvm.phi<["loop_body2", "loop_body3"]>([%46, %65])
+        |     %49 : Nil = llvm.phi<"loop_body2", "loop_body3">(%46, %65)
         |     %50 : Index = 3
         |     %51 : llvm.Int<1> = llvm.icmp<"slt">(%49, %50)
         |     %52 : Nil = llvm.cond_br<"loop_body3", "loop_exit3">(%51)
@@ -355,7 +355,7 @@ def test_full_example():
         |     %73 : Index = 0
         |     %74 : Nil = llvm.br<"loop_header4">()
         |     %75 : Nil = llvm.label<"loop_header4">()
-        |     %76 : Nil = llvm.phi<["loop_exit2", "loop_exit5"]>([%73, %110])
+        |     %76 : Nil = llvm.phi<"loop_exit2", "loop_exit5">(%73, %110)
         |     %77 : Index = 3
         |     %78 : llvm.Int<1> = llvm.icmp<"slt">(%76, %77)
         |     %79 : Nil = llvm.cond_br<"loop_body4", "loop_exit4">(%78)
@@ -363,7 +363,7 @@ def test_full_example():
         |     %81 : Index = 0
         |     %82 : Nil = llvm.br<"loop_header5">()
         |     %83 : Nil = llvm.label<"loop_header5">()
-        |     %84 : Nil = llvm.phi<["loop_body4", "loop_body5"]>([%81, %106])
+        |     %84 : Nil = llvm.phi<"loop_body4", "loop_body5">(%81, %106)
         |     %85 : Index = 2
         |     %86 : llvm.Int<1> = llvm.icmp<"slt">(%84, %85)
         |     %87 : Nil = llvm.cond_br<"loop_body5", "loop_exit5">(%86)

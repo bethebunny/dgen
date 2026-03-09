@@ -15,7 +15,6 @@ op transpose(input: Tensor) -> Tensor
 op reshape(input: Tensor) -> Tensor
 op mul(lhs: Tensor, rhs: Tensor) -> Tensor
 op add(lhs: Tensor, rhs: Tensor) -> Tensor
-op generic_call<callee: String>(args: list) -> Tensor
 op concat<axis: Index>(lhs: Tensor, rhs: Tensor) -> Tensor:
     requires axis < lhs.shape.rank
 op tile<count: Index>(input: Tensor) -> Tensor

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Index, Nil, F64, String
+from dgen.dialects.builtin import Index, Nil, F64
 import toy.dialects.affine as affine
 
 toy = Dialect("toy")
@@ -72,16 +72,6 @@ class AddOp(Op):
         ("lhs", Tensor),
         ("rhs", Tensor),
     )
-
-
-@toy.op("generic_call")
-@dataclass(eq=False, kw_only=True)
-class GenericCallOp(Op):
-    callee: Value[String]
-    args: list[Value]
-    type: Type
-    __params__ = (("callee", String),)
-    __operands__ = (("args", Type),)
 
 
 @toy.op("concat")

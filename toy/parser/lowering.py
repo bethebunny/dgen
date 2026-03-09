@@ -212,9 +212,13 @@ class Lowering:
         args = []
         for a in call.args:
             args.append((yield from self.lower_expr(a)))
-        op = toy.GenericCallOp(
-            callee=builtin.String().constant(call.callee),
-            args=args,
+        callee_ref = dgen.Value(name=call.callee, type=builtin.Nil())
+        element_type = toy.InferredShapeTensor()
+        pack = builtin.PackOp(values=args, type=builtin.List(element_type=element_type))
+        yield pack
+        op = builtin.CallOp(
+            callee=callee_ref,
+            args=pack,
             type=toy.InferredShapeTensor(),
         )
         yield op

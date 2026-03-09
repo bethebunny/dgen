@@ -85,12 +85,15 @@ def test_roundtrip_add():
     assert asm.format(module) == ir
 
 
-def test_roundtrip_generic_call():
+def test_roundtrip_call():
     ir = strip_prefix("""
         | import toy
         |
+        | %helper : Nil = function<toy.InferredShapeTensor<F64>>() (%x: toy.InferredShapeTensor<F64>):
+        |     %_ : Nil = return(%x)
+        |
         | %f : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>):
-        |     %0 : toy.InferredShapeTensor<F64> = toy.generic_call<"helper">([%a])
+        |     %0 : toy.InferredShapeTensor<F64> = call<%helper>([%a])
         |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
@@ -197,8 +200,8 @@ def test_roundtrip_full_program():
         |     %1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)
         |     %2 : toy.Tensor<[6], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : toy.Tensor<[2, 3], F64> = toy.reshape(%2)
-        |     %4 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%1, %3])
-        |     %5 : toy.InferredShapeTensor<F64> = toy.generic_call<"multiply_transpose">([%3, %1])
+        |     %4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])
+        |     %5 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%3, %1])
         |     %_ : Nil = toy.print(%5)
         |     %_ : Nil = return(())
     """)

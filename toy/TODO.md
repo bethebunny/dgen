@@ -26,6 +26,8 @@
 - Try to generalize binary operations, eg. can we have a `builtin.add` op? Does it make sense to model types explicitly as being in a group/field/ring? There's certainly generic optimizations that can be done.
 - Pass input/output types, pre/post validation
 - Simple pass infrastructure
+- Formally support symbols
+- Parser / lowering support for forward references and cyclic references
 
 ## Parser / formatting improvements
 - Massively simplify / clean the asm parser and formatter code

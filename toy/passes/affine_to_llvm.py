@@ -188,8 +188,10 @@ class AffineToLLVMLowering:
         # Phi node for loop variable (back-edge value patched after body)
         back_edge = dgen.Value(type=builtin.Index())  # placeholder, patched below
         phi_op = llvm.PhiOp(
-            values=[init_op, back_edge],
-            labels=[String().constant(prev_label), String().constant(body_label)],
+            a=init_op,
+            b=back_edge,
+            label_a=String().constant(prev_label),
+            label_b=String().constant(body_label),
         )
         yield phi_op
         # Map the affine loop variable to the LLVM phi node
@@ -215,7 +217,7 @@ class AffineToLLVMLowering:
             yield from self.lower_op(child_op)
 
         # Patch phi back-edge label to actual current block
-        phi_op.labels[1] = String().constant(self.current_label)
+        phi_op.label_b = String().constant(self.current_label)
 
         # Increment and branch back
         one_op = ConstantOp(value=1, type=builtin.Index())
@@ -223,7 +225,7 @@ class AffineToLLVMLowering:
         next_op = llvm.AddOp(lhs=phi_op, rhs=one_op)
         yield next_op
         # Patch phi back-edge value
-        phi_op.values[1] = next_op
+        phi_op.b = next_op
         yield llvm.BrOp(dest=String().constant(header_label))
 
         # Exit label

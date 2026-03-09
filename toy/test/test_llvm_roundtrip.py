@@ -97,7 +97,7 @@ def test_roundtrip_phi():
         | import llvm
         |
         | %f : Nil = function<Nil>() ():
-        |     %i0 : Nil = llvm.phi<["entry", "loop_body"]>([%init, %next])
+        |     %i0 : Nil = llvm.phi<"entry", "loop_body">(%init, %next)
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
@@ -148,7 +148,7 @@ def test_roundtrip_loop_pattern():
         |     %init : Index = 0
         |     %_ : Nil = llvm.br<"loop_header0">()
         |     %_ : Nil = llvm.label<"loop_header0">()
-        |     %i0 : Nil = llvm.phi<["entry", "loop_body0"]>([%init, %next0])
+        |     %i0 : Nil = llvm.phi<"entry", "loop_body0">(%init, %next0)
         |     %hi : Index = 3
         |     %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
         |     %_ : Nil = llvm.cond_br<"loop_body0", "loop_exit0">(%cmp)

@@ -25,7 +25,7 @@ op icmp<pred: String>(lhs: Int<64>, rhs: Int<64>) -> Int<1>
 op br<dest: String>() -> Nil
 op cond_br<true_dest: String, false_dest: String>(cond: Int<1>) -> Nil
 op label<label_name: String>() -> Nil
-op phi<labels: list<String>>(values: list) -> Nil
+op phi<label_a: String, label_b: String>(a, b) -> Nil
 op fcmp<pred: String>(lhs: Float, rhs: Float) -> Int<1>
 op zext(input: Int<1>) -> Int<64>
 op call<callee: String>(args: list) -> Nil

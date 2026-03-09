@@ -128,11 +128,10 @@ class BuiltinToLLVMLowering:
         self.current_label = merge_label
         assert then_result is not None and else_result is not None
         phi_op = llvm.PhiOp(
-            values=[then_result, else_result],
-            labels=[
-                String().constant(then_source_label),
-                String().constant(else_source_label),
-            ],
+            a=then_result,
+            b=else_result,
+            label_a=String().constant(then_source_label),
+            label_b=String().constant(else_source_label),
         )
         yield phi_op
         self.value_map[id(op)] = phi_op

@@ -30,7 +30,7 @@ def test_llvm_full_loop():
         |     %init : Index = 0
         |     %_ : Nil = llvm.br<"loop_header">()
         |     %_ : Nil = llvm.label<"loop_header">()
-        |     %i0 : Nil = llvm.phi<["entry", "loop_body"]>([%init, %next])
+        |     %i0 : Nil = llvm.phi<"entry", "loop_body">(%init, %next)
         |     %hi : Index = 3
         |     %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
         |     %_ : Nil = llvm.cond_br<"loop_body", "loop_exit">(%cmp)

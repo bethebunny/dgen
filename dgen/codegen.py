@@ -138,8 +138,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         elif isinstance(op, builtin.PackOp):
             continue
         elif isinstance(op, llvm.PhiOp):
-            first_val = op.values[0]
-            types[vid] = types.get(id(first_val), "i64")
+            types[vid] = types.get(id(op.a), "i64")
         else:
             if (rt := _result_type_str(op.type)) is not None:
                 types[vid] = rt
@@ -233,11 +232,11 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             )
         elif isinstance(op, llvm.PhiOp):
             ty = types.get(id(op), "i64")
-            pairs = ", ".join(
-                f"[ {bare_ref(v)}, %{string_value(lab)} ]"
-                for v, lab in zip(op.values, op.labels)
+            lines.append(
+                f"  %{name} = phi {ty} "
+                f"[ {bare_ref(op.a)}, %{string_value(op.label_a)} ], "
+                f"[ {bare_ref(op.b)}, %{string_value(op.label_b)} ]"
             )
-            lines.append(f"  %{name} = phi {ty} {pairs}")
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
             a = ", ".join(typed_ref(arg) for arg in op.args)
