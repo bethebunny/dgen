@@ -30,6 +30,9 @@ type FatPointer<pointee: Type>:
 type List<element_type: Type>:
     storage: FatPointer<element_type>
 
+type Tuple<types: List<Type>>:
+    layout Record
+
 op pack(values: list) -> List
 op list_get<index: Index>(list: List)
 op add_index(lhs: Index, rhs: Index) -> Index

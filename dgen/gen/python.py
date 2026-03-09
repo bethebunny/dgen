@@ -34,6 +34,7 @@ _LAYOUTS: dict[str, str] = {
     "Pointer": "layout.Pointer",
     "Array": "layout.Array",
     "FatPointer": "layout.FatPointer",
+    "Record": "layout.Record",
 }
 
 
@@ -98,6 +99,8 @@ def _resolve_param_type_ref(ref: TypeRef) -> str:
     """For __params__: Type -> dgen.TypeType (type-kinded params hold type values)."""
     if ref.name == "Type":
         return "dgen.TypeType"
+    if ref.name == "List":
+        return "List"
     return ref.name
 
 
@@ -109,6 +112,9 @@ def _resolve_operand_type_ref(ref: TypeRef) -> str:
 def _annotation_for_param(param: ParamDecl) -> str:
     if param.variadic:
         inner = _resolve_param_type_ref(param.type)
+        return f"list[Value[{inner}]]"
+    if param.type.name == "List" and param.type.args:
+        inner = _resolve_param_type_ref(param.type.args[0])
         return f"list[Value[{inner}]]"
     if param.type.name == "Type":
         return "Value[dgen.TypeType]"
@@ -272,16 +278,36 @@ def _generate(
         if is_parametric_layout:
             assert td.layout is not None
             entry = _LAYOUTS[td.layout]
-            args = []
-            for p in td.params:
-                if p.type.name == "Type":
-                    args.append(f"dgen.type.type_constant(self.{p.name}).__layout__")
-                else:
-                    args.append(f"self.{p.name}.__constant__.to_json()")
+            # Special case: Record layout with a List<Type> param builds
+            # fields from the list elements.
+            list_type_param = next(
+                (
+                    p
+                    for p in td.params
+                    if p.type.name == "List"
+                    and p.type.args
+                    and p.type.args[0].name == "Type"
+                ),
+                None,
+            )
             body.append("")
             body.append("    @property")
             body.append("    def __layout__(self) -> layout.Layout:")
-            body.append(f"        return {entry}({', '.join(args)})")
+            if td.layout == "Record" and list_type_param is not None:
+                pname = list_type_param.name
+                body.append(
+                    f"        return layout.Record([(str(i), dgen.type.type_constant(t).__layout__) for i, t in enumerate(self.{pname})])"
+                )
+            else:
+                args = []
+                for p in td.params:
+                    if p.type.name == "Type":
+                        args.append(
+                            f"dgen.type.type_constant(self.{p.name}).__layout__"
+                        )
+                    else:
+                        args.append(f"self.{p.name}.__constant__.to_json()")
+                body.append(f"        return {entry}({', '.join(args)})")
         elif td.data and is_parametric:
             body.append("")
             body.append("    @property")

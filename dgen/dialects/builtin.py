@@ -101,6 +101,22 @@ class List(Type):
         return layout.FatPointer(dgen.type.type_constant(self.element_type).__layout__)
 
 
+@builtin.type("Tuple")
+@dataclass(frozen=True)
+class Tuple(Type):
+    types: list[Value[dgen.TypeType]]
+    __params__ = (("types", List),)
+
+    @property
+    def __layout__(self) -> layout.Layout:
+        return layout.Record(
+            [
+                (str(i), dgen.type.type_constant(t).__layout__)
+                for i, t in enumerate(self.types)
+            ]
+        )
+
+
 @builtin.op("pack")
 @dataclass(eq=False, kw_only=True)
 class PackOp(Op):
