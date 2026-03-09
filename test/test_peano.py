@@ -68,7 +68,7 @@ def count_nat(t: Type) -> int:
 @peano.op("zero")
 @dataclass(eq=False, kw_only=True)
 class ZeroOp(Op):
-    type: Type = TypeType(concrete=Zero())
+    type: Type = TypeType()
 
 
 @peano.op("successor")
@@ -77,7 +77,7 @@ class SuccessorOp(Op):
     """Wrap a Natural in another Successor layer. pred is compile-time."""
 
     pred: Value[TypeType]
-    type: Value[TypeType] = TypeType(concrete=Zero())  # overridden by ASM annotation
+    type: Value[TypeType] = TypeType()  # overridden by ASM annotation
     __params__: ClassVar[Fields] = (("pred", Type),)
 
 
@@ -106,9 +106,7 @@ def _lower_peano_ops(
         if isinstance(op, ZeroOp):
             z = Zero()
             print(f"  lower: peano.zero -> {type_asm(z)}")
-            const = ConstantOp(
-                value=z.__constant__.to_json(), type=TypeType(concrete=z)
-            )
+            const = ConstantOp(value=z.__constant__.to_json(), type=TypeType())
             new_ops.append(const)
             replacements[id(op)] = const
         elif isinstance(op, SuccessorOp):
@@ -118,9 +116,7 @@ def _lower_peano_ops(
             print(
                 f"  lower: peano.successor<{type_asm(pred_type)}> -> {type_asm(succ)}"
             )
-            const = ConstantOp(
-                value=succ.__constant__.to_json(), type=TypeType(concrete=succ)
-            )
+            const = ConstantOp(value=succ.__constant__.to_json(), type=TypeType())
             new_ops.append(const)
             replacements[id(op)] = const
         elif isinstance(op, ValueOp):
@@ -226,7 +222,7 @@ def test_recursive_type_roundtrip():
     nat = Successor(pred=Successor(pred=Zero()))
     assert count_nat(nat) == 2
     data = nat.__constant__.to_json()
-    reconstructed = type_constant(ConstantOp(value=data, type=TypeType(concrete=nat)))
+    reconstructed = type_constant(ConstantOp(value=data, type=TypeType()))
     assert count_nat(reconstructed) == 2
 
 
@@ -243,10 +239,10 @@ def test_peano_constant():
         | import peano
         |
         | %main : Nil = function<Index>() ():
-        |     %z : TypeType<peano.Zero> = peano.zero()
-        |     %s1 : TypeType<peano.Successor<peano.Zero>> = peano.successor<%z>()
-        |     %s2 : TypeType<peano.Successor<peano.Successor<peano.Zero>>> = peano.successor<%s1>()
-        |     %s3 : TypeType<peano.Successor<peano.Successor<peano.Successor<peano.Zero>>>> = peano.successor<%s2>()
+        |     %z : Type = peano.zero()
+        |     %s1 : Type = peano.successor<%z>()
+        |     %s2 : Type = peano.successor<%s1>()
+        |     %s3 : Type = peano.successor<%s2>()
         |     %n : Index = peano.value<%s3>()
         |     %_ : Nil = return(%n)
     """)
@@ -380,8 +376,8 @@ def test_multi_function_staged():
         | import peano
         |
         | %main : Nil = function<Index>() ():
-        |     %z : TypeType<peano.Zero> = peano.zero()
-        |     %s1 : TypeType<peano.Successor<peano.Zero>> = peano.successor<%z>()
+        |     %z : Type = peano.zero()
+        |     %s1 : Type = peano.successor<%z>()
         |     %n : Index = peano.value<%s1>()
         |     %result : Index = call<%add_one>([%n])
         |     %_ : Nil = return(%result)
@@ -431,8 +427,8 @@ def test_recursive_peano():
         | %natural : Nil = function<peano.Natural>() (%n: Index):
         |     %base_case : Index = equal_index(%n, 0)
         |     %value : peano.Natural = if(%base_case) ():
-        |         %z : TypeType<peano.Zero> = peano.zero()
-        |         %s : TypeType<peano.Successor<peano.Zero>> = peano.successor<%z>()
+        |         %z : Type = peano.zero()
+        |         %s : Type = peano.successor<%z>()
         |         %_ : Nil = return(%s)
         |     else ():
         |         %n_minus_one : Index = subtract_index(%n, 1)

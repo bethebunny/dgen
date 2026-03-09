@@ -108,7 +108,7 @@ class Type(Value["TypeType"]):
 
     @cached_property
     def type(self) -> TypeType:
-        return TypeType(concrete=self)
+        return TypeType()
 
     @cached_property
     def __constant__(self) -> Memory[TypeType]:
@@ -162,11 +162,10 @@ Fields = tuple[Field, ...]
 class TypeType(Type):
     """A type whose values are themselves types.
 
-    TypeType(concrete=Index()) wraps Index as a first-class value.
+    TypeType() is the metatype — its values are type descriptors.
+    The concrete identity of a type value is encoded in the TypeValue
+    layout (self-describing via tag), not in the TypeType itself.
     """
-
-    concrete: Value[TypeType]
-    __params__: ClassVar[Fields] = (("concrete", Type),)
 
     @property
     def __layout__(self) -> TypeValue:
@@ -175,7 +174,7 @@ class TypeType(Type):
 
     @property
     def ready(self) -> bool:
-        return isinstance(self.concrete, Type) or self.concrete.ready
+        return True
 
     @cached_property
     def type(self) -> TypeType:

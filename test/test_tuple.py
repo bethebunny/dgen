@@ -87,10 +87,10 @@ def test_tuple_three_types():
 
 
 def test_tuple_type_values():
-    """Tuple of type values: %types : Tuple<[TypeType<Index>, TypeType<String>]> = [Index, String]."""
+    """Tuple of type values: %types : Tuple<[Type, Type]> = [Index, String]."""
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
-        |     %types : Tuple<[TypeType<Index>, TypeType<String>]> = [Index, String]
+        |     %types : Tuple<[Type, Type]> = [Index, String]
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)

@@ -133,4 +133,5 @@ class Module:
 # ===----------------------------------------------------------------------=== #
 
 HasSingleBlock.__annotations__["__blocks__"] = ClassVar[tuple[str, ...]]
-builtin.type("TypeType")(TypeType)
+builtin.type("Type")(TypeType)
+builtin.types["TypeType"] = TypeType

@@ -214,15 +214,14 @@ def test_type_layout_parametric_type_param_nested():
 
 def test_type_value_memory_non_parametric():
     """Pack and unpack Index() as a type value through Memory."""
-    ty = builtin.Index()
-    metatype = TypeType(concrete=ty)
+    metatype = TypeType()
     mem = Memory.from_json(metatype, {"tag": "builtin.Index"})
     assert mem.to_json() == {"tag": "builtin.Index"}
 
 
 def test_type_value_memory_parametric():
     """Pack and unpack List<Index> as a type value through Memory."""
-    metatype = TypeType(concrete=builtin.List(element_type=builtin.Index()))
+    metatype = TypeType()
     data = {"tag": "builtin.List", "element_type": {"tag": "builtin.Index"}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
@@ -230,7 +229,7 @@ def test_type_value_memory_parametric():
 
 def test_type_value_memory_pointer():
     """Pack and unpack Pointer<F64> as a type value through Memory."""
-    metatype = TypeType(concrete=builtin.Pointer(pointee=builtin.F64()))
+    metatype = TypeType()
     data = {"tag": "builtin.Pointer", "pointee": {"tag": "builtin.F64"}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
@@ -238,15 +237,14 @@ def test_type_value_memory_pointer():
 
 def test_type_value_memory_nil():
     """Pack and unpack Nil as a type value through Memory."""
-    metatype = TypeType(concrete=builtin.Nil())
+    metatype = TypeType()
     mem = Memory.from_json(metatype, {"tag": "builtin.Nil"})
     assert mem.to_json() == {"tag": "builtin.Nil"}
 
 
 def test_type_value_memory_nested():
     """Pack and unpack List<List<F64>> as a type value through Memory."""
-    inner = builtin.List(element_type=builtin.F64())
-    metatype = TypeType(concrete=builtin.List(element_type=inner))
+    metatype = TypeType()
     data = {
         "tag": "builtin.List",
         "element_type": {
@@ -259,15 +257,15 @@ def test_type_value_memory_nested():
 
 
 def test_type_type_layout_non_parametric():
-    """TypeType(concrete=Index()) layout matches Index().type.__layout__."""
-    tt = TypeType(concrete=builtin.Index())
+    """TypeType() layout matches Index().type.__layout__."""
+    tt = TypeType()
     assert tt.__layout__ == builtin.Index().type.__layout__
 
 
 def test_type_type_layout_parametric():
-    """TypeType(concrete=List(Index())) layout matches the list's type.__layout__."""
+    """TypeType() layout matches the list's type.__layout__."""
     inner = builtin.List(element_type=builtin.Index())
-    tt = TypeType(concrete=inner)
+    tt = TypeType()
     assert tt.__layout__ == inner.type.__layout__
 
 
@@ -289,9 +287,7 @@ def test_type_is_value():
     """Every Type instance is a Value."""
     ty = builtin.F64()
     assert isinstance(ty, Value)
-    assert ty.ready
     assert isinstance(ty.type, TypeType)
-    assert ty.type.concrete is ty
 
 
 def test_type_constant_non_parametric():

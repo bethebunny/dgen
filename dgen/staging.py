@@ -153,13 +153,9 @@ def _resolve_comptime_field(
     if block_args:
         subgraph_ids = {id(o) for o in subgraph}
         func.body.ops = [o for o in func.body.ops if id(o) not in subgraph_ids]
-    # For TypeType results, reconstruct the concrete type from the dict
-    # so the ConstantOp's layout correctly includes all param fields.
-    # (e.g. Natural()'s layout only has the tag, but Successor needs tag + pred)
     const_type = value.type
     if isinstance(result, dict) and "tag" in result:
-        concrete = dgen.type._type_from_dict(result)
-        const_type = dgen.type.TypeType(concrete=concrete)
+        const_type = dgen.type.TypeType()
     const_op = ConstantOp(value=result, type=const_type)
     idx = func.body.ops.index(op)
     func.body.ops.insert(idx, const_op)
