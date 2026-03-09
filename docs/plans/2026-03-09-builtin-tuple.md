@@ -283,17 +283,17 @@ Add to `test/test_tuple.py`:
 
 ```python
 def test_tuple_type_values():
-    """Tuple of type values: %types : Tuple<[TypeTag, TypeTag]> = [Index, String]."""
+    """Tuple of type values: %types : Tuple<[TypeType<Index>, TypeType<String>]> = [...]."""
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
-        |     %types : Tuple<[TypeTag, TypeTag]> = ["builtin.Index", "builtin.String"]
+        |     %types : Tuple<[TypeType<Index>, TypeType<String>]> = [{"tag": "builtin.Index"}, {"tag": "builtin.String"}]
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 ```
 
-This validates Tuple can hold heterogeneous constant values. The exact serialization of type names depends on how TypeTag constants work (TypeTag stores strings via String layout).
+This validates that Tuple works with TypeType values. Uses `TypeType<Index>` because bare `Type` isn't yet a registered ASM type name (future work: register `Type` as ASM alias for `TypeType`, see TODO.md).
 
 **Step 2: Run test**
 
@@ -301,10 +301,14 @@ Run: `python -m pytest test/test_tuple.py::test_tuple_type_values -q`
 
 If it passes, great. If not, debug and fix.
 
-**Step 3: Commit**
+**Step 3: Add TODO for bare `Type` in ASM**
+
+Add to `TODO.md`: "Register `Type` as an ASM type name (alias for `TypeType`) so `Tuple<[Type, Type]>` works instead of `Tuple<[TypeType<Index>, TypeType<String>]>`"
+
+**Step 4: Commit**
 
 ```
-jj commit -m "test Tuple with type values"
+jj commit -m "test Tuple with type values; TODO for bare Type in ASM"
 ```
 
 ---
