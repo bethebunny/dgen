@@ -2,7 +2,7 @@
 
 from dgen import Block, asm
 from dgen.asm.formatting import format_expr
-from dgen.asm.parser import ASMParser, parse_module
+from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin
@@ -13,9 +13,9 @@ from toy.test.helpers import strip_prefix
 
 
 def test_parse_dict_literal():
-    """raw_expr handles {key: value, ...} and returns a Python dict."""
+    """value_expression handles {key: value, ...} and returns a Python dict."""
     parser = ASMParser('{"tag": "builtin.Index"}')
-    result = parser.raw_expr()
+    result = value_expression(parser)
     assert result == {"tag": "builtin.Index"}
 
 

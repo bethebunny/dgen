@@ -14,7 +14,7 @@ import pytest
 
 from dgen import Block, asm
 from dgen.asm.formatting import type_asm
-from dgen.asm.parser import ASMParser, TypeExpression, parse_module
+from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
@@ -121,9 +121,7 @@ ALL_TYPES = BUILTIN_TYPES + LLVM_TYPES + TOY_TYPES + AFFINE_TYPES
 def _parse_type(text: str) -> object:
     """Parse a type from ASM text, with all dialects registered."""
     parser = ASMParser(text)
-    for name in ("toy", "affine"):
-        parser.namespace.import_dialect(name)
-    return TypeExpression.read(parser)
+    return value_expression(parser)
 
 
 def _identity_exe(ty):
