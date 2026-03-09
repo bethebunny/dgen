@@ -283,17 +283,17 @@ Add to `test/test_tuple.py`:
 
 ```python
 def test_tuple_type_values():
-    """Tuple of type values: %types : Tuple<[TypeType<Index>, TypeType<String>]> = [...]."""
+    """Tuple of type values: %types : Tuple<[TypeType<Index>, TypeType<String>]> = [Index, String]."""
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
-        |     %types : Tuple<[TypeType<Index>, TypeType<String>]> = [{"tag": "builtin.Index"}, {"tag": "builtin.String"}]
+        |     %types : Tuple<[TypeType<Index>, TypeType<String>]> = [Index, String]
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert asm.format(module) == ir
 ```
 
-This validates that Tuple works with TypeType values. Uses `TypeType<Index>` because bare `Type` isn't yet a registered ASM type name (future work: register `Type` as ASM alias for `TypeType`, see TODO.md).
+This validates that Tuple works with TypeType values. `[Index, String]` parses as a list of Type objects via `_named_type`, and formats back via `type_asm`. Uses `TypeType<Index>` because bare `Type` isn't yet a registered ASM type name (future work: see TODO.md).
 
 **Step 2: Run test**
 
