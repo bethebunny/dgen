@@ -1,0 +1,179 @@
+"""Tests for the Pass base class, Rewriter, and Pass.run."""
+
+import pytest
+
+from dgen import asm
+from dgen.asm.parser import parse_module
+from dgen.dialects import builtin
+from dgen.module import ConstantOp
+from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from toy.dialects import toy
+from toy.test.helpers import strip_prefix
+
+
+# ---------------------------------------------------------------------------
+# Task 5: @lowering_for handler registration
+# ---------------------------------------------------------------------------
+
+
+def test_lowering_for_registers_handler():
+    class MyPass(Pass):
+        op_domain: set[type] = set()
+        op_range: set[type] = set()
+        type_domain: set[type] = set()
+        type_range: set[type] = set()
+
+        @lowering_for(ConstantOp)
+        def handle_constant(self, op: ConstantOp, rewriter: Rewriter) -> bool:
+            return False
+
+    assert ConstantOp in MyPass._handlers
+    assert len(MyPass._handlers[ConstantOp]) == 1
+
+
+def test_multiple_handlers_per_op_type():
+    class MyPass(Pass):
+        op_domain: set[type] = set()
+        op_range: set[type] = set()
+        type_domain: set[type] = set()
+        type_range: set[type] = set()
+
+        @lowering_for(ConstantOp)
+        def handler_a(self, op: ConstantOp, rewriter: Rewriter) -> bool:
+            return False
+
+        @lowering_for(ConstantOp)
+        def handler_b(self, op: ConstantOp, rewriter: Rewriter) -> bool:
+            return True
+
+    assert len(MyPass._handlers[ConstantOp]) == 2
+    names = [h.__name__ for h in MyPass._handlers[ConstantOp]]
+    assert names == ["handler_a", "handler_b"]
+
+
+# ---------------------------------------------------------------------------
+# Task 6: Rewriter with eager replace_uses
+# ---------------------------------------------------------------------------
+
+
+def test_rewriter_eager_replace():
+    """replace_uses eagerly updates all referencing ops."""
+    ir_text = strip_prefix("""
+        | import llvm
+        |
+        | %main : Nil = function<Nil>() ():
+        |     %0 : Index = 1
+        |     %1 : Index = 2
+        |     %2 : Index = llvm.add(%0, %0)
+        |     %_ : Nil = return(())
+    """)
+    m = parse_module(ir_text)
+    func = m.functions[0]
+    old = func.body.ops[0]  # %0 = 1
+    new = func.body.ops[1]  # %1 = 2
+
+    rewriter = Rewriter(func.body)
+    rewriter.replace_uses(old, new)
+
+    result = asm.format(m)
+    expected = strip_prefix("""
+        | import llvm
+        |
+        | %main : Nil = function<Nil>() ():
+        |     %0 : Index = 1
+        |     %1 : Index = 2
+        |     %2 : Index = llvm.add(%1, %1)
+        |     %_ : Nil = return(())
+    """)
+    assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# Task 7: Pass.run — walk graph, dispatch handlers
+# ---------------------------------------------------------------------------
+
+
+def test_pass_run_eliminates_double_transpose():
+    """A pass that eliminates transpose(transpose(x)) -> x."""
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main : Nil = function<Nil>() ():
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
+        |     %2 : toy.Tensor<[2, 3], F64> = toy.transpose(%1)
+        |     %_ : Nil = toy.print(%2)
+        |     %_ : Nil = return(())
+    """)
+
+    class ElimTranspose(Pass):
+        allow_unregistered_ops = True
+
+        @lowering_for(toy.TransposeOp)
+        def eliminate(
+            self, op: toy.TransposeOp, rewriter: Rewriter
+        ) -> bool:
+            if not isinstance(op.input, toy.TransposeOp):
+                return False
+            rewriter.replace_uses(op, op.input.input)
+            return True
+
+    m = parse_module(ir_text)
+    result = ElimTranspose().run(m)
+    formatted = asm.format(result)
+    expected = strip_prefix("""
+        | import toy
+        |
+        | %main : Nil = function<Nil>() ():
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
+        |     %_ : Nil = toy.print(%0)
+        |     %_ : Nil = return(())
+    """)
+    assert formatted == expected
+
+
+def test_pass_unregistered_ops_error():
+    """allow_unregistered_ops=False raises on unhandled ops."""
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main : Nil = function<Nil>() ():
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %_ : Nil = toy.print(%0)
+        |     %_ : Nil = return(())
+    """)
+
+    class StrictPass(Pass):
+        allow_unregistered_ops = False
+
+    m = parse_module(ir_text)
+    with pytest.raises(TypeError, match="No handler for"):
+        StrictPass().run(m)
+
+
+def test_pass_multiple_handlers_first_wins():
+    """Multiple handlers: first one that returns True wins."""
+    call_log: list[str] = []
+
+    class MultiPass(Pass):
+        allow_unregistered_ops = True
+
+        @lowering_for(ConstantOp)
+        def first(self, op: ConstantOp, rewriter: Rewriter) -> bool:
+            call_log.append("first")
+            return True
+
+        @lowering_for(ConstantOp)
+        def second(self, op: ConstantOp, rewriter: Rewriter) -> bool:
+            call_log.append("second")
+            return True
+
+    ir_text = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %0 : Index = 42
+        |     %_ : Nil = return(())
+    """)
+    m = parse_module(ir_text)
+    MultiPass().run(m)
+    assert call_log == ["first"]
