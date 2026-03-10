@@ -55,17 +55,11 @@ class Byte(Type):
 class Array(Type):
     element_type: Value[dgen.TypeType]
     n: Value[Index]
-    __params__ = (
-        ("element_type", dgen.TypeType),
-        ("n", Index),
-    )
+    __params__ = (("element_type", dgen.TypeType), ("n", Index),)
 
     @property
     def __layout__(self) -> layout.Layout:
-        return layout.Array(
-            dgen.type.type_constant(self.element_type).__layout__,
-            self.n.__constant__.to_json(),
-        )
+        return layout.Array(dgen.type.type_constant(self.element_type).__layout__, self.n.__constant__.to_json())
 
 
 @builtin.type("Pointer")
@@ -109,12 +103,7 @@ class Tuple(Type):
 
     @property
     def __layout__(self) -> layout.Layout:
-        return layout.Record(
-            [
-                (str(i), dgen.type.type_constant(t).__layout__)
-                for i, t in enumerate(self.types)
-            ]
-        )
+        return layout.Record([(str(i), dgen.type.type_constant(t).__layout__) for i, t in enumerate(self.types)])
 
 
 @builtin.type("Function")
@@ -141,10 +130,7 @@ class AddIndexOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Index()
-    __operands__ = (
-        ("lhs", Index),
-        ("rhs", Index),
-    )
+    __operands__ = (("lhs", Index), ("rhs", Index),)
 
 
 @builtin.op("equal_index")
@@ -153,10 +139,7 @@ class EqualIndexOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Index()
-    __operands__ = (
-        ("lhs", Index),
-        ("rhs", Index),
-    )
+    __operands__ = (("lhs", Index), ("rhs", Index),)
 
 
 @builtin.op("subtract_index")
@@ -165,10 +148,7 @@ class SubtractIndexOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Index()
-    __operands__ = (
-        ("lhs", Index),
-        ("rhs", Index),
-    )
+    __operands__ = (("lhs", Index), ("rhs", Index),)
 
 
 @builtin.op("return")
@@ -197,10 +177,16 @@ class IfOp(Op):
     then_body: Block
     else_body: Block
     __operands__ = (("cond", Index),)
-    __blocks__ = (
-        "then_body",
-        "else_body",
-    )
+    __blocks__ = ("then_body", "else_body",)
+
+
+@builtin.op("chain")
+@dataclass(eq=False, kw_only=True)
+class ChainOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type
+    __operands__ = (("lhs", Type), ("rhs", Type),)
 
 
 @builtin.op("call")
@@ -211,3 +197,5 @@ class CallOp(Op):
     type: Type
     __params__ = (("callee", Function),)
     __operands__ = (("args", List),)
+
+

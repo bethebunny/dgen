@@ -47,4 +47,5 @@ op function<result: Type>() -> Nil:
 op if(cond: Index) -> Type:
     block then_body
     block else_body
+op chain(lhs, rhs) -> Type
 op call<callee: Function>(args: List) -> Type

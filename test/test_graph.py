@@ -1,8 +1,11 @@
 """Tests for use-def graph utilities."""
 
+from dgen import asm
+from dgen.asm.parser import parse_module
 from dgen.dialects import builtin, llvm
 from dgen.graph import walk_ops
 from dgen.module import ConstantOp
+from toy.test.helpers import strip_prefix
 
 
 def test_walk_ops_linear_chain():
@@ -50,3 +53,26 @@ def test_walk_ops_does_not_descend_into_blocks():
     ops = walk_ops(func)
     assert func in ops
     assert inner not in ops
+
+
+def test_chain_asm_round_trip():
+    """chain op parses and formats correctly."""
+    ir_text = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %0 : Index = 0
+        |     %1 : Index = 1
+        |     %2 : Index = chain(%1, %0)
+        |     %_ : Nil = return(())
+    """)
+    m = parse_module(ir_text)
+    assert asm.format(m) == ir_text
+
+
+def test_walk_ops_follows_chain_dependencies():
+    """chain(lhs, rhs) creates dependency on rhs, walk_ops finds both."""
+    a = ConstantOp(value=0, type=builtin.Index())
+    b = ConstantOp(value=1, type=builtin.Index())
+    c = builtin.ChainOp(lhs=b, rhs=a, type=builtin.Index())
+    ops = walk_ops(c)
+    assert len(ops) == 3
+    assert set(ops) == {a, b, c}
