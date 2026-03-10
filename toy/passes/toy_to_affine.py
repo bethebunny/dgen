@@ -79,6 +79,12 @@ class ToyToAffineLowering:
             yield from self._lower_tile(op)
         elif isinstance(op, toy.ConcatOp):
             yield from self._lower_concat(op)
+        elif isinstance(op, builtin.ChainOp):
+            new_lhs = self.alloc_map.get(op.lhs, op.lhs)
+            new_rhs = self.alloc_map.get(op.rhs, op.rhs)
+            new_op = builtin.ChainOp(lhs=new_lhs, rhs=new_rhs, type=op.type)
+            yield new_op
+            self.alloc_map[op] = new_op
         elif isinstance(op, toy.PrintOp):
             yield from self._lower_print(op)
         elif isinstance(op, builtin.ReturnOp):
@@ -243,7 +249,9 @@ class ToyToAffineLowering:
 
     def _lower_print(self, op: toy.PrintOp) -> Iterator[dgen.Op]:
         alloc = self.alloc_map.get(op.input, op.input)
-        yield affine.PrintMemrefOp(input=alloc)
+        print_op = affine.PrintMemrefOp(input=alloc)
+        yield print_op
+        self.alloc_map[op] = print_op
 
     def _lower_return(self, op: builtin.ReturnOp) -> Iterator[dgen.Op]:
         for alloc_val in self.live_allocs:

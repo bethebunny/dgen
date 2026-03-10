@@ -91,6 +91,16 @@ class AffineToLLVMLowering:
             self.value_map[op] = llvm_op
         elif isinstance(op, affine.PrintMemrefOp):
             yield from self._lower_print(op)
+        elif isinstance(op, builtin.ChainOp):
+            new_lhs = self._map(op.lhs)
+            new_rhs = self._map(op.rhs)
+            new_op = builtin.ChainOp(lhs=new_lhs, rhs=new_rhs, type=op.type)
+            yield new_op
+            self.value_map[op] = new_op
+            # Propagate alloc metadata through chains
+            if new_lhs in self.alloc_shapes:
+                self.alloc_shapes[new_op] = self.alloc_shapes[new_lhs]
+                self.alloc_sizes[new_op] = self.alloc_sizes[new_lhs]
         elif isinstance(op, builtin.AddIndexOp):
             llvm_op = llvm.AddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
@@ -269,10 +279,12 @@ class AffineToLLVMLowering:
             values=[input_val, size_op], type=builtin.List(element_type=input_val.type)
         )
         yield pack
-        yield llvm.CallOp(
+        call_op = llvm.CallOp(
             callee=String().constant("print_memref"),
             args=pack,
         )
+        yield call_op
+        self.value_map[op] = call_op
 
 
 def lower_to_llvm(m: Module) -> Module:

@@ -32,7 +32,7 @@ def test_transpose():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
         |     %2 : Nil = toy.print(%1)
-        |     %3 : Nil = return(())
+        |     %3 : Nil = return(%2)
     """)
     assert result == expected
 
@@ -56,7 +56,7 @@ def test_mul():
         |     %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
         |     %2 : toy.Tensor<[2, 2], F64> = toy.mul(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(())
+        |     %4 : Nil = return(%3)
     """)
     assert result == expected
 
@@ -80,7 +80,7 @@ def test_3d_add():
         |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.add(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(())
+        |     %4 : Nil = return(%3)
     """)
     assert result == expected
 
@@ -104,7 +104,7 @@ def test_3d_mul():
         |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.mul(%0, %1)
         |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(())
+        |     %4 : Nil = return(%3)
     """)
     assert result == expected
 
@@ -138,7 +138,7 @@ def test_generic_call():
         |     %1 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %2 : toy.Tensor<[3, 2], F64> = call<%multiply_transpose>([%0, %1])
         |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(())
+        |     %4 : Nil = return(%3)
     """)
     assert result == expected
 
@@ -287,6 +287,6 @@ def test_full_tutorial_example():
         |     %4 : toy.Tensor<[3, 2], F64> = call<%multiply_transpose>([%1, %3])
         |     %5 : toy.Tensor<[3, 2], F64> = call<%multiply_transpose>([%3, %1])
         |     %6 : Nil = toy.print(%5)
-        |     %7 : Nil = return(())
+        |     %7 : Nil = return(%6)
     """)
     assert result == expected

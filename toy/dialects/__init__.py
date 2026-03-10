@@ -44,7 +44,6 @@ def _tensor_layout(self: Tensor) -> Layout:
 Tensor.__layout__ = _tensor_layout  # type: ignore[assignment, misc]
 
 
-
 # ===----------------------------------------------------------------------=== #
 # FunctionType (not dialect-registered)
 # ===----------------------------------------------------------------------=== #

@@ -137,6 +137,9 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             _register_constant(op)
         elif isinstance(op, PackOp):
             continue
+        elif isinstance(op, builtin.ChainOp):
+            # Chain is transparent: alias to lhs at runtime
+            types[vid] = types.get(id(op.lhs), "i64")
         elif isinstance(op, llvm.PhiOp):
             types[vid] = types.get(id(op.a), "i64")
         else:
@@ -147,6 +150,19 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 operand = getattr(op, operand_name)
                 if isinstance(operand, Constant):
                     _register_constant(operand)
+
+    # Resolve chain aliases: ChainOp is transparent, maps to its lhs
+    for op in f.body.ops:
+        if isinstance(op, builtin.ChainOp):
+            vid = id(op)
+            lhs_id = id(op.lhs)
+            if lhs_id in constants:
+                constants[vid] = constants[lhs_id]
+            else:
+                # Point to same slot as lhs
+                lhs_name = tracker.track_name(op.lhs)
+                lhs_ty = types.get(lhs_id, "i64")
+                constants[vid] = f"{lhs_ty} %{lhs_name}"
 
     def typed_ref(val: dgen.Value) -> str:
         """'type value' — e.g. 'double 1.0' or 'ptr %v3'."""
@@ -180,7 +196,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     lines = [f"define {llvm_ret} @{func_name}({param_str}) {{", "entry:"]
 
     for op in f.body.ops:
-        if isinstance(op, (ConstantOp, PackOp)):
+        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
             continue
 
         name = tracker.track_name(op)
@@ -247,7 +263,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 ret_ty = types[id(op)]
                 lines.append(f"  %{name} = call {ret_ty} @{callee}({a})")
         elif isinstance(op, builtin.ReturnOp):
-            if isinstance(op.value, builtin.Nil):
+            if llvm_ret == "void":
                 lines.append("  ret void")
             else:
                 lines.append(f"  ret {typed_ref(op.value)}")

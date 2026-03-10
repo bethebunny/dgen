@@ -29,6 +29,8 @@ from toy.parser.ast import (
 class Lowering:
     def __init__(self) -> None:
         self.scope: dict[str, dgen.Value] = {}
+        self.last_effect: dgen.Op | None = None
+        self.has_value_return: bool = False
 
     def lower_module(self, tm: ToyModule) -> Module:
         functions = [self.lower_function(f) for f in tm.functions]
@@ -36,6 +38,8 @@ class Lowering:
 
     def lower_function(self, f: Function) -> builtin.FunctionOp:
         self.scope = {}
+        self.last_effect = None
+        self.has_value_return = False
 
         # Create block args for function params
         args: list[BlockArgument] = []
@@ -49,14 +53,10 @@ class Lowering:
         for stmt in f.body:
             ops.extend(self._lower_statement(stmt))
 
-        # Determine return type from ops
+        # Determine return type from AST-level return
         result: dgen.Type = builtin.Nil()
-        if ops:
-            last_op = ops[-1]
-            if isinstance(last_op, builtin.ReturnOp) and not isinstance(
-                last_op.value, builtin.Nil
-            ):
-                result = toy.InferredShapeTensor()
+        if self.has_value_return:
+            result = toy.InferredShapeTensor()
 
         return builtin.FunctionOp(
             name=f.proto.name,
@@ -86,10 +86,18 @@ class Lowering:
         else:
             self.scope[decl.name] = expr_val
 
-    def _lower_return(self, ret: ReturnStmt) -> Iterator[dgen.Op]:
+    def _lower_return(self, ret: ReturnStmt) -> Generator[dgen.Op, None, None]:
         if ret.value is not None:
+            self.has_value_return = True
             val = yield from self.lower_expr(ret.value)
-            yield builtin.ReturnOp(value=val)
+            if self.last_effect is not None:
+                chain_op = builtin.ChainOp(lhs=val, rhs=self.last_effect, type=val.type)
+                yield chain_op
+                yield builtin.ReturnOp(value=chain_op)
+            else:
+                yield builtin.ReturnOp(value=val)
+        elif self.last_effect is not None:
+            yield builtin.ReturnOp(value=self.last_effect)
         else:
             yield builtin.ReturnOp()
 
@@ -226,7 +234,15 @@ class Lowering:
 
     def _lower_print(self, p: PrintExpr) -> Generator[dgen.Op, None, dgen.Value]:
         arg = yield from self.lower_expr(p.arg)
-        yield toy.PrintOp(input=arg)
+        if self.last_effect is not None:
+            chain_op = builtin.ChainOp(lhs=arg, rhs=self.last_effect, type=arg.type)
+            yield chain_op
+            print_input = chain_op
+        else:
+            print_input = arg
+        print_op = toy.PrintOp(input=print_input)
+        yield print_op
+        self.last_effect = print_op
         return arg
 
 
