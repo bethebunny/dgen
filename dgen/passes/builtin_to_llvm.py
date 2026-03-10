@@ -7,6 +7,7 @@ Passes through unchanged: ConstantOp, PackOp, ReturnOp, and any LLVM dialect ops
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Protocol
 
 import dgen
 from dgen.dialects import builtin, llvm
@@ -14,7 +15,37 @@ from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.module import ConstantOp, Module, PackOp
 
 
-class BuiltinToLLVMLowering:
+class Pass(Protocol):
+    op_lowerings: ClassVar[dict[type[dgen.Op], Callable[[dgen.Op], dgen.Op]]]
+
+    # open question: does the domain/range include types?
+    def domain(self) -> set[type[dgen.Op]]: ...
+    def range(self) -> set[type[dgen.Op]]: ...
+    # similarly, unregistered types?
+    def allow_unregistered_ops(self) -> bool: ...
+
+    def lower_op(self, op: dgen.Op) -> dgen.Op:
+        return self.op_lowerings[type(op)](op)
+
+    def lower(self, module: Module) -> Module:
+        return Module([self.lower_op(op) for op in module.functions])
+
+    # op, or module? awkward duality
+    # also, should provide a mechanism for diagnostics
+    # speaking of, TODO: location info
+    def verify_preconditions(self, op: dgen.Op) -> bool: ...
+    def verify_postconditions(self, op: dgen.Op) -> bool: ...
+
+    @classmethod
+    def lowering_for(cls, op: type[dgen.Op]):
+        def decorator(fn):
+            cls.op_lowerings[op] = fn
+            return fn
+
+        return decorator
+
+
+class BuiltinToLLVMLowering(Pass):
     def __init__(self) -> None:
         self.if_counter = 0
         self.value_map: dict[int, dgen.Value] = {}  # id(old) -> new
@@ -24,6 +55,7 @@ class BuiltinToLLVMLowering:
         functions = [self.lower_function(f) for f in m.functions]
         return Module(functions=functions)
 
+    @lowering_for(builtin.FunctionOp)
     def lower_function(self, f: FunctionOp) -> FunctionOp:
         self.if_counter = 0
         self.value_map = {}
