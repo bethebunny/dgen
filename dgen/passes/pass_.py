@@ -67,6 +67,7 @@ class Rewriter:
 
     def __init__(self, block: dgen.Block) -> None:
         self._block = block
+        self._op_replacements: dict[int, dgen.Op] = {}
 
     def replace_uses(self, old: dgen.Value, new: dgen.Value) -> None:
         """Eagerly replace all references to old with new in the block."""
@@ -77,6 +78,11 @@ class Rewriter:
             for name, param in op.parameters:
                 if param is old:
                     setattr(op, name, new)
+
+    def replace_op(self, old: dgen.Op, new: dgen.Op) -> None:
+        """Replace old op with new op: redirect all uses and swap in the block."""
+        self.replace_uses(old, new)
+        self._op_replacements[id(old)] = new
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +133,17 @@ class Pass(metaclass=_PassMeta):
                 # Recurse into nested blocks for unhandled ops
                 for _, child_block in op.blocks:
                     self._run_block(child_block)
-        # Remove replaced ops from the block
+        # Apply replacements: swap or remove handled ops
         if replaced:
-            block.ops = [op for op in block.ops if id(op) not in replaced]
+            new_ops: list[dgen.Op] = []
+            for op in block.ops:
+                oid = id(op)
+                if oid not in replaced:
+                    new_ops.append(op)
+                elif oid in rewriter._op_replacements:
+                    new_ops.append(rewriter._op_replacements[oid])
+                # else: op was replaced via replace_uses only — remove it
+            block.ops = new_ops
 
     def verify_preconditions(self, module: Module) -> None:
         """Check that all ops/types are in the declared domain."""
