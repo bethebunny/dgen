@@ -14,7 +14,7 @@ from dgen.layout import Layout
 from dgen.type import Memory
 
 from toy.dialects.affine import Shape
-from toy.dialects.toy import DimSizeOp, Tensor
+from toy.dialects.toy import Tensor
 
 # ===----------------------------------------------------------------------=== #
 # Shape helpers
@@ -43,23 +43,6 @@ def _tensor_layout(self: Tensor) -> Layout:
 
 Tensor.__layout__ = _tensor_layout  # type: ignore[assignment, misc]
 
-
-# ===----------------------------------------------------------------------=== #
-# DimSizeOp helpers
-# ===----------------------------------------------------------------------=== #
-
-
-def _dim_size_resolve_constant(self: DimSizeOp) -> int | None:
-    """Return constant value if input type has a resolved shape."""
-    if not isinstance(self.input.type, Tensor):
-        return None
-    shape: Value[Shape] = self.input.type.shape
-    if not shape.ready:
-        return None
-    return shape.__constant__.to_json()[self.axis.__constant__.to_json()]
-
-
-DimSizeOp.resolve_constant = _dim_size_resolve_constant  # type: ignore[assignment]
 
 
 # ===----------------------------------------------------------------------=== #

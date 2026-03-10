@@ -67,6 +67,8 @@ class ToyToAffineLowering:
             yield from self._lower_binop(op, op.lhs, op.rhs)
         elif isinstance(op, toy.ReshapeOp):
             self._lower_reshape(op)
+        elif isinstance(op, toy.DimSizeOp):
+            yield from self._lower_dim_size(op)
         elif isinstance(op, toy.NonzeroCountOp):
             new_op = toy.NonzeroCountOp(
                 input=self.alloc_map.get(op.input, op.input),
@@ -226,6 +228,15 @@ class ToyToAffineLowering:
 
         yield from self._nested_for(rhs_shape, rhs_body)
         self.alloc_map[op] = alloc_op
+
+    def _lower_dim_size(self, op: toy.DimSizeOp) -> Iterator[dgen.Op]:
+        assert isinstance(op.input.type, toy.Tensor)
+        shape = op.input.type.unpack_shape()
+        axis = op.axis.__constant__.to_json()
+        assert isinstance(axis, int)
+        const = ConstantOp(value=shape[axis], type=Index())
+        yield const
+        self.alloc_map[op] = const
 
     def _lower_reshape(self, op: toy.ReshapeOp) -> None:
         self.alloc_map[op] = self.alloc_map.get(op.input, op.input)

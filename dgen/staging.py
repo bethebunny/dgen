@@ -160,27 +160,6 @@ def _resolve_comptime_field(
     setattr(op, field_name, const_op)
 
 
-def _resolve_constant_ops(func: FunctionOp) -> None:
-    """Replace ops that implement resolve_constant() with ConstantOps.
-
-    After shape inference runs, ops like DimSizeOp may be resolvable to
-    constants because their input types are now concrete. This function
-    finds such ops and replaces them, patching any Constant field references.
-    """
-    for i, op in enumerate(func.body.ops):
-        resolver = getattr(op, "resolve_constant", None)
-        if resolver is None:
-            continue
-        val = resolver()
-        if val is None:
-            continue
-        const = ConstantOp(value=val, type=op.type)
-        func.body.ops[i] = const
-        for other in func.body.ops:
-            for param_name, param_value in other.parameters:
-                if param_value is op:
-                    setattr(other, param_name, const)
-
 
 # ---------------------------------------------------------------------------
 # Stage computation
@@ -381,8 +360,6 @@ def _resolve_all_comptime(
                 continue
             _resolve_comptime_field(func, op, field_name, value, lower)
             module = infer(module)
-            for f in module.functions:
-                _resolve_constant_ops(f)
             resolved_any = True
             break  # re-iterate from the start after each resolution
         if not resolved_any:
@@ -473,7 +450,6 @@ def _compile_with_callbacks(
             )
             template = infer(template)
             s2_func = next(f for f in template.functions if f.name == func_name)
-            _resolve_constant_ops(s2_func)
 
         # Compile and run stage-2 (only this function, not the full template)
         func_module = Module(functions=[s2_func])

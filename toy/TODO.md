@@ -1,10 +1,11 @@
 ## Make the JIT work in the general case
-- Memory layout for types
-  - Make `type: Type` an honorary `__params__` on `Op`
 - Generalize `compile_and_run_staged` to not need an `infer` stage
 - Remove any "if stage0/stage1" logic
 - Batch multiple subgraphs in the same staging pass rather than serializing them
-- Delete `DimSizeOp.resolve_constant` monkey-patch and the `getattr(op, "resolve_constant")` pattern in `staging.py` — declare it as an optional method on `Op` or remove entirely
+- ~~Delete `DimSizeOp.resolve_constant` monkey-patch~~ Done: `DimSizeOp` now has a proper lowering in `toy_to_affine.py`
+
+## General pass infrastructure
+- Passes should guarantee they can lower all ops in their input dialect — add validation that no un-lowered ops survive a pass
 
 ## Experiments / scope creep
 - Tuple type

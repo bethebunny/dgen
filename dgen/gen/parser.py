@@ -581,7 +581,7 @@ def _parse_operands(s: str) -> list[OperandDecl]:
 
 
 def _parse_type_ref(s: str) -> TypeRef:
-    """Parse a type reference: Name, Name<args>, list<T>, or Type."""
+    """Parse a type reference: Name or Name<args>."""
     s = s.strip()
     if "<" in s:
         lt = s.index("<")
