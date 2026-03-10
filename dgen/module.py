@@ -19,7 +19,7 @@ from dgen.dialects.builtin import (
     builtin,
 )
 
-from dgen.type import Memory, type_constant
+from dgen.type import Fields, Memory, type_constant
 
 # ===----------------------------------------------------------------------=== #
 # ConstantOp (custom __init__, multiple inheritance)
@@ -49,6 +49,25 @@ class ConstantOp(Op, Constant):
 
     def __hash__(self) -> int:
         return id(self)
+
+
+# ===----------------------------------------------------------------------=== #
+# PackOp (sugar op, never emitted standalone in ASM)
+# ===----------------------------------------------------------------------=== #
+
+
+@builtin.op("pack")
+@dataclass(eq=False, kw_only=True)
+class PackOp(Op):
+    """Sugar op: wraps multiple values into a single list-like operand.
+
+    Never emitted standalone in ASM — the formatter inlines it as [...].
+    The codegen skips it entirely.
+    """
+
+    values: list[Value]
+    type: Type
+    __operands__: ClassVar[Fields] = (("values", Type),)
 
 
 # ===----------------------------------------------------------------------=== #

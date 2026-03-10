@@ -125,14 +125,6 @@ class Function(Type):
     __params__ = (("result", dgen.TypeType),)
 
 
-@builtin.op("pack")
-@dataclass(eq=False, kw_only=True)
-class PackOp(Op):
-    values: list[Value]
-    type: Type
-    __operands__ = (("values", Type),)
-
-
 @builtin.op("list_get")
 @dataclass(eq=False, kw_only=True)
 class ListGetOp(Op):

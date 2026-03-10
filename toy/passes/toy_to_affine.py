@@ -8,8 +8,8 @@ import dgen
 from dgen.block import BlockArgument
 from dgen import layout
 from dgen.dialects import builtin
-from dgen.dialects.builtin import FunctionOp, Index, List, Nil, PackOp
-from dgen.module import ConstantOp, Module
+from dgen.dialects.builtin import FunctionOp, Index, List, Nil
+from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import affine, shape_constant, toy
 
 

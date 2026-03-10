@@ -10,8 +10,8 @@ from collections.abc import Iterator
 
 import dgen
 from dgen.dialects import builtin, llvm
-from dgen.dialects.builtin import FunctionOp, Nil, PackOp, String
-from dgen.module import ConstantOp, Module
+from dgen.dialects.builtin import FunctionOp, Nil, String
+from dgen.module import ConstantOp, Module, PackOp
 
 
 class BuiltinToLLVMLowering:

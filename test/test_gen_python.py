@@ -288,49 +288,6 @@ def test_generate_op_default_operand():
     assert "value: Value | Nil = Nil()" in code
 
 
-def test_generate_list_operand():
-    f = DgenFile(
-        types=[TypeDecl(name="List")],
-        ops=[
-            OpDecl(
-                name="pack",
-                operands=[
-                    OperandDecl(name="values", type=TypeRef("Type"), variadic=True)
-                ],
-                return_type=TypeRef("List"),
-            )
-        ],
-    )
-    code = generate(f, dialect_name="test")
-    assert "values: list[Value]" in code
-
-
-def test_generate_list_param():
-    f = DgenFile(
-        imports=[ImportDecl(module="builtin", names=["String"])],
-        ops=[
-            OpDecl(
-                name="phi",
-                params=[
-                    ParamDecl(name="labels", type=TypeRef("String"), variadic=True)
-                ],
-                operands=[
-                    OperandDecl(name="values", type=TypeRef("Type"), variadic=True)
-                ],
-                return_type=TypeRef("Type"),
-            )
-        ],
-    )
-    code = generate(
-        f,
-        dialect_name="test",
-        import_map={"builtin": "dgen.dialects.builtin"},
-    )
-    assert "labels: list[Value[String]]" in code
-    assert "values: list[Value]" in code
-    assert '__params__ = (("labels", String),)' in code
-
-
 def test_generate_op_typed_operand():
     """Operand with specific type (not generic Type)."""
     f = DgenFile(

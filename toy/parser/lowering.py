@@ -7,7 +7,7 @@ from collections.abc import Generator, Iterator
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module
+from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
 from toy.parser.ast import (
     BinaryOp,
@@ -214,7 +214,7 @@ class Lowering:
             args.append((yield from self.lower_expr(a)))
         callee_ref = dgen.Value(name=call.callee, type=builtin.Nil())
         element_type = toy.InferredShapeTensor()
-        pack = builtin.PackOp(values=args, type=builtin.List(element_type=element_type))
+        pack = PackOp(values=args, type=builtin.List(element_type=element_type))
         yield pack
         op = builtin.CallOp(
             callee=callee_ref,

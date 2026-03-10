@@ -6,7 +6,7 @@ from copy import deepcopy
 
 import dgen
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module
+from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant
 from toy.dialects import toy
 
@@ -88,9 +88,7 @@ def _infer_function(
                     type_of[id(op)] = t
 
         elif isinstance(op, builtin.CallOp):
-            args_list = (
-                op.args.values if isinstance(op.args, builtin.PackOp) else [op.args]
-            )
+            args_list = op.args.values if isinstance(op.args, PackOp) else [op.args]
             resolved = [type_of.get(id(a)) for a in args_list]
             arg_types = [t for t in resolved if t is not None]
             if len(arg_types) == len(resolved):

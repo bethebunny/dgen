@@ -36,7 +36,6 @@ type Tuple<types: List<Type>>:
 type Function<result: Type>:
     layout Void
 
-op pack(values: list) -> List
 op list_get<index: Index>(list: List)
 op add_index(lhs: Index, rhs: Index) -> Index
 op equal_index(lhs: Index, rhs: Index) -> Index

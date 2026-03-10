@@ -110,9 +110,6 @@ def _resolve_operand_type_ref(ref: TypeRef) -> str:
 
 
 def _annotation_for_param(param: ParamDecl) -> str:
-    if param.variadic:
-        inner = _resolve_param_type_ref(param.type)
-        return f"list[Value[{inner}]]"
     if param.type.name == "List" and param.type.args:
         inner = _resolve_param_type_ref(param.type.args[0])
         return f"list[Value[{inner}]]"
@@ -122,8 +119,6 @@ def _annotation_for_param(param: ParamDecl) -> str:
 
 
 def _annotation_for_operand(operand: OperandDecl) -> str:
-    if operand.variadic:
-        return "list[Value]"
     return "Value"
 
 

@@ -12,7 +12,7 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
-from dgen.module import ConstantOp, Module, string_value
+from dgen.module import ConstantOp, Module, PackOp, string_value
 from dgen.layout import Layout
 from dgen.type import Constant, Memory, Value
 
@@ -135,7 +135,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         vid = id(op)
         if isinstance(op, ConstantOp):
             _register_constant(op)
-        elif isinstance(op, builtin.PackOp):
+        elif isinstance(op, PackOp):
             continue
         elif isinstance(op, llvm.PhiOp):
             types[vid] = types.get(id(op.a), "i64")
@@ -180,7 +180,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     lines = [f"define {llvm_ret} @{func_name}({param_str}) {{", "entry:"]
 
     for op in f.body.ops:
-        if isinstance(op, (ConstantOp, builtin.PackOp)):
+        if isinstance(op, (ConstantOp, PackOp)):
             continue
 
         name = tracker.track_name(op)
@@ -239,9 +239,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             )
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
-            call_args = (
-                op.args.values if isinstance(op.args, builtin.PackOp) else [op.args]
-            )
+            call_args = op.args.values if isinstance(op.args, PackOp) else [op.args]
             a = ", ".join(typed_ref(arg) for arg in call_args)
             if isinstance(op.type, builtin.Nil):
                 lines.append(f"  call void @{callee}({a})")

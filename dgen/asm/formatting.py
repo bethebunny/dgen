@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from dgen.dialects.builtin import Nil, PackOp
+from dgen.dialects.builtin import Nil
+from dgen.module import PackOp
 
 from ..op import Op
 from ..type import Memory, Type

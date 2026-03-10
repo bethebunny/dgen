@@ -537,13 +537,13 @@ def _parse_constraint(line: str) -> Constraint:
 
 def _parse_decl_parts(
     s: str,
-) -> list[tuple[str, TypeRef | None, str | None, bool]]:
-    """Parse comma-separated declarations into (name, type_ref, default, variadic) tuples.
+) -> list[tuple[str, TypeRef | None, str | None]]:
+    """Parse comma-separated declarations into (name, type_ref, default) tuples.
 
     Each declaration has the form: name[: Type] [= default].
     The type annotation is optional; when absent, type_ref is None.
     """
-    parts: list[tuple[str, TypeRef | None, str | None, bool]] = []
+    parts: list[tuple[str, TypeRef | None, str | None]] = []
     for part in _split_commas(s):
         part = part.strip()
         default: str | None = None
@@ -552,40 +552,31 @@ def _parse_decl_parts(
             default = default.strip()
             part = decl.strip()
         type_ref: TypeRef | None = None
-        variadic = False
         if ":" in part:
             name, type_str = part.split(":", 1)
             name = name.strip()
             type_ref = _parse_type_ref(type_str.strip())
-            if type_ref.name == "list":
-                variadic = True
-                if type_ref.args:
-                    type_ref = type_ref.args[0]
-                else:
-                    type_ref = None
         else:
             name = part.strip()
-        parts.append((name, type_ref, default, variadic))
+        parts.append((name, type_ref, default))
     return parts
 
 
 def _parse_params(s: str) -> list[ParamDecl]:
     """Parse a comma-separated parameter list: name: Type [= default], ..."""
     params: list[ParamDecl] = []
-    for name, type_ref, default, variadic in _parse_decl_parts(s):
+    for name, type_ref, default in _parse_decl_parts(s):
         if type_ref is None:
             raise SyntaxError(f"parameter {name!r} requires a type annotation")
-        params.append(
-            ParamDecl(name=name, type=type_ref, default=default, variadic=variadic)
-        )
+        params.append(ParamDecl(name=name, type=type_ref, default=default))
     return params
 
 
 def _parse_operands(s: str) -> list[OperandDecl]:
     """Parse a comma-separated operand list: name[: Type] [= default], ..."""
     return [
-        OperandDecl(name=name, type=type_ref, default=default, variadic=variadic)
-        for name, type_ref, default, variadic in _parse_decl_parts(s)
+        OperandDecl(name=name, type=type_ref, default=default)
+        for name, type_ref, default in _parse_decl_parts(s)
     ]
 
 

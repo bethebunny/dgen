@@ -20,7 +20,7 @@ from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin
 from dgen.dialects.builtin import Index
-from dgen.module import ConstantOp, Module
+from dgen.module import ConstantOp, Module, PackOp
 from dgen.staging import compile_staged
 from dgen.type import Fields, TypeType, type_constant
 from toy.test.helpers import strip_prefix
@@ -131,9 +131,9 @@ def _lower_peano_ops(
             val = replacements.get(id(op.value), op.value)
             new_ops.append(builtin.ReturnOp(value=val, type=op.type))
         elif isinstance(op, builtin.CallOp):
-            if isinstance(op.args, builtin.PackOp):
+            if isinstance(op.args, PackOp):
                 new_values = [replacements.get(id(a), a) for a in op.args.values]
-                new_pack = builtin.PackOp(values=new_values, type=op.args.type)
+                new_pack = PackOp(values=new_values, type=op.args.type)
                 new_ops.append(new_pack)
                 new_call = builtin.CallOp(
                     callee=op.callee,

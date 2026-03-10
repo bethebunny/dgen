@@ -7,9 +7,9 @@ from math import prod
 
 import dgen
 from dgen.dialects import builtin, llvm
-from dgen.dialects.builtin import FunctionOp, Nil, PackOp, String
+from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen import layout
-from dgen.module import ConstantOp, Module
+from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import affine, toy
 
 
@@ -265,7 +265,7 @@ class AffineToLLVMLowering:
         size = self.alloc_sizes[input_val]
         size_op = ConstantOp(value=size, type=builtin.Index())
         yield size_op
-        pack = builtin.PackOp(
+        pack = PackOp(
             values=[input_val, size_op], type=builtin.List(element_type=input_val.type)
         )
         yield pack

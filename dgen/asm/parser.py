@@ -13,7 +13,7 @@ import dgen.type
 from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module
+from dgen.module import ConstantOp, Module, PackOp
 
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 _QUALIFIED = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*")
@@ -330,7 +330,7 @@ def _wrap_constant(field_type: type[Type], raw: object) -> Constant:
 
 def _pack_list(
     parser: ASMParser, elems: list[object], field_type: type[Type]
-) -> builtin.PackOp:
+) -> PackOp:
     if field_type is builtin.List or field_type.__params__:
         # List is parameterized; infer element type from first Value element
         element_type: Type | None = None
@@ -350,7 +350,7 @@ def _pack_list(
             op = ConstantOp(value=elem, type=element_type)
             parser.pending_ops.append(op)
             values.append(op)
-    pack = builtin.PackOp(values=values, type=builtin.List(element_type=element_type))
+    pack = PackOp(values=values, type=builtin.List(element_type=element_type))
     parser.pending_ops.append(pack)
     return pack
 
