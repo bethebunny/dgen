@@ -110,9 +110,7 @@ def test_pass_run_eliminates_double_transpose():
         allow_unregistered_ops = True
 
         @lowering_for(toy.TransposeOp)
-        def eliminate(
-            self, op: toy.TransposeOp, rewriter: Rewriter
-        ) -> bool:
+        def eliminate(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
             if not isinstance(op.input, toy.TransposeOp):
                 return False
             rewriter.replace_uses(op, op.input.input)

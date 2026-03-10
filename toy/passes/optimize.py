@@ -21,9 +21,7 @@ class ToyOptimize(Pass):
     allow_unregistered_ops = True
 
     @lowering_for(toy.TransposeOp)
-    def eliminate_transpose(
-        self, op: toy.TransposeOp, rewriter: Rewriter
-    ) -> bool:
+    def eliminate_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
         if not isinstance(op.input, toy.TransposeOp):
             return False
         rewriter.replace_uses(op, op.input.input)
