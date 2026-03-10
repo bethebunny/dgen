@@ -177,3 +177,35 @@ def test_pass_multiple_handlers_first_wins():
     m = parse_module(ir_text)
     MultiPass().run(m)
     assert call_log == ["first"]
+
+
+# ---------------------------------------------------------------------------
+# Task 8: PassManager
+# ---------------------------------------------------------------------------
+
+
+def test_pass_manager_verification_catches_range_violation():
+    """Post-condition check detects ops outside the declared range."""
+    from dgen.passes.pass_manager import PassManager
+
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main : Nil = function<Nil>() ():
+        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
+        |     %_ : Nil = toy.print(%1)
+        |     %_ : Nil = return(())
+    """)
+
+    class StrictPass(Pass):
+        op_domain = {*toy.toy.ops.values(), ConstantOp, builtin.ReturnOp}
+        op_range = {ConstantOp, builtin.ReturnOp}  # TransposeOp NOT in range
+        type_domain: set[type] = set()
+        type_range: set[type] = set()
+        allow_unregistered_ops = True
+
+    m = parse_module(ir_text)
+    pm = PassManager([StrictPass()], verify=True)
+    with pytest.raises(AssertionError):
+        pm.run(m)
