@@ -158,7 +158,7 @@ def test_structural_diff_returns_string():
         |     %_ : Nil = return(())
     """)
     diff = structural_diff(parse_module(a), parse_module(b))
-    assert "actual" in diff.lower() or "expected" in diff.lower()
+    assert "-" in diff and "+" in diff
 
 
 @pytest.mark.xfail(

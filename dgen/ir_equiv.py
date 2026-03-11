@@ -13,7 +13,6 @@ import json
 import struct
 
 import dgen
-from dgen import asm
 from dgen.block import Block, BlockArgument
 from dgen.module import Module, PackOp
 from dgen.type import Constant, Type, Value
@@ -142,9 +141,7 @@ def graph_equivalent(actual: Module, expected: Module) -> bool:
 
 
 def structural_diff(actual: Module, expected: Module) -> str:
-    """Return a human-readable description of the difference between two IRs."""
-    return (
-        "IR equivalence check failed.\n\n"
-        f"Actual:\n{asm.format(actual)}\n"
-        f"Expected:\n{asm.format(expected)}"
-    )
+    """Return a human-readable fingerprint-guided diff between two IRs."""
+    from dgen.ir_diff import diff_modules
+
+    return diff_modules(actual, expected)
