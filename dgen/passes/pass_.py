@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Callable
 
 import dgen
-from dgen.module import Module
+from dgen.module import Module, _walk_all_ops
 
 
 # ---------------------------------------------------------------------------
@@ -147,8 +147,6 @@ class Pass(metaclass=_PassMeta):
 
     def verify_preconditions(self, module: Module) -> None:
         """Check that all ops/types are in the declared domain."""
-        from dgen.module import _walk_all_ops
-
         for func in module.functions:
             for op in _walk_all_ops(func):
                 assert type(op) in self.op_domain, (
@@ -157,8 +155,6 @@ class Pass(metaclass=_PassMeta):
 
     def verify_postconditions(self, module: Module) -> None:
         """Check that all ops/types are in the declared range."""
-        from dgen.module import _walk_all_ops
-
         for func in module.functions:
             for op in _walk_all_ops(func):
                 assert type(op) in self.op_range, (

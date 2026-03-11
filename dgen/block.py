@@ -5,6 +5,7 @@ from typing import Iterable
 
 import dgen
 
+from .graph import walk_ops
 from .type import Memory, TypeType, Value
 
 
@@ -53,8 +54,6 @@ class Block:
     def ops(self) -> list[dgen.Op]:
         if self._stored_ops is not None:
             return self._stored_ops
-        from dgen.graph import walk_ops
-
         return walk_ops(self.result)
 
     @ops.setter
