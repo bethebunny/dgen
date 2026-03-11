@@ -148,14 +148,15 @@ def qualified_name(parser: ASMParser) -> str:
     return parser.expect_token(_QUALIFIED, "qualified name")
 
 
-def _import_line(parser: ASMParser) -> None:
-    """Skip an import line (dialects are registered externally)."""
+def _import_line(parser: ASMParser) -> str:
+    """Skip an import line (dialects are registered externally). Returns dialect name."""
     parser._skip_all()
     keyword = parser.expect_token(_IDENT, "keyword")
     if keyword != "import":
         raise RuntimeError(f"Expected 'import', got '{keyword}'")
-    parser.expect_token(_IDENT, "dialect name")
+    dialect_name = parser.expect_token(_IDENT, "dialect name")
     newline(parser)
+    return dialect_name
 
 
 def newline(parser: ASMParser) -> int:

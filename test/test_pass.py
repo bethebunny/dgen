@@ -2,8 +2,8 @@
 
 import pytest
 
-from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.testing import assert_ir_equivalent
 from dgen.dialects import builtin
 from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
@@ -75,8 +75,9 @@ def test_rewriter_eager_replace():
     rewriter = Rewriter(func.body)
     rewriter.replace_uses(old, new)
 
-    result = asm.format(m)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        m,
+        strip_prefix("""
         | import llvm
         |
         | %main : Nil = function<Nil>() ():
@@ -84,8 +85,8 @@ def test_rewriter_eager_replace():
         |     %1 : Index = 2
         |     %2 : Index = llvm.add(%1, %1)
         |     %_ : Nil = return(%2)
-    """)
-    assert result == expected
+    """),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -118,16 +119,17 @@ def test_pass_run_eliminates_double_transpose():
 
     m = parse_module(ir_text)
     result = ElimTranspose().run(m)
-    formatted = asm.format(result)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        result,
+        strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : Nil = toy.print(%0)
         |     %_ : Nil = return(%3)
-    """)
-    assert formatted == expected
+    """),
+    )
 
 
 def test_pass_unregistered_ops_error():

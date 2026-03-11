@@ -1,0 +1,150 @@
+"""IR graph equivalence via Merkle fingerprinting.
+
+Two IRs are equivalent if their use-def graphs are structurally isomorphic
+— same computation up to op ordering and alpha-renaming.
+
+See docs/ir_testing.md for design rationale.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import struct
+
+import dgen
+from dgen import asm
+from dgen.block import Block, BlockArgument
+from dgen.module import Module, PackOp
+from dgen.type import Constant, Type, Value
+
+
+def _hash_parts(*parts: bytes) -> bytes:
+    """Hash an ordered sequence of byte strings into a single digest."""
+    hasher = hashlib.sha256()
+    for part in parts:
+        hasher.update(struct.pack(">I", len(part)))
+        hasher.update(part)
+    return hasher.digest()
+
+
+class Fingerprinter:
+    """Computes content-addressed fingerprints for IR values.
+
+    Fingerprints are keyed on object identity and memoized. A single
+    Fingerprinter instance should be used for one coherent IR graph.
+    Block arguments must be registered (via register_block) before
+    fingerprinting any op that uses them.
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[int, bytes] = {}
+        self._arg_positions: dict[int, int] = {}
+
+    def register_block(self, block: Block) -> None:
+        """Register block argument positions and recurse into nested blocks."""
+        for i, arg in enumerate(block.args):
+            self._arg_positions[id(arg)] = i
+        for op in block.ops:
+            for _, nested in op.blocks:
+                self.register_block(nested)
+
+    def fingerprint(self, value: Value) -> bytes:
+        value_id = id(value)
+        if value_id in self._cache:
+            return self._cache[value_id]
+        result = self._compute(value)
+        self._cache[value_id] = result
+        return result
+
+    def _fingerprint_type(self, type_value: Type) -> bytes:
+        """Fingerprint a Type by recursing on its structure, bypassing Memory."""
+        parts: list[bytes] = [
+            b"type",
+            type_value.dialect.name.encode(),
+            type_value.asm_name.encode(),
+        ]
+        for _, param in type_value.parameters:
+            if isinstance(param, list):
+                parts.append(b"".join(self._fingerprint_type_param(v) for v in param))
+            else:
+                parts.append(self._fingerprint_type_param(param))
+        return _hash_parts(*parts)
+
+    def _fingerprint_type_param(self, value: Value) -> bytes:
+        if isinstance(value, Type):
+            return self._fingerprint_type(value)
+        return self.fingerprint(value)
+
+    def _compute(self, value: Value) -> bytes:
+        match value:
+            case BlockArgument(type=arg_type):
+                pos = self._arg_positions[id(value)]
+                return _hash_parts(
+                    b"arg", pos.to_bytes(4, "big"), self._fingerprint_type(arg_type)
+                )
+            case Constant():
+                serialized = json.dumps(value.__constant__.to_json(), sort_keys=True)
+                return _hash_parts(
+                    b"constant", self._fingerprint_type(value.type), serialized.encode()
+                )
+            case PackOp() as pack:
+                element_fingerprints = b"".join(
+                    self.fingerprint(v) for v in pack.values
+                )
+                return _hash_parts(b"pack", element_fingerprints)
+            case Type() as type_value:
+                return self._fingerprint_type(type_value)
+            case dgen.Op() as op:
+                param_fingerprints = b"".join(
+                    self.fingerprint(v) for _, v in op.parameters
+                )
+                operand_fingerprints = b"".join(
+                    self.fingerprint(v) for _, v in op.operands
+                )
+                block_fingerprints = b"".join(
+                    self._fingerprint_block(block) for _, block in op.blocks
+                )
+                return _hash_parts(
+                    op.dialect.name.encode(),
+                    op.asm_name.encode(),
+                    self._fingerprint_type(op.type),
+                    param_fingerprints,
+                    operand_fingerprints,
+                    block_fingerprints,
+                )
+            case _:
+                raise TypeError(f"Cannot fingerprint {type(value).__name__}")
+
+    def _fingerprint_block(self, block: Block) -> bytes:
+        return _hash_parts(b"block", self.fingerprint(block.result))
+
+
+def _fingerprint_function(func: dgen.Op) -> bytes:
+    fingerprinter = Fingerprinter()
+    for _, block in func.blocks:
+        fingerprinter.register_block(block)
+    return fingerprinter.fingerprint(func)
+
+
+def graph_equivalent(actual: Module, expected: Module) -> bool:
+    """Return True if actual and expected compute the same IR graph.
+
+    Matches functions by name. Two functions are equivalent if their
+    use-def graphs are structurally isomorphic — same ops, same operand
+    structure, up to op ordering and SSA name assignment.
+    """
+    actual_fingerprints = {f.name: _fingerprint_function(f) for f in actual.functions}
+    expected_fingerprints = {
+        f.name: _fingerprint_function(f) for f in expected.functions
+    }
+    return actual_fingerprints == expected_fingerprints
+
+
+def structural_diff(actual: Module, expected: Module) -> str:
+    """Return a human-readable description of the difference between two IRs."""
+    return (
+        "IR equivalence check failed.\n\n"
+        f"Actual:\n{asm.format(actual)}\n"
+        f"Expected:\n{asm.format(expected)}"
+    )
