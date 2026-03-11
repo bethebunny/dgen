@@ -34,22 +34,22 @@ def test_identical_ops_same_fingerprint():
     """Two independently-constructed identical ops have the same fingerprint."""
     a = ConstantOp(value=42, type=builtin.Index())
     b = ConstantOp(value=42, type=builtin.Index())
-    fp = Fingerprinter()
-    assert fp.fingerprint(a) == fp.fingerprint(b)
+    fingerprinter = Fingerprinter()
+    assert fingerprinter.fingerprint(a) == fingerprinter.fingerprint(b)
 
 
 def test_different_value_different_fingerprint():
     a = ConstantOp(value=1, type=builtin.Index())
     b = ConstantOp(value=2, type=builtin.Index())
-    fp = Fingerprinter()
-    assert fp.fingerprint(a) != fp.fingerprint(b)
+    fingerprinter = Fingerprinter()
+    assert fingerprinter.fingerprint(a) != fingerprinter.fingerprint(b)
 
 
 def test_different_type_different_fingerprint():
     a = ConstantOp(value=1, type=builtin.Index())
     b = ConstantOp(value=1, type=builtin.F64())
-    fp = Fingerprinter()
-    assert fp.fingerprint(a) != fp.fingerprint(b)
+    fingerprinter = Fingerprinter()
+    assert fingerprinter.fingerprint(a) != fingerprinter.fingerprint(b)
 
 
 def test_op_includes_operands():
@@ -60,8 +60,8 @@ def test_op_includes_operands():
     z = ConstantOp(value=3, type=builtin.Index())
     add_xy = AddOp(lhs=x, rhs=y)
     add_xz = AddOp(lhs=x, rhs=z)
-    fp = Fingerprinter()
-    assert fp.fingerprint(add_xy) != fp.fingerprint(add_xz)
+    fingerprinter = Fingerprinter()
+    assert fingerprinter.fingerprint(add_xy) != fingerprinter.fingerprint(add_xz)
 
 
 def test_op_operand_order_matters():
@@ -69,27 +69,27 @@ def test_op_operand_order_matters():
     from dgen.dialects.llvm import AddOp
     x = ConstantOp(value=1, type=builtin.Index())
     y = ConstantOp(value=2, type=builtin.Index())
-    fp = Fingerprinter()
-    assert fp.fingerprint(AddOp(lhs=x, rhs=y)) != fp.fingerprint(AddOp(lhs=y, rhs=x))
+    fingerprinter = Fingerprinter()
+    assert fingerprinter.fingerprint(AddOp(lhs=x, rhs=y)) != fingerprinter.fingerprint(AddOp(lhs=y, rhs=x))
 
 
 def test_block_arg_fingerprint_by_position():
     """Two block args at the same position with same type have same fingerprint."""
     arg_a = BlockArgument(type=builtin.Index())
     arg_b = BlockArgument(type=builtin.Index())
-    fp = Fingerprinter()
-    fp._arg_positions[id(arg_a)] = 0
-    fp._arg_positions[id(arg_b)] = 0
-    assert fp.fingerprint(arg_a) == fp.fingerprint(arg_b)
+    fingerprinter = Fingerprinter()
+    fingerprinter._arg_positions[id(arg_a)] = 0
+    fingerprinter._arg_positions[id(arg_b)] = 0
+    assert fingerprinter.fingerprint(arg_a) == fingerprinter.fingerprint(arg_b)
 
 
 def test_block_arg_different_position_different_fingerprint():
     arg_a = BlockArgument(type=builtin.Index())
     arg_b = BlockArgument(type=builtin.Index())
-    fp = Fingerprinter()
-    fp._arg_positions[id(arg_a)] = 0
-    fp._arg_positions[id(arg_b)] = 1
-    assert fp.fingerprint(arg_a) != fp.fingerprint(arg_b)
+    fingerprinter = Fingerprinter()
+    fingerprinter._arg_positions[id(arg_a)] = 0
+    fingerprinter._arg_positions[id(arg_b)] = 1
+    assert fingerprinter.fingerprint(arg_a) != fingerprinter.fingerprint(arg_b)
 
 
 def test_fingerprint_memoized():
@@ -98,10 +98,10 @@ def test_fingerprint_memoized():
     x = ConstantOp(value=5, type=builtin.Index())
     add = AddOp(lhs=x, rhs=x)
     mul = MulOp(lhs=add, rhs=add)
-    fp = Fingerprinter()
-    fp.fingerprint(mul)
+    fingerprinter = Fingerprinter()
+    fingerprinter.fingerprint(mul)
     # x is a shared dependency — fingerprinted once
-    assert id(x) in fp._cache
+    assert id(x) in fingerprinter._cache
 ```
 
 #### Step 2: Implement `Fingerprinter`
@@ -127,13 +127,13 @@ from dgen.block import Block, BlockArgument
 from dgen.type import Constant, Value
 
 
-def _h(*parts: bytes) -> bytes:
+def _hash_parts(*parts: bytes) -> bytes:
     """Hash an ordered sequence of byte strings into a single digest."""
-    h = hashlib.sha256()
+    hasher = hashlib.sha256()
     for part in parts:
-        h.update(struct.pack(">I", len(part)))
-        h.update(part)
-    return h.digest()
+        hasher.update(struct.pack(">I", len(part)))
+        hasher.update(part)
+    return hasher.digest()
 
 
 class Fingerprinter:
@@ -158,40 +158,40 @@ class Fingerprinter:
                 self.register_block(nested)
 
     def fingerprint(self, value: Value) -> bytes:
-        vid = id(value)
-        if vid in self._cache:
-            return self._cache[vid]
+        value_id = id(value)
+        if value_id in self._cache:
+            return self._cache[value_id]
         result = self._compute(value)
-        self._cache[vid] = result
+        self._cache[value_id] = result
         return result
 
     def _compute(self, value: Value) -> bytes:
         match value:
-            case BlockArgument(type=t):
+            case BlockArgument(type=arg_type):
                 pos = self._arg_positions[id(value)]
-                return _h(b"arg", pos.to_bytes(4, "big"), self.fingerprint(t))
+                return _hash_parts(b"arg", pos.to_bytes(4, "big"), self.fingerprint(arg_type))
             case Constant():
-                mem = value.__constant__
-                return _h(b"constant", self.fingerprint(value.type), bytes(mem.buffer))
+                memory = value.__constant__
+                return _hash_parts(b"constant", self.fingerprint(value.type), bytes(memory.buffer))
             case dgen.Op() as op:
-                param_fps = b"".join(self.fingerprint(v) for _, v in op.parameters)
-                operand_fps = b"".join(self.fingerprint(v) for _, v in op.operands)
-                block_fps = b"".join(
-                    self._fingerprint_block(b) for _, b in op.blocks
+                param_fingerprints = b"".join(self.fingerprint(v) for _, v in op.parameters)
+                operand_fingerprints = b"".join(self.fingerprint(v) for _, v in op.operands)
+                block_fingerprints = b"".join(
+                    self._fingerprint_block(block) for _, block in op.blocks
                 )
-                return _h(
+                return _hash_parts(
                     op.dialect.name.encode(),
                     op.asm_name.encode(),
                     self.fingerprint(op.type),
-                    param_fps,
-                    operand_fps,
-                    block_fps,
+                    param_fingerprints,
+                    operand_fingerprints,
+                    block_fingerprints,
                 )
             case _:
                 raise TypeError(f"Cannot fingerprint {type(value).__name__}")
 
     def _fingerprint_block(self, block: Block) -> bytes:
-        return _h(b"block", self.fingerprint(block.result))
+        return _hash_parts(b"block", self.fingerprint(block.result))
 ```
 
 **Important ordering constraint:** `Constant` must be matched before `dgen.Op` because `ConstantOp` inherits from both. The `match` statement uses `case Constant()` to dispatch on type, so declaration order in the `match` matters.
@@ -298,10 +298,10 @@ from dgen.module import Module
 
 
 def _fingerprint_function(func: dgen.Op) -> bytes:
-    fp = Fingerprinter()
+    fingerprinter = Fingerprinter()
     for _, block in func.blocks:
-        fp.register_block(block)
-    return fp._fingerprint_block(list(func.blocks)[0][1])
+        fingerprinter.register_block(block)
+    return fingerprinter._fingerprint_block(list(func.blocks)[0][1])
 
 
 def graph_equivalent(actual: Module, expected: Module) -> bool:
@@ -311,9 +311,9 @@ def graph_equivalent(actual: Module, expected: Module) -> bool:
     use-def graphs are structurally isomorphic — same ops, same operand
     structure, up to op ordering and SSA name assignment.
     """
-    actual_fps = {f.name: _fingerprint_function(f) for f in actual.functions}
-    expected_fps = {f.name: _fingerprint_function(f) for f in expected.functions}
-    return actual_fps == expected_fps
+    actual_fingerprints = {f.name: _fingerprint_function(f) for f in actual.functions}
+    expected_fingerprints = {f.name: _fingerprint_function(f) for f in expected.functions}
+    return actual_fingerprints == expected_fingerprints
 
 
 def structural_diff(actual: Module, expected: Module) -> str:
