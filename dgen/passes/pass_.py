@@ -116,14 +116,12 @@ class Pass(metaclass=_PassMeta):
 
     def _run_block(self, block: dgen.Block) -> None:
         rewriter = Rewriter(block)
-        replaced: set[int] = set()
         for op in list(block.ops):  # snapshot — graph may change
             handlers = self._handlers.get(type(op), [])
             handled = False
             for handler in handlers:
                 if handler(self, op, rewriter):
                     handled = True
-                    replaced.add(id(op))
                     break
             if not handled and not self.allow_unregistered_ops:
                 raise TypeError(
@@ -133,17 +131,8 @@ class Pass(metaclass=_PassMeta):
                 # Recurse into nested blocks for unhandled ops
                 for _, child_block in op.blocks:
                     self._run_block(child_block)
-        # Apply replacements: swap or remove handled ops
-        if replaced:
-            new_ops: list[dgen.Op] = []
-            for op in block.ops:
-                oid = id(op)
-                if oid not in replaced:
-                    new_ops.append(op)
-                elif oid in rewriter._op_replacements:
-                    new_ops.append(rewriter._op_replacements[oid])
-                # else: op was replaced via replace_uses only — remove it
-            block.ops = new_ops
+        # Graph takes over: derive ops from use-def walk
+        block._stored_ops = None
 
     def verify_preconditions(self, module: Module) -> None:
         """Check that all ops/types are in the declared domain."""

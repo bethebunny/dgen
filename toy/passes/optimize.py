@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from copy import deepcopy
 
 import dgen
 from dgen.dialects import builtin
@@ -108,12 +107,4 @@ def _remove_indices(ops: list[dgen.Op], indices: Sequence[int]) -> None:
 
 
 def optimize(m: Module) -> Module:
-    functions = []
-    for func in m.functions:
-        func = deepcopy(func)
-        functions.append(func)
-    m = Module(functions=functions)
-    m = ToyOptimize().run(m)
-    for func in m.functions:
-        eliminate_dead_code(func)
-    return m
+    return ToyOptimize().run(m)

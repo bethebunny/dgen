@@ -65,7 +65,7 @@ def test_rewriter_eager_replace():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %2 : Index = llvm.add(%0, %0)
-        |     %_ : Nil = return(())
+        |     %_ : Nil = return(%2)
     """)
     m = parse_module(ir_text)
     func = m.functions[0]
@@ -83,7 +83,7 @@ def test_rewriter_eager_replace():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %2 : Index = llvm.add(%1, %1)
-        |     %_ : Nil = return(())
+        |     %_ : Nil = return(%2)
     """)
     assert result == expected
 
@@ -102,8 +102,8 @@ def test_pass_run_eliminates_double_transpose():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
         |     %2 : toy.Tensor<[2, 3], F64> = toy.transpose(%1)
-        |     %_ : Nil = toy.print(%2)
-        |     %_ : Nil = return(())
+        |     %3 : Nil = toy.print(%2)
+        |     %_ : Nil = return(%3)
     """)
 
     class ElimTranspose(Pass):
@@ -124,9 +124,8 @@ def test_pass_run_eliminates_double_transpose():
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
-        |     %_ : Nil = toy.print(%0)
-        |     %_ : Nil = return(())
+        |     %3 : Nil = toy.print(%0)
+        |     %_ : Nil = return(%3)
     """)
     assert formatted == expected
 
@@ -138,8 +137,8 @@ def test_pass_unregistered_ops_error():
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %_ : Nil = toy.print(%0)
-        |     %_ : Nil = return(())
+        |     %1 : Nil = toy.print(%0)
+        |     %_ : Nil = return(%1)
     """)
 
     class StrictPass(Pass):
@@ -170,7 +169,7 @@ def test_pass_multiple_handlers_first_wins():
     ir_text = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %0 : Index = 42
-        |     %_ : Nil = return(())
+        |     %_ : Nil = return(%0)
     """)
     m = parse_module(ir_text)
     MultiPass().run(m)
@@ -192,8 +191,8 @@ def test_pass_manager_verification_catches_range_violation():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
-        |     %_ : Nil = toy.print(%1)
-        |     %_ : Nil = return(())
+        |     %2 : Nil = toy.print(%1)
+        |     %_ : Nil = return(%2)
     """)
 
     class StrictPass(Pass):

@@ -24,9 +24,12 @@ def walk_ops(root: dgen.Value) -> list[dgen.Op]:
         if not isinstance(value, dgen.Op):
             return
 
-        # Visit dependencies first
+        # Visit dependencies first (both operands and parameter values)
         for _, operand in value.operands:
             visit(operand)
+        for _, param in value.parameters:
+            if isinstance(param, dgen.Value):
+                visit(param)
 
         order.append(value)
 
