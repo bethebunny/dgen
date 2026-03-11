@@ -92,6 +92,14 @@ class Fingerprinter:
                     self.fingerprint(v) for v in pack.values
                 )
                 return _hash_parts(b"pack", element_fingerprints)
+            case list() as lst:
+                element_fingerprints = b"".join(
+                    self.fingerprint(v)
+                    if isinstance(v, Value)
+                    else json.dumps(v).encode()
+                    for v in lst
+                )
+                return _hash_parts(b"list", element_fingerprints)
             case Type() as type_value:
                 return self._fingerprint_type(type_value)
             case dgen.Op() as op:
