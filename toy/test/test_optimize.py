@@ -1,7 +1,7 @@
 """Ch3 tests: IR optimization passes."""
 
-from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.testing import assert_ir_equivalent
 from toy.passes.optimize import optimize
 from toy.test.helpers import strip_prefix
 
@@ -20,16 +20,17 @@ def test_transpose_elimination():
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = asm.format(opt)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        opt,
+        strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : Nil = toy.print(%0)
         |     %_ : Nil = return(%3)
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_reshape_of_matching_constant():
@@ -45,16 +46,17 @@ def test_reshape_of_matching_constant():
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = asm.format(opt)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        opt,
+        strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %2 : Nil = toy.print(%0)
         |     %_ : Nil = return(%2)
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_constant_folding_reshape():
@@ -70,16 +72,17 @@ def test_constant_folding_reshape():
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = asm.format(opt)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        opt,
+        strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %2 : Nil = toy.print(%0)
         |     %_ : Nil = return(%2)
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_dce():
@@ -96,16 +99,17 @@ def test_dce():
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = asm.format(opt)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        opt,
+        strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : Nil = toy.print(%0)
         |     %_ : Nil = return(%3)
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_full_pipeline():
@@ -129,8 +133,9 @@ def test_full_pipeline():
     """)
     m = parse_module(ir_text)
     opt = optimize(m)
-    result = asm.format(opt)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        opt,
+        strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() ():
@@ -141,5 +146,5 @@ def test_full_pipeline():
         |     %9 : toy.Tensor<[3, 2], F64> = toy.mul(%7, %8)
         |     %10 : Nil = toy.print(%9)
         |     %_ : Nil = return(%10)
-    """)
-    assert result == expected
+    """),
+    )

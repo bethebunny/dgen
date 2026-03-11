@@ -1,7 +1,7 @@
 """Ch5 tests: Toy IR to Affine IR lowering."""
 
-from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.testing import assert_ir_equivalent
 from toy.passes.toy_to_affine import lower_to_affine
 from toy.test.helpers import strip_prefix
 
@@ -18,8 +18,9 @@ def test_simple_constant():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -28,8 +29,8 @@ def test_simple_constant():
         |     %1 : Nil = affine.print_memref(%0)
         |     %2 : Nil = affine.dealloc(%0)
         |     %3 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_transpose():
@@ -45,8 +46,9 @@ def test_transpose():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -61,8 +63,8 @@ def test_transpose():
         |     %9 : Nil = affine.dealloc(%0)
         |     %10 : Nil = affine.dealloc(%1)
         |     %11 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_mul():
@@ -79,8 +81,9 @@ def test_mul():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -99,8 +102,8 @@ def test_mul():
         |     %13 : Nil = affine.dealloc(%1)
         |     %14 : Nil = affine.dealloc(%2)
         |     %15 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_add():
@@ -117,8 +120,9 @@ def test_add():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -137,8 +141,8 @@ def test_add():
         |     %13 : Nil = affine.dealloc(%1)
         |     %14 : Nil = affine.dealloc(%2)
         |     %15 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_print():
@@ -153,8 +157,9 @@ def test_print():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -163,8 +168,8 @@ def test_print():
         |     %1 : Nil = affine.print_memref(%0)
         |     %2 : Nil = affine.dealloc(%0)
         |     %3 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_3d_constant():
@@ -179,8 +184,9 @@ def test_3d_constant():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -189,8 +195,8 @@ def test_3d_constant():
         |     %1 : Nil = affine.print_memref(%0)
         |     %2 : Nil = affine.dealloc(%0)
         |     %3 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_3d_add():
@@ -207,8 +213,9 @@ def test_3d_add():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -228,8 +235,8 @@ def test_3d_add():
         |     %15 : Nil = affine.dealloc(%1)
         |     %16 : Nil = affine.dealloc(%2)
         |     %17 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_3d_mul():
@@ -246,8 +253,9 @@ def test_3d_mul():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -267,8 +275,8 @@ def test_3d_mul():
         |     %15 : Nil = affine.dealloc(%1)
         |     %16 : Nil = affine.dealloc(%2)
         |     %17 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
 
 
 def test_full_example():
@@ -287,8 +295,9 @@ def test_full_example():
     """)
     m = parse_module(ir_text)
     affine = lower_to_affine(m)
-    result = asm.format(affine)
-    expected = strip_prefix("""
+    assert_ir_equivalent(
+        affine,
+        strip_prefix("""
         | import affine
         | import toy
         |
@@ -319,5 +328,5 @@ def test_full_example():
         |     %29 : Nil = affine.dealloc(%9)
         |     %30 : Nil = affine.dealloc(%16)
         |     %31 : Nil = return(())
-    """)
-    assert result == expected
+    """),
+    )
