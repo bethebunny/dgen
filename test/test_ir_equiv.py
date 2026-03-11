@@ -1,5 +1,7 @@
 """Tests for IR graph equivalence checking."""
 
+import pytest
+
 from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
@@ -157,3 +159,30 @@ def test_structural_diff_returns_string():
     """)
     diff = structural_diff(parse_module(a), parse_module(b))
     assert "actual" in diff.lower() or "expected" in diff.lower()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "TypeValue._resolve_layout constructs param types without arguments to get "
+        "their layout (e.g. Shape().__layout__), but Shape.__layout__ reads "
+        "self.rank — so Shape() raises TypeError: missing required arg 'rank'. "
+        "Fix: _resolve_layout needs a way to get the layout of a param type "
+        "without constructing an instance, e.g. a classmethod or a sentinel instance."
+    ),
+)
+def test_type_constant_with_dynamic_layout_param():
+    """Type.__constant__ fails for types whose layout depends on a param type with a dynamic layout.
+
+    MemRef.__params__ = (("shape", Shape), ("dtype", TypeType)).
+    _resolve_layout("affine.MemRef") calls Shape().__layout__ to determine how to
+    serialize the "shape" field, but Shape.__layout__ is Array(Index.__layout__,
+    self.rank.to_json()), which requires a concrete self.rank.
+    """
+    from toy.dialects.affine import MemRef, Shape
+
+    rank = ConstantOp(value=2, type=builtin.Index())
+    shape = Shape(rank=rank)
+    memref_type = MemRef(shape=shape, dtype=builtin.F64())
+    # Triggers TypeValue._resolve_layout("affine.MemRef") -> Shape().__layout__ -> TypeError
+    _ = memref_type.__constant__.to_json()
