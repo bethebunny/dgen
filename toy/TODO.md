@@ -8,6 +8,9 @@
 - Passes should guarantee they can lower all ops in their input dialect — add validation that no un-lowered ops survive a pass
 
 ## Experiments / scope creep
+- Rename `List` / `FatPointer` to `Span`
+- Create a `StaticSpan` type (statically-known-length span, like `FatPointer` but with compile-time shape)
+- Update `toy.Tensor` to use `StaticSpan` — removes the need for the runtime `llvm.load` to extract the data pointer (shape is compile-time, so no indirection is needed)
 - Tuple type
   - `Nil` becomes an alias for `Tuple<[]>`
   - Add a `Sequence` trait so Tuple's type parameter could accept `Array<Type, ...>` or `List<Type>`
@@ -40,6 +43,7 @@
 
 ## Easy cleanup
 - Migrate `toy/test/test_end_to_end.py` to snapshot testing (using `IRSnapshotExtension` / `graph_equivalent`) so that expected IR strings don't need manual updates when codegen changes
+- Remove cases where operands are non-Values (e.g. raw Python ints/strings passed as operand fields); all operands should be `Value` instances
 
 
 - Figure out why some ASM still doesn't have types, these should fail to parse

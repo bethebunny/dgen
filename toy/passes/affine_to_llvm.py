@@ -30,7 +30,7 @@ class AffineToLLVMLowering:
         self.alloc_shapes: dict[dgen.Value, list[int]] = {}  # llvm alloca -> shape
         self.alloc_sizes: dict[dgen.Value, int] = {}  # llvm alloca -> total size
         self.current_label = "entry"
-        self._seen: set[int] = set()  # op ids already processed
+        self._seen: set[dgen.Value] = set()  # ops already processed
 
     def lower_module(self, m: Module) -> Module:
         functions = [self.lower_function(f) for f in m.functions]
@@ -42,7 +42,7 @@ class AffineToLLVMLowering:
         self.alloc_shapes = {}
         self.alloc_sizes = {}
         self.current_label = "entry"
-        self._seen = set()
+        self._seen: set[dgen.Value] = set()
         # Register block args (function parameters)
         prologue: list[dgen.Op] = []
         for arg in f.body.args:
@@ -70,9 +70,9 @@ class AffineToLLVMLowering:
         return self.value_map.get(old, old)
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
-        if id(op) in self._seen:
+        if op in self._seen:
             return
-        self._seen.add(id(op))
+        self._seen.add(op)
         if isinstance(op, affine.AllocOp):
             yield from self._lower_alloc(op)
         elif isinstance(op, affine.DeallocOp):
@@ -205,7 +205,7 @@ class AffineToLLVMLowering:
             )
             yield init_op
             self.value_map[op.lo] = init_op
-            self._seen.add(id(op.lo))
+            self._seen.add(op.lo)
         prev_label = self.current_label
         yield llvm.BrOp(dest=String().constant(header_label))
 
@@ -231,7 +231,7 @@ class AffineToLLVMLowering:
             hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.Index())
             yield hi_op
             self.value_map[op.hi] = hi_op
-            self._seen.add(id(op.hi))
+            self._seen.add(op.hi)
         cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=phi_op, rhs=hi_op)
         yield cmp_op
         yield llvm.CondBrOp(
