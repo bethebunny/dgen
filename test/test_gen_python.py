@@ -1,783 +1,189 @@
-"""Tests for Python code generator from .dgen AST."""
+"""Tests for Python .pyi stub generator (module introspection based)."""
+
+from __future__ import annotations
 
 import importlib
 import sys
 
-from dgen.gen.ast import (
-    Constraint,
-    DataField,
-    DgenFile,
-    ImportDecl,
-    OpDecl,
-    OperandDecl,
-    ParamDecl,
-    StaticField,
-    TraitDecl,
-    TypeDecl,
-    TypeRef,
-)
 from dgen.gen.importer import DgenLoader
-from dgen.gen.parser import parse
 from dgen.gen.python import generate_pyi
 
 
-def test_generate_header():
-    code = generate_pyi(DgenFile(), dialect_name="test")
+# ---------------------------------------------------------------------------
+# Builtin dialect tests
+# ---------------------------------------------------------------------------
+
+
+def test_generate_builtin_header():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
     assert "# GENERATED" in code
     assert "from dgen import" in code
-    assert 'Dialect("test")' in code
+    assert 'Dialect("builtin")' in code
 
 
-def test_generate_layout_keyword():
-    """layout keyword generates static __layout__."""
-    f = DgenFile(types=[TypeDecl(name="Index", layout="Int")])
-    code = generate_pyi(f, dialect_name="test")
-    assert "class Index(Type):" in code
-    assert "__layout__ = layout.Int()" in code
-
-
-def test_generate_layout_keyword_pointer():
-    """layout Pointer generates __layout__ = layout.Pointer(layout.Void())."""
-    f = DgenFile(types=[TypeDecl(name="Ptr", layout="Pointer")])
-    code = generate_pyi(f, dialect_name="test")
-    assert "class Ptr(Type):" in code
-    assert "__layout__ = layout.Pointer(layout.Void())" in code
-
-
-def test_generate_data_field_type_ref():
-    """Data field referencing a type name uses Name.__layout__."""
-    f = DgenFile(
-        types=[
-            TypeDecl(name="Foo", data=[DataField(name="data", type=TypeRef("Index"))])
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "__layout__ = Index.__layout__" in code
-
-
-def test_generate_type_no_data():
-    """Type with no data field at all (layout provided externally)."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Tensor",
-                params=[
-                    ParamDecl(name="shape", type=TypeRef("Shape")),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class Tensor(Type):" in code
-    assert "__layout__" not in code
-
-
-def test_generate_parameterized_type():
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Shape",
-                params=[ParamDecl(name="rank", type=TypeRef("Index"))],
-                data=[
-                    DataField(
-                        name="dims",
-                        type=TypeRef("Array", [TypeRef("Index"), TypeRef("rank")]),
-                    )
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class Shape(Type):" in code
-    assert "rank: Value[Index]" in code
-    assert '__params__ = (("rank", Index),)' in code
-    assert "def __layout__(self) -> layout.Layout: ..." in code
-
-
-def test_generate_type_fatpointer_data():
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="String",
-                data=[
-                    DataField(
-                        name="storage",
-                        type=TypeRef("FatPointer", [TypeRef("Byte")]),
-                    )
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class String(Type):" in code
-    assert "__layout__ = layout.FatPointer(Byte.__layout__)" in code
-
-
-def test_generate_type_fatpointer_param():
-    """FatPointer<element_type> where element_type is a Type param."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="List",
-                params=[ParamDecl(name="element_type", type=TypeRef("Type"))],
-                data=[
-                    DataField(
-                        name="storage",
-                        type=TypeRef("FatPointer", [TypeRef("element_type")]),
-                    )
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class List(Type):" in code
-    assert "def __layout__(self) -> layout.Layout: ..." in code
-
-
-def test_generate_type_default_param():
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Tensor",
-                params=[
-                    ParamDecl(name="shape", type=TypeRef("Shape")),
-                    ParamDecl(name="dtype", type=TypeRef("Type"), default="F64"),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "shape: Value[Shape]" in code
-    assert "dtype: Value[dgen.TypeType]" in code
-    assert "F64()" in code
-
-
-def test_generate_trait():
-    f = DgenFile(traits=[TraitDecl(name="HasSingleBlock")])
-    code = generate_pyi(f, dialect_name="test")
+def test_generate_builtin_trait():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
     assert "class HasSingleBlock:" in code
-    assert "..." in code
+    assert "    ..." in code
 
 
-def test_generate_simple_op():
-    f = DgenFile(
-        ops=[
-            OpDecl(
-                name="transpose",
-                operands=[OperandDecl(name="input", type=TypeRef("Type"))],
-                return_type=TypeRef("Type"),
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert '@test.op("transpose")' in code
-    assert "@dataclass(eq=False, kw_only=True)" in code
-    assert "class TransposeOp(Op):" in code
-    assert "input: Value" in code
-    assert "type: Type" in code
-    assert '__operands__ = (("input", Type),)' in code
+def test_generate_builtin_simple_type():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "@dataclass(frozen=True)" in code
+    assert "class Index(Type):" in code
 
 
-def test_generate_op_with_params():
-    f = DgenFile(
-        imports=[ImportDecl(module="builtin", names=["Index"])],
-        ops=[
-            OpDecl(
-                name="concat",
-                params=[ParamDecl(name="axis", type=TypeRef("Index"))],
-                operands=[
-                    OperandDecl(name="lhs", type=TypeRef("Type")),
-                    OperandDecl(name="rhs", type=TypeRef("Type")),
-                ],
-                return_type=TypeRef("Type"),
-            )
-        ],
-    )
-    code = generate_pyi(
-        f,
-        dialect_name="test",
-        import_map={"builtin": "dgen.dialects.builtin"},
-    )
-    assert "axis: Value[Index]" in code
-    assert "lhs: Value" in code
-    assert "rhs: Value" in code
-    assert '__params__ = (("axis", Index),)' in code
-    assert '__operands__ = (("lhs", Type), ("rhs", Type),)' in code
+def test_generate_builtin_parametric_type():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "class Array(Type):" in code
+    assert "element_type: Value[dgen.TypeType]" in code
+    assert "n: Value[Index]" in code
 
 
-def test_generate_op_with_block():
-    f = DgenFile(
-        traits=[TraitDecl(name="HasSingleBlock")],
-        types=[TypeDecl(name="Nil", layout="Void")],
-        ops=[
-            OpDecl(
-                name="for",
-                params=[
-                    ParamDecl(name="lo", type=TypeRef("Index")),
-                    ParamDecl(name="hi", type=TypeRef("Index")),
-                ],
-                return_type=TypeRef("Nil"),
-                blocks=["body"],
-                traits=["HasSingleBlock"],
-            )
-        ],
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class ForOp(HasSingleBlock, Op):" in code
-    assert "body: Block" in code
-    assert '__blocks__ = ("body",)' in code
+def test_generate_builtin_list_type():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "class Tuple(Type):" in code
+    assert "types: list[Value[dgen.TypeType]]" in code
 
 
-def test_generate_op_return_default():
-    """Concrete return type generates a default."""
-    f = DgenFile(
-        types=[TypeDecl(name="Nil", layout="Void")],
-        ops=[
-            OpDecl(
-                name="store",
-                operands=[
-                    OperandDecl(name="value", type=TypeRef("Type")),
-                    OperandDecl(name="ptr", type=TypeRef("Type")),
-                ],
-                return_type=TypeRef("Nil"),
-            )
-        ],
-    )
-    code = generate_pyi(f, dialect_name="test")
+def test_generate_builtin_function_type_not_list():
+    """Function<Type> should NOT have list annotation (it's not a list container)."""
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "class Function(Type):" in code
+    assert "result: Value[dgen.TypeType]" in code
+
+
+def test_generate_builtin_op_with_default():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "class AddIndexOp(Op):" in code
+    assert "type: Type = Index()" in code
+
+
+def test_generate_builtin_op_with_optional_operand():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "class ReturnOp(Op):" in code
+    assert "value: Value | Nil = Nil()" in code
     assert "type: Type = Nil()" in code
 
 
-def test_generate_op_return_generic():
-    """Return type 'Type' means no default."""
-    f = DgenFile(
-        ops=[
-            OpDecl(
-                name="transpose",
-                operands=[OperandDecl(name="input", type=TypeRef("Type"))],
-                return_type=TypeRef("Type"),
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "type: Type\n" in code or "type: Type" in code
-    assert "type: Type =" not in code
+def test_generate_builtin_op_with_block():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "class FunctionOp(HasSingleBlock, Op):" in code
+    assert "body: Block" in code
+    assert "Block" in code.split("from dgen import")[1].split("\n")[0]
 
 
-def test_generate_op_default_operand():
-    """Operand with default value."""
-    f = DgenFile(
-        types=[TypeDecl(name="Nil", layout="Void")],
-        ops=[
-            OpDecl(
-                name="return",
-                operands=[
-                    OperandDecl(name="value", type=TypeRef("Type"), default="Nil")
-                ],
-                return_type=TypeRef("Nil"),
-            )
-        ],
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "value: Value | Nil = Nil()" in code
+def test_generate_builtin_op_kw_only_decorator():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "@dataclass(eq=False, kw_only=True)" in code
 
 
-def test_generate_op_typed_operand():
-    """Operand with specific type (not generic Type)."""
-    f = DgenFile(
-        ops=[
-            OpDecl(
-                name="alloc",
-                operands=[OperandDecl(name="shape", type=TypeRef("Shape"))],
-                return_type=TypeRef("Type"),
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "shape: Value" in code
-    assert '__operands__ = (("shape", Shape),)' in code
+def test_generate_builtin_call_op_function_param():
+    """CallOp.callee should be Value[Function], not list[Value[...]]."""
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    assert "callee: Value[Function]" in code
 
 
-def test_generate_imports():
-    f = DgenFile(imports=[ImportDecl(module="builtin", names=["Index", "Nil"])])
-    code = generate_pyi(
-        f,
-        dialect_name="test",
-        import_map={"builtin": "dgen.dialects.builtin"},
-    )
-    assert "from dgen.dialects.builtin import Index, Nil" in code
+def test_generate_builtin_valid_python():
+    mod = importlib.import_module("dgen.dialects.builtin")
+    code = generate_pyi(mod, "builtin")
+    compile(code, "<builtin.pyi>", "exec")
 
 
-def test_generate_imported_trait():
-    """Ops with explicit traits should inherit them even when imported."""
-    f = DgenFile(
-        imports=[
-            ImportDecl(module="builtin", names=["Index", "Nil", "HasSingleBlock"])
-        ],
-        ops=[
-            OpDecl(
-                name="for",
-                params=[
-                    ParamDecl(name="lo", type=TypeRef("Index")),
-                    ParamDecl(name="hi", type=TypeRef("Index")),
-                ],
-                return_type=TypeRef("Nil"),
-                blocks=["body"],
-                traits=["HasSingleBlock"],
-            )
-        ],
-    )
-    code = generate_pyi(
-        f,
-        dialect_name="test",
-        import_map={"builtin": "dgen.dialects.builtin"},
-    )
+# ---------------------------------------------------------------------------
+# LLVM dialect tests
+# ---------------------------------------------------------------------------
+
+
+def test_generate_llvm_parameterized_default():
+    """Int(bits=Index().constant(64)) should appear as a readable default."""
+    mod = importlib.import_module("dgen.dialects.llvm")
+    code = generate_pyi(mod, "llvm")
+    assert "type: Type = Int(bits=Index().constant(64))" in code
+
+
+def test_generate_llvm_imports():
+    mod = importlib.import_module("dgen.dialects.llvm")
+    code = generate_pyi(mod, "llvm")
+    assert "from dgen.dialects.builtin import" in code
+    assert "Index" in code
+
+
+def test_generate_llvm_valid_python():
+    mod = importlib.import_module("dgen.dialects.llvm")
+    code = generate_pyi(mod, "llvm")
+    compile(code, "<llvm.pyi>", "exec")
+
+
+# ---------------------------------------------------------------------------
+# Affine dialect tests
+# ---------------------------------------------------------------------------
+
+
+def test_generate_affine_cross_dialect_import():
+    mod = importlib.import_module("toy.dialects.affine")
+    code = generate_pyi(mod, "affine")
+    assert "from dgen.dialects.builtin import" in code
     assert "HasSingleBlock" in code
-    assert "HasSingleBlockType" not in code
+
+
+def test_generate_affine_op_trait_base():
+    mod = importlib.import_module("toy.dialects.affine")
+    code = generate_pyi(mod, "affine")
     assert "class ForOp(HasSingleBlock, Op):" in code
 
 
-def test_generate_valid_python():
-    """The generated code should be valid Python that can be exec'd."""
-    f = DgenFile(
-        types=[
-            TypeDecl(name="Index", layout="Int"),
-            TypeDecl(name="Nil", layout="Void"),
-        ],
-        ops=[
-            OpDecl(
-                name="nop",
-                return_type=TypeRef("Nil"),
-            )
-        ],
-    )
-    code = generate_pyi(f, dialect_name="test")
-    compile(code, "<test>", "exec")
+def test_generate_affine_valid_python():
+    mod = importlib.import_module("toy.dialects.affine")
+    code = generate_pyi(mod, "affine")
+    compile(code, "<affine.pyi>", "exec")
 
 
-def test_generate_nil_data_field():
-    """A type with data: Nil should get __layout__ = Nil.__layout__."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="InferredShapeTensor",
-                params=[
-                    ParamDecl(name="dtype", type=TypeRef("Type"), default="F64"),
-                ],
-                data=[DataField(name="data", type=TypeRef("Nil"))],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class InferredShapeTensor(Type):" in code
-    assert "__layout__ = Nil.__layout__" in code
+# ---------------------------------------------------------------------------
+# Toy dialect tests
+# ---------------------------------------------------------------------------
 
 
-def test_parse_layout_keyword():
-    f = parse("type Index:\n    layout Int\n")
-    assert len(f.types) == 1
-    assert f.types[0].name == "Index"
-    assert f.types[0].layout == "Int"
-    assert f.types[0].data == []
-
-
-def test_generate_pointer_data():
-    """Pointer<Nil> should generate __layout__ = layout.Pointer(Nil.__layout__)."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="MemRef",
-                params=[
-                    ParamDecl(name="shape", type=TypeRef("Shape")),
-                    ParamDecl(name="dtype", type=TypeRef("Type"), default="F64"),
-                ],
-                data=[
-                    DataField(name="data", type=TypeRef("Pointer", [TypeRef("Nil")]))
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class MemRef(Type):" in code
-    assert "__layout__ = layout.Pointer(Nil.__layout__)" in code
-
-
-def test_generate_parametric_layout_keyword():
-    """layout keyword on parametric type generates __layout__ property."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="MyArray",
-                params=[
-                    ParamDecl(name="elem", type=TypeRef("Type")),
-                    ParamDecl(name="n", type=TypeRef("Index")),
-                ],
-                layout="Array",
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "def __layout__(self) -> layout.Layout: ..." in code
-
-
-def test_generate_parametric_layout_pointer():
-    """layout Pointer on parametric type generates __layout__ property."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="MyPointer",
-                params=[ParamDecl(name="pointee", type=TypeRef("Type"))],
-                layout="Pointer",
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "def __layout__(self) -> layout.Layout: ..." in code
-
-
-def test_generate_untyped_operand():
-    """Untyped operand generates same as Type operand."""
-    f = DgenFile(
-        ops=[
-            OpDecl(
-                name="transpose",
-                operands=[OperandDecl(name="input", type=None)],
-                return_type=TypeRef("Type"),
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "input: Value" in code
-    assert "type: Type" in code
-    assert '__operands__ = (("input", Type),)' in code
-
-
-def test_generate_op_none_return_type():
-    """None return type generates same as Type return type."""
-    f = DgenFile(
-        ops=[
-            OpDecl(
-                name="foo",
-                operands=[OperandDecl(name="x", type=TypeRef("Type"))],
-                return_type=None,
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "type: Type" in code
-    assert "type: Type =" not in code
-
-
-def test_generate_type_multiple_data_fields():
-    """Multiple data fields generate a Record layout."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Pair",
-                data=[
-                    DataField(name="x", type=TypeRef("Index")),
-                    DataField(name="y", type=TypeRef("F64")),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class Pair(Type):" in code
-    assert "layout.Record" in code
-
-
-def test_generate_unknown_return_type_falls_back():
-    """Return type referencing unknown type falls back to no default."""
-    f = DgenFile(ops=[OpDecl(name="foo", return_type=TypeRef("Unknown"))])
-    code = generate_pyi(f, dialect_name="test")
-    assert "type: Type" in code
-    assert "type: Type =" not in code
-
-
-def test_generate_op_parameterized_return_type():
-    """Parameterized return type that can't be default-constructed generates no default."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Tensor",
-                params=[ParamDecl(name="shape", type=TypeRef("Shape"))],
-            )
-        ],
-        ops=[
-            OpDecl(
-                name="transpose",
-                operands=[OperandDecl(name="input", type=TypeRef("Tensor"))],
-                return_type=TypeRef("Tensor"),
-            )
-        ],
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "type: Type" in code
-    assert "type: Type =" not in code
-
-
-def test_generate_type_with_trait():
-    f = DgenFile(
-        types=[TypeDecl(name="F64", layout="Float64", traits=["FloatingPoint"])]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class F64(FloatingPoint, Type):" in code
-
-
-def test_generate_op_with_has_trait():
-    f = DgenFile(
-        traits=[TraitDecl(name="HasSingleBlock")],
-        types=[TypeDecl(name="Nil", layout="Void")],
-        ops=[
-            OpDecl(
-                name="for",
-                return_type=TypeRef("Nil"),
-                blocks=["body"],
-                traits=["HasSingleBlock"],
-            )
-        ],
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class ForOp(HasSingleBlock, Op):" in code
-
-
-def test_generate_namespace_import():
-    f = DgenFile(
-        imports=[ImportDecl(module="affine", names=[])],
-    )
-    code = generate_pyi(
-        f,
-        dialect_name="test",
-        import_map={"affine": "toy.dialects.affine"},
-    )
+def test_generate_toy_module_alias_import():
+    """Module alias import (import affine) should appear in stub."""
+    mod = importlib.import_module("toy.dialects.toy")
+    code = generate_pyi(mod, "toy")
     assert "import toy.dialects.affine as affine" in code
 
 
-def test_generate_trait_with_statics():
-
-    f = DgenFile(
-        traits=[
-            TraitDecl(
-                name="DType",
-                statics=[
-                    StaticField(name="signed", type=TypeRef("Boolean")),
-                    StaticField(name="bitwidth", type=TypeRef("Index")),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class DType:" in code
-    assert "signed: Boolean" in code
-    assert "bitwidth: Index" in code
-    assert "pass" not in code.split("class DType:")[1].split("\n\n")[0]
+def test_generate_toy_cross_dialect_param():
+    """Tensor.shape should reference affine.Shape via the module alias."""
+    mod = importlib.import_module("toy.dialects.toy")
+    code = generate_pyi(mod, "toy")
+    assert "shape: Value[affine.Shape]" in code
 
 
-def test_generate_trait_with_static_default():
-
-    f = DgenFile(
-        traits=[
-            TraitDecl(
-                name="DType",
-                statics=[
-                    StaticField(name="bitwidth", type=TypeRef("Index"), default="64"),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class DType:" in code
-    assert "bitwidth = 64" in code
+def test_generate_toy_default_param():
+    mod = importlib.import_module("toy.dialects.toy")
+    code = generate_pyi(mod, "toy")
+    assert "dtype: Value[dgen.TypeType] = F64()" in code
 
 
-def test_generate_type_with_static_default():
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="F64",
-                layout="Float64",
-                traits=["FloatingPoint"],
-                statics=[
-                    StaticField(name="bitwidth", type=TypeRef("Index"), default="64"),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class F64(FloatingPoint, Type):" in code
-    assert "bitwidth = 64" in code
+def test_generate_toy_valid_python():
+    mod = importlib.import_module("toy.dialects.toy")
+    code = generate_pyi(mod, "toy")
+    compile(code, "<toy.pyi>", "exec")
 
 
-def test_generate_type_with_static_no_default():
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="F64",
-                statics=[
-                    StaticField(name="signed", type=TypeRef("Boolean")),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class F64(Type):" in code
-    assert "signed: Boolean" in code
-
-
-def test_generate_qualified_type_no_default():
-    """Qualified type ref (affine.Shape) can't be default-constructed."""
-    f = DgenFile(
-        imports=[ImportDecl(module="affine", names=[])],
-        ops=[
-            OpDecl(
-                name="foo",
-                return_type=TypeRef("affine.Shape"),
-            )
-        ],
-    )
-    code = generate_pyi(
-        f,
-        dialect_name="test",
-        import_map={"affine": "toy.dialects.affine"},
-    )
-    assert "type: Type" in code
-    assert "type: Type =" not in code
-
-
-def test_generate_type_multi_field_record():
-    """Multiple data fields generate a Record layout."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Point",
-                data=[
-                    DataField(name="x", type=TypeRef("Index")),
-                    DataField(name="y", type=TypeRef("F64")),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "class Point(Type):" in code
-    assert "layout.Record" in code
-    assert '"x"' in code
-    assert '"y"' in code
-    assert "Index.__layout__" in code
-    assert "F64.__layout__" in code
-
-
-def test_generate_type_multi_field_parametric_record():
-    """Multi-field type with parametric fields generates Record property."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Pair",
-                params=[ParamDecl(name="t", type=TypeRef("Type"))],
-                data=[
-                    DataField(name="first", type=TypeRef("t")),
-                    DataField(name="second", type=TypeRef("Index")),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "def __layout__(self) -> layout.Layout: ..." in code
-
-
-def test_generate_op_constraints():
-    """Constraints are emitted as __constraints__ metadata."""
-    f = DgenFile(
-        ops=[
-            OpDecl(
-                name="tile",
-                operands=[OperandDecl(name="x", type=TypeRef("$X"))],
-                return_type=TypeRef("$Result"),
-                constraints=[
-                    Constraint(kind="match", lhs="$X", pattern="Tensor"),
-                    Constraint(kind="match", lhs="$Result", pattern="Tensor"),
-                    Constraint(kind="eq", lhs="$X.dtype", rhs="$Result.dtype"),
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "__constraints__" in code
-    assert '"$X ~= Tensor"' in code
-    assert '"$Result ~= Tensor"' in code
-    assert '"$X.dtype == $Result.dtype"' in code
-
-
-def test_generate_op_no_constraints():
-    """Ops without constraints have no __constraints__."""
-    f = DgenFile(
-        ops=[
-            OpDecl(
-                name="nop",
-                return_type=TypeRef("Nil"),
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "__constraints__" not in code
-
-
-# --- generate_pyi tests ---
-
-
-def test_generate_pyi_trait_uses_ellipsis():
-    """generate_pyi uses '...' instead of 'pass' for empty trait bodies."""
-    f = DgenFile(traits=[TraitDecl(name="HasSingleBlock")])
-    code = generate_pyi(f, dialect_name="test")
-    assert "class HasSingleBlock:" in code
-    assert "..." in code
-    assert "pass" not in code
-
-
-def test_generate_pyi_empty_type_uses_ellipsis():
-    """generate_pyi uses '...' instead of 'pass' for empty type bodies."""
-    f = DgenFile(types=[TypeDecl(name="Index", layout="Int")])
-    code = generate_pyi(f, dialect_name="test")
-    assert "class Index(Type):" in code
-    assert "pass" not in code
-
-
-def test_generate_pyi_property_stub():
-    """generate_pyi emits a one-line property stub instead of a full body."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Ptr",
-                params=[ParamDecl(name="pointee", type=TypeRef("Type"))],
-                layout="Pointer",
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "def __layout__(self) -> layout.Layout: ..." in code
-    assert "return " not in code
-
-
-def test_generate_pyi_data_property_stub():
-    """generate_pyi emits a one-line property stub for parametric data layouts."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="List",
-                params=[ParamDecl(name="element_type", type=TypeRef("Type"))],
-                data=[
-                    DataField(
-                        name="storage",
-                        type=TypeRef("FatPointer", [TypeRef("element_type")]),
-                    )
-                ],
-            )
-        ]
-    )
-    code = generate_pyi(f, dialect_name="test")
-    assert "def __layout__(self) -> layout.Layout: ..." in code
-    assert "return " not in code
-
-
-# --- import hook tests ---
+# ---------------------------------------------------------------------------
+# Import hook tests (unchanged from before)
+# ---------------------------------------------------------------------------
 
 
 def test_import_hook_loads_builtin():

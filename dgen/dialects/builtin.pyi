@@ -5,185 +5,105 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
-from dgen import Block, Dialect, Op, Type, Value, layout
+from dgen import Block, Dialect, Op, Type, Value
 
 builtin = Dialect("builtin")
 
 class HasSingleBlock: ...
 
-@builtin.type("Index")
 @dataclass(frozen=True)
-class Index(Type):
-    __layout__ = layout.Int()
+class Index(Type): ...
 
-@builtin.type("F64")
 @dataclass(frozen=True)
-class F64(Type):
-    __layout__ = layout.Float64()
+class F64(Type): ...
 
-@builtin.type("Nil")
 @dataclass(frozen=True)
-class Nil(Type):
-    __layout__ = layout.Void()
+class Nil(Type): ...
 
-@builtin.type("String")
 @dataclass(frozen=True)
-class String(Type):
-    __layout__ = layout.String()
+class String(Type): ...
 
-@builtin.type("TypeTag")
 @dataclass(frozen=True)
-class TypeTag(Type):
-    __layout__ = String.__layout__
+class TypeTag(Type): ...
 
-@builtin.type("Byte")
 @dataclass(frozen=True)
-class Byte(Type):
-    __layout__ = layout.Byte()
+class Byte(Type): ...
 
-@builtin.type("Array")
 @dataclass(frozen=True)
 class Array(Type):
     element_type: Value[dgen.TypeType]
     n: Value[Index]
-    __params__ = (
-        ("element_type", dgen.TypeType),
-        ("n", Index),
-    )
 
-    @property
-    def __layout__(self) -> layout.Layout: ...
-
-@builtin.type("Pointer")
 @dataclass(frozen=True)
 class Pointer(Type):
     pointee: Value[dgen.TypeType]
-    __params__ = (("pointee", dgen.TypeType),)
 
-    @property
-    def __layout__(self) -> layout.Layout: ...
-
-@builtin.type("FatPointer")
 @dataclass(frozen=True)
 class FatPointer(Type):
     pointee: Value[dgen.TypeType]
-    __params__ = (("pointee", dgen.TypeType),)
 
-    @property
-    def __layout__(self) -> layout.Layout: ...
-
-@builtin.type("List")
 @dataclass(frozen=True)
 class List(Type):
     element_type: Value[dgen.TypeType]
-    __params__ = (("element_type", dgen.TypeType),)
 
-    @property
-    def __layout__(self) -> layout.Layout: ...
-
-@builtin.type("Tuple")
 @dataclass(frozen=True)
 class Tuple(Type):
     types: list[Value[dgen.TypeType]]
-    __params__ = (("types", List),)
 
-    @property
-    def __layout__(self) -> layout.Layout: ...
-
-@builtin.type("Function")
 @dataclass(frozen=True)
 class Function(Type):
-    __layout__ = layout.Void()
     result: Value[dgen.TypeType]
-    __params__ = (("result", dgen.TypeType),)
 
-@builtin.op("list_get")
 @dataclass(eq=False, kw_only=True)
 class ListGetOp(Op):
     index: Value[Index]
     list: Value
     type: Type
-    __params__ = (("index", Index),)
-    __operands__ = (("list", List),)
 
-@builtin.op("add_index")
 @dataclass(eq=False, kw_only=True)
 class AddIndexOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Index()
-    __operands__ = (
-        ("lhs", Index),
-        ("rhs", Index),
-    )
 
-@builtin.op("equal_index")
 @dataclass(eq=False, kw_only=True)
 class EqualIndexOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Index()
-    __operands__ = (
-        ("lhs", Index),
-        ("rhs", Index),
-    )
 
-@builtin.op("subtract_index")
 @dataclass(eq=False, kw_only=True)
 class SubtractIndexOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Index()
-    __operands__ = (
-        ("lhs", Index),
-        ("rhs", Index),
-    )
 
-@builtin.op("return")
 @dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):
     value: Value | Nil = Nil()
     type: Type = Nil()
-    __operands__ = (("value", Type),)
 
-@builtin.op("function")
 @dataclass(eq=False, kw_only=True)
 class FunctionOp(HasSingleBlock, Op):
     result: Value[dgen.TypeType]
     type: Type = Nil()
     body: Block
-    __params__ = (("result", dgen.TypeType),)
-    __blocks__ = ("body",)
 
-@builtin.op("if")
 @dataclass(eq=False, kw_only=True)
 class IfOp(Op):
     cond: Value
     type: Type
     then_body: Block
     else_body: Block
-    __operands__ = (("cond", Index),)
-    __blocks__ = (
-        "then_body",
-        "else_body",
-    )
 
-@builtin.op("chain")
 @dataclass(eq=False, kw_only=True)
 class ChainOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (
-        ("lhs", Type),
-        ("rhs", Type),
-    )
 
-@builtin.op("call")
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):
     callee: Value[Function]
     args: Value
     type: Type
-    __params__ = (("callee", Function),)
-    __operands__ = (("args", List),)

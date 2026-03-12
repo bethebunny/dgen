@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from dgen.gen.importer import DgenLoader, _path_to_module, install
+from dgen.gen.importer import _path_to_module, install
 from dgen.gen.python import generate_pyi
 
 
@@ -24,15 +24,7 @@ def main(dgen_file: Path) -> None:
             "(run from the project root)."
         )
     module = importlib.import_module(module_name)
-    loader = module.__spec__.loader
-    assert isinstance(loader, DgenLoader)
-    assert loader.ast is not None
-    click.echo(
-        generate_pyi(
-            loader.ast, dialect_name=dgen_file.stem, import_map=loader.import_map
-        ),
-        nl=False,
-    )
+    click.echo(generate_pyi(module, dialect_name=dgen_file.stem), nl=False)
 
 
 if __name__ == "__main__":

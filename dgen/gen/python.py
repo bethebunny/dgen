@@ -1,312 +1,238 @@
-"""Python .pyi stub generator for .dgen dialect specifications."""
+"""Python .pyi stub generator by introspecting live dialect modules.
+
+Instead of generating stubs from the AST, this module inspects the classes
+that ``build.py`` already created at import time.  The import hook loads the
+``.dgen`` file, ``build.py`` materialises real dataclass types, and this
+module walks those live objects to emit ``.pyi`` type stubs.
+"""
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterator
+from types import ModuleType
 
-from dgen.gen.ast import (
-    DgenFile,
-    OperandDecl,
-    ParamDecl,
-    TypeDecl,
-    TypeRef,
-)
+from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
+from dgen.type import Constant
 
-# Fallback import map for when the caller doesn't supply one.
-# Must stay in sync with _DEFAULT_MAP in dgen/gen/importer.py.
-_BUILTIN_MODULE_MAP: dict[str, str] = {"builtin": "dgen.dialects.builtin"}
-
-# Builtin type → layout expression for static __layout__ attributes.
-# Leaf entries end in ")"; constructor entries don't.
-_LAYOUTS: dict[str, str] = {
-    "Int": "layout.Int()",
-    "Float64": "layout.Float64()",
-    "Void": "layout.Void()",
-    "Byte": "layout.Byte()",
-    "String": "layout.String()",
-    "Pointer": "layout.Pointer",
-    "Array": "layout.Array",
-    "FatPointer": "layout.FatPointer",
-    "Record": "layout.Record",
-}
+_DGEN_CORE: frozenset[type] = frozenset({Type, Op, Value, Block, TypeType})
 
 
-def _op_class_name(asm_name: str) -> str:
-    parts = asm_name.split("_")
-    return "".join(p.capitalize() for p in parts) + "Op"
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-def _type_expr(
-    ref: TypeRef, type_map: dict[str, TypeDecl], known_names: set[str]
-) -> str:
-    """Resolve a TypeRef to a Python construction expression for defaults."""
-    if not ref.args:
-        if "." in ref.name:
-            raise ValueError(f"cannot default-construct cross-module type {ref.name}")
-        td = type_map.get(ref.name)
-        if td is not None:
-            if any(p.default is None for p in td.params):
-                raise ValueError(f"cannot default-construct {ref.name}")
-        elif ref.name not in known_names:
-            raise ValueError(f"unknown type {ref.name}")
-        return f"{ref.name}()"
-    td = type_map.get(ref.name)
-    if td is None or len(ref.args) != len(td.params):
-        raise ValueError(f"cannot resolve parameterized type {ref.name}")
-    parts = [
-        f"{param.name}={param.type.name}().constant({arg.name})"
-        for arg, param in zip(ref.args, td.params)
-    ]
-    return f"{ref.name}({', '.join(parts)})"
+def _is_type_kinded(param_type: type[Type]) -> bool:
+    return param_type is Type or issubclass(param_type, TypeType)
 
 
-def _layout_expr(ref: TypeRef, param_map: dict[str, ParamDecl]) -> str:
-    if ref.name in param_map:
-        p = param_map[ref.name]
-        if p.type.name == "Type":
-            return f"dgen.type.type_constant(self.{ref.name}).__layout__"
-        return f"self.{ref.name}.__constant__.to_json()"
-    entry = _LAYOUTS.get(ref.name)
-    if entry is not None and not entry.endswith(")"):
-        args = ", ".join(_layout_expr(a, param_map) for a in ref.args)
-        return f"{entry}({args})"
-    return f"{ref.name}.__layout__"
+def _is_list_of_types(param_type: type[Type]) -> bool:
+    params: tuple[tuple[str, type[Type]], ...] = getattr(param_type, "__params__", ())
+    if not any(_is_type_kinded(pt) for _, pt in params):
+        return False
+    try:
+        kwargs = {name: TypeType() for name, pt in params if _is_type_kinded(pt)}
+        return isinstance(param_type(**kwargs).__layout__, layout.FatPointer)
+    except Exception:
+        return False
 
 
-def _ref_has_params(ref: TypeRef, param_map: dict[str, ParamDecl]) -> bool:
-    if ref.name in param_map:
-        return True
-    return any(_ref_has_params(a, param_map) for a in ref.args)
+def _own_fields(cls: type) -> list[dataclasses.Field[object]]:
+    """Dataclass fields defined on *cls* itself (not inherited from bases)."""
+    own = getattr(cls, "__annotations__", {})
+    return [f for f in dataclasses.fields(cls) if f.name in own]
 
 
-def _resolve_param_type_ref(ref: TypeRef) -> str:
-    if ref.name == "Type":
-        return "dgen.TypeType"
-    if ref.name == "List":
-        return "List"
-    return ref.name
+def _stub_repr(value: object) -> str:
+    """Format a value for a .pyi stub, with readable Constant representations."""
+    if isinstance(value, Constant):
+        data = value.value.unpack()
+        scalar = data[0] if len(data) == 1 else data
+        return f"{_stub_repr(value.type)}.constant({scalar!r})"
+    if isinstance(value, Type) and dataclasses.is_dataclass(value):
+        fields = _own_fields(type(value))
+        if not fields:
+            return f"{type(value).__name__}()"
+        parts = [f"{f.name}={_stub_repr(getattr(value, f.name))}" for f in fields]
+        return f"{type(value).__name__}({', '.join(parts)})"
+    return repr(value)
 
 
-def _annotation_for_param(param: ParamDecl) -> str:
-    if param.type.name == "List" and param.type.args:
-        inner = _resolve_param_type_ref(param.type.args[0])
-        return f"list[Value[{inner}]]"
-    if param.type.name == "Type":
+def _param_annotation(param_type: type[Type], type_to_name: dict[type, str]) -> str:
+    """Annotation string for a compile-time parameter field."""
+    if _is_list_of_types(param_type):
+        return "list[Value[dgen.TypeType]]"
+    if _is_type_kinded(param_type):
         return "Value[dgen.TypeType]"
-    return f"Value[{param.type.name}]"
+    return f"Value[{type_to_name.get(param_type, param_type.__name__)}]"
 
 
-def _annotation_for_operand(operand: OperandDecl) -> str:
-    return "Value"
+def _build_type_to_name(
+    ns: dict[str, object],
+    imported_mods: dict[str, ModuleType],
+) -> dict[type, str]:
+    """Build a reverse map from live type classes to their stub-qualified name."""
+    result: dict[type, str] = {}
+    for name, val in ns.items():
+        if isinstance(val, type) and not name.startswith("_"):
+            result[val] = name
+    for alias, mod in imported_mods.items():
+        for attr, val in vars(mod).items():
+            if isinstance(val, type) and val not in result:
+                result[val] = f"{alias}.{attr}"
+    return result
 
 
-def _generate(
-    ast: DgenFile,
-    dialect_name: str,
-    import_map: dict[str, str],
+# ---------------------------------------------------------------------------
+# Class stub emitters
+# ---------------------------------------------------------------------------
+
+
+def _stub_class(
+    cls: type,
+    type_to_name: dict[type, str],
+    *,
+    frozen: bool,
 ) -> Iterator[str]:
-    type_map: dict[str, TypeDecl] = {td.name: td for td in ast.types}
-    known_names: set[str] = set(type_map)
-    for imp in ast.imports:
-        for name in imp.names:
-            known_names.add(name)
+    """Yield stub lines for one type or op dataclass."""
+    if frozen:
+        yield "@dataclass(frozen=True)"
+    else:
+        yield "@dataclass(eq=False, kw_only=True)"
 
-    needs_block = any(od.blocks for od in ast.ops)
-    needs_layout = any(td.data or td.layout for td in ast.types)
+    bases = ", ".join(
+        type_to_name.get(b, b.__name__) for b in cls.__bases__ if b is not object
+    )
+    yield f"class {cls.__name__}({bases}):"
 
-    # Header
-    yield f"# GENERATED by dgen from {dialect_name}.dgen — do not edit."
-    yield ""
-    yield "from __future__ import annotations"
-    yield ""
-    yield "from dataclasses import dataclass"
-    yield ""
+    fields = {f.name: f for f in _own_fields(cls)}
+    param_types = dict(getattr(cls, "__params__", ()))
 
-    dgen_names = ["Dialect", "Op", "Type", "Value"]
-    if needs_block:
-        dgen_names.insert(0, "Block")
-    if needs_layout:
-        dgen_names.append("layout")
-    yield "import dgen"
-    yield f"from dgen import {', '.join(sorted(dgen_names))}"
-
-    effective_map = {**_BUILTIN_MODULE_MAP, **import_map}
-
-    for imp in ast.imports:
-        python_module = effective_map.get(imp.module)
-        if python_module:
-            if imp.names:
-                yield f"from {python_module} import {', '.join(imp.names)}"
+    if fields:
+        for name, f in fields.items():
+            if name in param_types:
+                ann = _param_annotation(param_types[name], type_to_name)
             else:
-                yield f"import {python_module} as {imp.module}"
+                ann = f.type
+            if f.default is dataclasses.MISSING:
+                yield f"    {name}: {ann}"
+            else:
+                yield f"    {name}: {ann} = {_stub_repr(f.default)}"
+    else:
+        yield "    ..."
+    yield ""
 
-    yield ""
-    yield f'{dialect_name} = Dialect("{dialect_name}")'
-    yield ""
+
+# ---------------------------------------------------------------------------
+# Top-level generator
+# ---------------------------------------------------------------------------
+
+
+def generate_pyi(module: ModuleType, dialect_name: str) -> str:
+    """Generate a ``.pyi`` type stub by introspecting a live dialect module."""
+    ns = vars(module)
+    dialect: Dialect = ns[dialect_name]
+    current_module = module.__name__
+
+    # Imported module aliases (e.g. affine → toy.dialects.affine)
+    imported_mods: dict[str, ModuleType] = {
+        name: val
+        for name, val in ns.items()
+        if isinstance(val, ModuleType)
+        and not name.startswith("_")
+        and name not in ("dgen", "layout")
+    }
+
+    type_to_name = _build_type_to_name(ns, imported_mods)
+
+    # Specifically-imported names from other dialect modules
+    imported_type_names: dict[str, list[str]] = {}
+    for name, val in ns.items():
+        if (
+            isinstance(val, type)
+            and not name.startswith("_")
+            and val not in _DGEN_CORE
+            and getattr(val, "__module__", "") != current_module
+            # Only include names the dialect actually uses (types/traits, not dgen core)
+            and not (
+                issubclass(val, (Type, Op)) and getattr(val, "dialect", None) is dialect
+            )
+        ):
+            src = getattr(val, "__module__", "")
+            if src and src != current_module:
+                imported_type_names.setdefault(src, []).append(name)
+
+    # Detect if Block is needed in imports
+    needs_block = any(
+        any(f.type == "Block" for f in _own_fields(cls))
+        for cls in dialect.ops.values()
+        if dataclasses.is_dataclass(cls)
+    )
+
+    dgen_imports = sorted(
+        {"Dialect", "Op", "Type", "Value"} | ({"Block"} if needs_block else set())
+    )
+
+    lines: list[str] = [
+        f"# GENERATED by dgen from {dialect_name}.dgen — do not edit.",
+        "",
+        "from __future__ import annotations",
+        "",
+        "from dataclasses import dataclass",
+        "",
+        "import dgen",
+        f"from dgen import {', '.join(dgen_imports)}",
+    ]
+
+    for alias, mod in sorted(imported_mods.items()):
+        lines.append(f"import {mod.__name__} as {alias}")
+    for src, names in sorted(imported_type_names.items()):
+        lines.append(f"from {src} import {', '.join(sorted(names))}")
+
+    lines += ["", f'{dialect_name} = Dialect("{dialect_name}")', ""]
 
     # Traits
-    for trait in ast.traits:
-        yield ""
-        yield f"class {trait.name}:"
-        if trait.statics:
-            for sf in trait.statics:
-                if sf.default:
-                    yield f"    {sf.name} = {sf.default}"
+    for name, val in ns.items():
+        if (
+            isinstance(val, type)
+            and not name.startswith("_")
+            and not issubclass(val, (Type, Op))
+            and val not in _DGEN_CORE
+            and getattr(val, "__module__", None) == current_module
+        ):
+            trait_annotations = getattr(val, "__annotations__", {})
+            trait_body: list[str] = []
+            for attr_name in trait_annotations:
+                attr_val = getattr(val, attr_name, dataclasses.MISSING)
+                if attr_val is not dataclasses.MISSING:
+                    trait_body.append(f"    {attr_name} = {attr_val!r}")
                 else:
-                    yield f"    {sf.name}: {_resolve_param_type_ref(sf.type)}"
-        else:
-            yield "    ..."
-        yield ""
+                    trait_body.append(
+                        f"    {attr_name}: {trait_annotations[attr_name]}"
+                    )
+            # Also include class-level defaults that aren't annotations
+            for attr_name, attr_val in vars(val).items():
+                if (
+                    attr_name not in trait_annotations
+                    and not attr_name.startswith("_")
+                    and attr_name != "__module__"
+                ):
+                    trait_body.append(f"    {attr_name} = {attr_val!r}")
+
+            lines.append(f"class {name}:")
+            if trait_body:
+                lines.extend(trait_body)
+            else:
+                lines.append("    ...")
+            lines.append("")
 
     # Types
-    for td in ast.types:
-        param_map = {p.name: p for p in td.params}
-        is_parametric = bool(td.data) and any(
-            _ref_has_params(df.type, param_map) for df in td.data
-        )
-
-        yield ""
-        yield f'@{dialect_name}.type("{td.name}")'
-        yield "@dataclass(frozen=True)"
-        if td.traits:
-            bases = ", ".join(td.traits + ["Type"])
-        else:
-            bases = "Type"
-        yield f"class {td.name}({bases}):"
-
-        body: list[str] = []
-
-        is_parametric_layout = (
-            td.layout is not None
-            and not _LAYOUTS[td.layout].endswith(")")
-            and bool(td.params)
-        )
-
-        if td.layout is not None and not is_parametric_layout:
-            entry = _LAYOUTS[td.layout]
-            if entry.endswith(")"):
-                body.append(f"    __layout__ = {entry}")
-            else:
-                body.append(f"    __layout__ = {entry}(layout.Void())")
-        elif td.data and not is_parametric:
-            if len(td.data) == 1:
-                body.append(
-                    f"    __layout__ = {_layout_expr(td.data[0].type, param_map)}"
-                )
-            else:
-                fields = ", ".join(
-                    f'("{df.name}", {_layout_expr(df.type, param_map)})'
-                    for df in td.data
-                )
-                body.append(f"    __layout__ = layout.Record([{fields}])")
-
-        for p in td.params:
-            ann = _annotation_for_param(p)
-            if p.default:
-                body.append(f"    {p.name}: {ann} = {p.default}()")
-            else:
-                body.append(f"    {p.name}: {ann}")
-
-        if td.params:
-            parts = [
-                f'("{p.name}", {_resolve_param_type_ref(p.type)})' for p in td.params
-            ]
-            body.append(f"    __params__ = ({', '.join(parts)},)")
-
-        if is_parametric_layout or (td.data and is_parametric):
-            body.append("")
-            body.append("    @property")
-            body.append("    def __layout__(self) -> layout.Layout: ...")
-
-        for sf in td.statics:
-            if sf.default:
-                body.append(f"    {sf.name} = {sf.default}")
-            else:
-                body.append(f"    {sf.name}: {_resolve_param_type_ref(sf.type)}")
-
-        if not body:
-            body.append("    ...")
-
-        yield from body
-        yield ""
+    for cls in dialect.types.values():
+        lines.extend(_stub_class(cls, type_to_name, frozen=True))
 
     # Ops
-    for od in ast.ops:
-        yield ""
-        yield f'@{dialect_name}.op("{od.name}")'
-        yield "@dataclass(eq=False, kw_only=True)"
-        if od.traits:
-            bases = ", ".join(od.traits + ["Op"])
-        else:
-            bases = "Op"
-        yield f"class {_op_class_name(od.name)}({bases}):"
+    for cls in dialect.ops.values():
+        lines.extend(_stub_class(cls, type_to_name, frozen=False))
 
-        body = []
-
-        for p in od.params:
-            body.append(f"    {p.name}: {_annotation_for_param(p)}")
-
-        for op in od.operands:
-            ann = _annotation_for_operand(op)
-            if op.default:
-                body.append(f"    {op.name}: {ann} | {op.default} = {op.default}()")
-            else:
-                body.append(f"    {op.name}: {ann}")
-
-        ret = od.return_type
-        if ret is None or ret.name == "Type":
-            body.append("    type: Type")
-        else:
-            try:
-                body.append(
-                    f"    type: Type = {_type_expr(ret, type_map, known_names)}"
-                )
-            except ValueError:
-                body.append("    type: Type")
-
-        for block_name in od.blocks:
-            body.append(f"    {block_name}: Block")
-
-        if od.params:
-            parts = [
-                f'("{p.name}", {_resolve_param_type_ref(p.type)})' for p in od.params
-            ]
-            body.append(f"    __params__ = ({', '.join(parts)},)")
-
-        if od.operands:
-            parts = [
-                f'("{op.name}", {_resolve_operand_type_ref(op.type) if op.type is not None else "Type"})'
-                for op in od.operands
-            ]
-            body.append(f"    __operands__ = ({', '.join(parts)},)")
-
-        if od.blocks:
-            parts = [f'"{b}"' for b in od.blocks]
-            body.append(f"    __blocks__ = ({', '.join(parts)},)")
-
-        if od.constraints:
-            cparts: list[str] = []
-            for c in od.constraints:
-                if c.kind == "match":
-                    cparts.append(f'"{c.lhs} ~= {c.pattern}"')
-                elif c.kind == "eq":
-                    cparts.append(f'"{c.lhs} == {c.rhs}"')
-                else:
-                    cparts.append(f'"{c.expr}"')
-            body.append(f"    __constraints__ = ({', '.join(cparts)},)")
-
-        yield from body
-        yield ""
-
-
-def _resolve_operand_type_ref(ref: TypeRef) -> str:
-    return ref.name
-
-
-def generate_pyi(
-    ast: DgenFile,
-    dialect_name: str,
-    import_map: dict[str, str] | None = None,
-) -> str:
-    """Generate a ``.pyi`` type stub for a parsed .dgen file."""
-    return "\n".join(_generate(ast, dialect_name, import_map or {})) + "\n"
+    return "\n".join(lines) + "\n"

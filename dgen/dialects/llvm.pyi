@@ -4,165 +4,100 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64, String, List
+from dgen import Dialect, Op, Type, Value
+from dgen.dialects.builtin import Index, Nil, String
 
 llvm = Dialect("llvm")
 
-@llvm.type("Ptr")
 @dataclass(frozen=True)
-class Ptr(Type):
-    __layout__ = layout.Pointer(Nil.__layout__)
+class Ptr(Type): ...
 
-@llvm.type("Int")
 @dataclass(frozen=True)
 class Int(Type):
-    __layout__ = Index.__layout__
     bits: Value[Index]
-    __params__ = (("bits", Index),)
 
-@llvm.type("Float")
 @dataclass(frozen=True)
-class Float(Type):
-    __layout__ = F64.__layout__
+class Float(Type): ...
 
-@llvm.type("Void")
 @dataclass(frozen=True)
-class Void(Type):
-    __layout__ = Nil.__layout__
+class Void(Type): ...
 
-@llvm.op("alloca")
 @dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
     elem_count: Value[Index]
     type: Type = Ptr()
-    __params__ = (("elem_count", Index),)
 
-@llvm.op("gep")
 @dataclass(eq=False, kw_only=True)
 class GepOp(Op):
     base: Value
     index: Value
     type: Type = Ptr()
-    __operands__ = (
-        ("base", Ptr),
-        ("index", Int),
-    )
 
-@llvm.op("load")
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
     ptr: Value
     type: Type = Float()
-    __operands__ = (("ptr", Ptr),)
 
-@llvm.op("store")
 @dataclass(eq=False, kw_only=True)
 class StoreOp(Op):
     value: Value
     ptr: Value
     type: Type = Nil()
-    __operands__ = (
-        ("value", Float),
-        ("ptr", Ptr),
-    )
 
-@llvm.op("fadd")
 @dataclass(eq=False, kw_only=True)
 class FaddOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Float()
-    __operands__ = (
-        ("lhs", Float),
-        ("rhs", Float),
-    )
 
-@llvm.op("fmul")
 @dataclass(eq=False, kw_only=True)
 class FmulOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Float()
-    __operands__ = (
-        ("lhs", Float),
-        ("rhs", Float),
-    )
 
-@llvm.op("add")
 @dataclass(eq=False, kw_only=True)
 class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
-    __operands__ = (
-        ("lhs", Int),
-        ("rhs", Int),
-    )
 
-@llvm.op("sub")
 @dataclass(eq=False, kw_only=True)
 class SubOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
-    __operands__ = (
-        ("lhs", Int),
-        ("rhs", Int),
-    )
 
-@llvm.op("mul")
 @dataclass(eq=False, kw_only=True)
 class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
-    __operands__ = (
-        ("lhs", Int),
-        ("rhs", Int),
-    )
 
-@llvm.op("icmp")
 @dataclass(eq=False, kw_only=True)
 class IcmpOp(Op):
     pred: Value[String]
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(1))
-    __params__ = (("pred", String),)
-    __operands__ = (
-        ("lhs", Int),
-        ("rhs", Int),
-    )
 
-@llvm.op("br")
 @dataclass(eq=False, kw_only=True)
 class BrOp(Op):
     dest: Value[String]
     type: Type = Nil()
-    __params__ = (("dest", String),)
 
-@llvm.op("cond_br")
 @dataclass(eq=False, kw_only=True)
 class CondBrOp(Op):
     true_dest: Value[String]
     false_dest: Value[String]
     cond: Value
     type: Type = Nil()
-    __params__ = (
-        ("true_dest", String),
-        ("false_dest", String),
-    )
-    __operands__ = (("cond", Int),)
 
-@llvm.op("label")
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
     label_name: Value[String]
     type: Type = Nil()
-    __params__ = (("label_name", String),)
 
-@llvm.op("phi")
 @dataclass(eq=False, kw_only=True)
 class PhiOp(Op):
     label_a: Value[String]
@@ -170,40 +105,21 @@ class PhiOp(Op):
     a: Value
     b: Value
     type: Type = Nil()
-    __params__ = (
-        ("label_a", String),
-        ("label_b", String),
-    )
-    __operands__ = (
-        ("a", Type),
-        ("b", Type),
-    )
 
-@llvm.op("fcmp")
 @dataclass(eq=False, kw_only=True)
 class FcmpOp(Op):
     pred: Value[String]
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(1))
-    __params__ = (("pred", String),)
-    __operands__ = (
-        ("lhs", Float),
-        ("rhs", Float),
-    )
 
-@llvm.op("zext")
 @dataclass(eq=False, kw_only=True)
 class ZextOp(Op):
     input: Value
     type: Type = Int(bits=Index().constant(64))
-    __operands__ = (("input", Int),)
 
-@llvm.op("call")
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):
     callee: Value[String]
     args: Value
     type: Type = Nil()
-    __params__ = (("callee", String),)
-    __operands__ = (("args", List),)
