@@ -3,7 +3,6 @@
 import pytest
 
 from dgen.asm.parser import parse_module
-from dgen.testing import assert_ir_equivalent
 from dgen.dialects import builtin
 from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
@@ -56,7 +55,7 @@ def test_multiple_handlers_per_op_type():
 # ---------------------------------------------------------------------------
 
 
-def test_rewriter_eager_replace():
+def test_rewriter_eager_replace(ir_snapshot):
     """replace_uses eagerly updates all referencing ops."""
     ir_text = strip_prefix("""
         | import llvm
@@ -75,18 +74,7 @@ def test_rewriter_eager_replace():
     rewriter = Rewriter(func.body)
     rewriter.replace_uses(old, new)
 
-    assert_ir_equivalent(
-        m,
-        strip_prefix("""
-        | import llvm
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : Index = 1
-        |     %1 : Index = 2
-        |     %2 : Index = llvm.add(%1, %1)
-        |     %_ : Nil = return(%2)
-    """),
-    )
+    assert m == ir_snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +82,7 @@ def test_rewriter_eager_replace():
 # ---------------------------------------------------------------------------
 
 
-def test_pass_run_eliminates_double_transpose():
+def test_pass_run_eliminates_double_transpose(ir_snapshot):
     """A pass that eliminates transpose(transpose(x)) -> x."""
     ir_text = strip_prefix("""
         | import toy
@@ -119,17 +107,7 @@ def test_pass_run_eliminates_double_transpose():
 
     m = parse_module(ir_text)
     result = ElimTranspose().run(m)
-    assert_ir_equivalent(
-        result,
-        strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%3)
-    """),
-    )
+    assert result == ir_snapshot
 
 
 def test_pass_unregistered_ops_error():

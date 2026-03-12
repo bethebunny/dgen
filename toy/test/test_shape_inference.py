@@ -2,20 +2,20 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.module import Module
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.shape_inference import infer_shapes
 from toy.test.helpers import strip_prefix
 
 
-def compile_and_infer(source: str) -> str:
+def compile_and_infer(source: str) -> Module:
     ast = parse_toy(source)
     ir = lower(ast)
-    ir = infer_shapes(ir)
-    return asm.format(ir)
+    return infer_shapes(ir)
 
 
-def test_transpose():
+def test_transpose(ir_snapshot):
     source = strip_prefix("""
         | def main() {
         |   var a = [[1, 2, 3], [4, 5, 6]];
@@ -24,20 +24,10 @@ def test_transpose():
         |   return;
         | }
     """)
-    result = compile_and_infer(source)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
-        |     %2 : Nil = toy.print(%1)
-        |     %3 : Nil = return(%2)
-    """)
-    assert result == expected
+    assert compile_and_infer(source) == ir_snapshot
 
 
-def test_mul():
+def test_mul(ir_snapshot):
     source = strip_prefix("""
         | def main() {
         |   var a = [[1, 2], [3, 4]];
@@ -47,21 +37,10 @@ def test_mul():
         |   return;
         | }
     """)
-    result = compile_and_infer(source)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 2], F64> = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : toy.Tensor<[2, 2], F64> = toy.mul(%0, %1)
-        |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(%3)
-    """)
-    assert result == expected
+    assert compile_and_infer(source) == ir_snapshot
 
 
-def test_3d_add():
+def test_3d_add(ir_snapshot):
     source = strip_prefix("""
         | def main() {
         |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
@@ -71,21 +50,10 @@ def test_3d_add():
         |   return;
         | }
     """)
-    result = compile_and_infer(source)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.add(%0, %1)
-        |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(%3)
-    """)
-    assert result == expected
+    assert compile_and_infer(source) == ir_snapshot
 
 
-def test_3d_mul():
+def test_3d_mul(ir_snapshot):
     source = strip_prefix("""
         | def main() {
         |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
@@ -95,21 +63,10 @@ def test_3d_mul():
         |   return;
         | }
     """)
-    result = compile_and_infer(source)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 2, 2], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<[2, 2, 2], F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<[2, 2, 2], F64> = toy.mul(%0, %1)
-        |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(%3)
-    """)
-    assert result == expected
+    assert compile_and_infer(source) == ir_snapshot
 
 
-def test_generic_call():
+def test_generic_call(ir_snapshot):
     source = strip_prefix("""
         | def multiply_transpose(a, b) {
         |   return transpose(a) * transpose(b);
@@ -123,27 +80,10 @@ def test_generic_call():
         |   return;
         | }
     """)
-    result = compile_and_infer(source)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %multiply_transpose : Nil = function<toy.Tensor<[3, 2], F64>>() (%a: toy.Tensor<[2, 3], F64>, %b: toy.Tensor<[2, 3], F64>):
-        |     %0 : toy.Tensor<[3, 2], F64> = toy.transpose(%a)
-        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%b)
-        |     %2 : toy.Tensor<[3, 2], F64> = toy.mul(%0, %1)
-        |     %3 : Nil = return(%2)
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %2 : toy.Tensor<[3, 2], F64> = call<%multiply_transpose>([%0, %1])
-        |     %3 : Nil = toy.print(%2)
-        |     %4 : Nil = return(%3)
-    """)
-    assert result == expected
+    assert compile_and_infer(source) == ir_snapshot
 
 
-def test_concat():
+def test_concat(ir_snapshot):
     """Concat shape is computed from input shapes: [2,3] concat [3,3] axis=0 -> [5,3]."""
     ir = strip_prefix("""
         | import toy
@@ -156,22 +96,10 @@ def test_concat():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    result = infer_shapes(module)
-    out = asm.format(result)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %f : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[3, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<[5, 3], F64> = toy.concat<0>(%0, %1)
-        |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(())
-    """)
-    assert out == expected
+    assert infer_shapes(module) == ir_snapshot
 
 
-def test_concat_axis1():
+def test_concat_axis1(ir_snapshot):
     """Concat along axis 1: [2,3] concat [2,5] -> [2,8]."""
     ir = strip_prefix("""
         | import toy
@@ -184,22 +112,10 @@ def test_concat_axis1():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    result = infer_shapes(module)
-    out = asm.format(result)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %f : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 5], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-        |     %2 : toy.Tensor<[2, 8], F64> = toy.concat<1>(%0, %1)
-        |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(())
-    """)
-    assert out == expected
+    assert infer_shapes(module) == ir_snapshot
 
 
-def test_tile_with_constant_count():
+def test_tile_with_constant_count(ir_snapshot):
     """Tile where count is a constant — shape inference peeks through the constant."""
     ir = strip_prefix("""
         | import toy
@@ -212,19 +128,7 @@ def test_tile_with_constant_count():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    result = infer_shapes(module)
-    out = asm.format(result)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %f : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[3], F64> = [1.0, 2.0, 3.0]
-        |     %1 : Index = 4
-        |     %2 : toy.Tensor<[4, 3], F64> = toy.tile<%1>(%0)
-        |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(())
-    """)
-    assert out == expected
+    assert infer_shapes(module) == ir_snapshot
 
 
 def test_tile_with_computed_count():
@@ -254,7 +158,7 @@ def test_tile_with_computed_count():
     assert "toy.InferredShapeTensor<F64> = toy.tile" in out
 
 
-def test_full_tutorial_example():
+def test_full_tutorial_example(ir_snapshot):
     source = strip_prefix("""
         | def multiply_transpose(a, b) {
         |   return transpose(a) * transpose(b);
@@ -269,24 +173,4 @@ def test_full_tutorial_example():
         |   return;
         | }
     """)
-    result = compile_and_infer(source)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %multiply_transpose : Nil = function<toy.Tensor<[3, 2], F64>>() (%a: toy.Tensor<[2, 3], F64>, %b: toy.Tensor<[2, 3], F64>):
-        |     %0 : toy.Tensor<[3, 2], F64> = toy.transpose(%a)
-        |     %1 : toy.Tensor<[3, 2], F64> = toy.transpose(%b)
-        |     %2 : toy.Tensor<[3, 2], F64> = toy.mul(%0, %1)
-        |     %3 : Nil = return(%2)
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)
-        |     %2 : toy.Tensor<[6], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor<[2, 3], F64> = toy.reshape(%2)
-        |     %4 : toy.Tensor<[3, 2], F64> = call<%multiply_transpose>([%1, %3])
-        |     %5 : toy.Tensor<[3, 2], F64> = call<%multiply_transpose>([%3, %1])
-        |     %6 : Nil = toy.print(%5)
-        |     %7 : Nil = return(%6)
-    """)
-    assert result == expected
+    assert compile_and_infer(source) == ir_snapshot

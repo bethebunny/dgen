@@ -1,0 +1,30 @@
+import affine
+import toy
+
+%main : Nil = function<Nil>() ():
+    %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    %1 : affine.MemRef<[3, 2], F64> = affine.alloc([3, 2])
+    %2 : Nil = affine.for<0, 2>() (%3: Index):
+        %4 : Nil = affine.for<0, 3>() (%5: Index):
+            %6 : F64 = affine.load(%0, [%3, %5])
+            %7 : Nil = affine.store(%6, %1, [%5, %3])
+    %8 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    %9 : affine.MemRef<[3, 2], F64> = affine.alloc([3, 2])
+    %10 : Nil = affine.for<0, 2>() (%11: Index):
+        %12 : Nil = affine.for<0, 3>() (%13: Index):
+            %14 : F64 = affine.load(%8, [%11, %13])
+            %15 : Nil = affine.store(%14, %9, [%13, %11])
+    %16 : affine.MemRef<[3, 2], F64> = affine.alloc([3, 2])
+    %17 : Nil = affine.for<0, 3>() (%18: Index):
+        %19 : Nil = affine.for<0, 2>() (%20: Index):
+            %21 : F64 = affine.load(%1, [%18, %20])
+            %22 : F64 = affine.load(%9, [%18, %20])
+            %23 : F64 = affine.mul_f(%21, %22)
+            %24 : Nil = affine.store(%23, %16, [%18, %20])
+    %25 : Nil = affine.print_memref(%16)
+    %26 : Nil = affine.dealloc(%0)
+    %27 : Nil = affine.dealloc(%1)
+    %28 : Nil = affine.dealloc(%8)
+    %29 : Nil = affine.dealloc(%9)
+    %30 : Nil = affine.dealloc(%16)
+    %31 : Nil = return(())
