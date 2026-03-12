@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64, HasSingleBlock
+from dgen.dialects.builtin import Index, Nil, F64, HasSingleBlock, Array, Pointer
 
 affine = Dialect("affine")
 
@@ -28,10 +28,7 @@ class MemRef(Type):
     __layout__ = layout.Pointer(Nil.__layout__)
     shape: Value[Shape]
     dtype: Value[dgen.TypeType] = F64()
-    __params__ = (
-        ("shape", Shape),
-        ("dtype", dgen.TypeType),
-    )
+    __params__ = (("shape", Shape), ("dtype", dgen.TypeType),)
 
 
 @affine.op("alloc")
@@ -56,10 +53,7 @@ class LoadOp(Op):
     memref: Value
     indices: Value
     type: Type = F64()
-    __operands__ = (
-        ("memref", MemRef),
-        ("indices", Index),
-    )
+    __operands__ = (("memref", MemRef), ("indices", Index),)
 
 
 @affine.op("store")
@@ -69,11 +63,7 @@ class StoreOp(Op):
     memref: Value
     indices: Value
     type: Type = Nil()
-    __operands__ = (
-        ("value", F64),
-        ("memref", MemRef),
-        ("indices", Index),
-    )
+    __operands__ = (("value", F64), ("memref", MemRef), ("indices", Index),)
 
 
 @affine.op("mul_f")
@@ -82,10 +72,7 @@ class MulFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = F64()
-    __operands__ = (
-        ("lhs", F64),
-        ("rhs", F64),
-    )
+    __operands__ = (("lhs", F64), ("rhs", F64),)
 
 
 @affine.op("add_f")
@@ -94,10 +81,7 @@ class AddFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = F64()
-    __operands__ = (
-        ("lhs", F64),
-        ("rhs", F64),
-    )
+    __operands__ = (("lhs", F64), ("rhs", F64),)
 
 
 @affine.op("print_memref")
@@ -115,8 +99,7 @@ class ForOp(HasSingleBlock, Op):
     hi: Value[Index]
     type: Type = Nil()
     body: Block
-    __params__ = (
-        ("lo", Index),
-        ("hi", Index),
-    )
+    __params__ = (("lo", Index), ("hi", Index),)
     __blocks__ = ("body",)
+
+
