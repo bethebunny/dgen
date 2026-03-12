@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
-import dgen
-from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import shape_constant, toy
@@ -42,7 +38,7 @@ class ToyOptimize(Pass):
             value=defn.memory.to_json(),
             type=toy.Tensor(shape=shape_constant(target_shape.__constant__.to_json())),
         )
-        rewriter.replace_op(op, new_op)
+        rewriter.replace_uses(op, new_op)
         return True
 
     @lowering_for(toy.ReshapeOp)
@@ -59,48 +55,10 @@ class ToyOptimize(Pass):
         # Reshape of reshape -> collapse
         if isinstance(defn, toy.ReshapeOp):
             new_op = toy.ReshapeOp(input=defn.input, type=op.type)
-            rewriter.replace_op(op, new_op)
+            rewriter.replace_uses(op, new_op)
             return True
 
         return False
-
-
-# ===----------------------------------------------------------------------=== #
-# Dead code elimination
-# ===----------------------------------------------------------------------=== #
-
-
-def collect_uses(ops: Sequence[dgen.Op]) -> set[dgen.Value]:
-    """Return the set of Values referenced as parameters and operands."""
-    used: set[dgen.Value] = set()
-    for op in ops:
-        for _, v in op.parameters:
-            if isinstance(v, dgen.Value):
-                used.add(v)
-        for _, v in op.operands:
-            if isinstance(v, dgen.Value):
-                used.add(v)
-    return used
-
-
-def eliminate_dead_code(func: builtin.FunctionOp) -> None:
-    changed = True
-    while changed:
-        changed = False
-        used = collect_uses(func.body.ops)
-        to_remove: list[int] = []
-        for i, op in enumerate(func.body.ops):
-            if isinstance(op, (toy.PrintOp, builtin.ReturnOp)):
-                continue
-            if op not in used:
-                to_remove.append(i)
-                changed = True
-        _remove_indices(func.body.ops, to_remove)
-
-
-def _remove_indices(ops: list[dgen.Op], indices: Sequence[int]) -> None:
-    for idx in reversed(indices):
-        ops.pop(idx)
 
 
 # ===----------------------------------------------------------------------=== #
