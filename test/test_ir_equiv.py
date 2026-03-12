@@ -5,7 +5,8 @@ import pytest
 from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
-from dgen.ir_equiv import Fingerprinter, graph_equivalent, structural_diff
+from dgen.ir_diff import structural_diff
+from dgen.ir_equiv import Fingerprinter, graph_equivalent
 from dgen.module import ConstantOp
 from toy.test.helpers import strip_prefix
 
@@ -148,14 +149,16 @@ def test_structural_diff_returns_string():
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %_ : Nil = return(())
+        |     %1 : Nil = toy.print(%0)
+        |     %_ : Nil = return(%1)
     """)
     b = strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<[2, 3], F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
-        |     %_ : Nil = return(())
+        |     %1 : Nil = toy.print(%0)
+        |     %_ : Nil = return(%1)
     """)
     diff = structural_diff(parse_module(a), parse_module(b))
     assert "-" in diff and "+" in diff
