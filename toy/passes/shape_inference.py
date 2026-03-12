@@ -65,7 +65,7 @@ class ShapeInference(Pass):
     def infer_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
         src = self.type_of.get(id(op.input))
         if src is not None:
-            t = toy.Tensor(shape=shape_constant(list(reversed(src.unpack_shape()))))
+            t = toy.Tensor(shape=shape_constant(list(reversed(src.shape.__constant__.to_json()))))
             op.type = t
             self.type_of[id(op)] = t
         return True
@@ -74,7 +74,7 @@ class ShapeInference(Pass):
     def infer_mul(self, op: toy.MulOp, rewriter: Rewriter) -> bool:
         src = self.type_of.get(id(op.lhs))
         if src is not None:
-            t = toy.Tensor(shape=shape_constant(src.unpack_shape()))
+            t = toy.Tensor(shape=shape_constant(src.shape.__constant__.to_json()))
             op.type = t
             self.type_of[id(op)] = t
         return True
@@ -83,7 +83,7 @@ class ShapeInference(Pass):
     def infer_add(self, op: toy.AddOp, rewriter: Rewriter) -> bool:
         src = self.type_of.get(id(op.lhs))
         if src is not None:
-            t = toy.Tensor(shape=shape_constant(src.unpack_shape()))
+            t = toy.Tensor(shape=shape_constant(src.shape.__constant__.to_json()))
             op.type = t
             self.type_of[id(op)] = t
         return True
@@ -93,8 +93,8 @@ class ShapeInference(Pass):
         lhs = self.type_of.get(id(op.lhs))
         rhs = self.type_of.get(id(op.rhs))
         if lhs is not None and rhs is not None:
-            lhs_dims = lhs.unpack_shape()
-            rhs_dims = rhs.unpack_shape()
+            lhs_dims = lhs.shape.__constant__.to_json()
+            rhs_dims = rhs.shape.__constant__.to_json()
             shape = list(lhs_dims)
             axis = op.axis.__constant__.to_json()
             assert isinstance(axis, int)
@@ -114,7 +114,7 @@ class ShapeInference(Pass):
                 else None
             )
             if count_val is not None:
-                t = toy.Tensor(shape=shape_constant([count_val] + src.unpack_shape()))
+                t = toy.Tensor(shape=shape_constant([count_val] + src.shape.__constant__.to_json()))
                 op.type = t
                 self.type_of[id(op)] = t
         return True
@@ -139,7 +139,7 @@ class ShapeInference(Pass):
                     if ret_type is not None:
                         callee.result = ret_type
                         op.type = toy.Tensor(
-                            shape=shape_constant(ret_type.unpack_shape())
+                            shape=shape_constant(ret_type.shape.__constant__.to_json())
                         )
                         self.type_of[id(op)] = op.type
         return True

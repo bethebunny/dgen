@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 
 import dgen
 from dgen.block import BlockArgument
+from dgen import layout
 from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index, List, Nil
 from dgen.module import ConstantOp, Module, PackOp
+from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import affine, shape_constant, toy
 
 
@@ -24,84 +26,32 @@ def _make_index_list(
     return [pack_op], pack_op
 
 
-class ToyToAffineLowering:
+class ToyToAffine(Pass):
+    allow_unregistered_ops = (
+        True  # ConstantOp, ReturnOp, ChainOp, AddIndexOp pass through
+    )
+
     def __init__(self) -> None:
-        self.alloc_map: dict[dgen.Value, dgen.Value] = {}
         self.live_allocs: list[dgen.Value] = []
 
-    def lower_module(self, m: Module) -> Module:
-        functions = [self.lower_function(f) for f in m.functions]
+    def run(self, module: Module) -> Module:
+        functions = [self._lower_function(f) for f in module.functions]
         return Module(functions=functions)
 
-    def lower_function(self, f: FunctionOp) -> FunctionOp:
-        self.alloc_map = {}
+    def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.live_allocs = []
-        # Register block args (function parameters) as themselves
-        for arg in f.body.args:
-            self.alloc_map[arg] = arg
-        ops = []
-        for op in f.body.ops:
-            ops.extend(self.lower_op(op))
-        return FunctionOp(
-            name=f.name,
-            body=dgen.Block(ops=ops, args=f.body.args),
-            result=f.result,
-        )
-
-    def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
-        if isinstance(op, ConstantOp) and isinstance(op.type, toy.Tensor):
-            yield from self._lower_constant(op)
-        elif isinstance(op, ConstantOp):
-            yield op
-        elif isinstance(op, builtin.AddIndexOp):
-            new_op = builtin.AddIndexOp(
-                lhs=self.alloc_map.get(op.lhs, op.lhs),
-                rhs=self.alloc_map.get(op.rhs, op.rhs),
-            )
-            yield new_op
-            self.alloc_map[op] = new_op
-        elif isinstance(op, toy.TransposeOp):
-            yield from self._lower_transpose(op)
-        elif isinstance(op, (toy.MulOp, toy.AddOp)):
-            yield from self._lower_binop(op, op.lhs, op.rhs)
-        elif isinstance(op, toy.ReshapeOp):
-            self._lower_reshape(op)
-        elif isinstance(op, toy.DimSizeOp):
-            yield from self._lower_dim_size(op)
-        elif isinstance(op, toy.NonzeroCountOp):
-            new_op = toy.NonzeroCountOp(
-                input=self.alloc_map.get(op.input, op.input),
-            )
-            yield new_op
-            self.alloc_map[op] = new_op
-        elif isinstance(op, toy.TileOp):
-            yield from self._lower_tile(op)
-        elif isinstance(op, toy.ConcatOp):
-            yield from self._lower_concat(op)
-        elif isinstance(op, builtin.ChainOp):
-            new_lhs = self.alloc_map.get(op.lhs, op.lhs)
-            new_rhs = self.alloc_map.get(op.rhs, op.rhs)
-            new_op = builtin.ChainOp(lhs=new_lhs, rhs=new_rhs, type=op.type)
-            yield new_op
-            self.alloc_map[op] = new_op
-        elif isinstance(op, toy.PrintOp):
-            yield from self._lower_print(op)
-        elif isinstance(op, builtin.ReturnOp):
-            yield from self._lower_return(op)
+        self._run_block(f.body)
+        return FunctionOp(name=f.name, body=f.body, result=f.result)
 
     def _make_alloc(self, shape: dgen.Value) -> affine.AllocOp:
-        """Create an AllocOp from a shape Constant."""
-        return affine.AllocOp(
-            shape=shape,
-            type=affine.MemRef(shape=shape),
-        )
+        return affine.AllocOp(shape=shape, type=affine.MemRef(shape=shape))
 
-    def _nested_for(
+    def _nested_for_op(
         self,
         shape: Sequence[int],
         body_fn: Callable[[Sequence[dgen.Value]], list[dgen.Op]],
-    ) -> Iterator[dgen.Op]:
-        """Build nested ForOps for each dimension. body_fn(ivars) -> innermost ops."""
+    ) -> affine.ForOp:
+        """Build nested ForOps for each dimension. Returns the outermost ForOp."""
         ivars: list[dgen.Value] = [BlockArgument(type=builtin.Index()) for _ in shape]
         ops = list(body_fn(ivars))
         for dim, var in reversed(list(zip(shape, ivars))):
@@ -112,23 +62,26 @@ class ToyToAffineLowering:
                     body=dgen.Block(ops=ops, args=[var]),
                 )
             ]
-        yield ops[0]
+        return ops[0]
 
-    def _lower_constant(self, op: ConstantOp) -> Iterator[dgen.Op]:
+    @lowering_for(ConstantOp)
+    def lower_constant(self, op: ConstantOp, rewriter: Rewriter) -> bool:
+        if not isinstance(op.memory.layout, layout.Array):
+            return False
         new_const = ConstantOp(value=op.value, type=op.type)
-        yield new_const
-        self.alloc_map[op] = new_const
+        rewriter.replace_uses(op, new_const)
         self.live_allocs.append(new_const)
+        return True
 
-    def _lower_transpose(self, op: toy.TransposeOp) -> Iterator[dgen.Op]:
+    @lowering_for(toy.TransposeOp)
+    def lower_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
         assert isinstance(op.type, toy.Tensor)
         assert isinstance(op.input.type, toy.Tensor)
         in_shape = op.input.type.shape.__constant__.to_json()
+        in_alloc = op.input
 
         alloc_op = self._make_alloc(op.type.shape)
-        yield alloc_op
         self.live_allocs.append(alloc_op)
-        in_alloc = self.alloc_map.get(op.input, op.input)
 
         def body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             load_idx_ops, load_idx = _make_index_list(list(ivars))
@@ -137,93 +90,150 @@ class ToyToAffineLowering:
             store = affine.StoreOp(value=load, memref=alloc_op, indices=store_idx)
             return load_idx_ops + [load] + store_idx_ops + [store]
 
-        yield from self._nested_for(in_shape, body)
-        self.alloc_map[op] = alloc_op
+        for_op = self._nested_for_op(in_shape, body)
+        # Chain in_alloc before for_op so walk_ops visits it first (ordering fix).
+        inner_chain = builtin.ChainOp(lhs=in_alloc, rhs=for_op, type=alloc_op.type)
+        chain = builtin.ChainOp(lhs=alloc_op, rhs=inner_chain, type=alloc_op.type)
+        rewriter.replace_uses(op, chain)
+        return True
+
+    @lowering_for(toy.MulOp)
+    def lower_mul(self, op: toy.MulOp, rewriter: Rewriter) -> bool:
+        return self._lower_binop(op, op.lhs, op.rhs, affine.MulFOp, rewriter)
+
+    @lowering_for(toy.AddOp)
+    def lower_add(self, op: toy.AddOp, rewriter: Rewriter) -> bool:
+        return self._lower_binop(op, op.lhs, op.rhs, affine.AddFOp, rewriter)
 
     def _lower_binop(
-        self, result_op: dgen.Op, lhs_val: dgen.Value, rhs_val: dgen.Value
-    ) -> Iterator[dgen.Op]:
-        assert isinstance(lhs_val.type, toy.Tensor)
+        self,
+        op: dgen.Op,
+        lhs_val: dgen.Value,
+        rhs_val: dgen.Value,
+        binop_cls: type,
+        rewriter: Rewriter,
+    ) -> bool:
+        assert isinstance(lhs_val.type, (toy.Tensor, affine.MemRef))
         shape = lhs_val.type.shape.__constant__.to_json()
+        assert isinstance(shape, list)
         alloc_op = self._make_alloc(lhs_val.type.shape)
-        yield alloc_op
         self.live_allocs.append(alloc_op)
-        lhs_alloc = self.alloc_map.get(lhs_val, lhs_val)
-        rhs_alloc = self.alloc_map.get(rhs_val, rhs_val)
-
-        binop = {
-            toy.MulOp: affine.MulFOp,
-            toy.AddOp: affine.AddFOp,
-        }
+        lhs_alloc = lhs_val
+        rhs_alloc = rhs_val
 
         def body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             idx_ops, idx = _make_index_list(list(ivars))
             lv = affine.LoadOp(memref=lhs_alloc, indices=idx)
             rv = affine.LoadOp(memref=rhs_alloc, indices=idx)
-            res = binop[type(result_op)](lhs=lv, rhs=rv)
+            res = binop_cls(lhs=lv, rhs=rv)
             store = affine.StoreOp(value=res, memref=alloc_op, indices=idx)
             return idx_ops + [lv, rv, res, store]
 
-        yield from self._nested_for(shape, body)
-        self.alloc_map[result_op] = alloc_op
+        for_op = self._nested_for_op(shape, body)
+        # Chain lhs/rhs before for_op so walk_ops visits inputs first (ordering fix).
+        inner = builtin.ChainOp(lhs=rhs_alloc, rhs=for_op, type=alloc_op.type)
+        inner2 = builtin.ChainOp(lhs=lhs_alloc, rhs=inner, type=alloc_op.type)
+        chain = builtin.ChainOp(lhs=alloc_op, rhs=inner2, type=alloc_op.type)
+        rewriter.replace_uses(op, chain)
+        return True
 
-    def _lower_tile(self, op: toy.TileOp) -> Iterator[dgen.Op]:
+    @lowering_for(toy.ReshapeOp)
+    def lower_reshape(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
+        rewriter.replace_uses(op, op.input)
+        return True
+
+    @lowering_for(toy.PrintOp)
+    def lower_print(self, op: toy.PrintOp, rewriter: Rewriter) -> bool:
+        # op.input was already updated by replace_uses if from a previous handler.
+        # Keep any ChainOp reference intact so the for-loop stays graph-reachable.
+        print_op = affine.PrintMemrefOp(input=op.input)
+        rewriter.replace_uses(op, print_op)
+        return True
+
+    @lowering_for(toy.DimSizeOp)
+    def lower_dim_size(self, op: toy.DimSizeOp, rewriter: Rewriter) -> bool:
+        assert isinstance(op.input.type, (toy.Tensor, affine.MemRef))
+        shape = op.input.type.shape.__constant__.to_json()
+        assert isinstance(shape, list)
+        axis = op.axis.__constant__.to_json()
+        assert isinstance(axis, int)
+        const = ConstantOp(value=shape[axis], type=Index())
+        rewriter.replace_uses(op, const)
+        return True
+
+    @lowering_for(toy.TileOp)
+    def lower_tile(self, op: toy.TileOp, rewriter: Rewriter) -> bool:
         assert isinstance(op.count, ConstantOp)
         count = op.count.__constant__.to_json()
         assert isinstance(count, int)
         assert isinstance(op.input.type, toy.Tensor)
         input_shape = op.input.type.shape.__constant__.to_json()
         output_shape: list[int] = [count] + input_shape
+        in_alloc = op.input
+
+        # Unwrap ChainOp to get the underlying MemRef
+        underlying = in_alloc
+        while isinstance(underlying, builtin.ChainOp):
+            underlying = underlying.lhs
 
         alloc_op = self._make_alloc(shape_constant(output_shape))
-        yield alloc_op
         self.live_allocs.append(alloc_op)
-        in_alloc = self.alloc_map.get(op.input, op.input)
 
         def body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             iv = list(ivars)
             load_idx_ops, load_idx = _make_index_list(iv[1:])
             store_idx_ops, store_idx = _make_index_list(iv)
-            load = affine.LoadOp(memref=in_alloc, indices=load_idx)
+            load = affine.LoadOp(memref=underlying, indices=load_idx)
             store = affine.StoreOp(value=load, memref=alloc_op, indices=store_idx)
             return load_idx_ops + [load] + store_idx_ops + [store]
 
-        yield from self._nested_for(output_shape, body)
-        self.alloc_map[op] = alloc_op
+        for_op = self._nested_for_op(output_shape, body)
+        # Chain in_alloc before for_op so walk_ops visits it first (ordering fix).
+        inner_chain = builtin.ChainOp(lhs=in_alloc, rhs=for_op, type=alloc_op.type)
+        chain = builtin.ChainOp(lhs=alloc_op, rhs=inner_chain, type=alloc_op.type)
+        rewriter.replace_uses(op, chain)
+        return True
 
-    def _lower_concat(self, op: toy.ConcatOp) -> Iterator[dgen.Op]:
-        assert isinstance(op.lhs.type, toy.Tensor)
-        assert isinstance(op.rhs.type, toy.Tensor)
+    @lowering_for(toy.ConcatOp)
+    def lower_concat(self, op: toy.ConcatOp, rewriter: Rewriter) -> bool:
+        assert isinstance(op.lhs.type, (toy.Tensor, affine.MemRef))
+        assert isinstance(op.rhs.type, (toy.Tensor, affine.MemRef))
         lhs_shape = op.lhs.type.shape.__constant__.to_json()
         rhs_shape = op.rhs.type.shape.__constant__.to_json()
+        assert isinstance(lhs_shape, list)
+        assert isinstance(rhs_shape, list)
         axis = op.axis.__constant__.to_json()
         assert isinstance(axis, int)
 
         output_shape = list(lhs_shape)
         output_shape[axis] = lhs_shape[axis] + rhs_shape[axis]
 
-        alloc_op = self._make_alloc(shape_constant(output_shape))
-        yield alloc_op
-        self.live_allocs.append(alloc_op)
-        lhs_alloc = self.alloc_map.get(op.lhs, op.lhs)
-        rhs_alloc = self.alloc_map.get(op.rhs, op.rhs)
+        lhs_alloc = op.lhs
+        rhs_alloc = op.rhs
+        # Unwrap ChainOps
+        underlying_lhs = lhs_alloc
+        while isinstance(underlying_lhs, builtin.ChainOp):
+            underlying_lhs = underlying_lhs.lhs
+        underlying_rhs = rhs_alloc
+        while isinstance(underlying_rhs, builtin.ChainOp):
+            underlying_rhs = underlying_rhs.lhs
 
-        # Copy lhs into output[0:lhs_shape[axis], ...]
+        alloc_op = self._make_alloc(shape_constant(output_shape))
+        self.live_allocs.append(alloc_op)
+
         def lhs_body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             idx_ops, idx = _make_index_list(list(ivars))
-            load = affine.LoadOp(memref=lhs_alloc, indices=idx)
+            load = affine.LoadOp(memref=underlying_lhs, indices=idx)
             store = affine.StoreOp(value=load, memref=alloc_op, indices=idx)
             return idx_ops + [load, store]
 
-        yield from self._nested_for(lhs_shape, lhs_body)
+        lhs_for = self._nested_for_op(lhs_shape, lhs_body)
 
-        # Copy rhs into output[lhs_shape[axis]:, ...] with offset along axis
         offset_const = ConstantOp(value=lhs_shape[axis], type=builtin.Index())
-        yield offset_const
 
         def rhs_body(ivars: Sequence[dgen.Value]) -> list[dgen.Op]:
             load_idx_ops, load_idx = _make_index_list(list(ivars))
-            load = affine.LoadOp(memref=rhs_alloc, indices=load_idx)
+            load = affine.LoadOp(memref=underlying_rhs, indices=load_idx)
             offset_idx = builtin.AddIndexOp(lhs=ivars[axis], rhs=offset_const)
             out_indices: list[dgen.Value] = list(ivars)
             out_indices[axis] = offset_idx
@@ -231,36 +241,44 @@ class ToyToAffineLowering:
             store = affine.StoreOp(value=load, memref=alloc_op, indices=store_idx)
             return load_idx_ops + [load, offset_idx] + store_idx_ops + [store]
 
-        yield from self._nested_for(rhs_shape, rhs_body)
-        self.alloc_map[op] = alloc_op
+        rhs_for = self._nested_for_op(rhs_shape, rhs_body)
 
-    def _lower_dim_size(self, op: toy.DimSizeOp) -> Iterator[dgen.Op]:
-        assert isinstance(op.input.type, toy.Tensor)
-        shape = op.input.type.shape.__constant__.to_json()
-        axis = op.axis.__constant__.to_json()
-        assert isinstance(axis, int)
-        const = ConstantOp(value=shape[axis], type=Index())
-        yield const
-        self.alloc_map[op] = const
+        # Chain inputs before each ForOp so walk_ops visits them first (ordering fix).
+        inner_lhs = builtin.ChainOp(lhs=lhs_alloc, rhs=lhs_for, type=alloc_op.type)
+        inner_rhs = builtin.ChainOp(lhs=rhs_alloc, rhs=rhs_for, type=alloc_op.type)
+        chain = builtin.ChainOp(
+            lhs=builtin.ChainOp(lhs=alloc_op, rhs=inner_lhs, type=alloc_op.type),
+            rhs=inner_rhs,
+            type=alloc_op.type,
+        )
+        rewriter.replace_uses(op, chain)
+        return True
 
-    def _lower_reshape(self, op: toy.ReshapeOp) -> None:
-        self.alloc_map[op] = self.alloc_map.get(op.input, op.input)
+    @lowering_for(toy.NonzeroCountOp)
+    def lower_nonzero_count(self, op: toy.NonzeroCountOp, rewriter: Rewriter) -> bool:
+        new_op = toy.NonzeroCountOp(input=op.input)
+        rewriter.replace_uses(op, new_op)
+        return True
 
-    def _lower_print(self, op: toy.PrintOp) -> Iterator[dgen.Op]:
-        alloc = self.alloc_map.get(op.input, op.input)
-        print_op = affine.PrintMemrefOp(input=alloc)
-        yield print_op
-        self.alloc_map[op] = print_op
-
-    def _lower_return(self, op: builtin.ReturnOp) -> Iterator[dgen.Op]:
+    @lowering_for(builtin.ReturnOp)
+    def lower_return(self, op: builtin.ReturnOp, rewriter: Rewriter) -> bool:
+        # Chain all deallocs to the return value
+        current_val = op.value
         for alloc_val in self.live_allocs:
-            yield affine.DeallocOp(input=alloc_val)
-        if isinstance(op.value, Nil):
-            yield builtin.ReturnOp()
-        else:
-            yield builtin.ReturnOp(value=self.alloc_map.get(op.value, op.value))
+            # Unwrap ChainOp to get underlying alloc for DeallocOp
+            underlying = alloc_val
+            while isinstance(underlying, builtin.ChainOp):
+                underlying = underlying.lhs
+            dealloc = affine.DeallocOp(input=underlying)
+            if isinstance(current_val, Nil):
+                current_val = dealloc
+            else:
+                current_val = builtin.ChainOp(
+                    lhs=current_val, rhs=dealloc, type=current_val.type
+                )
+        op.value = current_val
+        return True
 
 
 def lower_to_affine(m: Module) -> Module:
-    lowering = ToyToAffineLowering()
-    return lowering.lower_module(m)
+    return ToyToAffine().run(m)
