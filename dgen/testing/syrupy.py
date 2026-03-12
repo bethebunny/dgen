@@ -9,7 +9,7 @@ Usage
 In ``conftest.py``::
 
     import pytest
-    from dgen.syrupy_ext import IRSnapshotExtension
+    from dgen.testing.syrupy import IRSnapshotExtension
 
     @pytest.fixture
     def ir_snapshot(snapshot):

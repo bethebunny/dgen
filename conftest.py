@@ -3,7 +3,7 @@
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from dgen.syrupy_ext import IRSnapshotExtension
+from dgen.testing.syrupy import IRSnapshotExtension
 
 
 @pytest.fixture
