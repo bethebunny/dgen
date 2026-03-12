@@ -14,7 +14,7 @@ from dgen.gen.ast import (
     TypeRef,
 )
 from dgen.gen.parser import parse
-from dgen.gen.python import generate
+from dgen.gen.python import generate, generate_pyi
 
 
 def test_generate_header():
@@ -723,3 +723,115 @@ def test_generate_op_no_constraints():
     )
     code = generate(f, dialect_name="test")
     assert "__constraints__" not in code
+
+
+# --- generate_pyi tests ---
+
+
+def test_generate_pyi_trait_uses_ellipsis():
+    """generate_pyi uses '...' instead of 'pass' for empty trait bodies."""
+    f = DgenFile(traits=[TraitDecl(name="HasSingleBlock")])
+    code = generate_pyi(f, dialect_name="test")
+    assert "class HasSingleBlock:" in code
+    assert "..." in code
+    assert "pass" not in code
+
+
+def test_generate_pyi_empty_type_uses_ellipsis():
+    """generate_pyi uses '...' instead of 'pass' for empty type bodies."""
+    f = DgenFile(types=[TypeDecl(name="Index", layout="Int")])
+    code = generate_pyi(f, dialect_name="test")
+    assert "class Index(Type):" in code
+    assert "pass" not in code
+
+
+def test_generate_pyi_property_stub():
+    """generate_pyi emits a one-line property stub instead of a full body."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="Ptr",
+                params=[ParamDecl(name="pointee", type=TypeRef("Type"))],
+                layout="Pointer",
+            )
+        ]
+    )
+    code = generate_pyi(f, dialect_name="test")
+    assert "def __layout__(self) -> layout.Layout: ..." in code
+    assert "return " not in code
+
+
+def test_generate_pyi_data_property_stub():
+    """generate_pyi emits a one-line property stub for parametric data layouts."""
+    f = DgenFile(
+        types=[
+            TypeDecl(
+                name="List",
+                params=[ParamDecl(name="element_type", type=TypeRef("Type"))],
+                data=[
+                    DataField(
+                        name="storage",
+                        type=TypeRef("FatPointer", [TypeRef("element_type")]),
+                    )
+                ],
+            )
+        ]
+    )
+    code = generate_pyi(f, dialect_name="test")
+    assert "def __layout__(self) -> layout.Layout: ..." in code
+    assert "return " not in code
+
+
+def test_generate_keeps_pass_by_default():
+    """generate() (non-stub) still uses 'pass', not '...'."""
+    f = DgenFile(traits=[TraitDecl(name="HasSingleBlock")])
+    code = generate(f, dialect_name="test")
+    assert "pass" in code
+    assert "..." not in code
+
+
+# --- import hook tests ---
+
+
+def test_import_hook_loads_builtin():
+    """The .dgen import hook makes dgen.dialects.builtin importable."""
+    import importlib
+
+    mod = importlib.import_module("dgen.dialects.builtin")
+    assert hasattr(mod, "Index")
+    assert hasattr(mod, "F64")
+    assert hasattr(mod, "builtin")
+
+
+def test_import_hook_loads_toy():
+    """The .dgen import hook resolves cross-file imports (affine in toy)."""
+    import importlib
+
+    mod = importlib.import_module("toy.dialects.toy")
+    assert hasattr(mod, "Tensor")
+    assert hasattr(mod, "toy")
+
+
+def test_import_hook_import_map_auto_resolved():
+    """DgenLoader stores the resolved import_map after loading."""
+    import sys
+
+
+    spec = sys.modules["dgen.dialects.builtin"].__spec__
+    from dgen.gen.importer import DgenLoader
+
+    assert isinstance(spec.loader, DgenLoader)
+    # builtin.dgen has no cross-file imports so import_map should be empty
+    assert spec.loader.import_map == {}
+
+
+def test_import_hook_toy_import_map_has_affine():
+    """Loader for toy.dgen resolves 'affine' → 'toy.dialects.affine'."""
+    import sys
+
+
+    spec = sys.modules["toy.dialects.toy"].__spec__
+    from dgen.gen.importer import DgenLoader
+
+    assert isinstance(spec.loader, DgenLoader)
+    assert spec.loader.import_map.get("affine") == "toy.dialects.affine"

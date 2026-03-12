@@ -1,37 +1,38 @@
 """CLI: python -m dgen.gen path/to/dialect.dgen"""
 
+from __future__ import annotations
+
+import importlib
 from pathlib import Path
 
 import click
 
-from dgen.gen.parser import parse
-from dgen.gen.python import generate
-
-
-def _parse_import(value: str) -> tuple[str, str]:
-    key, _, path = value.partition("=")
-    if not path:
-        raise click.BadParameter(f"expected module=python.path, got {value!r}")
-    return key, path
+from dgen.gen.importer import DgenLoader, _path_to_module, install
+from dgen.gen.python import generate_pyi
 
 
 @click.command()
 @click.argument("dgen_file", type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "--import",
-    "-I",
-    "imports",
-    multiple=True,
-    help="Map a .dgen module to a Python path: builtin=dgen.dialects.builtin",
-)
-def main(dgen_file: Path, imports: tuple[str, ...]) -> None:
-    """Generate Python dialect code from a .dgen file."""
-    import_map = dict(_parse_import(i) for i in imports)
-    source = dgen_file.read_text()
-    ast = parse(source)
-    dialect_name = dgen_file.stem
-    code = generate(ast, dialect_name=dialect_name, import_map=import_map)
-    click.echo(code)
+def main(dgen_file: Path) -> None:
+    """Generate a .pyi type stub for a .dgen dialect file."""
+    install()
+    module_name = _path_to_module(dgen_file.resolve())
+    if module_name is None:
+        raise click.ClickException(
+            f"Cannot determine module name for {dgen_file}. "
+            "Ensure the file is reachable via a sys.path entry "
+            "(run from the project root)."
+        )
+    module = importlib.import_module(module_name)
+    loader = module.__spec__.loader
+    assert isinstance(loader, DgenLoader)
+    assert loader.ast is not None
+    click.echo(
+        generate_pyi(
+            loader.ast, dialect_name=dgen_file.stem, import_map=loader.import_map
+        ),
+        nl=False,
+    )
 
 
 if __name__ == "__main__":
