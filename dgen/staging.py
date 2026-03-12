@@ -23,8 +23,8 @@ def _walk_inputs(op: dgen.Op) -> Iterator[dgen.Value]:
     for _, val in itertools.chain(op.parameters, op.operands):
         if isinstance(val, list):
             # TODO: remove this case once we push through Tuple types
-            yield from val
-        else:
+            yield from (v for v in val if isinstance(v, dgen.Value))
+        elif isinstance(val, dgen.Value):
             yield val
 
 
@@ -304,13 +304,15 @@ def _specialize_ifs(
     # Apply replacements to all inlined ops
     for op in new_ops:
         for fname, fval in op.operands:
-            mapped = replacements.get(fval)
-            if mapped is not None:
-                setattr(op, fname, mapped)
+            if isinstance(fval, dgen.Value):
+                mapped = replacements.get(fval)
+                if mapped is not None:
+                    setattr(op, fname, mapped)
         for fname, fval in op.parameters:
-            mapped = replacements.get(fval)
-            if mapped is not None:
-                setattr(op, fname, mapped)
+            if isinstance(fval, dgen.Value):
+                mapped = replacements.get(fval)
+                if mapped is not None:
+                    setattr(op, fname, mapped)
 
     func.body.ops = new_ops
 

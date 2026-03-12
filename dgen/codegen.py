@@ -13,7 +13,7 @@ from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 from dgen.module import ConstantOp, Module, PackOp, string_value
-from dgen.layout import FatPointer, Layout
+from dgen.layout import Layout
 from dgen.type import Constant, Memory, Value
 
 # ---------------------------------------------------------------------------
@@ -115,10 +115,9 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         mem = c.__constant__
         layout = mem.layout
         if _ctype(layout) is ctypes.c_void_p:
-            # Pointer-passed layout (Array, FatPointer): emit data buffer address
+            # Pointer-passed layout: emit struct address (FatPointer: [data_ptr, len])
             host_buffers.append(mem)
-            addr = mem.unpack()[0] if isinstance(layout, FatPointer) else mem.address
-            constants[c] = f"ptr inttoptr (i64 {addr} to ptr)"
+            constants[c] = f"ptr inttoptr (i64 {mem.address} to ptr)"
             types[c] = "ptr"
         else:
             lt = _llvm_type(layout)
@@ -208,7 +207,8 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 f" {typed_ref(op.index)}"
             )
         elif isinstance(op, llvm.LoadOp):
-            lines.append(f"  %{name} = load double, {typed_ref(op.ptr)}")
+            lt = _llvm_type(dgen.type.type_constant(op.type).__layout__)
+            lines.append(f"  %{name} = load {lt}, {typed_ref(op.ptr)}")
         elif isinstance(op, llvm.StoreOp):
             lines.append(f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}")
         elif isinstance(op, llvm.FaddOp):
@@ -305,9 +305,7 @@ class Executable:
         cfunc = self.ctype(func_ptr)
         param_ctypes = [_ctype(t.__layout__) for t in self.input_types]
         ctypes_args = [
-            (m.unpack()[0] if isinstance(t.__layout__, FatPointer) else m.address)
-            if ct is ctypes.c_void_p
-            else m.unpack()[0]
+            m.address if ct is ctypes.c_void_p else m.unpack()[0]
             for m, ct, t in zip(memories, param_ctypes, self.input_types)
         ]
         return cfunc(*ctypes_args)
