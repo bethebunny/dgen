@@ -5,107 +5,63 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
-from dgen import Block, Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64, HasSingleBlock
+from dgen import Block, Dialect, Op, Type, Value
+from dgen.dialects.builtin import F64, HasSingleBlock, Index, Nil
 
 affine = Dialect("affine")
 
-@affine.type("Shape")
 @dataclass(frozen=True)
 class Shape(Type):
     rank: Value[Index]
-    __params__ = (("rank", Index),)
 
-    @property
-    def __layout__(self) -> layout.Layout: ...
-
-@affine.type("MemRef")
 @dataclass(frozen=True)
 class MemRef(Type):
-    __layout__ = layout.Pointer(Nil.__layout__)
     shape: Value[Shape]
     dtype: Value[dgen.TypeType] = F64()
-    __params__ = (
-        ("shape", Shape),
-        ("dtype", dgen.TypeType),
-    )
 
-@affine.op("alloc")
 @dataclass(eq=False, kw_only=True)
 class AllocOp(Op):
     shape: Value
     type: Type
-    __operands__ = (("shape", Shape),)
 
-@affine.op("dealloc")
 @dataclass(eq=False, kw_only=True)
 class DeallocOp(Op):
     input: Value
     type: Type = Nil()
-    __operands__ = (("input", MemRef),)
 
-@affine.op("load")
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
     memref: Value
     indices: Value
     type: Type = F64()
-    __operands__ = (
-        ("memref", MemRef),
-        ("indices", Index),
-    )
 
-@affine.op("store")
 @dataclass(eq=False, kw_only=True)
 class StoreOp(Op):
     value: Value
     memref: Value
     indices: Value
     type: Type = Nil()
-    __operands__ = (
-        ("value", F64),
-        ("memref", MemRef),
-        ("indices", Index),
-    )
 
-@affine.op("mul_f")
 @dataclass(eq=False, kw_only=True)
 class MulFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = F64()
-    __operands__ = (
-        ("lhs", F64),
-        ("rhs", F64),
-    )
 
-@affine.op("add_f")
 @dataclass(eq=False, kw_only=True)
 class AddFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = F64()
-    __operands__ = (
-        ("lhs", F64),
-        ("rhs", F64),
-    )
 
-@affine.op("print_memref")
 @dataclass(eq=False, kw_only=True)
 class PrintMemrefOp(Op):
     input: Value
     type: Type = Nil()
-    __operands__ = (("input", MemRef),)
 
-@affine.op("for")
 @dataclass(eq=False, kw_only=True)
 class ForOp(HasSingleBlock, Op):
     lo: Value[Index]
     hi: Value[Index]
     type: Type = Nil()
     body: Block
-    __params__ = (
-        ("lo", Index),
-        ("hi", Index),
-    )
-    __blocks__ = ("body",)

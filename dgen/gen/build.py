@@ -66,9 +66,21 @@ def _is_type_kinded(param_type: type[Type]) -> bool:
 
 
 def _is_list_of_types(param_type: type[Type]) -> bool:
-    """True when *param_type* holds a list of types (e.g. the builtin List<Type>)."""
-    params: tuple = getattr(param_type, "__params__", ())
-    return any(_is_type_kinded(pt) for _, pt in params)
+    """True when *param_type* holds a list of types (e.g. the builtin List<Type>).
+
+    A type qualifies when it has a type-kinded param AND its layout is
+    FatPointer-based (i.e. it stores elements as a variable-length array).
+    This distinguishes List<Type> (FatPointer layout) from Function<Type>
+    (Void layout).
+    """
+    params: tuple[tuple[str, type[Type]], ...] = getattr(param_type, "__params__", ())
+    if not any(_is_type_kinded(pt) for _, pt in params):
+        return False
+    try:
+        kwargs = {name: TypeType() for name, pt in params if _is_type_kinded(pt)}
+        return isinstance(param_type(**kwargs).__layout__, layout.FatPointer)
+    except Exception:
+        return False
 
 
 def _ref_has_params(ref: TypeRef, param_names: set[str]) -> bool:
