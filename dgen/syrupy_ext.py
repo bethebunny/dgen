@@ -62,10 +62,6 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
     file_extension = "ir"
     _write_mode = WriteMode.TEXT
 
-    def __init__(self) -> None:
-        super().__init__()
-        self._current_module: Module | None = None
-
     def serialize(
         self,
         data: SerializableData,
@@ -77,7 +73,6 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
         assert isinstance(data, Module), (
             f"IRSnapshotExtension expects a Module, got {type(data).__name__}"
         )
-        self._current_module = data
         return "\n".join(data.asm)
 
     def matches(
@@ -86,19 +81,15 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
         serialized_data: SerializedData,
         snapshot_data: SerializedData,
     ) -> bool:
-        # _current_module is always set by serialize(), which syrupy calls
-        # immediately before matches() within the same assertion.
-        assert self._current_module is not None
+        assert isinstance(serialized_data, str)
         assert isinstance(snapshot_data, str)
+        actual = parse_module(serialized_data)
         expected = parse_module(snapshot_data)
-        return graph_equivalent(self._current_module, expected)
+        return graph_equivalent(actual, expected)
 
     def diff_lines(
         self, serialized_data: SerializedData, snapshot_data: SerializedData
     ) -> Iterator[str]:
-        # diff_lines is called during failure reporting, after the assertion
-        # has completed, so _current_module may be stale. Re-parse from the
-        # serialized string, which is stored by syrupy in the assertion result.
         assert isinstance(serialized_data, str)
         assert isinstance(snapshot_data, str)
         actual = parse_module(serialized_data)
