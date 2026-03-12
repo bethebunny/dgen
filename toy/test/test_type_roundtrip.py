@@ -129,7 +129,7 @@ def _identity_exe(ty):
     arg = BlockArgument(name="v0", type=ty)
     func = FunctionOp(
         name="main",
-        body=Block(ops=[builtin.ReturnOp(value=arg)], args=[arg]),
+        body=Block(result=builtin.ReturnOp(value=arg), args=[arg]),
         result=ty,
     )
     return compile_module(Module(functions=[func]))
@@ -315,7 +315,7 @@ def test_list_constant_jit_return():
     ret = builtin.ReturnOp(value=const)
     func = FunctionOp(
         name="main",
-        body=Block(ops=[const, ret], args=[]),
+        body=Block(result=ret, args=[]),
         result=list_type,
     )
     exe = compile_module(Module(functions=[func]))
@@ -531,7 +531,7 @@ def test_deepcopy_module_with_list_constant():
     ret = builtin.ReturnOp(value=const)
     func = FunctionOp(
         name="main",
-        body=Block(ops=[const, ret], args=[]),
+        body=Block(result=ret, args=[]),
         result=list_type,
     )
     module = Module(functions=[func])

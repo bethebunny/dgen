@@ -116,7 +116,7 @@ def _jit_evaluate(
     ops = list(subgraph) + [builtin.ReturnOp(value=target)]
     func = FunctionOp(
         name="main",
-        body=dgen.Block(ops=ops, args=list(block_args)),
+        body=dgen.Block(result=ops[-1], args=list(block_args)),
         result=target.type,
     )
     module = Module(functions=[func])
@@ -148,16 +148,21 @@ def _resolve_comptime_field(
         block_args=block_args,
         args=args,
     )
-    if block_args:
-        subgraph_set = set(subgraph)
-        func.body.ops = [o for o in func.body.ops if o not in subgraph_set]
     const_type = value.type
     if isinstance(result, dict) and "tag" in result:
         const_type = dgen.type.TypeType()
     const_op = ConstantOp(value=result, type=const_type)
-    idx = func.body.ops.index(op)
-    func.body.ops.insert(idx, const_op)
     setattr(op, field_name, const_op)
+    # For stored-ops blocks (parser-created), also insert const_op into the list
+    # so it's visible to subsequent codegen and analysis passes.
+    stored = func.body._stored_ops
+    if stored is not None:
+        if block_args:
+            subgraph_ids = {id(o) for o in subgraph}
+            stored = [o for o in stored if id(o) not in subgraph_ids]
+        idx = stored.index(op)
+        stored.insert(idx, const_op)
+        func.body._stored_ops = stored
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +319,9 @@ def _specialize_ifs(
                 if mapped is not None:
                     setattr(op, fname, mapped)
 
-    func.body.ops = new_ops
+    func.body.result = new_ops[-1]
+    if func.body._stored_ops is not None:
+        func.body._stored_ops = new_ops
 
 
 def _has_nested_boundaries(func: FunctionOp) -> bool:

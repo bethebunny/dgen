@@ -61,7 +61,7 @@ class Lowering:
         return builtin.FunctionOp(
             name=f.proto.name,
             result=result,
-            body=dgen.Block(ops=ops, args=args),
+            body=dgen.Block(result=ops[-1], args=args),
         )
 
     def _lower_statement(self, stmt: Statement) -> Iterator[dgen.Op]:

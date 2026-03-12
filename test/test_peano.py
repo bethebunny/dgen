@@ -148,7 +148,7 @@ def _lower_peano_ops(
         else:
             # Descend into blocks (e.g., if/else bodies)
             for block_name, block in op.blocks:
-                block.ops = _lower_peano_ops(block.ops, replacements)
+                block.result = _lower_peano_ops(block.ops, replacements)[-1]
             new_ops.append(op)
 
     return new_ops
@@ -157,7 +157,10 @@ def _lower_peano_ops(
 def _lower_peano_func(func: builtin.FunctionOp) -> None:
     """Lower peano ops in a single function."""
     replacements: dict[Value, Value] = {}
-    func.body.ops = _lower_peano_ops(func.body.ops, replacements)
+    new_ops = _lower_peano_ops(func.body.ops, replacements)
+    func.body.result = new_ops[-1]
+    if func.body._stored_ops is not None:
+        func.body._stored_ops = new_ops
 
 
 def lower_peano(module: Module) -> Module:

@@ -136,7 +136,7 @@ def test_full_module():
     mt_func = builtin.FunctionOp(
         name="multiply_transpose",
         result=inferred(),
-        body=dgen.Block(ops=[t0, t1, m0, ret_mt], args=[mt_arg_a, mt_arg_b]),
+        body=dgen.Block(result=ret_mt, args=[mt_arg_a, mt_arg_b]),
     )
 
     # Build main function
