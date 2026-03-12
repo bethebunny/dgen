@@ -105,46 +105,44 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         tracker.track_name(arg)
     tracker.register(f.body.ops)
 
-    # Pre-scan: build constants and types maps (keyed by id)
-    constants: dict[int, str] = {}  # id(op) -> typed literal
-    types: dict[int, str] = {}  # id(op) -> LLVM type
+    # Pre-scan: build constants and types maps
+    constants: dict[dgen.Value, str] = {}
+    types: dict[dgen.Value, str] = {}
 
     def _register_constant(c: Constant) -> None:
-        vid = id(c)
-        if vid in constants:
+        if c in constants:
             return
         mem = c.__constant__
         layout = mem.layout
         if _ctype(layout) is ctypes.c_void_p:
             # Pointer-passed layout (Array, FatPointer): emit buffer address
             host_buffers.append(mem)
-            constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
-            types[vid] = "ptr"
+            constants[c] = f"ptr inttoptr (i64 {mem.address} to ptr)"
+            types[c] = "ptr"
         else:
             lt = _llvm_type(layout)
             raw = mem.unpack()[0]
             val_str = format_float(raw) if isinstance(raw, float) else str(raw)
-            constants[vid] = f"{lt} {val_str}"
-            types[vid] = lt
+            constants[c] = f"{lt} {val_str}"
+            types[c] = lt
 
     # Register block arg types
     for arg in f.body.args:
-        types[id(arg)] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
+        types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
     for op in f.body.ops:
-        vid = id(op)
         if isinstance(op, ConstantOp):
             _register_constant(op)
         elif isinstance(op, PackOp):
             continue
         elif isinstance(op, builtin.ChainOp):
             # Chain is transparent: alias to lhs at runtime
-            types[vid] = types.get(id(op.lhs), "i64")
+            types[op] = types.get(op.lhs, "i64")
         elif isinstance(op, llvm.PhiOp):
-            types[vid] = types.get(id(op.a), "i64")
+            types[op] = types.get(op.a, "i64")
         else:
             if (rt := _result_type_str(op.type)) is not None:
-                types[vid] = rt
+                types[op] = rt
             # Register inline Constant operands (e.g. literal args)
             for operand_name, _ in op.__operands__:
                 operand = getattr(op, operand_name)
@@ -154,28 +152,24 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     # Resolve chain aliases: ChainOp is transparent, maps to its lhs
     for op in f.body.ops:
         if isinstance(op, builtin.ChainOp):
-            vid = id(op)
-            lhs_id = id(op.lhs)
-            if lhs_id in constants:
-                constants[vid] = constants[lhs_id]
+            if op.lhs in constants:
+                constants[op] = constants[op.lhs]
             else:
                 # Point to same slot as lhs
                 lhs_name = tracker.track_name(op.lhs)
-                lhs_ty = types.get(lhs_id, "i64")
-                constants[vid] = f"{lhs_ty} %{lhs_name}"
+                lhs_ty = types.get(op.lhs, "i64")
+                constants[op] = f"{lhs_ty} %{lhs_name}"
 
     def typed_ref(val: dgen.Value) -> str:
         """'type value' — e.g. 'double 1.0' or 'ptr %v3'."""
-        vid = id(val)
-        if vid in constants:
-            return constants[vid]
-        return f"{types.get(vid, 'i64')} %{tracker.track_name(val)}"
+        if val in constants:
+            return constants[val]
+        return f"{types.get(val, 'i64')} %{tracker.track_name(val)}"
 
     def bare_ref(val: dgen.Value) -> str:
         """Just the value — e.g. '1.0' or '%v3'."""
-        vid = id(val)
-        if vid in constants:
-            return constants[vid].split(" ", 1)[1]
+        if val in constants:
+            return constants[val].split(" ", 1)[1]
         return f"%{tracker.track_name(val)}"
 
     assert f.name is not None
@@ -190,7 +184,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     params = []
     for arg in f.body.args:
         name = tracker.track_name(arg)
-        ty = types.get(id(arg), "i64")
+        ty = types.get(arg, "i64")
         params.append(f"{ty} %{name}")
     param_str = ", ".join(params)
     lines = [f"define {llvm_ret} @{func_name}({param_str}) {{", "entry:"]
@@ -247,7 +241,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 f"  br i1 %{tracker.track_name(op.cond)}, label %{string_value(op.true_dest)}, label %{string_value(op.false_dest)}"
             )
         elif isinstance(op, llvm.PhiOp):
-            ty = types.get(id(op), "i64")
+            ty = types.get(op, "i64")
             lines.append(
                 f"  %{name} = phi {ty} "
                 f"[ {bare_ref(op.a)}, %{string_value(op.label_a)} ], "
@@ -260,7 +254,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             if isinstance(op.type, builtin.Nil):
                 lines.append(f"  call void @{callee}({a})")
             else:
-                ret_ty = types[id(op)]
+                ret_ty = types[op]
                 lines.append(f"  %{name} = call {ret_ty} @{callee}({a})")
         elif isinstance(op, builtin.ReturnOp):
             if llvm_ret == "void":

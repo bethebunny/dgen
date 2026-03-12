@@ -63,8 +63,8 @@ def test_block_arg_fingerprint_by_position():
     arg_a = BlockArgument(type=builtin.Index())
     arg_b = BlockArgument(type=builtin.Index())
     fingerprinter = Fingerprinter()
-    fingerprinter._arg_positions[id(arg_a)] = 0
-    fingerprinter._arg_positions[id(arg_b)] = 0
+    fingerprinter._arg_positions[arg_a] = 0
+    fingerprinter._arg_positions[arg_b] = 0
     assert fingerprinter.fingerprint(arg_a) == fingerprinter.fingerprint(arg_b)
 
 
@@ -72,8 +72,8 @@ def test_block_arg_different_position_different_fingerprint():
     arg_a = BlockArgument(type=builtin.Index())
     arg_b = BlockArgument(type=builtin.Index())
     fingerprinter = Fingerprinter()
-    fingerprinter._arg_positions[id(arg_a)] = 0
-    fingerprinter._arg_positions[id(arg_b)] = 1
+    fingerprinter._arg_positions[arg_a] = 0
+    fingerprinter._arg_positions[arg_b] = 1
     assert fingerprinter.fingerprint(arg_a) != fingerprinter.fingerprint(arg_b)
 
 
@@ -87,7 +87,7 @@ def test_fingerprint_memoized():
     fingerprinter = Fingerprinter()
     fingerprinter.fingerprint(mul)
     # x is a shared dependency — fingerprinted once
-    assert id(x) in fingerprinter._cache
+    assert x in fingerprinter._cache
 
 
 def test_graph_equivalent_same_ir():

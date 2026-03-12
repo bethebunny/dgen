@@ -42,7 +42,7 @@ class SlotTracker:
     """Assigns sequential %0, %1, ... names to unnamed Values."""
 
     def __init__(self) -> None:
-        self._slots: dict[int, str] = {}  # id(value) -> name
+        self._slots: dict[Value, str] = {}
         self._counter = 0
 
     def register(self, ops: Sequence[Op]) -> None:
@@ -57,12 +57,11 @@ class SlotTracker:
                 self.register(block.ops)
 
     def __getitem__(self, value: Value) -> str:
-        return self._slots[id(value)]
+        return self._slots[value]
 
     def track_name(self, value: Value) -> str:
-        vid = id(value)
-        if vid in self._slots:
-            return self._slots[vid]
+        if value in self._slots:
+            return self._slots[value]
         if value.name is not None:
             name = value.name
             # If it's a numeric name, advance counter past it
@@ -71,7 +70,7 @@ class SlotTracker:
         else:
             name = str(self._counter)
             self._counter += 1
-        self._slots[vid] = name
+        self._slots[value] = name
         return name
 
 

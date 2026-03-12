@@ -97,7 +97,7 @@ class ValueOp(Op):
 
 
 def _lower_peano_ops(
-    ops: list[dgen.Op], replacements: dict[int, Value]
+    ops: list[dgen.Op], replacements: dict[Value, Value]
 ) -> list[dgen.Op]:
     """Lower peano ops in a list, descending into blocks."""
     new_ops: list[dgen.Op] = []
@@ -108,9 +108,9 @@ def _lower_peano_ops(
             print(f"  lower: peano.zero -> {type_asm(z)}")
             const = ConstantOp(value=z.__constant__.to_json(), type=TypeType())
             new_ops.append(const)
-            replacements[id(op)] = const
+            replacements[op] = const
         elif isinstance(op, SuccessorOp):
-            pred = replacements.get(id(op.pred), op.pred)
+            pred = replacements.get(op.pred, op.pred)
             pred_type = type_constant(pred)
             succ = Successor(pred=pred_type)
             print(
@@ -118,21 +118,21 @@ def _lower_peano_ops(
             )
             const = ConstantOp(value=succ.__constant__.to_json(), type=TypeType())
             new_ops.append(const)
-            replacements[id(op)] = const
+            replacements[op] = const
         elif isinstance(op, ValueOp):
-            nat = replacements.get(id(op.nat), op.nat)
+            nat = replacements.get(op.nat, op.nat)
             nat_type = type_constant(nat)
             n = count_nat(nat_type)
             print(f"  lower: peano.value<{type_asm(nat_type)}> -> {n}")
             const = ConstantOp(value=n, type=Index())
             new_ops.append(const)
-            replacements[id(op)] = const
+            replacements[op] = const
         elif isinstance(op, builtin.ReturnOp):
-            val = replacements.get(id(op.value), op.value)
+            val = replacements.get(op.value, op.value)
             new_ops.append(builtin.ReturnOp(value=val, type=op.type))
         elif isinstance(op, builtin.CallOp):
             if isinstance(op.args, PackOp):
-                new_values = [replacements.get(id(a), a) for a in op.args.values]
+                new_values = [replacements.get(a, a) for a in op.args.values]
                 new_pack = PackOp(values=new_values, type=op.args.type)
                 new_ops.append(new_pack)
                 new_call = builtin.CallOp(
@@ -142,7 +142,7 @@ def _lower_peano_ops(
                     name=op.name,
                 )
                 new_ops.append(new_call)
-                replacements[id(op)] = new_call
+                replacements[op] = new_call
             else:
                 new_ops.append(op)
         else:
@@ -156,7 +156,7 @@ def _lower_peano_ops(
 
 def _lower_peano_func(func: builtin.FunctionOp) -> None:
     """Lower peano ops in a single function."""
-    replacements: dict[int, Value] = {}
+    replacements: dict[Value, Value] = {}
     func.body.ops = _lower_peano_ops(func.body.ops, replacements)
 
 
