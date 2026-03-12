@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64
+from dgen.dialects.builtin import Index, Nil, F64, String, FatPointer
 import toy.dialects.affine as affine
 
 toy = Dialect("toy")
@@ -17,10 +17,7 @@ toy = Dialect("toy")
 class Tensor(Type):
     shape: Value[affine.Shape]
     dtype: Value[dgen.TypeType] = F64()
-    __params__ = (
-        ("shape", affine.Shape),
-        ("dtype", dgen.TypeType),
-    )
+    __params__ = (("shape", affine.Shape), ("dtype", dgen.TypeType),)
 
     @property
     def __layout__(self) -> layout.Layout:
@@ -57,10 +54,7 @@ class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (
-        ("lhs", Tensor),
-        ("rhs", Tensor),
-    )
+    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
 
 
 @toy.op("add")
@@ -69,10 +63,7 @@ class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (
-        ("lhs", Tensor),
-        ("rhs", Tensor),
-    )
+    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
 
 
 @toy.op("concat")
@@ -83,10 +74,7 @@ class ConcatOp(Op):
     rhs: Value
     type: Type
     __params__ = (("axis", Index),)
-    __operands__ = (
-        ("lhs", Tensor),
-        ("rhs", Tensor),
-    )
+    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
     __constraints__ = ("axis < lhs.shape.rank",)
 
 
@@ -125,3 +113,5 @@ class PrintOp(Op):
     input: Value
     type: Type = Nil()
     __operands__ = (("input", Tensor),)
+
+
