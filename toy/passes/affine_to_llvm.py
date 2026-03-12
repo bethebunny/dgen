@@ -30,6 +30,7 @@ class AffineToLLVMLowering:
         self.alloc_shapes: dict[dgen.Value, list[int]] = {}  # llvm alloca -> shape
         self.alloc_sizes: dict[dgen.Value, int] = {}  # llvm alloca -> total size
         self.current_label = "entry"
+        self._seen: set[int] = set()  # op ids already processed
 
     def lower_module(self, m: Module) -> Module:
         functions = [self.lower_function(f) for f in m.functions]
@@ -41,6 +42,7 @@ class AffineToLLVMLowering:
         self.alloc_shapes = {}
         self.alloc_sizes = {}
         self.current_label = "entry"
+        self._seen = set()
         # Register block args (function parameters)
         prologue: list[dgen.Op] = []
         for arg in f.body.args:
@@ -68,6 +70,9 @@ class AffineToLLVMLowering:
         return self.value_map.get(old, old)
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
+        if id(op) in self._seen:
+            return
+        self._seen.add(id(op))
         if isinstance(op, affine.AllocOp):
             yield from self._lower_alloc(op)
         elif isinstance(op, affine.DeallocOp):
@@ -102,15 +107,12 @@ class AffineToLLVMLowering:
         elif isinstance(op, affine.PrintMemrefOp):
             yield from self._lower_print(op)
         elif isinstance(op, builtin.ChainOp):
+            # rhs side-effects were already emitted individually; resolve to lhs.
             new_lhs = self._map(op.lhs)
-            new_rhs = self._map(op.rhs)
-            new_op = builtin.ChainOp(lhs=new_lhs, rhs=new_rhs, type=op.type)
-            yield new_op
-            self.value_map[op] = new_op
-            # Propagate alloc metadata through chains
+            self.value_map[op] = new_lhs
             if new_lhs in self.alloc_shapes:
-                self.alloc_shapes[new_op] = self.alloc_shapes[new_lhs]
-                self.alloc_sizes[new_op] = self.alloc_sizes[new_lhs]
+                self.alloc_shapes[op] = self.alloc_shapes[new_lhs]
+                self.alloc_sizes[op] = self.alloc_sizes[new_lhs]
         elif isinstance(op, builtin.AddIndexOp):
             llvm_op = llvm.AddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
@@ -195,9 +197,15 @@ class AffineToLLVMLowering:
         body_label = f"loop_body{loop_id}"
         exit_label = f"loop_exit{loop_id}"
 
-        # Init: constant lo, br header
-        init_op = ConstantOp(value=op.lo.__constant__.to_json(), type=builtin.Index())
-        yield init_op
+        # Init: lo constant (reuse already-emitted constant if available)
+        init_op = self._map(op.lo)
+        if init_op is op.lo:
+            init_op = ConstantOp(
+                value=op.lo.__constant__.to_json(), type=builtin.Index()
+            )
+            yield init_op
+            self.value_map[op.lo] = init_op
+            self._seen.add(id(op.lo))
         prev_label = self.current_label
         yield llvm.BrOp(dest=String().constant(header_label))
 
@@ -217,9 +225,13 @@ class AffineToLLVMLowering:
         # Map the affine loop variable to the LLVM phi node
         self.value_map[op.body.args[0]] = phi_op
 
-        # Compare and branch
-        hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.Index())
-        yield hi_op
+        # Compare and branch: hi constant (reuse already-emitted if available)
+        hi_op = self._map(op.hi)
+        if hi_op is op.hi:
+            hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.Index())
+            yield hi_op
+            self.value_map[op.hi] = hi_op
+            self._seen.add(id(op.hi))
         cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=phi_op, rhs=hi_op)
         yield cmp_op
         yield llvm.CondBrOp(
