@@ -3,8 +3,7 @@
 Install with ``install()`` (called automatically when ``dgen`` is imported) to
 make ``.dgen`` files importable as regular Python modules.  The hook searches
 for ``<name>.dgen`` alongside the normal Python path entries and, when found,
-generates executable Python in-memory via :func:`dgen.gen.python.generate` and
-executes it into the module's namespace.
+builds the dialect module in-memory via :func:`dgen.gen.build.build`.
 """
 
 from __future__ import annotations
@@ -16,8 +15,8 @@ from pathlib import Path
 from types import ModuleType
 
 from dgen.gen.ast import DgenFile
+from dgen.gen.build import build
 from dgen.gen.parser import parse
-from dgen.gen.python import generate
 
 # Hardcoded fallback: if relative discovery fails, try this mapping.
 _DEFAULT_MAP: dict[str, str] = {
@@ -82,13 +81,12 @@ class DgenLoader(importlib.abc.Loader):
         source = self.path.read_text()
         self.ast = parse(source)
         self.import_map = _resolve_imports(self.path, self.ast)
-        python_source = generate(
+        build(
             self.ast,
             dialect_name=self.path.stem,
             import_map=self.import_map,
+            module=module,
         )
-        code = compile(python_source, str(self.path), "exec")
-        exec(code, module.__dict__)  # noqa: S102
 
 
 class DgenFinder(importlib.abc.MetaPathFinder):

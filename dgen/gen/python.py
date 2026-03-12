@@ -1,4 +1,4 @@
-"""Python code generator for .dgen dialect specifications."""
+"""Python .pyi stub generator for .dgen dialect specifications."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from dgen.gen.ast import (
     TypeRef,
 )
 
-# Builtin type → layout expression. Leaf entries end in ")"; constructors don't.
-# Used by both the `layout` keyword handler and `_layout_expr` for data fields.
+# Builtin type → layout expression for static __layout__ attributes.
+# Leaf entries end in ")"; constructor entries don't.
 _LAYOUTS: dict[str, str] = {
     "Int": "layout.Int()",
     "Float64": "layout.Float64()",
@@ -37,7 +37,6 @@ def _type_expr(
 ) -> str:
     """Resolve a TypeRef to a Python construction expression for defaults."""
     if not ref.args:
-        # Qualified names (e.g. affine.Shape) are cross-module; can't default-construct
         if "." in ref.name:
             raise ValueError(f"cannot default-construct cross-module type {ref.name}")
         td = type_map.get(ref.name)
@@ -58,13 +57,6 @@ def _type_expr(
 
 
 def _layout_expr(ref: TypeRef, param_map: dict[str, ParamDecl]) -> str:
-    """Resolve a data-field type reference to a layout expression.
-
-    - Parameter (Type kind) → self.name.__layout__
-    - Parameter (value kind) → self.name.__constant__.to_json()
-    - Builtin constructor type (Array, Pointer, FatPointer) → layout.X(recurse args)
-    - Any other type name → Name.__layout__
-    """
     if ref.name in param_map:
         p = param_map[ref.name]
         if p.type.name == "Type":
@@ -74,7 +66,6 @@ def _layout_expr(ref: TypeRef, param_map: dict[str, ParamDecl]) -> str:
     if entry is not None and not entry.endswith(")"):
         args = ", ".join(_layout_expr(a, param_map) for a in ref.args)
         return f"{entry}({args})"
-    # Type name — defer to its __layout__
     return f"{ref.name}.__layout__"
 
 
@@ -85,16 +76,10 @@ def _ref_has_params(ref: TypeRef, param_map: dict[str, ParamDecl]) -> bool:
 
 
 def _resolve_param_type_ref(ref: TypeRef) -> str:
-    """For __params__: Type -> dgen.TypeType (type-kinded params hold type values)."""
     if ref.name == "Type":
         return "dgen.TypeType"
     if ref.name == "List":
         return "List"
-    return ref.name
-
-
-def _resolve_operand_type_ref(ref: TypeRef) -> str:
-    """For __operands__: Type stays Type (operands are values of any type)."""
     return ref.name
 
 
@@ -115,7 +100,6 @@ def _generate(
     ast: DgenFile,
     dialect_name: str,
     import_map: dict[str, str],
-    as_stub: bool = False,
 ) -> Iterator[str]:
     type_map: dict[str, TypeDecl] = {td.name: td for td in ast.types}
     known_names: set[str] = set(type_map)
@@ -142,7 +126,6 @@ def _generate(
     yield "import dgen"
     yield f"from dgen import {', '.join(sorted(dgen_names))}"
 
-    # builtin always maps to dgen.dialects.builtin
     effective_map = {"builtin": "dgen.dialects.builtin", **import_map}
 
     for imp in ast.imports:
@@ -168,7 +151,7 @@ def _generate(
                 else:
                     yield f"    {sf.name}: {_resolve_param_type_ref(sf.type)}"
         else:
-            yield "    ..." if as_stub else "    pass"
+            yield "    ..."
         yield ""
 
     # Types
@@ -226,59 +209,10 @@ def _generate(
             ]
             body.append(f"    __params__ = ({', '.join(parts)},)")
 
-        if is_parametric_layout:
-            assert td.layout is not None
-            entry = _LAYOUTS[td.layout]
-            # Special case: Record layout with a List<Type> param builds
-            # fields from the list elements.
-            list_type_param = next(
-                (
-                    p
-                    for p in td.params
-                    if p.type.name == "List"
-                    and p.type.args
-                    and p.type.args[0].name == "Type"
-                ),
-                None,
-            )
+        if is_parametric_layout or (td.data and is_parametric):
             body.append("")
             body.append("    @property")
-            if as_stub:
-                body.append("    def __layout__(self) -> layout.Layout: ...")
-            else:
-                body.append("    def __layout__(self) -> layout.Layout:")
-                if td.layout == "Record" and list_type_param is not None:
-                    pname = list_type_param.name
-                    body.append(
-                        f"        return layout.Record([(str(i), dgen.type.type_constant(t).__layout__) for i, t in enumerate(self.{pname})])"
-                    )
-                else:
-                    args = []
-                    for p in td.params:
-                        if p.type.name == "Type":
-                            args.append(
-                                f"dgen.type.type_constant(self.{p.name}).__layout__"
-                            )
-                        else:
-                            args.append(f"self.{p.name}.__constant__.to_json()")
-                    body.append(f"        return {entry}({', '.join(args)})")
-        elif td.data and is_parametric:
-            body.append("")
-            body.append("    @property")
-            if as_stub:
-                body.append("    def __layout__(self) -> layout.Layout: ...")
-            else:
-                body.append("    def __layout__(self) -> layout.Layout:")
-                if len(td.data) == 1:
-                    body.append(
-                        f"        return {_layout_expr(td.data[0].type, param_map)}"
-                    )
-                else:
-                    fields = ", ".join(
-                        f'("{df.name}", {_layout_expr(df.type, param_map)})'
-                        for df in td.data
-                    )
-                    body.append(f"        return layout.Record([{fields}])")
+            body.append("    def __layout__(self) -> layout.Layout: ...")
 
         for sf in td.statics:
             if sf.default:
@@ -287,7 +221,7 @@ def _generate(
                 body.append(f"    {sf.name}: {_resolve_param_type_ref(sf.type)}")
 
         if not body:
-            body.append("    ..." if as_stub else "    pass")
+            body.append("    ...")
 
         yield from body
         yield ""
@@ -361,12 +295,8 @@ def _generate(
         yield ""
 
 
-def generate(
-    ast: DgenFile,
-    dialect_name: str,
-    import_map: dict[str, str] | None = None,
-) -> str:
-    return "\n".join(_generate(ast, dialect_name, import_map or {})) + "\n"
+def _resolve_operand_type_ref(ref: TypeRef) -> str:
+    return ref.name
 
 
 def generate_pyi(
@@ -375,6 +305,4 @@ def generate_pyi(
     import_map: dict[str, str] | None = None,
 ) -> str:
     """Generate a ``.pyi`` type stub for a parsed .dgen file."""
-    return (
-        "\n".join(_generate(ast, dialect_name, import_map or {}, as_stub=True)) + "\n"
-    )
+    return "\n".join(_generate(ast, dialect_name, import_map or {})) + "\n"
