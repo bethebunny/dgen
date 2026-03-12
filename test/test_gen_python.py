@@ -14,11 +14,11 @@ from dgen.gen.ast import (
     TypeRef,
 )
 from dgen.gen.parser import parse
-from dgen.gen.python import generate, generate_pyi
+from dgen.gen.python import generate_pyi
 
 
 def test_generate_header():
-    code = generate(DgenFile(), dialect_name="test")
+    code = generate_pyi(DgenFile(), dialect_name="test")
     assert "# GENERATED" in code
     assert "from dgen import" in code
     assert 'Dialect("test")' in code
@@ -27,7 +27,7 @@ def test_generate_header():
 def test_generate_layout_keyword():
     """layout keyword generates static __layout__."""
     f = DgenFile(types=[TypeDecl(name="Index", layout="Int")])
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class Index(Type):" in code
     assert "__layout__ = layout.Int()" in code
 
@@ -35,7 +35,7 @@ def test_generate_layout_keyword():
 def test_generate_layout_keyword_pointer():
     """layout Pointer generates __layout__ = layout.Pointer(layout.Void())."""
     f = DgenFile(types=[TypeDecl(name="Ptr", layout="Pointer")])
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class Ptr(Type):" in code
     assert "__layout__ = layout.Pointer(layout.Void())" in code
 
@@ -47,7 +47,7 @@ def test_generate_data_field_type_ref():
             TypeDecl(name="Foo", data=[DataField(name="data", type=TypeRef("Index"))])
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "__layout__ = Index.__layout__" in code
 
 
@@ -63,7 +63,7 @@ def test_generate_type_no_data():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class Tensor(Type):" in code
     assert "__layout__" not in code
 
@@ -83,12 +83,11 @@ def test_generate_parameterized_type():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class Shape(Type):" in code
     assert "rank: Value[Index]" in code
     assert '__params__ = (("rank", Index),)' in code
-    assert "def __layout__(self)" in code
-    assert "layout.Array(Index.__layout__," in code
+    assert "def __layout__(self) -> layout.Layout: ..." in code
 
 
 def test_generate_type_fatpointer_data():
@@ -105,7 +104,7 @@ def test_generate_type_fatpointer_data():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class String(Type):" in code
     assert "__layout__ = layout.FatPointer(Byte.__layout__)" in code
 
@@ -126,10 +125,9 @@ def test_generate_type_fatpointer_param():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class List(Type):" in code
-    assert "def __layout__(self)" in code
-    assert "dgen.type.type_constant(self.element_type).__layout__" in code
+    assert "def __layout__(self) -> layout.Layout: ..." in code
 
 
 def test_generate_type_default_param():
@@ -144,7 +142,7 @@ def test_generate_type_default_param():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "shape: Value[Shape]" in code
     assert "dtype: Value[dgen.TypeType]" in code
     assert "F64()" in code
@@ -152,9 +150,9 @@ def test_generate_type_default_param():
 
 def test_generate_trait():
     f = DgenFile(traits=[TraitDecl(name="HasSingleBlock")])
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class HasSingleBlock:" in code
-    assert "pass" in code
+    assert "..." in code
 
 
 def test_generate_simple_op():
@@ -167,7 +165,7 @@ def test_generate_simple_op():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert '@test.op("transpose")' in code
     assert "@dataclass(eq=False, kw_only=True)" in code
     assert "class TransposeOp(Op):" in code
@@ -191,7 +189,7 @@ def test_generate_op_with_params():
             )
         ],
     )
-    code = generate(
+    code = generate_pyi(
         f,
         dialect_name="test",
         import_map={"builtin": "dgen.dialects.builtin"},
@@ -220,7 +218,7 @@ def test_generate_op_with_block():
             )
         ],
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class ForOp(HasSingleBlock, Op):" in code
     assert "body: Block" in code
     assert '__blocks__ = ("body",)' in code
@@ -241,7 +239,7 @@ def test_generate_op_return_default():
             )
         ],
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "type: Type = Nil()" in code
 
 
@@ -256,7 +254,7 @@ def test_generate_op_return_generic():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "type: Type\n" in code or "type: Type" in code
     assert "type: Type =" not in code
 
@@ -275,7 +273,7 @@ def test_generate_op_default_operand():
             )
         ],
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "value: Value | Nil = Nil()" in code
 
 
@@ -290,14 +288,14 @@ def test_generate_op_typed_operand():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "shape: Value" in code
     assert '__operands__ = (("shape", Shape),)' in code
 
 
 def test_generate_imports():
     f = DgenFile(imports=[ImportDecl(module="builtin", names=["Index", "Nil"])])
-    code = generate(
+    code = generate_pyi(
         f,
         dialect_name="test",
         import_map={"builtin": "dgen.dialects.builtin"},
@@ -324,7 +322,7 @@ def test_generate_imported_trait():
             )
         ],
     )
-    code = generate(
+    code = generate_pyi(
         f,
         dialect_name="test",
         import_map={"builtin": "dgen.dialects.builtin"},
@@ -348,7 +346,7 @@ def test_generate_valid_python():
             )
         ],
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     compile(code, "<test>", "exec")
 
 
@@ -365,7 +363,7 @@ def test_generate_nil_data_field():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class InferredShapeTensor(Type):" in code
     assert "__layout__ = Nil.__layout__" in code
 
@@ -394,7 +392,7 @@ def test_generate_pointer_data():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class MemRef(Type):" in code
     assert "__layout__ = layout.Pointer(Nil.__layout__)" in code
 
@@ -413,12 +411,8 @@ def test_generate_parametric_layout_keyword():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
-    assert "def __layout__(self)" in code
-    assert (
-        "layout.Array(dgen.type.type_constant(self.elem).__layout__, self.n.__constant__.to_json())"
-        in code
-    )
+    code = generate_pyi(f, dialect_name="test")
+    assert "def __layout__(self) -> layout.Layout: ..." in code
 
 
 def test_generate_parametric_layout_pointer():
@@ -432,9 +426,8 @@ def test_generate_parametric_layout_pointer():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
-    assert "def __layout__(self)" in code
-    assert "layout.Pointer(dgen.type.type_constant(self.pointee).__layout__)" in code
+    code = generate_pyi(f, dialect_name="test")
+    assert "def __layout__(self) -> layout.Layout: ..." in code
 
 
 def test_generate_untyped_operand():
@@ -448,7 +441,7 @@ def test_generate_untyped_operand():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "input: Value" in code
     assert "type: Type" in code
     assert '__operands__ = (("input", Type),)' in code
@@ -465,7 +458,7 @@ def test_generate_op_none_return_type():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "type: Type" in code
     assert "type: Type =" not in code
 
@@ -483,7 +476,7 @@ def test_generate_type_multiple_data_fields():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class Pair(Type):" in code
     assert "layout.Record" in code
 
@@ -491,7 +484,7 @@ def test_generate_type_multiple_data_fields():
 def test_generate_unknown_return_type_falls_back():
     """Return type referencing unknown type falls back to no default."""
     f = DgenFile(ops=[OpDecl(name="foo", return_type=TypeRef("Unknown"))])
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "type: Type" in code
     assert "type: Type =" not in code
 
@@ -513,7 +506,7 @@ def test_generate_op_parameterized_return_type():
             )
         ],
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "type: Type" in code
     assert "type: Type =" not in code
 
@@ -522,7 +515,7 @@ def test_generate_type_with_trait():
     f = DgenFile(
         types=[TypeDecl(name="F64", layout="Float64", traits=["FloatingPoint"])]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class F64(FloatingPoint, Type):" in code
 
 
@@ -539,7 +532,7 @@ def test_generate_op_with_has_trait():
             )
         ],
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class ForOp(HasSingleBlock, Op):" in code
 
 
@@ -547,7 +540,7 @@ def test_generate_namespace_import():
     f = DgenFile(
         imports=[ImportDecl(module="affine", names=[])],
     )
-    code = generate(
+    code = generate_pyi(
         f,
         dialect_name="test",
         import_map={"affine": "toy.dialects.affine"},
@@ -568,7 +561,7 @@ def test_generate_trait_with_statics():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class DType:" in code
     assert "signed: Boolean" in code
     assert "bitwidth: Index" in code
@@ -587,7 +580,7 @@ def test_generate_trait_with_static_default():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class DType:" in code
     assert "bitwidth = 64" in code
 
@@ -605,7 +598,7 @@ def test_generate_type_with_static_default():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class F64(FloatingPoint, Type):" in code
     assert "bitwidth = 64" in code
 
@@ -621,7 +614,7 @@ def test_generate_type_with_static_no_default():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class F64(Type):" in code
     assert "signed: Boolean" in code
 
@@ -637,7 +630,7 @@ def test_generate_qualified_type_no_default():
             )
         ],
     )
-    code = generate(
+    code = generate_pyi(
         f,
         dialect_name="test",
         import_map={"affine": "toy.dialects.affine"},
@@ -659,7 +652,7 @@ def test_generate_type_multi_field_record():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "class Point(Type):" in code
     assert "layout.Record" in code
     assert '"x"' in code
@@ -682,10 +675,8 @@ def test_generate_type_multi_field_parametric_record():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
-    assert "def __layout__(self)" in code
-    assert "layout.Record" in code
-    assert "dgen.type.type_constant(self.t).__layout__" in code
+    code = generate_pyi(f, dialect_name="test")
+    assert "def __layout__(self) -> layout.Layout: ..." in code
 
 
 def test_generate_op_constraints():
@@ -704,7 +695,7 @@ def test_generate_op_constraints():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "__constraints__" in code
     assert '"$X ~= Tensor"' in code
     assert '"$Result ~= Tensor"' in code
@@ -721,7 +712,7 @@ def test_generate_op_no_constraints():
             )
         ]
     )
-    code = generate(f, dialect_name="test")
+    code = generate_pyi(f, dialect_name="test")
     assert "__constraints__" not in code
 
 
@@ -782,14 +773,6 @@ def test_generate_pyi_data_property_stub():
     assert "return " not in code
 
 
-def test_generate_keeps_pass_by_default():
-    """generate() (non-stub) still uses 'pass', not '...'."""
-    f = DgenFile(traits=[TraitDecl(name="HasSingleBlock")])
-    code = generate(f, dialect_name="test")
-    assert "pass" in code
-    assert "..." not in code
-
-
 # --- import hook tests ---
 
 
@@ -816,7 +799,6 @@ def test_import_hook_import_map_auto_resolved():
     """DgenLoader stores the resolved import_map after loading."""
     import sys
 
-
     spec = sys.modules["dgen.dialects.builtin"].__spec__
     from dgen.gen.importer import DgenLoader
 
@@ -828,7 +810,6 @@ def test_import_hook_import_map_auto_resolved():
 def test_import_hook_toy_import_map_has_affine():
     """Loader for toy.dgen resolves 'affine' → 'toy.dialects.affine'."""
     import sys
-
 
     spec = sys.modules["toy.dialects.toy"].__spec__
     from dgen.gen.importer import DgenLoader
