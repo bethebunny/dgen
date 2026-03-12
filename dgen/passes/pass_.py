@@ -67,7 +67,7 @@ class Rewriter:
 
     def __init__(self, block: dgen.Block) -> None:
         self._block = block
-        self._op_replacements: dict[int, dgen.Op] = {}
+        self._op_replacements: dict[dgen.Op, dgen.Op] = {}
 
     def replace_uses(self, old: dgen.Value, new: dgen.Value) -> None:
         """Eagerly replace all references to old with new in the block."""
@@ -82,7 +82,7 @@ class Rewriter:
     def replace_op(self, old: dgen.Op, new: dgen.Op) -> None:
         """Replace old op with new op: redirect all uses and swap in the block."""
         self.replace_uses(old, new)
-        self._op_replacements[id(old)] = new
+        self._op_replacements[old] = new
 
 
 # ---------------------------------------------------------------------------

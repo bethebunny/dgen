@@ -70,14 +70,16 @@ class ToyOptimize(Pass):
 # ===----------------------------------------------------------------------=== #
 
 
-def collect_uses(ops: Sequence[dgen.Op]) -> set[int]:
-    """Return set of id()s of Values referenced as parameters and operands."""
-    used: set[int] = set()
+def collect_uses(ops: Sequence[dgen.Op]) -> set[dgen.Value]:
+    """Return the set of Values referenced as parameters and operands."""
+    used: set[dgen.Value] = set()
     for op in ops:
         for _, v in op.parameters:
-            used.add(id(v))
+            if isinstance(v, dgen.Value):
+                used.add(v)
         for _, v in op.operands:
-            used.add(id(v))
+            if isinstance(v, dgen.Value):
+                used.add(v)
     return used
 
 
@@ -90,7 +92,7 @@ def eliminate_dead_code(func: builtin.FunctionOp) -> None:
         for i, op in enumerate(func.body.ops):
             if isinstance(op, (toy.PrintOp, builtin.ReturnOp)):
                 continue
-            if id(op) not in used:
+            if op not in used:
                 to_remove.append(i)
                 changed = True
         _remove_indices(func.body.ops, to_remove)

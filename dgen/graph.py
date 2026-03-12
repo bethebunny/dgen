@@ -12,14 +12,15 @@ def walk_ops(root: dgen.Value) -> list[dgen.Op]:
     - Does not descend into an op's nested blocks.
     - Dependencies appear before dependents.
     """
-    visited: set[int] = set()
+    visited: set[dgen.Value] = set()
     order: list[dgen.Op] = []
 
-    def visit(value: dgen.Value) -> None:
-        vid = id(value)
-        if vid in visited:
+    def visit(value: object) -> None:
+        if not isinstance(value, dgen.Value):
             return
-        visited.add(vid)
+        if value in visited:
+            return
+        visited.add(value)
 
         if not isinstance(value, dgen.Op):
             return

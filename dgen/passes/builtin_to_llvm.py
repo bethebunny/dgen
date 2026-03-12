@@ -17,7 +17,7 @@ from dgen.module import ConstantOp, Module, PackOp
 class BuiltinToLLVMLowering:
     def __init__(self) -> None:
         self.if_counter = 0
-        self.value_map: dict[int, dgen.Value] = {}  # id(old) -> new
+        self.value_map: dict[dgen.Value, dgen.Value] = {}
         self.current_label = "entry"
 
     def lower_module(self, m: Module) -> Module:
@@ -38,17 +38,17 @@ class BuiltinToLLVMLowering:
         )
 
     def _map(self, old: dgen.Value) -> dgen.Value:
-        return self.value_map.get(id(old), old)
+        return self.value_map.get(old, old)
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
         if isinstance(op, builtin.AddIndexOp):
             llvm_op = llvm.AddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
-            self.value_map[id(op)] = llvm_op
+            self.value_map[op] = llvm_op
         elif isinstance(op, builtin.SubtractIndexOp):
             llvm_op = llvm.SubOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
-            self.value_map[id(op)] = llvm_op
+            self.value_map[op] = llvm_op
         elif isinstance(op, builtin.EqualIndexOp):
             icmp_op = llvm.IcmpOp(
                 pred=String().constant("eq"),
@@ -58,7 +58,7 @@ class BuiltinToLLVMLowering:
             yield icmp_op
             zext_op = llvm.ZextOp(input=icmp_op)
             yield zext_op
-            self.value_map[id(op)] = zext_op
+            self.value_map[op] = zext_op
         elif isinstance(op, builtin.IfOp):
             yield from self._lower_if(op)
         elif isinstance(op, builtin.CallOp):
@@ -134,7 +134,7 @@ class BuiltinToLLVMLowering:
             label_b=String().constant(else_source_label),
         )
         yield phi_op
-        self.value_map[id(op)] = phi_op
+        self.value_map[op] = phi_op
 
     def _lower_call(self, op: builtin.CallOp) -> Iterator[dgen.Op]:
         callee_name = op.callee.name
@@ -152,7 +152,7 @@ class BuiltinToLLVMLowering:
             type=op.type,
         )
         yield llvm_call
-        self.value_map[id(op)] = llvm_call
+        self.value_map[op] = llvm_call
 
 
 def lower_builtin_to_llvm(m: Module) -> Module:

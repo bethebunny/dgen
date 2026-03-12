@@ -37,23 +37,22 @@ class Fingerprinter:
     """
 
     def __init__(self) -> None:
-        self._cache: dict[int, bytes] = {}
-        self._arg_positions: dict[int, int] = {}
+        self._cache: dict[Value, bytes] = {}
+        self._arg_positions: dict[BlockArgument, int] = {}
 
     def register_block(self, block: Block) -> None:
         """Register block argument positions and recurse into nested blocks."""
         for i, arg in enumerate(block.args):
-            self._arg_positions[id(arg)] = i
+            self._arg_positions[arg] = i
         for op in block.ops:
             for _, nested in op.blocks:
                 self.register_block(nested)
 
     def fingerprint(self, value: Value) -> bytes:
-        value_id = id(value)
-        if value_id in self._cache:
-            return self._cache[value_id]
+        if value in self._cache:
+            return self._cache[value]
         result = self._compute(value)
-        self._cache[value_id] = result
+        self._cache[value] = result
         return result
 
     def _fingerprint_type(self, type_value: Type) -> bytes:
@@ -78,7 +77,7 @@ class Fingerprinter:
     def _compute(self, value: Value) -> bytes:
         match value:
             case BlockArgument(type=arg_type):
-                pos = self._arg_positions[id(value)]
+                pos = self._arg_positions[value]
                 return _hash_parts(
                     b"arg", pos.to_bytes(4, "big"), self._fingerprint_type(arg_type)
                 )

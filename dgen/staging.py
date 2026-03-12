@@ -30,16 +30,16 @@ def _walk_inputs(op: dgen.Op) -> Iterator[dgen.Value]:
 
 def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
     """Backward-walk from target, return all needed ops in topological order."""
-    needed: set[int] = set()
+    needed: set[dgen.Value] = set()
     worklist = [target]
     while worklist:
         val = worklist.pop()
-        if id(val) in needed:
+        if val in needed:
             continue
-        needed.add(id(val))
+        needed.add(val)
         if isinstance(val, dgen.Op):
             worklist.extend(_walk_inputs(val))
-    return [op for op in func.body.ops if id(op) in needed]
+    return [op for op in func.body.ops if op in needed]
 
 
 def _is_stage0_evaluable(target: dgen.Value) -> bool:
@@ -48,13 +48,13 @@ def _is_stage0_evaluable(target: dgen.Value) -> bool:
     Returns False if any value in the dependency tree is a BlockArgument
     (function parameter), meaning it depends on runtime input.
     """
-    visited: set[int] = set()
+    visited: set[dgen.Value] = set()
     worklist = [target]
     while worklist:
         val = worklist.pop()
-        if id(val) in visited:
+        if val in visited:
             continue
-        visited.add(id(val))
+        visited.add(val)
         if isinstance(val, BlockArgument):
             return False
         if isinstance(val, dgen.Op):
@@ -149,8 +149,8 @@ def _resolve_comptime_field(
         args=args,
     )
     if block_args:
-        subgraph_ids = {id(o) for o in subgraph}
-        func.body.ops = [o for o in func.body.ops if id(o) not in subgraph_ids]
+        subgraph_set = set(subgraph)
+        func.body.ops = [o for o in func.body.ops if o not in subgraph_set]
     const_type = value.type
     if isinstance(result, dict) and "tag" in result:
         const_type = dgen.type.TypeType()
@@ -191,23 +191,22 @@ def compute_stages(func: FunctionOp) -> dict[int, int]:
             *(stage(v) for v in __operands__),
         ))
 
-    Returns a dict mapping ``id(value) → stage_number``.
+    Returns a dict mapping ``value → stage_number``.
     """
-    stages: dict[int, int] = {}
+    stages: dict[dgen.Value, int] = {}
 
     def _stage(value: dgen.Value) -> int:
-        vid = id(value)
-        if vid in stages:
-            return stages[vid]
+        if value in stages:
+            return stages[value]
         if isinstance(value, (Constant, dgen.Type, FunctionOp)):
-            stages[vid] = 0
+            stages[value] = 0
             return 0
         if isinstance(value, BlockArgument):
-            stages[vid] = 1
+            stages[value] = 1
             return 1
         if not isinstance(value, dgen.Op):
             # Forward reference to a module-level entity (e.g. function name)
-            stages[vid] = 0
+            stages[value] = 0
             return 0
         parts: list[int] = []
         for pv in _field_values(value, value.__params__):
@@ -220,11 +219,11 @@ def compute_stages(func: FunctionOp) -> dict[int, int]:
         ):
             parts.append(1 + _stage(value.type))
         result = max(parts, default=0)
-        stages[vid] = result
+        stages[value] = result
         return result
 
     for arg in func.body.args:
-        stages[id(arg)] = 1
+        stages[arg] = 1
     for op in func.body.ops:
         _stage(op)
     return stages
@@ -232,7 +231,7 @@ def compute_stages(func: FunctionOp) -> dict[int, int]:
 
 def _unresolved_boundaries(
     func: FunctionOp,
-    stages: dict[int, int],
+    stages: dict[dgen.Value, int],
 ) -> list[tuple[int, dgen.Op, str, dgen.Value]]:
     """Find ops with unresolved __params__, sorted by stage number.
 
@@ -245,12 +244,12 @@ def _unresolved_boundaries(
             if isinstance(value, (dgen.Op, BlockArgument)) and not isinstance(
                 value, (Constant, dgen.Type, FunctionOp)
             ):
-                boundaries.append((stages.get(id(op), 0), op, field_name, value))
+                boundaries.append((stages.get(op, 0), op, field_name, value))
         # Also check op.type — if it's an unresolved SSA ref (Value, not Type)
         if isinstance(op.type, dgen.Value) and not isinstance(
             op.type, (Constant, dgen.Type)
         ):
-            boundaries.append((stages.get(id(op), 0), op, "type", op.type))
+            boundaries.append((stages.get(op, 0), op, "type", op.type))
     boundaries.sort(key=lambda t: t[0])
     return boundaries
 
@@ -272,7 +271,7 @@ def _specialize_ifs(
     and the IfOp is removed. References to the IfOp result are rewired to
     the branch's return value.
     """
-    replacements: dict[int, dgen.Value] = {}
+    replacements: dict[dgen.Value, dgen.Value] = {}
     new_ops: list[dgen.Op] = []
 
     for op in func.body.ops:
@@ -281,7 +280,7 @@ def _specialize_ifs(
             continue
 
         # Evaluate the condition
-        cond = replacements.get(id(op.cond), op.cond)
+        cond = replacements.get(op.cond, op.cond)
         subgraph = _trace_dependencies(cond, func)
         cond_result = _jit_evaluate(
             subgraph,
@@ -298,18 +297,18 @@ def _specialize_ifs(
         for child in branch.ops:
             if isinstance(child, builtin.ReturnOp):
                 val = child.value
-                replacements[id(op)] = replacements.get(id(val), val)
+                replacements[op] = replacements.get(val, val)
             else:
                 new_ops.append(child)
 
     # Apply replacements to all inlined ops
     for op in new_ops:
         for fname, fval in op.operands:
-            mapped = replacements.get(id(fval))
+            mapped = replacements.get(fval)
             if mapped is not None:
                 setattr(op, fname, mapped)
         for fname, fval in op.parameters:
-            mapped = replacements.get(id(fval))
+            mapped = replacements.get(fval)
             if mapped is not None:
                 setattr(op, fname, mapped)
 
