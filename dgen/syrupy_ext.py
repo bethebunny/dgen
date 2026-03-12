@@ -83,8 +83,8 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
     def matches(
         self,
         *,
-        serialized_data: SerializableData,
-        snapshot_data: SerializableData,
+        serialized_data: SerializedData,
+        snapshot_data: SerializedData,
     ) -> bool:
         # _current_module is always set by serialize(), which syrupy calls
         # immediately before matches() within the same assertion.
