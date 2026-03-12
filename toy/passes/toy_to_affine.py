@@ -59,7 +59,7 @@ class ToyToAffine(Pass):
                 affine.ForOp(
                     lo=builtin.Index().constant(0),
                     hi=builtin.Index().constant(dim),
-                    body=dgen.Block(ops=ops, args=[var]),
+                    body=dgen.Block(result=ops[-1], args=[var]),
                 )
             ]
         return ops[0]

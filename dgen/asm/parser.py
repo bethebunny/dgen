@@ -364,7 +364,7 @@ def _read_block_body(parser: ASMParser) -> Block:
     parser.read(":")
     block_indent = newline(parser)
     if block_indent == 0:
-        return Block(ops=[], args=args)
+        raise ValueError("Block body must contain at least one op")
     ops: list[Op] = []
     while parser.pos < len(parser.text):
         indent = newline(parser)

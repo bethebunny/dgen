@@ -26,8 +26,8 @@ class Block:
 
     Stores the result value (root of the use-def graph). When constructed
     with result=, ops are derived by walking the use-def graph. When
-    constructed with ops= (legacy path), the provided ops list is stored
-    directly for backward compatibility during migration.
+    constructed with ops= (for terminal LLVM lowering passes where control
+    flow ops are not use-def connected), the provided list is used directly.
     """
 
     result: dgen.Value
@@ -55,12 +55,6 @@ class Block:
         if self._stored_ops is not None:
             return self._stored_ops
         return walk_ops(self.result)
-
-    @ops.setter
-    def ops(self, value: list[dgen.Op]) -> None:
-        self._stored_ops = value
-        if value:
-            self.result = value[-1]
 
     @property
     def asm(self) -> Iterable[str]:

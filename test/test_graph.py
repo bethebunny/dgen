@@ -47,7 +47,7 @@ def test_walk_ops_does_not_descend_into_blocks():
     inner = ConstantOp(value=42, type=builtin.Index())
     func = builtin.FunctionOp(
         name="f",
-        body=dgen.Block(ops=[inner], args=[]),
+        body=dgen.Block(result=inner, args=[]),
         result=builtin.Nil(),
     )
     ops = walk_ops(func)

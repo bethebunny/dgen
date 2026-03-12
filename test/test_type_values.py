@@ -192,7 +192,7 @@ def test_type_value_jit_identity():
     arg = BlockArgument(name="t", type=idx.type)
     func = FunctionOp(
         name="main",
-        body=Block(ops=[builtin.ReturnOp(value=arg)], args=[arg]),
+        body=Block(result=builtin.ReturnOp(value=arg), args=[arg]),
         result=idx.type,
     )
     exe = compile_module(Module(functions=[func]))
@@ -208,7 +208,7 @@ def test_type_constant_jit_return():
     ret = builtin.ReturnOp(value=const)
     func = FunctionOp(
         name="main",
-        body=Block(ops=[const, ret], args=[]),
+        body=Block(result=ret, args=[]),
         result=idx.type,
     )
     exe = compile_module(Module(functions=[func]))
