@@ -6,23 +6,23 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value, layout
-from dgen.dialects.builtin import Index, Nil, F64, String, FatPointer
+from dgen.dialects.builtin import Index, Nil, F64
 import toy.dialects.affine as affine
 
 toy = Dialect("toy")
-
 
 @toy.type("Tensor")
 @dataclass(frozen=True)
 class Tensor(Type):
     shape: Value[affine.Shape]
     dtype: Value[dgen.TypeType] = F64()
-    __params__ = (("shape", affine.Shape), ("dtype", dgen.TypeType),)
+    __params__ = (
+        ("shape", affine.Shape),
+        ("dtype", dgen.TypeType),
+    )
 
     @property
-    def __layout__(self) -> layout.Layout:
-        return layout.FatPointer(dgen.type.type_constant(self.dtype).__layout__)
-
+    def __layout__(self) -> layout.Layout: ...
 
 @toy.type("InferredShapeTensor")
 @dataclass(frozen=True)
@@ -31,14 +31,12 @@ class InferredShapeTensor(Type):
     dtype: Value[dgen.TypeType] = F64()
     __params__ = (("dtype", dgen.TypeType),)
 
-
 @toy.op("transpose")
 @dataclass(eq=False, kw_only=True)
 class TransposeOp(Op):
     input: Value
     type: Type
     __operands__ = (("input", Tensor),)
-
 
 @toy.op("reshape")
 @dataclass(eq=False, kw_only=True)
@@ -47,15 +45,16 @@ class ReshapeOp(Op):
     type: Type
     __operands__ = (("input", Tensor),)
 
-
 @toy.op("mul")
 @dataclass(eq=False, kw_only=True)
 class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
-
+    __operands__ = (
+        ("lhs", Tensor),
+        ("rhs", Tensor),
+    )
 
 @toy.op("add")
 @dataclass(eq=False, kw_only=True)
@@ -63,8 +62,10 @@ class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
-
+    __operands__ = (
+        ("lhs", Tensor),
+        ("rhs", Tensor),
+    )
 
 @toy.op("concat")
 @dataclass(eq=False, kw_only=True)
@@ -74,9 +75,11 @@ class ConcatOp(Op):
     rhs: Value
     type: Type
     __params__ = (("axis", Index),)
-    __operands__ = (("lhs", Tensor), ("rhs", Tensor),)
+    __operands__ = (
+        ("lhs", Tensor),
+        ("rhs", Tensor),
+    )
     __constraints__ = ("axis < lhs.shape.rank",)
-
 
 @toy.op("tile")
 @dataclass(eq=False, kw_only=True)
@@ -87,14 +90,12 @@ class TileOp(Op):
     __params__ = (("count", Index),)
     __operands__ = (("input", Tensor),)
 
-
 @toy.op("nonzero_count")
 @dataclass(eq=False, kw_only=True)
 class NonzeroCountOp(Op):
     input: Value
     type: Type = Index()
     __operands__ = (("input", Tensor),)
-
 
 @toy.op("dim_size")
 @dataclass(eq=False, kw_only=True)
@@ -106,12 +107,9 @@ class DimSizeOp(Op):
     __operands__ = (("input", Tensor),)
     __constraints__ = ("axis < input.shape.rank",)
 
-
 @toy.op("print")
 @dataclass(eq=False, kw_only=True)
 class PrintOp(Op):
     input: Value
     type: Type = Nil()
     __operands__ = (("input", Tensor),)
-
-

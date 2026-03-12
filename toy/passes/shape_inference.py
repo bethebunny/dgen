@@ -65,7 +65,9 @@ class ShapeInference(Pass):
     def infer_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
         src = self.type_of.get(op.input)
         if src is not None:
-            t = toy.Tensor(shape=shape_constant(list(reversed(src.shape.__constant__.to_json()))))
+            t = toy.Tensor(
+                shape=shape_constant(list(reversed(src.shape.__constant__.to_json())))
+            )
             op.type = t
             self.type_of[op] = t
         return True
@@ -114,7 +116,9 @@ class ShapeInference(Pass):
                 else None
             )
             if count_val is not None:
-                t = toy.Tensor(shape=shape_constant([count_val] + src.shape.__constant__.to_json()))
+                t = toy.Tensor(
+                    shape=shape_constant([count_val] + src.shape.__constant__.to_json())
+                )
                 op.type = t
                 self.type_of[op] = t
         return True

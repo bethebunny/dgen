@@ -13,3 +13,7 @@ __all__ = [
     "TypeType",
     "Value",
 ]
+
+from dgen.gen.importer import install as _install_dgen_hook
+
+_install_dgen_hook()

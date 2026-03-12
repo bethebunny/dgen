@@ -9,46 +9,37 @@ from dgen import Block, Dialect, Op, Type, Value, layout
 
 builtin = Dialect("builtin")
 
-
-class HasSingleBlock:
-    pass
-
+class HasSingleBlock: ...
 
 @builtin.type("Index")
 @dataclass(frozen=True)
 class Index(Type):
     __layout__ = layout.Int()
 
-
 @builtin.type("F64")
 @dataclass(frozen=True)
 class F64(Type):
     __layout__ = layout.Float64()
-
 
 @builtin.type("Nil")
 @dataclass(frozen=True)
 class Nil(Type):
     __layout__ = layout.Void()
 
-
 @builtin.type("String")
 @dataclass(frozen=True)
 class String(Type):
     __layout__ = layout.String()
-
 
 @builtin.type("TypeTag")
 @dataclass(frozen=True)
 class TypeTag(Type):
     __layout__ = String.__layout__
 
-
 @builtin.type("Byte")
 @dataclass(frozen=True)
 class Byte(Type):
     __layout__ = layout.Byte()
-
 
 @builtin.type("Array")
 @dataclass(frozen=True)
@@ -61,12 +52,7 @@ class Array(Type):
     )
 
     @property
-    def __layout__(self) -> layout.Layout:
-        return layout.Array(
-            dgen.type.type_constant(self.element_type).__layout__,
-            self.n.__constant__.to_json(),
-        )
-
+    def __layout__(self) -> layout.Layout: ...
 
 @builtin.type("Pointer")
 @dataclass(frozen=True)
@@ -75,9 +61,7 @@ class Pointer(Type):
     __params__ = (("pointee", dgen.TypeType),)
 
     @property
-    def __layout__(self) -> layout.Layout:
-        return layout.Pointer(dgen.type.type_constant(self.pointee).__layout__)
-
+    def __layout__(self) -> layout.Layout: ...
 
 @builtin.type("FatPointer")
 @dataclass(frozen=True)
@@ -86,9 +70,7 @@ class FatPointer(Type):
     __params__ = (("pointee", dgen.TypeType),)
 
     @property
-    def __layout__(self) -> layout.Layout:
-        return layout.FatPointer(dgen.type.type_constant(self.pointee).__layout__)
-
+    def __layout__(self) -> layout.Layout: ...
 
 @builtin.type("List")
 @dataclass(frozen=True)
@@ -97,9 +79,7 @@ class List(Type):
     __params__ = (("element_type", dgen.TypeType),)
 
     @property
-    def __layout__(self) -> layout.Layout:
-        return layout.FatPointer(dgen.type.type_constant(self.element_type).__layout__)
-
+    def __layout__(self) -> layout.Layout: ...
 
 @builtin.type("Tuple")
 @dataclass(frozen=True)
@@ -108,14 +88,7 @@ class Tuple(Type):
     __params__ = (("types", List),)
 
     @property
-    def __layout__(self) -> layout.Layout:
-        return layout.Record(
-            [
-                (str(i), dgen.type.type_constant(t).__layout__)
-                for i, t in enumerate(self.types)
-            ]
-        )
-
+    def __layout__(self) -> layout.Layout: ...
 
 @builtin.type("Function")
 @dataclass(frozen=True)
@@ -123,7 +96,6 @@ class Function(Type):
     __layout__ = layout.Void()
     result: Value[dgen.TypeType]
     __params__ = (("result", dgen.TypeType),)
-
 
 @builtin.op("list_get")
 @dataclass(eq=False, kw_only=True)
@@ -133,7 +105,6 @@ class ListGetOp(Op):
     type: Type
     __params__ = (("index", Index),)
     __operands__ = (("list", List),)
-
 
 @builtin.op("add_index")
 @dataclass(eq=False, kw_only=True)
@@ -146,7 +117,6 @@ class AddIndexOp(Op):
         ("rhs", Index),
     )
 
-
 @builtin.op("equal_index")
 @dataclass(eq=False, kw_only=True)
 class EqualIndexOp(Op):
@@ -157,7 +127,6 @@ class EqualIndexOp(Op):
         ("lhs", Index),
         ("rhs", Index),
     )
-
 
 @builtin.op("subtract_index")
 @dataclass(eq=False, kw_only=True)
@@ -170,14 +139,12 @@ class SubtractIndexOp(Op):
         ("rhs", Index),
     )
 
-
 @builtin.op("return")
 @dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):
     value: Value | Nil = Nil()
     type: Type = Nil()
     __operands__ = (("value", Type),)
-
 
 @builtin.op("function")
 @dataclass(eq=False, kw_only=True)
@@ -187,7 +154,6 @@ class FunctionOp(HasSingleBlock, Op):
     body: Block
     __params__ = (("result", dgen.TypeType),)
     __blocks__ = ("body",)
-
 
 @builtin.op("if")
 @dataclass(eq=False, kw_only=True)
@@ -202,7 +168,6 @@ class IfOp(Op):
         "else_body",
     )
 
-
 @builtin.op("chain")
 @dataclass(eq=False, kw_only=True)
 class ChainOp(Op):
@@ -213,7 +178,6 @@ class ChainOp(Op):
         ("lhs", Type),
         ("rhs", Type),
     )
-
 
 @builtin.op("call")
 @dataclass(eq=False, kw_only=True)
