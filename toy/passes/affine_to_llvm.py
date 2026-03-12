@@ -6,12 +6,22 @@ from collections.abc import Generator, Iterator
 from math import prod
 
 import dgen
+from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import affine, toy
 
 _PTR_TYPE = llvm.Ptr()
+
+
+def _pack_args(*values: dgen.Value) -> PackOp:
+    """Create a PackOp for branch args (empty or with values)."""
+    if values:
+        return PackOp(
+            values=list(values), type=builtin.List(element_type=values[0].type)
+        )
+    return PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
 
 
 def _extract_list_elements(
@@ -56,7 +66,7 @@ class AffineToLLVMLowering:
                 self.alloc_sizes[load_op] = prod(shape)
             else:
                 self.value_map[arg] = arg
-        ops = list(prologue)
+        ops: list[dgen.Op] = list(prologue)
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
         return FunctionOp(
@@ -195,80 +205,86 @@ class AffineToLLVMLowering:
 
         header_label = f"loop_header{loop_id}"
         body_label = f"loop_body{loop_id}"
-        exit_label = f"loop_exit{loop_id}"
+        exit_label_name = f"loop_exit{loop_id}"
 
-        # lo/hi may be ConstantOp objects shared across multiple ForOps (e.g. two
-        # loops both bound by the same constant node in multiply_transpose).  If
-        # _map already has a mapping the constant was emitted by an earlier loop;
-        # reuse it.  Otherwise emit a fresh ConstantOp and record the mapping so
-        # subsequent loops can reuse it.
-        # TODO: this deduplication is fragile — revisit once ForOp bounds are
-        # modelled as proper SSA Values so _seen / value_map handle them uniformly.
+        # lo may be a ConstantOp shared across ForOps; deduplicate.
         init_op = self._map(op.lo)
-        if init_op is op.lo:
+        emit_init = init_op is op.lo
+        if emit_init:
             init_op = ConstantOp(
                 value=op.lo.__constant__.to_json(), type=builtin.Index()
             )
-            yield init_op
             self.value_map[op.lo] = init_op
             self._seen.add(op.lo)
-        prev_label = self.current_label
-        yield llvm.BrOp(dest=String().constant(header_label))
 
-        # Header label
-        yield llvm.LabelOp(label_name=String().constant(header_label))
-        self.current_label = header_label
+        # Create loop variable (block argument for header label)
+        loop_var = BlockArgument(type=builtin.Index())
+        self.value_map[op.body.args[0]] = loop_var
 
-        # Phi node for loop variable (back-edge value patched after body)
-        back_edge = dgen.Value(type=builtin.Index())  # placeholder, patched below
-        phi_op = llvm.PhiOp(
-            a=init_op,
-            b=back_edge,
-            label_a=String().constant(prev_label),
-            label_b=String().constant(body_label),
-        )
-        yield phi_op
-        # Map the affine loop variable to the LLVM phi node
-        self.value_map[op.body.args[0]] = phi_op
-
-        # Same deduplication as lo above (see comment there).
+        # hi constant lives inside the header body, not at top level
         hi_op = self._map(op.hi)
         if hi_op is op.hi:
             hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.Index())
-            yield hi_op
             self.value_map[op.hi] = hi_op
             self._seen.add(op.hi)
-        cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=phi_op, rhs=hi_op)
-        yield cmp_op
-        yield llvm.CondBrOp(
+
+        # Header body: icmp slt + conditional branch
+        cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=loop_var, rhs=hi_op)
+        cond_br_op = llvm.CondBrOp(
             cond=cmp_op,
             true_dest=String().constant(body_label),
-            false_dest=String().constant(exit_label),
+            false_dest=String().constant(exit_label_name),
+            true_args=_pack_args(),
+            false_args=_pack_args(),
         )
-
-        # Body label
-        yield llvm.LabelOp(label_name=String().constant(body_label))
-        self.current_label = body_label
+        # walk_ops(cond_br_op) = [hi_op, cmp_op, cond_br_op] — all connected
+        header_body = dgen.Block(result=cond_br_op, args=[loop_var])
 
         # Lower body ops
+        body_ops: list[dgen.Op] = []
         for child_op in op.body.ops:
-            yield from self.lower_op(child_op)
+            body_ops.extend(self.lower_op(child_op))
 
-        # Patch phi back-edge label to actual current block
-        phi_op.label_b = String().constant(self.current_label)
-
-        # Increment and branch back
+        # Increment and back-edge branch
         one_op = ConstantOp(value=1, type=builtin.Index())
-        yield one_op
-        next_op = llvm.AddOp(lhs=phi_op, rhs=one_op)
-        yield next_op
-        # Patch phi back-edge value
-        phi_op.b = next_op
-        yield llvm.BrOp(dest=String().constant(header_label))
+        next_op = llvm.AddOp(lhs=loop_var, rhs=one_op)
+        br_back = llvm.BrOp(
+            dest=String().constant(header_label), args=_pack_args(next_op)
+        )
 
-        # Exit label
-        yield llvm.LabelOp(label_name=String().constant(exit_label))
-        self.current_label = exit_label
+        # Body label contains all body ops + increment + back-edge branch
+        all_body_ops: list[dgen.Op] = body_ops + [one_op, next_op, br_back]
+        loop_body_label = llvm.LabelOp(
+            label_name=String().constant(body_label),
+            body=dgen.Block(ops=all_body_ops, args=[]),
+        )
+
+        # Header label
+        loop_header_label = llvm.LabelOp(
+            label_name=String().constant(header_label),
+            body=header_body,
+        )
+
+        # Exit label: thin marker, empty body
+        exit_label_op = llvm.LabelOp(
+            label_name=String().constant(exit_label_name),
+            body=dgen.Block(args=[]),
+        )
+
+        # Branch to header passing init as the initial loop variable value
+        br_entry = llvm.BrOp(
+            dest=String().constant(header_label),
+            args=_pack_args(init_op),
+        )
+
+        # Yield structural ops individually (function body uses _stored_ops for flat ordering)
+        if emit_init:
+            yield init_op
+        yield br_entry
+        yield loop_header_label
+        yield loop_body_label
+        yield exit_label_op
+        self.value_map[op] = exit_label_op
 
     def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> Iterator[dgen.Op]:
         """Unrolled nonzero_count: count non-zero elements in a tensor."""

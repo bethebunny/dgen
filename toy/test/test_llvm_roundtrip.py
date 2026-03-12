@@ -72,7 +72,7 @@ def test_roundtrip_icmp_condbr():
         |     %0 : Index = 0
         |     %1 : Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
-        |     %_ : Nil = llvm.cond_br<"loop_body", "loop_exit">(%cmp)
+        |     %_ : Nil = llvm.cond_br<"loop_body", "loop_exit">(%cmp, [], [])
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
@@ -80,24 +80,15 @@ def test_roundtrip_icmp_condbr():
 
 
 def test_roundtrip_label_br():
+    """Label with body block and br with optional arg."""
     ir = strip_prefix("""
         | import llvm
         |
         | %f : Nil = function<Nil>() ():
-        |     %_ : Nil = llvm.br<"loop_header">()
-        |     %_ : Nil = llvm.label<"loop_header">()
-        |     %_ : Nil = return(())
-    """)
-    module = parse_module(ir)
-    assert asm.format(module) == ir
-
-
-def test_roundtrip_phi():
-    ir = strip_prefix("""
-        | import llvm
-        |
-        | %f : Nil = function<Nil>() ():
-        |     %i0 : Nil = llvm.phi<"entry", "loop_body">(%init, %next)
+        |     %0 : Index = 0
+        |     %_ : Nil = llvm.br<"loop_header">([%0])
+        |     %_ : Nil = llvm.label<"loop_header">() (%i: Index):
+        |         %_ : Nil = llvm.br<"loop_header">([%i])
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
@@ -139,27 +130,26 @@ def test_roundtrip_return_value():
 
 
 def test_roundtrip_loop_pattern():
-    """Full loop pattern: br, label, phi, icmp, condbr, body, increment."""
+    """Full loop pattern using blocks-as-values: labels with body blocks and args."""
     ir = strip_prefix("""
         | import llvm
         |
         | %f : Nil = function<Nil>() ():
-        |     %0 : Nil = llvm.alloca<3>()
+        |     %0 : llvm.Ptr = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %_ : Nil = llvm.br<"loop_header0">()
-        |     %_ : Nil = llvm.label<"loop_header0">()
-        |     %i0 : Nil = llvm.phi<"entry", "loop_body0">(%init, %next0)
-        |     %hi : Index = 3
-        |     %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
-        |     %_ : Nil = llvm.cond_br<"loop_body0", "loop_exit0">(%cmp)
-        |     %_ : Nil = llvm.label<"loop_body0">()
-        |     %val : F64 = 1.0
-        |     %ptr : Nil = llvm.gep(%0, %i0)
-        |     %_ : Nil = llvm.store(%val, %ptr)
-        |     %one : Index = 1
-        |     %next0 : Nil = llvm.add(%i0, %one)
-        |     %_ : Nil = llvm.br<"loop_header0">()
-        |     %_ : Nil = llvm.label<"loop_exit0">()
+        |     %_ : Nil = llvm.br<"loop_header0">([%init])
+        |     %_ : Nil = llvm.label<"loop_header0">() (%i: Index):
+        |         %hi : Index = 3
+        |         %cmp : Nil = llvm.icmp<"slt">(%i, %hi)
+        |         %_ : Nil = llvm.cond_br<"loop_body0", "loop_exit0">(%cmp, [], [])
+        |     %_ : Nil = llvm.label<"loop_body0">() ():
+        |         %val : F64 = 1.0
+        |         %ptr : llvm.Ptr = llvm.gep(%0, %i)
+        |         %_ : Nil = llvm.store(%val, %ptr)
+        |         %one : Index = 1
+        |         %next0 : Nil = llvm.add(%i, %one)
+        |         %_ : Nil = llvm.br<"loop_header0">([%next0])
+        |     %_ : Nil = llvm.label<"loop_exit0">() ():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)

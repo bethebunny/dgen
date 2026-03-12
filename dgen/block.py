@@ -24,13 +24,14 @@ class BlockArgument(Value):
 class Block:
     """A block of ops with arguments.
 
-    Stores the result value (root of the use-def graph). When constructed
-    with result=, ops are derived by walking the use-def graph. When
-    constructed with ops= (for terminal LLVM lowering passes where control
-    flow ops are not use-def connected), the provided list is used directly.
+    Stores the result value (root of the use-def graph). For blocks whose ops
+    form a proper use-def graph, use result= and ops are derived by walk_ops.
+    For parser-created blocks with flat op lists that may not form a complete
+    graph, use ops= to store the list explicitly. Use result=None for empty
+    blocks (e.g. thin label markers).
     """
 
-    result: dgen.Value
+    result: dgen.Value | None
     args: list[BlockArgument]
 
     def __init__(
@@ -47,13 +48,17 @@ class Block:
             self.result = ops[-1]
             self._stored_ops = ops
         else:
-            raise ValueError("Block needs either result= or non-empty ops=")
+            # Empty block (no ops, no result — valid for thin label markers)
+            self.result = None
+            self._stored_ops = None
         self.args = args if args is not None else []
 
     @property
     def ops(self) -> list[dgen.Op]:
         if self._stored_ops is not None:
             return self._stored_ops
+        if self.result is None:
+            return []
         return walk_ops(self.result)
 
     @property

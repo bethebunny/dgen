@@ -9,16 +9,25 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import dgen
+from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.module import ConstantOp, Module, PackOp
+
+
+def _pack_args(*values: dgen.Value) -> PackOp:
+    """Create a PackOp for branch args (empty or with values)."""
+    if values:
+        return PackOp(
+            values=list(values), type=builtin.List(element_type=values[0].type)
+        )
+    return PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
 
 
 class BuiltinToLLVMLowering:
     def __init__(self) -> None:
         self.if_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}
-        self.current_label = "entry"
 
     def lower_module(self, m: Module) -> Module:
         functions = [self.lower_function(f) for f in m.functions]
@@ -27,8 +36,7 @@ class BuiltinToLLVMLowering:
     def lower_function(self, f: FunctionOp) -> FunctionOp:
         self.if_counter = 0
         self.value_map = {}
-        self.current_label = "entry"
-        ops = []
+        ops: list[dgen.Op] = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
         return FunctionOp(
@@ -82,7 +90,7 @@ class BuiltinToLLVMLowering:
 
         then_label = f"then_{if_id}"
         else_label = f"else_{if_id}"
-        merge_label = f"merge_{if_id}"
+        merge_label_name = f"merge_{if_id}"
 
         # Convert i64 condition to i1 via icmp ne 0
         zero = ConstantOp(value=0, type=builtin.Index())
@@ -93,53 +101,65 @@ class BuiltinToLLVMLowering:
             rhs=zero,
         )
         yield cond_i1
-        yield llvm.CondBrOp(
+        cond_br = llvm.CondBrOp(
             cond=cond_i1,
             true_dest=String().constant(then_label),
             false_dest=String().constant(else_label),
+            true_args=_pack_args(),
+            false_args=_pack_args(),
         )
+        yield cond_br
 
-        # Then block
-        yield llvm.LabelOp(label_name=String().constant(then_label))
-        self.current_label = then_label
+        # Lower then body; extract result from the inner ReturnOp
+        then_ops: list[dgen.Op] = []
         then_result: dgen.Value | None = None
         for child in op.then_body.ops:
             if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
                 then_result = self._map(child.value)
-                yield llvm.BrOp(dest=String().constant(merge_label))
             else:
-                yield from self.lower_op(child)
-        then_source_label = self.current_label
+                then_ops.extend(self.lower_op(child))
+        assert then_result is not None
+        br_then = llvm.BrOp(
+            dest=String().constant(merge_label_name), args=_pack_args(then_result)
+        )
+        all_then = then_ops + [br_then]
+        then_label_op = llvm.LabelOp(
+            label_name=String().constant(then_label),
+            body=dgen.Block(ops=all_then, args=[]),
+        )
+        yield then_label_op
 
-        # Else block
-        yield llvm.LabelOp(label_name=String().constant(else_label))
-        self.current_label = else_label
+        # Lower else body; extract result from the inner ReturnOp
+        else_ops: list[dgen.Op] = []
         else_result: dgen.Value | None = None
         for child in op.else_body.ops:
             if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
                 else_result = self._map(child.value)
-                yield llvm.BrOp(dest=String().constant(merge_label))
             else:
-                yield from self.lower_op(child)
-        else_source_label = self.current_label
-
-        # Merge with phi
-        yield llvm.LabelOp(label_name=String().constant(merge_label))
-        self.current_label = merge_label
-        assert then_result is not None and else_result is not None
-        phi_op = llvm.PhiOp(
-            a=then_result,
-            b=else_result,
-            label_a=String().constant(then_source_label),
-            label_b=String().constant(else_source_label),
+                else_ops.extend(self.lower_op(child))
+        assert else_result is not None
+        br_else = llvm.BrOp(
+            dest=String().constant(merge_label_name), args=_pack_args(else_result)
         )
-        yield phi_op
-        self.value_map[op] = phi_op
+        all_else = else_ops + [br_else]
+        else_label_op = llvm.LabelOp(
+            label_name=String().constant(else_label),
+            body=dgen.Block(ops=all_else, args=[]),
+        )
+        yield else_label_op
+
+        # Merge label: block arg receives the phi value from then/else branches
+        merge_result = BlockArgument(type=op.type)
+        merge_label_op = llvm.LabelOp(
+            label_name=String().constant(merge_label_name),
+            body=dgen.Block(args=[merge_result]),
+        )
+        yield merge_label_op
+        self.value_map[op] = merge_result
 
     def _lower_call(self, op: builtin.CallOp) -> Iterator[dgen.Op]:
         callee_name = op.callee.name
         assert callee_name is not None
-        # Unpack PackOp args
         if isinstance(op.args, PackOp):
             mapped_args = [self._map(v) for v in op.args.values]
         else:

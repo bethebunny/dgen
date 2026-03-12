@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Op, Type, Value, layout
+from dgen import Block, Dialect, Op, Type, Value, layout
 from dgen.dialects.builtin import Index, Nil, F64, String, List
 
 llvm = Dialect("llvm")
@@ -154,8 +154,10 @@ class IcmpOp(Op):
 @dataclass(eq=False, kw_only=True)
 class BrOp(Op):
     dest: Value[String]
+    args: Value
     type: Type = Nil()
     __params__ = (("dest", String),)
+    __operands__ = (("args", List),)
 
 
 @llvm.op("cond_br")
@@ -164,12 +166,18 @@ class CondBrOp(Op):
     true_dest: Value[String]
     false_dest: Value[String]
     cond: Value
+    true_args: Value
+    false_args: Value
     type: Type = Nil()
     __params__ = (
         ("true_dest", String),
         ("false_dest", String),
     )
-    __operands__ = (("cond", Int),)
+    __operands__ = (
+        ("cond", Int),
+        ("true_args", List),
+        ("false_args", List),
+    )
 
 
 @llvm.op("label")
@@ -177,25 +185,9 @@ class CondBrOp(Op):
 class LabelOp(Op):
     label_name: Value[String]
     type: Type = Nil()
+    body: Block
     __params__ = (("label_name", String),)
-
-
-@llvm.op("phi")
-@dataclass(eq=False, kw_only=True)
-class PhiOp(Op):
-    label_a: Value[String]
-    label_b: Value[String]
-    a: Value
-    b: Value
-    type: Type = Nil()
-    __params__ = (
-        ("label_a", String),
-        ("label_b", String),
-    )
-    __operands__ = (
-        ("a", Type),
-        ("b", Type),
-    )
+    __blocks__ = ("body",)
 
 
 @llvm.op("fcmp")

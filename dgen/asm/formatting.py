@@ -158,6 +158,14 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         for _, param in op.parameters
     ]
     operand_parts = [format_expr(operand, tracker) for _, operand in op.operands]
+    # Strip trailing Nil operands (optional arguments with default Nil()),
+    # but only when non-Nil operands precede them.
+    while (
+        operand_parts
+        and operand_parts[-1] == "()"
+        and any(p != "()" for p in operand_parts)
+    ):
+        operand_parts.pop()
 
     # Build the line
     result_name = tracker.track_name(op)

@@ -125,6 +125,8 @@ class Fingerprinter:
                 raise TypeError(f"Cannot fingerprint {type(value).__name__}")
 
     def _fingerprint_block(self, block: Block) -> bytes:
+        if block.result is None:
+            return _hash_parts(b"empty_block")
         return _hash_parts(b"block", self.fingerprint(block.result))
 
 

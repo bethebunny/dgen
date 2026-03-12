@@ -400,8 +400,8 @@ def test_string_as_op_param():
         | import llvm
         |
         | %main : Nil = function<Nil>() ():
-        |     %_ : Nil = llvm.br<"target">()
-        |     %_ : Nil = llvm.label<"target">()
+        |     %_ : Nil = llvm.br<"target">([])
+        |     %_ : Nil = llvm.label<"target">() ():
         |     %_ : Nil = return(())
     """)
     parsed = parse_module(ir)

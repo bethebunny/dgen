@@ -9,7 +9,6 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-import dgen.type
 from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
@@ -39,6 +38,7 @@ class ASMParser:
         self.pos: int = 0
         self.name_table: dict[str, Value] = {}
         self.pending_ops: list[Op] = []
+        self.current_indent: int = 0  # indent level of the enclosing block
 
     @property
     def done(self) -> bool:
@@ -311,7 +311,7 @@ def _coerce_operand(
     if isinstance(value, Value):
         return value
     if isinstance(value, list):
-        if any(isinstance(v, Value) for v in value):
+        if field_type is builtin.List or any(isinstance(v, Value) for v in value):
             return _pack_list(parser, value, field_type)
         return value
     if issubclass(op_cls, ConstantOp):
@@ -332,15 +332,19 @@ def _wrap_constant(field_type: type[Type], raw: object) -> Constant:
 def _pack_list(
     parser: ASMParser, elems: list[object], field_type: type[Type]
 ) -> PackOp:
-    if field_type is builtin.List or field_type.__params__:
-        # List is parameterized; infer element type from first Value element
+    if (
+        field_type is builtin.List
+        or field_type.__params__
+        or not hasattr(field_type, "asm_name")
+    ):
+        # Parameterized, unregistered, or generic field type: infer from first Value element
         element_type: Type | None = None
         for elem in elems:
             if isinstance(elem, Value):
                 element_type = elem.type
                 break
         if element_type is None:
-            element_type = dgen.type.TypeType()
+            element_type = builtin.Nil()
     else:
         element_type = field_type()
     values: list[Value] = []
@@ -362,9 +366,12 @@ def _pack_list(
 def _read_block_body(parser: ASMParser) -> Block:
     args = block_arguments(parser)
     parser.read(":")
+    outer_indent = parser.current_indent
     block_indent = newline(parser)
-    if block_indent == 0:
-        raise ValueError("Block body must contain at least one op")
+    if block_indent == 0 or block_indent <= outer_indent:
+        return Block(args=args)
+    saved_indent = parser.current_indent
+    parser.current_indent = block_indent
     ops: list[Op] = []
     while parser.pos < len(parser.text):
         indent = newline(parser)
@@ -375,4 +382,5 @@ def _read_block_body(parser: ASMParser) -> Block:
         ops.extend(parser.pending_ops)
         parser.pending_ops.clear()
         ops.append(op)
+    parser.current_indent = saved_indent
     return Block(ops=ops, args=args)

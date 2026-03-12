@@ -68,6 +68,51 @@ def _ensure_initialized() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Predecessor collection for phi nodes
+# ---------------------------------------------------------------------------
+
+
+def _br_args(v: object) -> list[dgen.Value]:
+    """Extract values from a branch args operand (PackOp or list)."""
+    if isinstance(v, PackOp):
+        return v.values
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, dgen.Value)]
+    return []
+
+
+def _collect_phi_preds(
+    ops: list[dgen.Op],
+    current_block: str,
+    out: dict[str, list[tuple[str, dgen.Value | None]]],
+) -> str:
+    """Scan ops (recursing into LabelOp bodies) to collect branch predecessors.
+
+    For each BrOp/CondBrOp, records (current_block, arg_value_or_None) for
+    the target label in `out`.  Returns the last LLVM basic-block name active
+    after processing `ops` (mirrors what _emit_ops produces).
+    """
+    for op in ops:
+        if isinstance(op, llvm.BrOp):
+            dest = string_value(op.dest)
+            args = _br_args(op.args)
+            out.setdefault(dest, []).append((current_block, args[0] if args else None))
+        elif isinstance(op, llvm.CondBrOp):
+            true_args = _br_args(op.true_args)
+            false_args = _br_args(op.false_args)
+            out.setdefault(string_value(op.true_dest), []).append(
+                (current_block, true_args[0] if true_args else None)
+            )
+            out.setdefault(string_value(op.false_dest), []).append(
+                (current_block, false_args[0] if false_args else None)
+            )
+        elif isinstance(op, llvm.LabelOp):
+            label_name = string_value(op.label_name)
+            current_block = _collect_phi_preds(op.body.ops, label_name, out)
+    return current_block
+
+
+# ---------------------------------------------------------------------------
 # IR emission
 # ---------------------------------------------------------------------------
 
@@ -98,9 +143,13 @@ def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
 
 
 def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
-    # Build a SlotTracker so all ops get stable names
+    # Collect predecessors for phi nodes before building the tracker
+    phi_preds: dict[str, list[tuple[str, dgen.Value | None]]] = {}
+    _collect_phi_preds(f.body.ops, "entry", phi_preds)
+
+    # Build a SlotTracker so all ops get stable names.
+    # SlotTracker.register recurses into LabelOp bodies automatically.
     tracker = SlotTracker()
-    # Register block args (function parameters) first
     for arg in f.body.args:
         tracker.track_name(arg)
     tracker.register(f.body.ops)
@@ -115,7 +164,6 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         mem = c.__constant__
         layout = mem.layout
         if _ctype(layout) is ctypes.c_void_p:
-            # Pointer-passed layout: emit struct address (FatPointer: [data_ptr, len])
             host_buffers.append(mem)
             constants[c] = f"ptr inttoptr (i64 {mem.address} to ptr)"
             types[c] = "ptr"
@@ -126,28 +174,33 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             constants[c] = f"{lt} {val_str}"
             types[c] = lt
 
-    # Register block arg types
+    def _prescan(ops: list[dgen.Op]) -> None:
+        for op in ops:
+            if isinstance(op, ConstantOp):
+                _register_constant(op)
+            elif isinstance(op, PackOp):
+                continue
+            elif isinstance(op, builtin.ChainOp):
+                types[op] = types.get(op.lhs, "i64")
+            elif isinstance(op, llvm.LabelOp):
+                for arg in op.body.args:
+                    types[arg] = _llvm_type(
+                        dgen.type.type_constant(arg.type).__layout__
+                    )
+                _prescan(op.body.ops)
+            else:
+                if (rt := _result_type_str(op.type)) is not None:
+                    types[op] = rt
+                for operand_name, _ in op.__operands__:
+                    operand = getattr(op, operand_name)
+                    if isinstance(operand, Constant):
+                        _register_constant(operand)
+
+    # Register function parameter types
     for arg in f.body.args:
         types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
-    for op in f.body.ops:
-        if isinstance(op, ConstantOp):
-            _register_constant(op)
-        elif isinstance(op, PackOp):
-            continue
-        elif isinstance(op, builtin.ChainOp):
-            # Chain is transparent: alias to lhs at runtime
-            types[op] = types.get(op.lhs, "i64")
-        elif isinstance(op, llvm.PhiOp):
-            types[op] = types.get(op.a, "i64")
-        else:
-            if (rt := _result_type_str(op.type)) is not None:
-                types[op] = rt
-            # Register inline Constant operands (e.g. literal args)
-            for operand_name, _ in op.__operands__:
-                operand = getattr(op, operand_name)
-                if isinstance(operand, Constant):
-                    _register_constant(operand)
+    _prescan(f.body.ops)
 
     # Resolve chain aliases: ChainOp is transparent, maps to its lhs
     for op in f.body.ops:
@@ -155,7 +208,6 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             if op.lhs in constants:
                 constants[op] = constants[op.lhs]
             else:
-                # Point to same slot as lhs
                 lhs_name = tracker.track_name(op.lhs)
                 lhs_ty = types.get(op.lhs, "i64")
                 constants[op] = f"{lhs_ty} %{lhs_name}"
@@ -174,13 +226,11 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
 
     assert f.name is not None
     func_name = tracker.track_name(f)
-    # Derive LLVM return type from function signature
     result_type = f.result
     if isinstance(result_type, builtin.Nil):
         llvm_ret = "void"
     else:
         llvm_ret = _llvm_type(dgen.type.type_constant(result_type).__layout__)
-    # Build parameter list from block args
     params = []
     for arg in f.body.args:
         name = tracker.track_name(arg)
@@ -189,80 +239,95 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     param_str = ", ".join(params)
     lines = [f"define {llvm_ret} @{func_name}({param_str}) {{", "entry:"]
 
-    for op in f.body.ops:
-        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
-            continue
+    def _emit_ops(ops: list[dgen.Op]) -> None:
+        for op in ops:
+            if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
+                continue
 
-        name = tracker.track_name(op)
+            name = tracker.track_name(op)
 
-        if isinstance(op, llvm.LabelOp):
-            lines.append(f"{string_value(op.label_name)}:")
-        elif isinstance(op, llvm.AllocaOp):
-            lines.append(
-                f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
-            )
-        elif isinstance(op, llvm.GepOp):
-            lines.append(
-                f"  %{name} = getelementptr double, ptr {bare_ref(op.base)},"
-                f" {typed_ref(op.index)}"
-            )
-        elif isinstance(op, llvm.LoadOp):
-            lt = _llvm_type(dgen.type.type_constant(op.type).__layout__)
-            lines.append(f"  %{name} = load {lt}, {typed_ref(op.ptr)}")
-        elif isinstance(op, llvm.StoreOp):
-            lines.append(f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}")
-        elif isinstance(op, llvm.FaddOp):
-            lines.append(
-                f"  %{name} = fadd double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            )
-        elif isinstance(op, llvm.FmulOp):
-            lines.append(
-                f"  %{name} = fmul double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            )
-        elif isinstance(op, llvm.AddOp):
-            lines.append(f"  %{name} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
-        elif isinstance(op, llvm.SubOp):
-            lines.append(f"  %{name} = sub i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
-        elif isinstance(op, llvm.MulOp):
-            lines.append(f"  %{name} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}")
-        elif isinstance(op, llvm.FcmpOp):
-            lines.append(
-                f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            )
-        elif isinstance(op, llvm.ZextOp):
-            lines.append(f"  %{name} = zext i1 {bare_ref(op.input)} to i64")
-        elif isinstance(op, llvm.IcmpOp):
-            lines.append(
-                f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            )
-        elif isinstance(op, llvm.BrOp):
-            lines.append(f"  br label %{string_value(op.dest)}")
-        elif isinstance(op, llvm.CondBrOp):
-            lines.append(
-                f"  br i1 %{tracker.track_name(op.cond)}, label %{string_value(op.true_dest)}, label %{string_value(op.false_dest)}"
-            )
-        elif isinstance(op, llvm.PhiOp):
-            ty = types.get(op, "i64")
-            lines.append(
-                f"  %{name} = phi {ty} "
-                f"[ {bare_ref(op.a)}, %{string_value(op.label_a)} ], "
-                f"[ {bare_ref(op.b)}, %{string_value(op.label_b)} ]"
-            )
-        elif isinstance(op, llvm.CallOp):
-            callee = string_value(op.callee)
-            call_args = op.args.values if isinstance(op.args, PackOp) else [op.args]
-            a = ", ".join(typed_ref(arg) for arg in call_args)
-            if isinstance(op.type, builtin.Nil):
-                lines.append(f"  call void @{callee}({a})")
-            else:
-                ret_ty = types[op]
-                lines.append(f"  %{name} = call {ret_ty} @{callee}({a})")
-        elif isinstance(op, builtin.ReturnOp):
-            if llvm_ret == "void":
-                lines.append("  ret void")
-            else:
-                lines.append(f"  ret {typed_ref(op.value)}")
+            if isinstance(op, llvm.LabelOp):
+                label_name = string_value(op.label_name)
+                lines.append(f"{label_name}:")
+                # Emit phi nodes for each block argument
+                preds = phi_preds.get(label_name, [])
+                for arg in op.body.args:
+                    arg_name = tracker.track_name(arg)
+                    ty = types.get(arg, "i64")
+                    phi_entries = ", ".join(
+                        f"[ {bare_ref(val)}, %{pred_name} ]"
+                        if val is not None
+                        else f"[ undef, %{pred_name} ]"
+                        for pred_name, val in preds
+                    )
+                    lines.append(f"  %{arg_name} = phi {ty} {phi_entries}")
+                _emit_ops(op.body.ops)
+            elif isinstance(op, llvm.AllocaOp):
+                lines.append(
+                    f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
+                )
+            elif isinstance(op, llvm.GepOp):
+                lines.append(
+                    f"  %{name} = getelementptr double, ptr {bare_ref(op.base)},"
+                    f" {typed_ref(op.index)}"
+                )
+            elif isinstance(op, llvm.LoadOp):
+                lt = _llvm_type(dgen.type.type_constant(op.type).__layout__)
+                lines.append(f"  %{name} = load {lt}, {typed_ref(op.ptr)}")
+            elif isinstance(op, llvm.StoreOp):
+                lines.append(f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}")
+            elif isinstance(op, llvm.FaddOp):
+                lines.append(
+                    f"  %{name} = fadd double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                )
+            elif isinstance(op, llvm.FmulOp):
+                lines.append(
+                    f"  %{name} = fmul double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                )
+            elif isinstance(op, llvm.AddOp):
+                lines.append(
+                    f"  %{name} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                )
+            elif isinstance(op, llvm.SubOp):
+                lines.append(
+                    f"  %{name} = sub i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                )
+            elif isinstance(op, llvm.MulOp):
+                lines.append(
+                    f"  %{name} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                )
+            elif isinstance(op, llvm.FcmpOp):
+                lines.append(
+                    f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                )
+            elif isinstance(op, llvm.ZextOp):
+                lines.append(f"  %{name} = zext i1 {bare_ref(op.input)} to i64")
+            elif isinstance(op, llvm.IcmpOp):
+                lines.append(
+                    f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+                )
+            elif isinstance(op, llvm.BrOp):
+                lines.append(f"  br label %{string_value(op.dest)}")
+            elif isinstance(op, llvm.CondBrOp):
+                lines.append(
+                    f"  br i1 %{tracker.track_name(op.cond)}, label %{string_value(op.true_dest)}, label %{string_value(op.false_dest)}"
+                )
+            elif isinstance(op, llvm.CallOp):
+                callee = string_value(op.callee)
+                call_args = op.args.values if isinstance(op.args, PackOp) else [op.args]
+                a = ", ".join(typed_ref(arg) for arg in call_args)
+                if isinstance(op.type, builtin.Nil):
+                    lines.append(f"  call void @{callee}({a})")
+                else:
+                    ret_ty = types[op]
+                    lines.append(f"  %{name} = call {ret_ty} @{callee}({a})")
+            elif isinstance(op, builtin.ReturnOp):
+                if llvm_ret == "void":
+                    lines.append("  ret void")
+                else:
+                    lines.append(f"  ret {typed_ref(op.value)}")
 
+    _emit_ops(f.body.ops)
     lines.append("}")
     return lines
 
