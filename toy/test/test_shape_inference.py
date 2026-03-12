@@ -147,7 +147,7 @@ def test_tile_with_computed_count():
         |     %3 : Index = add_index(%1, %2)
         |     %4 : toy.InferredShapeTensor<F64> = toy.tile<%0>(%3)
         |     %5 : Nil = toy.print(%4)
-        |     %_ : Nil = return(())
+        |     %_ : Nil = return(%5)
     """)
     module = parse_module(ir)
     result = infer_shapes(module)
