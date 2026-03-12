@@ -48,17 +48,19 @@ def test_serialize_produces_ir_text(ir_snapshot):
 def test_matches_graph_equivalent(ir_snapshot):
     """matches() returns True for graph-equivalent modules (SSA names differ)."""
     ext = IRSnapshotExtension()
-    a = "\n".join(parse_module(IR).asm)
-    b = "\n".join(parse_module(IR_RENAMED).asm)
-    assert ext.matches(serialized_data=a, snapshot_data=b)
+    module = parse_module(IR)
+    serialized = ext.serialize(module)
+    snapshot = "\n".join(parse_module(IR_RENAMED).asm)
+    assert ext.matches(serialized_data=serialized, snapshot_data=snapshot)
 
 
 def test_matches_false_for_different_ir(ir_snapshot):
     """matches() returns False when modules have different values."""
     ext = IRSnapshotExtension()
-    a = "\n".join(parse_module(IR).asm)
-    b = "\n".join(parse_module(IR_DIFFERENT).asm)
-    assert not ext.matches(serialized_data=a, snapshot_data=b)
+    module = parse_module(IR)
+    serialized = ext.serialize(module)
+    snapshot = "\n".join(parse_module(IR_DIFFERENT).asm)
+    assert not ext.matches(serialized_data=serialized, snapshot_data=snapshot)
 
 
 def test_diff_lines_empty_when_equivalent(ir_snapshot):
