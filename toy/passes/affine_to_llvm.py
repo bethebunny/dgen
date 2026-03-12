@@ -197,7 +197,13 @@ class AffineToLLVMLowering:
         body_label = f"loop_body{loop_id}"
         exit_label = f"loop_exit{loop_id}"
 
-        # Init: lo constant (reuse already-emitted constant if available)
+        # lo/hi may be ConstantOp objects shared across multiple ForOps (e.g. two
+        # loops both bound by the same constant node in multiply_transpose).  If
+        # _map already has a mapping the constant was emitted by an earlier loop;
+        # reuse it.  Otherwise emit a fresh ConstantOp and record the mapping so
+        # subsequent loops can reuse it.
+        # TODO: this deduplication is fragile — revisit once ForOp bounds are
+        # modelled as proper SSA Values so _seen / value_map handle them uniformly.
         init_op = self._map(op.lo)
         if init_op is op.lo:
             init_op = ConstantOp(
@@ -225,7 +231,7 @@ class AffineToLLVMLowering:
         # Map the affine loop variable to the LLVM phi node
         self.value_map[op.body.args[0]] = phi_op
 
-        # Compare and branch: hi constant (reuse already-emitted if available)
+        # Same deduplication as lo above (see comment there).
         hi_op = self._map(op.hi)
         if hi_op is op.hi:
             hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.Index())
