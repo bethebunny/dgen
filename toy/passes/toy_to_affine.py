@@ -6,7 +6,6 @@ from collections.abc import Callable, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen import layout
 from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index, List, Nil
 from dgen.module import ConstantOp, Module, PackOp
@@ -66,7 +65,7 @@ class ToyToAffine(Pass):
 
     @lowering_for(ConstantOp)
     def lower_constant(self, op: ConstantOp, rewriter: Rewriter) -> bool:
-        if not isinstance(op.memory.layout, layout.Array):
+        if not isinstance(op.type, toy.Tensor):
             return False
         new_const = ConstantOp(value=op.value, type=op.type)
         rewriter.replace_uses(op, new_const)

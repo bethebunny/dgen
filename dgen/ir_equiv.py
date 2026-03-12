@@ -49,6 +49,8 @@ class Fingerprinter:
                 self.register_block(nested)
 
     def fingerprint(self, value: Value) -> bytes:
+        if isinstance(value, list):
+            return self._compute(value)
         if value in self._cache:
             return self._cache[value]
         result = self._compute(value)

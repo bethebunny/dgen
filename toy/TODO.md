@@ -39,6 +39,9 @@
 - Formatter: clearly delineate names in sub-blocks
 
 ## Easy cleanup
+- Migrate `toy/test/test_end_to_end.py` to snapshot testing (using `IRSnapshotExtension` / `graph_equivalent`) so that expected IR strings don't need manual updates when codegen changes
+
+
 - Figure out why some ASM still doesn't have types, these should fail to parse
 - Update parser and formatter to support multi-block ops
 - Remove spurious utf8 decoding stuff from Memory/Value
