@@ -127,11 +127,12 @@ def test_index_type_layout():
 
 
 def test_tensor_type_layout():
+    from dgen.layout import FatPointer
+
     t = Tensor(shape=shape_constant([2, 3]))
     ly = t.__layout__
-    assert ly.byte_size == 48  # 6 * 8 bytes
-    assert isinstance(ly, Array)
-    assert ly.count == 6
+    assert ly.byte_size == 16  # FatPointer: ptr + length
+    assert isinstance(ly, FatPointer)
 
 
 def test_array_to_json():

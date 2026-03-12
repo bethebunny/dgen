@@ -3,12 +3,6 @@ from builtin import Index, Nil, F64, HasSingleBlock, Array, Pointer
 type Shape<rank: Index>:
     dims: Array<Index, rank>
 
-    method num_elements(self) -> Index:
-        count: Index = 1
-        for dim in self.dims:
-            count = count * dim
-        return count
-
 type MemRef<shape: Shape, dtype: Type = F64>:
     data: Pointer<Nil>
 

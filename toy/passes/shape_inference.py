@@ -46,14 +46,18 @@ def _infer_function(
         elif isinstance(op, toy.TransposeOp):
             src = type_of.get(op.input)
             if src is not None:
-                t = toy.Tensor(shape=shape_constant(list(reversed(src.unpack_shape()))))
+                t = toy.Tensor(
+                    shape=shape_constant(
+                        list(reversed(src.shape.__constant__.to_json()))
+                    )
+                )
                 op.type = t
                 type_of[op] = t
 
         elif isinstance(op, (toy.MulOp, toy.AddOp)):
             src = type_of.get(op.lhs)
             if src is not None:
-                t = toy.Tensor(shape=shape_constant(src.unpack_shape()))
+                t = toy.Tensor(shape=shape_constant(src.shape.__constant__.to_json()))
                 op.type = t
                 type_of[op] = t
 
@@ -61,8 +65,8 @@ def _infer_function(
             lhs = type_of.get(op.lhs)
             rhs = type_of.get(op.rhs)
             if lhs is not None and rhs is not None:
-                lhs_dims = lhs.unpack_shape()
-                rhs_dims = rhs.unpack_shape()
+                lhs_dims = lhs.shape.__constant__.to_json()
+                rhs_dims = rhs.shape.__constant__.to_json()
                 shape = list(lhs_dims)
                 axis = op.axis.__constant__.to_json()
                 assert isinstance(axis, int)
@@ -82,7 +86,9 @@ def _infer_function(
                 )
                 if count_val is not None:
                     t = toy.Tensor(
-                        shape=shape_constant([count_val] + src.unpack_shape())
+                        shape=shape_constant(
+                            [count_val] + src.shape.__constant__.to_json()
+                        )
                     )
                     op.type = t
                     type_of[op] = t
@@ -109,7 +115,9 @@ def _infer_function(
                         if ret_type is not None:
                             callee.result = ret_type
                             op.type = toy.Tensor(
-                                shape=shape_constant(ret_type.unpack_shape())
+                                shape=shape_constant(
+                                    ret_type.shape.__constant__.to_json()
+                                )
                             )
                             type_of[op] = op.type
 

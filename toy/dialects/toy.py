@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
-from dgen import Dialect, Op, Type, Value
+from dgen import Dialect, Op, Type, Value, layout
 from dgen.dialects.builtin import Index, Nil, F64
 import toy.dialects.affine as affine
 
@@ -22,8 +22,9 @@ class Tensor(Type):
         ("dtype", dgen.TypeType),
     )
 
-    def unpack_shape(self):
-        return self.shape.__constant__.to_json()
+    @property
+    def __layout__(self) -> layout.Layout:
+        return layout.FatPointer(dgen.type.type_constant(self.dtype).__layout__)
 
 
 @toy.type("InferredShapeTensor")

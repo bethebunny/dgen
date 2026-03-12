@@ -3,25 +3,13 @@
 from __future__ import annotations
 
 from dgen.gen.ast import (
-    Assignment,
-    AttrExpr,
-    BinOpExpr,
-    CallExpr,
     Constraint,
     DataField,
     DgenFile,
-    Expr,
-    ForStmt,
-    IfStmt,
     ImportDecl,
-    LiteralExpr,
-    MethodDecl,
-    NameExpr,
     OpDecl,
     OperandDecl,
     ParamDecl,
-    ReturnStmt,
-    Statement,
     StaticField,
     TraitDecl,
     TypeDecl,
@@ -122,9 +110,8 @@ class _Parser:
         layout: str | None = None
         traits: list[str] = []
         statics: list[StaticField] = []
-        methods: list[MethodDecl] = []
         if has_body:
-            data, layout, traits, statics, methods = self._parse_type_body()
+            data, layout, traits, statics = self._parse_type_body()
         return TypeDecl(
             name=name,
             params=params,
@@ -132,20 +119,16 @@ class _Parser:
             layout=layout,
             traits=traits,
             statics=statics,
-            methods=methods,
         )
 
     def _parse_type_body(
         self,
-    ) -> tuple[
-        list[DataField], str | None, list[str], list[StaticField], list[MethodDecl]
-    ]:
-        """Parse indented type body lines, return (data fields, layout name, traits, statics, methods)."""
+    ) -> tuple[list[DataField], str | None, list[str], list[StaticField]]:
+        """Parse indented type body lines, return (data fields, layout name, traits, statics)."""
         data: list[DataField] = []
         layout = None
         traits: list[str] = []
         statics: list[StaticField] = []
-        methods: list[MethodDecl] = []
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
             # Skip blank lines but only if a subsequent indented line follows
@@ -172,46 +155,13 @@ class _Parser:
             if stripped.startswith("static "):
                 statics.append(_parse_static_field(stripped))
                 continue
-            # Method declaration: method name(self[, args]) -> ReturnType:
-            if stripped.startswith("method "):
-                rest = stripped[7:].rstrip(":")
-                paren = rest.index("(")
-                method_name = rest[:paren].strip()
-                close_paren = rest.index(")")
-                params_str = rest[paren + 1 : close_paren]
-                param_parts = [
-                    p.strip()
-                    for p in params_str.split(",")
-                    if p.strip() and p.strip() != "self"
-                ]
-                params = _parse_params(", ".join(param_parts)) if param_parts else []
-                after_paren = rest[close_paren + 1 :].strip()
-                ret_type = (
-                    _parse_type_ref(after_paren.split("->")[1].strip())
-                    if "->" in after_paren
-                    else TypeRef("Nil")
-                )
-                method_indent = len(next_line) - len(next_line.lstrip())
-                body, new_pos = _parse_method_body(
-                    self.lines, self.pos + 1, method_indent
-                )
-                self.pos = new_pos - 1
-                methods.append(
-                    MethodDecl(
-                        name=method_name,
-                        params=params,
-                        return_type=ret_type,
-                        body=body,
-                    )
-                )
-                continue
             # Field declaration: name: TypeExpr
             if ":" in stripped:
                 colon = stripped.index(":")
                 field_name = stripped[:colon].strip()
                 type_str = stripped[colon + 1 :].strip()
                 data.append(DataField(name=field_name, type=_parse_type_ref(type_str)))
-        return data, layout, traits, statics, methods
+        return data, layout, traits, statics
 
     def _has_more_body(self, pos: int) -> bool:
         """Check if there's a subsequent indented line after blank lines at pos."""
@@ -298,203 +248,6 @@ class _Parser:
             elif stripped.startswith("requires "):
                 constraints.append(_parse_constraint(stripped))
         return blocks, traits, constraints
-
-
-def _parse_expr(s: str) -> Expr:
-    """Parse a mini-language expression string."""
-    s = s.strip()
-    # Comparison operators (lowest precedence)
-    for op in ("==", "!=", "<=", ">=", "<", ">"):
-        idx = _find_binop(s, op)
-        if idx >= 0:
-            return BinOpExpr(
-                op=op,
-                left=_parse_expr(s[:idx]),
-                right=_parse_expr(s[idx + len(op) :]),
-            )
-    # Addition/subtraction
-    for op in ("+", "-"):
-        idx = _find_binop(s, op)
-        if idx >= 0:
-            return BinOpExpr(
-                op=op,
-                left=_parse_expr(s[:idx]),
-                right=_parse_expr(s[idx + len(op) :]),
-            )
-    # Multiplication/floor division
-    for op in ("*", "//"):
-        idx = _find_binop(s, op)
-        if idx >= 0:
-            return BinOpExpr(
-                op=op,
-                left=_parse_expr(s[:idx]),
-                right=_parse_expr(s[idx + len(op) :]),
-            )
-    return _parse_postfix(s)
-
-
-def _find_binop(s: str, op: str) -> int:
-    """Find rightmost occurrence of op outside parentheses."""
-    depth = 0
-    i = len(s) - len(op)
-    while i >= 0:
-        ch = s[i]
-        if ch == ")":
-            depth += 1
-        elif ch == "(":
-            depth -= 1
-        elif depth == 0 and s[i : i + len(op)] == op:
-            # Avoid matching = inside ==, !=, <=, >=
-            if op == "=" and i > 0 and s[i - 1] in "!<>=":
-                i -= 1
-                continue
-            if op == "=" and i + 1 < len(s) and s[i + 1] == "=":
-                i -= 1
-                continue
-            # Avoid matching < inside <=
-            if op == "<" and i + 1 < len(s) and s[i + 1] == "=":
-                i -= 1
-                continue
-            # Avoid matching > inside >= or =>
-            if op == ">" and i + 1 < len(s) and s[i + 1] == "=":
-                i -= 1
-                continue
-            if op == ">" and i > 0 and s[i - 1] == "=":
-                i -= 1
-                continue
-            # Avoid matching < inside !=  (n/a, but be safe)
-            if op == "<" and i > 0 and s[i - 1] == "!":
-                i -= 1
-                continue
-            # Don't match + or - at position 0 (unary)
-            if op in ("+", "-") and i == 0:
-                i -= 1
-                continue
-            return i
-        i -= 1
-    return -1
-
-
-def _parse_postfix(s: str) -> Expr:
-    """Parse name, literals, attribute access, function calls."""
-    s = s.strip()
-    # Parenthesized expression
-    if s.startswith("(") and s.endswith(")"):
-        return _parse_expr(s[1:-1])
-    # Integer literal
-    if s.isdigit() or (len(s) > 1 and s[0] == "-" and s[1:].isdigit()):
-        return LiteralExpr(value=int(s))
-    # Float literal
-    if "." in s:
-        try:
-            return LiteralExpr(value=float(s))
-        except ValueError:
-            pass
-    # Function call: ...name(args)
-    if s.endswith(")") and "(" in s:
-        paren = _find_matching_reverse(s, len(s) - 1)
-        func_str = s[:paren].strip()
-        args_str = s[paren + 1 : -1].strip()
-        func = _parse_postfix(func_str)
-        args = [_parse_expr(a) for a in _split_commas(args_str)] if args_str else []
-        return CallExpr(func=func, args=args)
-    # Attribute access: a.b.c — but NOT float literals
-    if "." in s:
-        last_dot = s.rindex(".")
-        return AttrExpr(value=_parse_postfix(s[:last_dot]), attr=s[last_dot + 1 :])
-    # Simple name
-    return NameExpr(name=s)
-
-
-def _find_matching_reverse(s: str, start: int) -> int:
-    """Find matching open paren scanning backwards from close paren at start."""
-    depth = 0
-    i = start
-    while i >= 0:
-        if s[i] == ")":
-            depth += 1
-        elif s[i] == "(":
-            depth -= 1
-            if depth == 0:
-                return i
-        i -= 1
-    raise SyntaxError(f"unmatched ) in {s!r}")
-
-
-def _parse_method_body(
-    lines: list[str], pos: int, base_indent: int
-) -> tuple[list[Statement], int]:
-    """Parse indented method body statements. Returns (statements, new_pos)."""
-    stmts: list[Statement] = []
-    while pos < len(lines):
-        line = lines[pos]
-        if not line or not line[0].isspace():
-            break
-        indent = len(line) - len(line.lstrip())
-        if indent <= base_indent:
-            break
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            pos += 1
-            continue
-
-        if stripped.startswith("return "):
-            stmts.append(ReturnStmt(value=_parse_expr(stripped[7:])))
-            pos += 1
-        elif stripped.startswith("for "):
-            rest = stripped[4:]
-            in_idx = rest.index(" in ")
-            var = rest[:in_idx].strip()
-            iter_str = rest[in_idx + 4 :].rstrip(":")
-            iter_expr = _parse_expr(iter_str)
-            pos += 1
-            body, pos = _parse_method_body(lines, pos, indent)
-            stmts.append(ForStmt(var=var, iter=iter_expr, body=body))
-        elif stripped.startswith("if "):
-            cond_str = stripped[3:].rstrip(":")
-            cond = _parse_expr(cond_str)
-            pos += 1
-            then_body, pos = _parse_method_body(lines, pos, indent)
-            else_body: list[Statement] = []
-            if pos < len(lines):
-                next_stripped = lines[pos].strip()
-                if next_stripped == "else:":
-                    pos += 1
-                    else_body, pos = _parse_method_body(lines, pos, indent)
-            stmts.append(
-                IfStmt(condition=cond, then_body=then_body, else_body=else_body)
-            )
-        else:
-            # Assignment: name[: Type] = value
-            eq_idx = _find_assignment_eq(stripped)
-            if eq_idx < 0:
-                raise SyntaxError(f"unexpected statement: {stripped!r}")
-            lhs = stripped[:eq_idx].strip()
-            rhs = stripped[eq_idx + 1 :].strip()
-            type_ref: TypeRef | None = None
-            if ":" in lhs:
-                name, type_str = lhs.split(":", 1)
-                name = name.strip()
-                type_ref = _parse_type_ref(type_str.strip())
-            else:
-                name = lhs
-            stmts.append(Assignment(name=name, value=_parse_expr(rhs), type=type_ref))
-            pos += 1
-    return stmts, pos
-
-
-def _find_assignment_eq(s: str) -> int:
-    """Find the = in an assignment, skipping == and !=."""
-    i = 0
-    while i < len(s):
-        if (
-            s[i] == "="
-            and (i == 0 or s[i - 1] not in "!<>=")
-            and (i + 1 >= len(s) or s[i + 1] != "=")
-        ):
-            return i
-        i += 1
-    return -1
 
 
 def _parse_static_field(line: str) -> StaticField:

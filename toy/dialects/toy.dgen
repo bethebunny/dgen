@@ -1,12 +1,8 @@
-from builtin import Index, Nil, F64, String
+from builtin import Index, Nil, F64, String, FatPointer
 import affine
 
 type Tensor<shape: affine.Shape, dtype: Type = F64>:
-    # TODO: data: Array<dtype, shape.num_elements()> — generator doesn't support
-    # method call expressions in data field args yet. Monkey-patched in __init__.py.
-
-    method unpack_shape(self) -> list:
-        return self.shape.__constant__.to_json()
+    data: FatPointer<dtype>
 
 type InferredShapeTensor<dtype: Type = F64>:
     data: Nil

@@ -1,22 +1,13 @@
 """Tests for Python code generator from .dgen AST."""
 
 from dgen.gen.ast import (
-    Assignment,
-    AttrExpr,
-    BinOpExpr,
-    CallExpr,
     Constraint,
     DataField,
     DgenFile,
-    ForStmt,
     ImportDecl,
-    LiteralExpr,
-    MethodDecl,
-    NameExpr,
     OpDecl,
     OperandDecl,
     ParamDecl,
-    ReturnStmt,
     StaticField,
     TraitDecl,
     TypeDecl,
@@ -718,115 +709,6 @@ def test_generate_op_constraints():
     assert '"$X ~= Tensor"' in code
     assert '"$Result ~= Tensor"' in code
     assert '"$X.dtype == $Result.dtype"' in code
-
-
-def test_generate_method_simple():
-    """Simple method generates a Python method."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Foo",
-                layout="Void",
-                methods=[
-                    MethodDecl(
-                        name="size",
-                        params=[],
-                        return_type=TypeRef("Index"),
-                        body=[ReturnStmt(value=LiteralExpr(value=42))],
-                    )
-                ],
-            )
-        ]
-    )
-    code = generate(f, dialect_name="test")
-    assert "def size(self):" in code
-    assert "return 42" in code
-
-
-def test_generate_method_for_loop():
-    """Method with for loop generates correct Python."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Shape",
-                params=[ParamDecl(name="rank", type=TypeRef("Index"))],
-                data=[
-                    DataField(
-                        name="dims",
-                        type=TypeRef("Array", [TypeRef("Index"), TypeRef("rank")]),
-                    )
-                ],
-                methods=[
-                    MethodDecl(
-                        name="num_elements",
-                        params=[],
-                        return_type=TypeRef("Index"),
-                        body=[
-                            Assignment(
-                                name="count",
-                                type=TypeRef("Index"),
-                                value=LiteralExpr(value=1),
-                            ),
-                            ForStmt(
-                                var="dim",
-                                iter=AttrExpr(value=NameExpr(name="self"), attr="dims"),
-                                body=[
-                                    Assignment(
-                                        name="count",
-                                        value=BinOpExpr(
-                                            op="*",
-                                            left=NameExpr(name="count"),
-                                            right=NameExpr(name="dim"),
-                                        ),
-                                    )
-                                ],
-                            ),
-                            ReturnStmt(value=NameExpr(name="count")),
-                        ],
-                    )
-                ],
-            )
-        ]
-    )
-    code = generate(f, dialect_name="test")
-    assert "def num_elements(self):" in code
-    assert "count = 1" in code
-    assert "for dim in self.dims:" in code
-    assert "count = count * dim" in code
-    assert "return count" in code
-
-
-def test_generate_method_call():
-    """Method with function call."""
-    f = DgenFile(
-        types=[
-            TypeDecl(
-                name="Foo",
-                layout="Void",
-                methods=[
-                    MethodDecl(
-                        name="total",
-                        params=[],
-                        return_type=TypeRef("Index"),
-                        body=[
-                            ReturnStmt(
-                                value=CallExpr(
-                                    func=NameExpr(name="prod"),
-                                    args=[
-                                        AttrExpr(
-                                            value=NameExpr(name="self"), attr="dims"
-                                        )
-                                    ],
-                                )
-                            )
-                        ],
-                    )
-                ],
-            )
-        ]
-    )
-    code = generate(f, dialect_name="test")
-    assert "return prod(self.dims)" in code
 
 
 def test_generate_op_no_constraints():

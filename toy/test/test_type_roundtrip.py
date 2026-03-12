@@ -199,6 +199,7 @@ _PARSEABLE_TYPES = [
     pytest.param(builtin.Index(), 42, "42", (42,), id="builtin.index"),
     pytest.param(builtin.F64(), 3.14, "3.14", (3.14,), id="builtin.f64"),
     # String uses FatPointer — tested separately (not via from_value)
+    # Tensor uses FatPointer — tested separately below (not via unpack)
     pytest.param(
         llvm.Int(bits=builtin.Index().constant(64)),
         42,
@@ -207,20 +208,6 @@ _PARSEABLE_TYPES = [
         id="llvm.i64",
     ),
     pytest.param(llvm.Float(), 3.14, "3.14", (3.14,), id="llvm.f64"),
-    pytest.param(
-        Tensor(shape=shape_constant([3])),
-        [1.0, 2.0, 3.0],
-        "[1.0, 2.0, 3.0]",
-        (1.0, 2.0, 3.0),
-        id="toy.tensor_1d",
-    ),
-    pytest.param(
-        Tensor(shape=shape_constant([2, 3])),
-        [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        "[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]",
-        (1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
-        id="toy.tensor_2d",
-    ),
     pytest.param(
         Shape(rank=builtin.Index().constant(2)),
         [2, 3],
@@ -269,6 +256,41 @@ def test_jit_identity_roundtrip(ty, value, _asm, expected):
 # ---------------------------------------------------------------------------
 # 5. String staging tests
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# 5. Tensor memory round-trips
+# ---------------------------------------------------------------------------
+
+
+def test_tensor_1d_from_value_roundtrip():
+    """1D Tensor round-trips through Memory — to_json returns flat list."""
+    ty = Tensor(shape=shape_constant([3]))
+    mem = Memory.from_value(ty, [1.0, 2.0, 3.0])
+    assert mem.to_json() == [1.0, 2.0, 3.0]
+
+
+def test_tensor_2d_from_value_roundtrip():
+    """2D Tensor round-trips through Memory — to_json returns flat list."""
+    ty = Tensor(shape=shape_constant([2, 3]))
+    mem = Memory.from_value(ty, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    assert mem.to_json() == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+
+
+def test_tensor_from_asm_roundtrip():
+    """Tensor ASM literal round-trips through Memory."""
+    ty = Tensor(shape=shape_constant([3]))
+    mem = Memory.from_asm(ty, "[1.0, 2.0, 3.0]")
+    assert mem.to_json() == [1.0, 2.0, 3.0]
+
+
+def test_tensor_layout_is_fatpointer():
+    """Tensor layout is FatPointer(F64) — 16 bytes."""
+    from dgen.layout import FatPointer
+
+    ty = Tensor(shape=shape_constant([3]))
+    assert isinstance(ty.__layout__, FatPointer)
+    assert ty.__layout__.byte_size == 16
 
 
 # ---------------------------------------------------------------------------
