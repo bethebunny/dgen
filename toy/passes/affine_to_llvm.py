@@ -8,7 +8,6 @@ from math import prod
 import dgen
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
-from dgen import layout
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import affine, toy
 
@@ -44,7 +43,7 @@ class AffineToLLVMLowering:
         for arg in f.body.args:
             self.value_map[arg] = arg
             if isinstance(arg.type, toy.Tensor):
-                shape = arg.type.unpack_shape()
+                shape = arg.type.shape.__constant__.to_json()
                 self.alloc_shapes[arg] = shape
                 self.alloc_sizes[arg] = prod(shape)
         ops = []
@@ -75,10 +74,8 @@ class AffineToLLVMLowering:
             new_op = ConstantOp(value=op.value, type=op.type)
             yield new_op
             self.value_map[op] = new_op
-            if isinstance(op.memory.layout, layout.Array) and isinstance(
-                op.type, toy.Tensor
-            ):
-                shape = op.type.unpack_shape()
+            if isinstance(op.type, toy.Tensor):
+                shape = op.type.shape.__constant__.to_json()
                 self.alloc_shapes[new_op] = shape
                 self.alloc_sizes[new_op] = prod(shape)
         elif isinstance(op, affine.MulFOp):
@@ -246,7 +243,7 @@ class AffineToLLVMLowering:
         """Unrolled nonzero_count: count non-zero elements in a tensor."""
         input_val = self._map(op.input)
         assert isinstance(op.input.type, toy.Tensor)
-        total = prod(op.input.type.unpack_shape())
+        total = prod(op.input.type.shape.__constant__.to_json())
 
         zero_f = ConstantOp(value=0.0, type=builtin.F64())
         yield zero_f

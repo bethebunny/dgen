@@ -21,12 +21,6 @@ class Shape(Type):
     def __layout__(self) -> layout.Layout:
         return layout.Array(Index.__layout__, self.rank.__constant__.to_json())
 
-    def num_elements(self):
-        count = 1
-        for dim in self.dims:
-            count = count * dim
-        return count
-
 
 @affine.type("MemRef")
 @dataclass(frozen=True)

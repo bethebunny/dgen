@@ -1,6 +1,5 @@
 """Ch6 tests: Affine IR to LLVM-like IR lowering."""
 
-
 from dgen.asm.parser import parse_module
 from dgen.module import Module
 from toy.passes.affine_to_llvm import lower_to_llvm

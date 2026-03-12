@@ -6,7 +6,6 @@ from collections.abc import Callable, Iterator, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen import layout
 from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index, List, Nil
 from dgen.module import ConstantOp, Module, PackOp
@@ -50,7 +49,7 @@ class ToyToAffineLowering:
         )
 
     def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
-        if isinstance(op, ConstantOp) and isinstance(op.memory.layout, layout.Array):
+        if isinstance(op, ConstantOp) and isinstance(op.type, toy.Tensor):
             yield from self._lower_constant(op)
         elif isinstance(op, ConstantOp):
             yield op
@@ -124,7 +123,7 @@ class ToyToAffineLowering:
     def _lower_transpose(self, op: toy.TransposeOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, toy.Tensor)
         assert isinstance(op.input.type, toy.Tensor)
-        in_shape = op.input.type.unpack_shape()
+        in_shape = op.input.type.shape.__constant__.to_json()
 
         alloc_op = self._make_alloc(op.type.shape)
         yield alloc_op
@@ -145,7 +144,7 @@ class ToyToAffineLowering:
         self, result_op: dgen.Op, lhs_val: dgen.Value, rhs_val: dgen.Value
     ) -> Iterator[dgen.Op]:
         assert isinstance(lhs_val.type, toy.Tensor)
-        shape = lhs_val.type.unpack_shape()
+        shape = lhs_val.type.shape.__constant__.to_json()
         alloc_op = self._make_alloc(lhs_val.type.shape)
         yield alloc_op
         self.live_allocs.append(alloc_op)
@@ -173,7 +172,7 @@ class ToyToAffineLowering:
         count = op.count.__constant__.to_json()
         assert isinstance(count, int)
         assert isinstance(op.input.type, toy.Tensor)
-        input_shape = op.input.type.unpack_shape()
+        input_shape = op.input.type.shape.__constant__.to_json()
         output_shape: list[int] = [count] + input_shape
 
         alloc_op = self._make_alloc(shape_constant(output_shape))
@@ -195,8 +194,8 @@ class ToyToAffineLowering:
     def _lower_concat(self, op: toy.ConcatOp) -> Iterator[dgen.Op]:
         assert isinstance(op.lhs.type, toy.Tensor)
         assert isinstance(op.rhs.type, toy.Tensor)
-        lhs_shape = op.lhs.type.unpack_shape()
-        rhs_shape = op.rhs.type.unpack_shape()
+        lhs_shape = op.lhs.type.shape.__constant__.to_json()
+        rhs_shape = op.rhs.type.shape.__constant__.to_json()
         axis = op.axis.__constant__.to_json()
         assert isinstance(axis, int)
 
@@ -237,7 +236,7 @@ class ToyToAffineLowering:
 
     def _lower_dim_size(self, op: toy.DimSizeOp) -> Iterator[dgen.Op]:
         assert isinstance(op.input.type, toy.Tensor)
-        shape = op.input.type.unpack_shape()
+        shape = op.input.type.shape.__constant__.to_json()
         axis = op.axis.__constant__.to_json()
         assert isinstance(axis, int)
         const = ConstantOp(value=shape[axis], type=Index())
