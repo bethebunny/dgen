@@ -11,6 +11,8 @@ from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import affine, toy
 
+_PTR_TYPE = llvm.Ptr()
+
 
 def _extract_list_elements(
     list_val: dgen.Value,
@@ -40,13 +42,19 @@ class AffineToLLVMLowering:
         self.alloc_sizes = {}
         self.current_label = "entry"
         # Register block args (function parameters)
+        prologue: list[dgen.Op] = []
         for arg in f.body.args:
-            self.value_map[arg] = arg
             if isinstance(arg.type, toy.Tensor):
+                # arg is a FatPointer struct ptr; load the data ptr from it
+                load_op = llvm.LoadOp(ptr=arg, type=_PTR_TYPE)
+                prologue.append(load_op)
+                self.value_map[arg] = load_op
                 shape = arg.type.shape.__constant__.to_json()
-                self.alloc_shapes[arg] = shape
-                self.alloc_sizes[arg] = prod(shape)
-        ops = []
+                self.alloc_shapes[load_op] = shape
+                self.alloc_sizes[load_op] = prod(shape)
+            else:
+                self.value_map[arg] = arg
+        ops = list(prologue)
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
         return FunctionOp(
@@ -73,11 +81,16 @@ class AffineToLLVMLowering:
         elif isinstance(op, ConstantOp):
             new_op = ConstantOp(value=op.value, type=op.type)
             yield new_op
-            self.value_map[op] = new_op
             if isinstance(op.type, toy.Tensor):
+                # new_op is a FatPointer struct ptr; load the data ptr from it
+                load_op = llvm.LoadOp(ptr=new_op, type=_PTR_TYPE)
+                yield load_op
+                self.value_map[op] = load_op
                 shape = op.type.shape.__constant__.to_json()
-                self.alloc_shapes[new_op] = shape
-                self.alloc_sizes[new_op] = prod(shape)
+                self.alloc_shapes[load_op] = shape
+                self.alloc_sizes[load_op] = prod(shape)
+            else:
+                self.value_map[op] = new_op
         elif isinstance(op, affine.MulFOp):
             llvm_op = llvm.FmulOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
             yield llvm_op
