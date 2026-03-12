@@ -1,5 +1,8 @@
 """Tests for Python code generator from .dgen AST."""
 
+import importlib
+import sys
+
 from dgen.gen.ast import (
     Constraint,
     DataField,
@@ -13,6 +16,7 @@ from dgen.gen.ast import (
     TypeDecl,
     TypeRef,
 )
+from dgen.gen.importer import DgenLoader
 from dgen.gen.parser import parse
 from dgen.gen.python import generate_pyi
 
@@ -778,8 +782,6 @@ def test_generate_pyi_data_property_stub():
 
 def test_import_hook_loads_builtin():
     """The .dgen import hook makes dgen.dialects.builtin importable."""
-    import importlib
-
     mod = importlib.import_module("dgen.dialects.builtin")
     assert hasattr(mod, "Index")
     assert hasattr(mod, "F64")
@@ -788,8 +790,6 @@ def test_import_hook_loads_builtin():
 
 def test_import_hook_loads_toy():
     """The .dgen import hook resolves cross-file imports (affine in toy)."""
-    import importlib
-
     mod = importlib.import_module("toy.dialects.toy")
     assert hasattr(mod, "Tensor")
     assert hasattr(mod, "toy")
@@ -797,11 +797,7 @@ def test_import_hook_loads_toy():
 
 def test_import_hook_import_map_auto_resolved():
     """DgenLoader stores the resolved import_map after loading."""
-    import sys
-
     spec = sys.modules["dgen.dialects.builtin"].__spec__
-    from dgen.gen.importer import DgenLoader
-
     assert isinstance(spec.loader, DgenLoader)
     # builtin.dgen has no cross-file imports so import_map should be empty
     assert spec.loader.import_map == {}
@@ -809,10 +805,6 @@ def test_import_hook_import_map_auto_resolved():
 
 def test_import_hook_toy_import_map_has_affine():
     """Loader for toy.dgen resolves 'affine' → 'toy.dialects.affine'."""
-    import sys
-
     spec = sys.modules["toy.dialects.toy"].__spec__
-    from dgen.gen.importer import DgenLoader
-
     assert isinstance(spec.loader, DgenLoader)
     assert spec.loader.import_map.get("affine") == "toy.dialects.affine"

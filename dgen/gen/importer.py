@@ -67,8 +67,7 @@ def _resolve_imports(dgen_path: Path, ast: DgenFile) -> dict[str, str]:
 class DgenLoader(importlib.abc.Loader):
     """Loader that compiles a .dgen file into a live Python module."""
 
-    def __init__(self, fullname: str, path: Path) -> None:
-        self.fullname = fullname
+    def __init__(self, path: Path) -> None:
         self.path = path
         # Populated by exec_module; available for introspection afterward.
         self.ast: DgenFile | None = None
@@ -107,7 +106,7 @@ class DgenFinder(importlib.abc.MetaPathFinder):
             if dgen_file.exists():
                 return importlib.machinery.ModuleSpec(
                     fullname,
-                    DgenLoader(fullname, dgen_file),
+                    DgenLoader(dgen_file),
                     origin=str(dgen_file),
                 )
         return None

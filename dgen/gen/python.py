@@ -12,6 +12,10 @@ from dgen.gen.ast import (
     TypeRef,
 )
 
+# Fallback import map for when the caller doesn't supply one.
+# Must stay in sync with _DEFAULT_MAP in dgen/gen/importer.py.
+_BUILTIN_MODULE_MAP: dict[str, str] = {"builtin": "dgen.dialects.builtin"}
+
 # Builtin type → layout expression for static __layout__ attributes.
 # Leaf entries end in ")"; constructor entries don't.
 _LAYOUTS: dict[str, str] = {
@@ -126,7 +130,7 @@ def _generate(
     yield "import dgen"
     yield f"from dgen import {', '.join(sorted(dgen_names))}"
 
-    effective_map = {"builtin": "dgen.dialects.builtin", **import_map}
+    effective_map = {**_BUILTIN_MODULE_MAP, **import_map}
 
     for imp in ast.imports:
         python_module = effective_map.get(imp.module)
