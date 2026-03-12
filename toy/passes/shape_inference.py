@@ -28,7 +28,7 @@ class ShapeInference(Pass):
     allow_unregistered_ops = True  # skip ops we don't infer
 
     def __init__(self) -> None:
-        self.type_of: dict[int, toy.Tensor] = {}
+        self.type_of: dict[dgen.Value, toy.Tensor] = {}
         self.func_map: dict[str, builtin.FunctionOp] = {}
 
     def run(self, module: Module) -> Module:
@@ -46,52 +46,52 @@ class ShapeInference(Pass):
     def _seed_and_run(self, func: builtin.FunctionOp) -> None:
         for arg in func.body.args:
             if isinstance(arg.type, toy.Tensor):
-                self.type_of[id(arg)] = arg.type
+                self.type_of[arg] = arg.type
         self._run_block(func.body)
 
     @lowering_for(ConstantOp)
     def infer_constant(self, op: ConstantOp, rewriter: Rewriter) -> bool:
         if isinstance(op.type, toy.Tensor):
-            self.type_of[id(op)] = op.type
+            self.type_of[op] = op.type
         return True
 
     @lowering_for(toy.ReshapeOp)
     def infer_reshape(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
         if isinstance(op.type, toy.Tensor):
-            self.type_of[id(op)] = op.type
+            self.type_of[op] = op.type
         return True
 
     @lowering_for(toy.TransposeOp)
     def infer_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
-        src = self.type_of.get(id(op.input))
+        src = self.type_of.get(op.input)
         if src is not None:
             t = toy.Tensor(shape=shape_constant(list(reversed(src.shape.__constant__.to_json()))))
             op.type = t
-            self.type_of[id(op)] = t
+            self.type_of[op] = t
         return True
 
     @lowering_for(toy.MulOp)
     def infer_mul(self, op: toy.MulOp, rewriter: Rewriter) -> bool:
-        src = self.type_of.get(id(op.lhs))
+        src = self.type_of.get(op.lhs)
         if src is not None:
             t = toy.Tensor(shape=shape_constant(src.shape.__constant__.to_json()))
             op.type = t
-            self.type_of[id(op)] = t
+            self.type_of[op] = t
         return True
 
     @lowering_for(toy.AddOp)
     def infer_add(self, op: toy.AddOp, rewriter: Rewriter) -> bool:
-        src = self.type_of.get(id(op.lhs))
+        src = self.type_of.get(op.lhs)
         if src is not None:
             t = toy.Tensor(shape=shape_constant(src.shape.__constant__.to_json()))
             op.type = t
-            self.type_of[id(op)] = t
+            self.type_of[op] = t
         return True
 
     @lowering_for(toy.ConcatOp)
     def infer_concat(self, op: toy.ConcatOp, rewriter: Rewriter) -> bool:
-        lhs = self.type_of.get(id(op.lhs))
-        rhs = self.type_of.get(id(op.rhs))
+        lhs = self.type_of.get(op.lhs)
+        rhs = self.type_of.get(op.rhs)
         if lhs is not None and rhs is not None:
             lhs_dims = lhs.shape.__constant__.to_json()
             rhs_dims = rhs.shape.__constant__.to_json()
@@ -101,12 +101,12 @@ class ShapeInference(Pass):
             shape[axis] = lhs_dims[axis] + rhs_dims[axis]
             t = toy.Tensor(shape=shape_constant(shape))
             op.type = t
-            self.type_of[id(op)] = t
+            self.type_of[op] = t
         return True
 
     @lowering_for(toy.TileOp)
     def infer_tile(self, op: toy.TileOp, rewriter: Rewriter) -> bool:
-        src = self.type_of.get(id(op.input))
+        src = self.type_of.get(op.input)
         if src is not None:
             count_val = (
                 _resolve_index_value(op.count)
@@ -116,32 +116,32 @@ class ShapeInference(Pass):
             if count_val is not None:
                 t = toy.Tensor(shape=shape_constant([count_val] + src.shape.__constant__.to_json()))
                 op.type = t
-                self.type_of[id(op)] = t
+                self.type_of[op] = t
         return True
 
     @lowering_for(builtin.CallOp)
     def infer_call(self, op: builtin.CallOp, rewriter: Rewriter) -> bool:
         args_list = op.args.values if isinstance(op.args, PackOp) else [op.args]
-        resolved = [self.type_of.get(id(a)) for a in args_list]
+        resolved = [self.type_of.get(a) for a in args_list]
         arg_types = [t for t in resolved if t is not None]
         if len(arg_types) == len(resolved):
             callee = self.func_map.get(op.callee.name)
             if callee is not None:
                 for param, atype in zip(callee.body.args, arg_types):
                     param.type = atype
-                    self.type_of[id(param)] = atype
+                    self.type_of[param] = atype
                 self._seed_and_run(callee)
                 ret_op = callee.body.ops[-1]
                 if isinstance(ret_op, builtin.ReturnOp) and not isinstance(
                     ret_op.value, builtin.Nil
                 ):
-                    ret_type = self.type_of.get(id(ret_op.value))
+                    ret_type = self.type_of.get(ret_op.value)
                     if ret_type is not None:
                         callee.result = ret_type
                         op.type = toy.Tensor(
                             shape=shape_constant(ret_type.shape.__constant__.to_json())
                         )
-                        self.type_of[id(op)] = op.type
+                        self.type_of[op] = op.type
         return True
 
 
