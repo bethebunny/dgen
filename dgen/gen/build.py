@@ -14,7 +14,19 @@ from types import ModuleType
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value, layout
-from dgen.gen.ast import DgenFile, OpDecl, ParamDecl, TraitDecl, TypeDecl, TypeRef
+from dgen.gen.ast import (
+    Constraint,
+    DgenFile,
+    OpDecl,
+    ParamDecl,
+    TraitDecl,
+    TypeDecl,
+    TypeRef,
+)
+
+# Layout functions return either a Layout (for Type params) or a JSON scalar
+# (for value params like Index used as Array size arguments).
+_LayoutFn = Callable[[object], object]
 
 _PRIMITIVE_LAYOUTS: dict[str, layout.Layout] = {
     "Int": layout.Int(),
@@ -24,7 +36,7 @@ _PRIMITIVE_LAYOUTS: dict[str, layout.Layout] = {
     "String": layout.String(),
 }
 
-_CONSTRUCTOR_LAYOUTS: dict[str, type] = {
+_CONSTRUCTOR_LAYOUTS: dict[str, type[layout.Layout]] = {
     "Pointer": layout.Pointer,
     "Array": layout.Array,
     "FatPointer": layout.FatPointer,
@@ -37,52 +49,51 @@ def _op_class_name(asm_name: str) -> str:
 
 
 def _resolve_type(name: str, ns: dict[str, object]) -> type:
-    """Look up a class from the module namespace, supporting qualified names."""
-    if "." in name:
-        mod_name, attr = name.split(".", 1)
-        return getattr(ns[mod_name], attr)
-    return ns[name]  # type: ignore[return-value]
+    """Look up a class from the namespace, supporting qualified names like ``mod.Cls``."""
+    mod, sep, attr = name.partition(".")
+    return getattr(ns[mod], attr) if sep else ns[name]  # type: ignore[return-value]
 
 
 def _ref_has_params(ref: TypeRef, param_map: dict[str, ParamDecl]) -> bool:
-    if ref.name in param_map:
-        return True
-    return any(_ref_has_params(a, param_map) for a in ref.args)
+    return ref.name in param_map or any(_ref_has_params(a, param_map) for a in ref.args)
 
 
-def _compute_static_layout(ref: TypeRef, ns: dict[str, object]) -> layout.Layout:
-    """Compute a Layout at class-build time (fully static, no parameters)."""
-    primitive = _PRIMITIVE_LAYOUTS.get(ref.name)
-    if primitive is not None:
-        return primitive
-    layout_cls = _CONSTRUCTOR_LAYOUTS.get(ref.name)
-    if layout_cls is not None:
-        args = [_compute_static_layout(a, ns) for a in ref.args]
-        return layout_cls(*args)  # type: ignore[return-value]
-    return _resolve_type(ref.name, ns).__layout__  # type: ignore[return-value]
-
-
-def _make_layout_fn(
+def _layout_fn(
     ref: TypeRef, param_map: dict[str, ParamDecl], ns: dict[str, object]
-) -> Callable[[object], object]:
-    """Return a closure ``(self) -> Layout | scalar`` for a parametric TypeRef."""
-    if ref.name in param_map:
-        p = param_map[ref.name]
+) -> _LayoutFn:
+    """Return a ``(self) -> layout_arg`` closure for any TypeRef.
+
+    For parametric refs the closure reads instance attributes; for fully static
+    refs it captures the layout constant at class-build time and ignores *self*.
+    """
+    if p := param_map.get(ref.name):
         pname = ref.name
         if p.type.name == "Type":
             return lambda self, _n=pname: (
                 dgen.type.type_constant(getattr(self, _n)).__layout__
             )
         return lambda self, _n=pname: getattr(self, _n).__constant__.to_json()
-    layout_cls = _CONSTRUCTOR_LAYOUTS.get(ref.name)
-    if layout_cls is not None:
-        sub_fns = [_make_layout_fn(a, param_map, ns) for a in ref.args]
-        return lambda self, _cls=layout_cls, _fns=sub_fns: _cls(
-            *[f(self) for f in _fns]
-        )
-    # Type name — capture its layout at build time (static reference)
-    static = _compute_static_layout(TypeRef(ref.name), ns)
+    if ctor := _CONSTRUCTOR_LAYOUTS.get(ref.name):
+        sub_fns = [_layout_fn(a, param_map, ns) for a in ref.args]
+        return lambda self, _c=ctor, _fs=sub_fns: _c(*[f(self) for f in _fs])
+    static: object = (
+        _PRIMITIVE_LAYOUTS.get(ref.name) or _resolve_type(ref.name, ns).__layout__
+    )
     return lambda self, _l=static: _l
+
+
+def _as_layout_or_property(fn: _LayoutFn, parametric: bool) -> layout.Layout | property:
+    """Evaluate *fn* statically (``fn(None)``) or wrap as a property."""
+    return property(fn) if parametric else fn(None)  # type: ignore[return-value]
+
+
+def _fmt_constraint(c: Constraint) -> str:
+    if c.kind == "match":
+        return f"{c.lhs} ~= {c.pattern}"
+    if c.kind == "eq":
+        return f"{c.lhs} == {c.rhs}"
+    assert c.expr is not None
+    return c.expr
 
 
 def _make_layout(
@@ -92,76 +103,65 @@ def _make_layout(
     param_map = {p.name: p for p in td.params}
 
     if td.layout is not None:
-        primitive = _PRIMITIVE_LAYOUTS.get(td.layout)
-        if primitive is not None:
+        if primitive := _PRIMITIVE_LAYOUTS.get(td.layout):
             return primitive
-        layout_cls = _CONSTRUCTOR_LAYOUTS[td.layout]
+        ctor = _CONSTRUCTOR_LAYOUTS[td.layout]
         if not td.params:
-            return layout_cls(layout.Void())  # type: ignore[return-value]
-        # Parametric layout keyword → property
-        list_type_param = next(
-            (
-                p
-                for p in td.params
-                if p.type.name == "List"
-                and p.type.args
-                and p.type.args[0].name == "Type"
-            ),
-            None,
-        )
-        if td.layout == "Record" and list_type_param is not None:
-            pname = list_type_param.name
-
-            def _record_layout(self: object, _n: str = pname) -> layout.Layout:
-                return layout.Record(
+            return ctor(layout.Void())  # type: ignore[return-value]
+        # Tuple-like: Record<List<Type>> enumerates types from a variadic list.
+        if td.layout == "Record" and (
+            lp := next(
+                (
+                    p
+                    for p in td.params
+                    if p.type.name == "List"
+                    and p.type.args
+                    and p.type.args[0].name == "Type"
+                ),
+                None,
+            )
+        ):
+            pname = lp.name
+            return property(
+                lambda self, _n=pname: layout.Record(
                     [
                         (str(i), dgen.type.type_constant(t).__layout__)
                         for i, t in enumerate(getattr(self, _n))
                     ]
                 )
-
-            return property(_record_layout)
-
-        param_fns = []
-        for p in td.params:
-            pname = p.name
-            if p.type.name == "Type":
-                param_fns.append(
-                    lambda self, _n=pname: (
-                        dgen.type.type_constant(getattr(self, _n)).__layout__
-                    )
-                )
-            else:
-                param_fns.append(
-                    lambda self, _n=pname: getattr(self, _n).__constant__.to_json()
-                )
-
-        def _param_layout(
-            self: object, _cls: type = layout_cls, _fns: list = param_fns
-        ) -> layout.Layout:
-            return _cls(*[f(self) for f in _fns])  # type: ignore[return-value]
-
-        return property(_param_layout)
+            )
+        fns = [_layout_fn(TypeRef(p.name), param_map, ns) for p in td.params]
+        return property(lambda self, _c=ctor, _fs=fns: _c(*[f(self) for f in _fs]))
 
     if td.data:
         is_parametric = any(_ref_has_params(df.type, param_map) for df in td.data)
-        if not is_parametric:
-            if len(td.data) == 1:
-                return _compute_static_layout(td.data[0].type, ns)
-            fields = [(df.name, _compute_static_layout(df.type, ns)) for df in td.data]
-            return layout.Record(fields)  # type: ignore[return-value]
-        # Parametric data → property
         if len(td.data) == 1:
-            fn = _make_layout_fn(td.data[0].type, param_map, ns)
-            return property(lambda self, _f=fn: _f(self))
-        fns = [(df.name, _make_layout_fn(df.type, param_map, ns)) for df in td.data]
-
-        def _data_layout(self: object, _fns: list = fns) -> layout.Layout:
-            return layout.Record([(n, f(self)) for n, f in _fns])
-
-        return property(_data_layout)
+            return _as_layout_or_property(
+                _layout_fn(td.data[0].type, param_map, ns), is_parametric
+            )
+        pairs = [(df.name, _layout_fn(df.type, param_map, ns)) for df in td.data]
+        return _as_layout_or_property(
+            lambda self, _ps=pairs: layout.Record([(n, f(self)) for n, f in _ps]),
+            is_parametric,
+        )
 
     return None
+
+
+def _resolve_param_type(ref: TypeRef, ns: dict[str, object]) -> type:
+    return dgen.TypeType if ref.name == "Type" else _resolve_type(ref.name, ns)
+
+
+def _annotation_for_param(param: ParamDecl) -> str:
+    if param.type.name == "List" and param.type.args:
+        inner = (
+            "dgen.TypeType"
+            if param.type.args[0].name == "Type"
+            else param.type.args[0].name
+        )
+        return f"list[Value[{inner}]]"
+    inner = "dgen.TypeType" if param.type.name == "Type" else param.type.name
+    return f"Value[{inner}]"
 
 
 def _make_type_default(
@@ -173,49 +173,37 @@ def _make_type_default(
     """Build the default type value for an op's ``type`` field, or ``None``."""
     try:
         if not ref.args:
-            if "." in ref.name:
-                return None
             td = type_map.get(ref.name)
-            if td is not None and any(p.default is None for p in td.params):
-                return None
-            if ref.name not in known_names:
-                return None
-            return _resolve_type(ref.name, ns)()
+            can_default = (
+                "." not in ref.name
+                and ref.name in known_names
+                and (td is None or all(p.default is not None for p in td.params))
+            )
+            return _resolve_type(ref.name, ns)() if can_default else None
         td = type_map.get(ref.name)
         if td is None or len(ref.args) != len(td.params):
             return None
-        kwargs: dict[str, object] = {}
-        for arg, param in zip(ref.args, td.params):
-            param_type = _resolve_type(param.type.name, ns)
-            kwargs[param.name] = param_type().constant(_ast.literal_eval(arg.name))
+        kwargs = {
+            param.name: _resolve_type(param.type.name, ns)().constant(
+                _ast.literal_eval(arg.name)
+            )
+            for arg, param in zip(ref.args, td.params)
+        }
         return _resolve_type(ref.name, ns)(**kwargs)
     except (ValueError, KeyError):
         return None
 
 
-def _resolve_param_type(ref: TypeRef, ns: dict[str, object]) -> type:
-    if ref.name == "Type":
-        return dgen.TypeType
-    return _resolve_type(ref.name, ns)
-
-
-def _annotation_for_param(param: ParamDecl) -> str:
-    if param.type.name == "List" and param.type.args:
-        inner = param.type.args[0].name
-        return f"list[Value[{('dgen.TypeType' if inner == 'Type' else inner)}]]"
-    if param.type.name == "Type":
-        return "Value[dgen.TypeType]"
-    return f"Value[{param.type.name}]"
-
-
 def _build_trait(td: TraitDecl, ns: dict[str, object]) -> type:
     trait_ns: dict[str, object] = {"__module__": ns.get("__name__", "")}
-    annotations: dict[str, str] = {}
-    for sf in td.statics:
-        if sf.default is not None:
-            trait_ns[sf.name] = _ast.literal_eval(sf.default)
-        else:
-            annotations[sf.name] = sf.type.name
+    annotations = {sf.name: sf.type.name for sf in td.statics if sf.default is None}
+    trait_ns.update(
+        {
+            sf.name: _ast.literal_eval(sf.default)
+            for sf in td.statics
+            if sf.default is not None
+        }
+    )
     if annotations:
         trait_ns["__annotations__"] = annotations
     return type(td.name, (), trait_ns)
@@ -229,22 +217,29 @@ def _build_type(td: TypeDecl, dialect: Dialect, ns: dict[str, object]) -> type:
     if layout_val is not None:
         type_ns["__layout__"] = layout_val
 
-    for p in td.params:
-        annotations[p.name] = _annotation_for_param(p)
-        if p.default is not None:
-            type_ns[p.name] = _resolve_type(p.default, ns)()
-
+    annotations.update({p.name: _annotation_for_param(p) for p in td.params})
+    type_ns.update(
+        {
+            p.name: _resolve_type(p.default, ns)()
+            for p in td.params
+            if p.default is not None
+        }
+    )
     if td.params:
         type_ns["__params__"] = tuple(
             (p.name, _resolve_param_type(p.type, ns)) for p in td.params
         )
 
-    for sf in td.statics:
-        if sf.default is not None:
-            type_ns[sf.name] = _ast.literal_eval(sf.default)
-        else:
-            annotations[sf.name] = sf.type.name
-
+    annotations.update(
+        {sf.name: sf.type.name for sf in td.statics if sf.default is None}
+    )
+    type_ns.update(
+        {
+            sf.name: _ast.literal_eval(sf.default)
+            for sf in td.statics
+            if sf.default is not None
+        }
+    )
     if annotations:
         type_ns["__annotations__"] = annotations
 
@@ -262,17 +257,17 @@ def _build_op(
     known_names: set[str],
 ) -> type:
     op_ns: dict[str, object] = {"__module__": ns.get("__name__", "")}
-    annotations: dict[str, str] = {}
+    annotations: dict[str, str] = {p.name: _annotation_for_param(p) for p in od.params}
 
-    for p in od.params:
-        annotations[p.name] = _annotation_for_param(p)
-
-    for op in od.operands:
-        if op.default:
-            annotations[op.name] = f"Value | {op.default}"
-            op_ns[op.name] = _resolve_type(op.default, ns)()
-        else:
-            annotations[op.name] = "Value"
+    annotations.update(
+        {
+            op.name: f"Value | {op.default}" if op.default else "Value"
+            for op in od.operands
+        }
+    )
+    op_ns.update(
+        {op.name: _resolve_type(op.default, ns)() for op in od.operands if op.default}
+    )
 
     annotations["type"] = "Type"
     ret = od.return_type
@@ -281,38 +276,23 @@ def _build_op(
         if default is not None:
             op_ns["type"] = default
 
-    for block_name in od.blocks:
-        annotations[block_name] = "Block"
+    annotations.update({block_name: "Block" for block_name in od.blocks})
 
     if od.params:
         op_ns["__params__"] = tuple(
             (p.name, _resolve_param_type(p.type, ns)) for p in od.params
         )
-
     if od.operands:
         op_ns["__operands__"] = tuple(
-            (
-                op.name,
-                _resolve_type(op.type.name, ns) if op.type is not None else Type,
-            )
+            (op.name, _resolve_type(op.type.name, ns) if op.type is not None else Type)
             for op in od.operands
         )
-
     if od.blocks:
         op_ns["__blocks__"] = tuple(od.blocks)
-
     if od.constraints:
-        op_ns["__constraints__"] = tuple(
-            f"{c.lhs} ~= {c.pattern}"
-            if c.kind == "match"
-            else f"{c.lhs} == {c.rhs}"
-            if c.kind == "eq"
-            else c.expr
-            for c in od.constraints
-        )
+        op_ns["__constraints__"] = tuple(_fmt_constraint(c) for c in od.constraints)
 
     op_ns["__annotations__"] = annotations
-
     bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in od.traits) + (Op,)
     cls = dataclasses.dataclass(eq=False, kw_only=True)(
         type(_op_class_name(od.name), bases, op_ns)
@@ -330,7 +310,6 @@ def build(
     """Build all types, traits, and ops into ``module.__dict__``."""
     ns = module.__dict__
 
-    # Bootstrap: inject dgen, layout, Op, Type, Value, Block
     ns.setdefault("dgen", dgen)
     ns.setdefault("layout", layout)
     ns.setdefault("Type", Type)
@@ -338,35 +317,24 @@ def build(
     ns.setdefault("Op", Op)
     ns.setdefault("Block", Block)
 
-    # Create dialect
     d = Dialect(dialect_name)
     ns[dialect_name] = d
 
-    # Resolve imports
-    effective_map = {"builtin": "dgen.dialects.builtin", **import_map}
     for imp in ast.imports:
-        py_mod = effective_map.get(imp.module)
-        if py_mod is None:
-            continue
-        mod = importlib.import_module(py_mod)
-        if imp.names:
-            for name in imp.names:
-                ns[name] = getattr(mod, name)
-        else:
-            ns[imp.module] = mod
+        if py_mod := import_map.get(imp.module):
+            mod = importlib.import_module(py_mod)
+            if imp.names:
+                ns.update({name: getattr(mod, name) for name in imp.names})
+            else:
+                ns[imp.module] = mod
 
-    # Build traits
     for td in ast.traits:
         ns[td.name] = _build_trait(td, ns)
 
-    # Build types
     type_map = {td.name: td for td in ast.types}
-    known_names: set[str] = set(type_map)
-    for imp in ast.imports:
-        known_names.update(imp.names)
+    known_names = set(type_map) | {name for imp in ast.imports for name in imp.names}
     for td in ast.types:
         ns[td.name] = _build_type(td, d, ns)
 
-    # Build ops
     for od in ast.ops:
         ns[_op_class_name(od.name)] = _build_op(od, d, ns, type_map, known_names)
