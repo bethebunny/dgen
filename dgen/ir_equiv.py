@@ -146,10 +146,3 @@ def graph_equivalent(actual: Module, expected: Module) -> bool:
         f.name: _fingerprint_function(f) for f in expected.functions
     }
     return actual_fingerprints == expected_fingerprints
-
-
-def structural_diff(actual: Module, expected: Module) -> str:
-    """Return a human-readable fingerprint-guided diff between two IRs."""
-    from dgen.ir_diff import diff_modules
-
-    return diff_modules(actual, expected)

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dgen.asm.parser import parse_module
-from dgen.ir_equiv import graph_equivalent, structural_diff
+from dgen.ir_diff import structural_diff
+from dgen.ir_equiv import graph_equivalent
 from dgen.module import Module
 
 

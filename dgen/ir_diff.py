@@ -3,18 +3,33 @@
 Matches ops across two IR modules using Merkle fingerprints (order- and
 label-insensitive), then emits a unified diff showing only semantic changes
 with configurable context lines.
+
+CLI usage:
+    python -m dgen.ir_diff expected.ir actual.ir
+    python -m dgen.ir_diff expected.ir actual.ir -C 5
+    python -m dgen.ir_diff expected.ir actual.ir --color
 """
 
 from __future__ import annotations
 
 import difflib
+import importlib
+import sys
 from collections.abc import Iterator
+
+import click
 
 from dgen import asm
 from dgen.asm.formatting import SlotTracker, op_asm
+from dgen.asm.parser import parse_module
 from dgen.dialects.builtin import FunctionOp
 from dgen.ir_equiv import Fingerprinter
 from dgen.module import Module
+
+
+def structural_diff(actual: Module, expected: Module) -> str:
+    """Return a human-readable fingerprint-guided diff between two IRs."""
+    return diff_modules(actual, expected)
 
 
 def diff_modules(actual: Module, expected: Module, context: int = 3) -> str:
@@ -58,6 +73,9 @@ def _diff_function(
     for _, block in expected_func.blocks:
         fp_e.register_block(block)
 
+    if fp_a.fingerprint(actual_func) == fp_e.fingerprint(expected_func):
+        return
+
     tracker_a = SlotTracker()
     tracker_a.register([actual_func])
     tracker_e = SlotTracker()
@@ -68,9 +86,6 @@ def _diff_function(
 
     actual_fps = [fp_a.fingerprint(op) for op in actual_ops]
     expected_fps = [fp_e.fingerprint(op) for op in expected_ops]
-
-    if actual_fps == expected_fps:
-        return
 
     actual_fmt = [list(op_asm(op, tracker_a)) for op in actual_ops]
     expected_fmt = [list(op_asm(op, tracker_e)) for op in expected_ops]
@@ -85,31 +100,31 @@ def _diff_function(
         ai1, ai2 = group[0][3], group[-1][4]
 
         exp_start = exp_starts[ei1] if ei1 < len(exp_starts) else 1
-        exp_count = sum(len(expected_fmt[k]) for k in range(ei1, ei2))
+        exp_count = sum(len(lines) for lines in expected_fmt[ei1:ei2])
         act_start = act_starts[ai1] if ai1 < len(act_starts) else 1
-        act_count = sum(len(actual_fmt[k]) for k in range(ai1, ai2))
+        act_count = sum(len(lines) for lines in actual_fmt[ai1:ai2])
 
         yield f"@@ -{exp_start},{exp_count} +{act_start},{act_count} @@"
 
         for tag, pi1, pi2, qi1, qi2 in group:
             if tag == "equal":
-                for k in range(pi1, pi2):
-                    for line in expected_fmt[k]:
+                for op_lines in expected_fmt[pi1:pi2]:
+                    for line in op_lines:
                         yield f"   {line}"
             elif tag == "delete":
-                for k in range(pi1, pi2):
-                    for line in expected_fmt[k]:
+                for op_lines in expected_fmt[pi1:pi2]:
+                    for line in op_lines:
                         yield f"-  {line}"
             elif tag == "insert":
-                for k in range(qi1, qi2):
-                    for line in actual_fmt[k]:
+                for op_lines in actual_fmt[qi1:qi2]:
+                    for line in op_lines:
                         yield f"+  {line}"
             elif tag == "replace":
-                for k in range(pi1, pi2):
-                    for line in expected_fmt[k]:
+                for op_lines in expected_fmt[pi1:pi2]:
+                    for line in op_lines:
                         yield f"-  {line}"
-                for k in range(qi1, qi2):
-                    for line in actual_fmt[k]:
+                for op_lines in actual_fmt[qi1:qi2]:
+                    for line in op_lines:
                         yield f"+  {line}"
 
 
@@ -121,3 +136,74 @@ def _line_starts(formatted_ops: list[list[str]]) -> list[int]:
         starts.append(total)
         total += len(lines)
     return starts
+
+
+@click.command()
+@click.argument("expected", type=click.File("r"))
+@click.argument("actual", type=click.File("r"))
+@click.option(
+    "-C",
+    "--context",
+    default=3,
+    show_default=True,
+    metavar="N",
+    help="Ops of context shown around each change.",
+)
+@click.option(
+    "--color/--no-color",
+    default=None,
+    help="Force color output on/off (default: auto-detect terminal).",
+)
+@click.option(
+    "-d",
+    "--dialect",
+    "dialects",
+    multiple=True,
+    metavar="MODULE",
+    help="Python module to import for dialect registration (repeatable).",
+)
+def diff(
+    expected: click.utils.LazyFile,
+    actual: click.utils.LazyFile,
+    context: int,
+    color: bool | None,
+    dialects: tuple[str, ...],
+) -> None:
+    """Semantically compare two IR files.
+
+    Differences are reported as a unified diff keyed on Merkle fingerprints,
+    so op ordering and SSA label renaming are ignored.  Exits 0 if equivalent,
+    1 if different.
+
+    Dialects used in the IR must be registered first:
+
+        python -m dgen.ir_diff expected.ir actual.ir \\
+            -d toy.dialects.toy -d toy.dialects.affine
+    """
+    for module_path in dialects:
+        importlib.import_module(module_path)
+
+    expected_module = parse_module(expected.read())
+    actual_module = parse_module(actual.read())
+
+    diff_text = diff_modules(actual_module, expected_module, context=context)
+    if not diff_text:
+        return
+
+    for line in diff_text.splitlines():
+        if line.startswith("+"):
+            click.echo(click.style(line, fg="green"), color=color)
+        elif line.startswith("-"):
+            click.echo(click.style(line, fg="red"), color=color)
+        elif line.startswith("@@"):
+            click.echo(click.style(line, fg="cyan"), color=color)
+        elif line.startswith("IR equivalence"):
+            click.echo(click.style(line, bold=True), color=color)
+        else:
+            click.echo(line)
+
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    diff()
