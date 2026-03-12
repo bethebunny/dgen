@@ -1,0 +1,18 @@
+import affine
+import toy
+
+%main : Nil = function<Nil>() ():
+    %0 : toy.Tensor<[2, 2], F64> = [1.0, 2.0, 3.0, 4.0]
+    %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
+    %2 : affine.MemRef<[2, 2], F64> = affine.alloc([2, 2])
+    %3 : Nil = affine.for<0, 2>() (%4: Index):
+        %5 : Nil = affine.for<0, 2>() (%6: Index):
+            %7 : F64 = affine.load(%0, [%4, %6])
+            %8 : F64 = affine.load(%1, [%4, %6])
+            %9 : F64 = affine.mul_f(%7, %8)
+            %10 : Nil = affine.store(%9, %2, [%4, %6])
+    %11 : Nil = affine.print_memref(%2)
+    %12 : Nil = affine.dealloc(%0)
+    %13 : Nil = affine.dealloc(%1)
+    %14 : Nil = affine.dealloc(%2)
+    %15 : Nil = return(())

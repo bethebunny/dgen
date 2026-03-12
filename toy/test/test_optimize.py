@@ -1,12 +1,11 @@
 """Ch3 tests: IR optimization passes."""
 
 from dgen.asm.parser import parse_module
-from dgen.testing import assert_ir_equivalent
 from toy.passes.optimize import optimize
 from toy.test.helpers import strip_prefix
 
 
-def test_transpose_elimination():
+def test_transpose_elimination(ir_snapshot):
     """transpose(transpose(x)) -> x"""
     ir_text = strip_prefix("""
         | import toy
@@ -19,21 +18,10 @@ def test_transpose_elimination():
         |     %_ : Nil = return(%3)
     """)
     m = parse_module(ir_text)
-    opt = optimize(m)
-    assert_ir_equivalent(
-        opt,
-        strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%3)
-    """),
-    )
+    assert optimize(m) == ir_snapshot
 
 
-def test_reshape_of_matching_constant():
+def test_reshape_of_matching_constant(ir_snapshot):
     """Reshape to same shape as constant -> remove reshape."""
     ir_text = strip_prefix("""
         | import toy
@@ -45,21 +33,10 @@ def test_reshape_of_matching_constant():
         |     %_ : Nil = return(%2)
     """)
     m = parse_module(ir_text)
-    opt = optimize(m)
-    assert_ir_equivalent(
-        opt,
-        strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %2 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%2)
-    """),
-    )
+    assert optimize(m) == ir_snapshot
 
 
-def test_constant_folding_reshape():
+def test_constant_folding_reshape(ir_snapshot):
     """Reshape of constant with different shape -> fold into new constant."""
     ir_text = strip_prefix("""
         | import toy
@@ -71,21 +48,10 @@ def test_constant_folding_reshape():
         |     %_ : Nil = return(%2)
     """)
     m = parse_module(ir_text)
-    opt = optimize(m)
-    assert_ir_equivalent(
-        opt,
-        strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %2 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%2)
-    """),
-    )
+    assert optimize(m) == ir_snapshot
 
 
-def test_dce():
+def test_dce(ir_snapshot):
     """Dead code elimination removes unused ops."""
     ir_text = strip_prefix("""
         | import toy
@@ -98,21 +64,10 @@ def test_dce():
         |     %_ : Nil = return(%3)
     """)
     m = parse_module(ir_text)
-    opt = optimize(m)
-    assert_ir_equivalent(
-        opt,
-        strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%3)
-    """),
-    )
+    assert optimize(m) == ir_snapshot
 
 
-def test_full_pipeline():
+def test_full_pipeline(ir_snapshot):
     """Full optimization on multiply_transpose-like example."""
     ir_text = strip_prefix("""
         | import toy
@@ -132,19 +87,4 @@ def test_full_pipeline():
         |     %_ : Nil = return(%10)
     """)
     m = parse_module(ir_text)
-    opt = optimize(m)
-    assert_ir_equivalent(
-        opt,
-        strip_prefix("""
-        | import toy
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %7 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %8 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
-        |     %9 : toy.Tensor<[3, 2], F64> = toy.mul(%7, %8)
-        |     %10 : Nil = toy.print(%9)
-        |     %_ : Nil = return(%10)
-    """),
-    )
+    assert optimize(m) == ir_snapshot

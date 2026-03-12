@@ -127,11 +127,19 @@ class Fingerprinter:
         return _hash_parts(b"block", self.fingerprint(block.result))
 
 
-def _fingerprint_function(func: dgen.Op) -> bytes:
-    fingerprinter = Fingerprinter()
-    for _, block in func.blocks:
-        fingerprinter.register_block(block)
-    return fingerprinter.fingerprint(func)
+def _module_fingerprints(module: Module) -> dict[str, bytes]:
+    """Fingerprint all functions in a module using a shared Fingerprinter.
+
+    A single Fingerprinter is used so that cross-function callee references
+    (where a CallOp's callee parameter is the actual FunctionOp object) can
+    be fingerprinted without KeyErrors: all block args from all functions are
+    registered before any fingerprinting begins.
+    """
+    fp = Fingerprinter()
+    for func in module.functions:
+        for _, block in func.blocks:
+            fp.register_block(block)
+    return {f.name: fp.fingerprint(f) for f in module.functions}
 
 
 def graph_equivalent(actual: Module, expected: Module) -> bool:
@@ -141,8 +149,4 @@ def graph_equivalent(actual: Module, expected: Module) -> bool:
     use-def graphs are structurally isomorphic — same ops, same operand
     structure, up to op ordering and SSA name assignment.
     """
-    actual_fingerprints = {f.name: _fingerprint_function(f) for f in actual.functions}
-    expected_fingerprints = {
-        f.name: _fingerprint_function(f) for f in expected.functions
-    }
-    return actual_fingerprints == expected_fingerprints
+    return _module_fingerprints(actual) == _module_fingerprints(expected)

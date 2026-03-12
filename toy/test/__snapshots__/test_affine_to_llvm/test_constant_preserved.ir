@@ -1,0 +1,8 @@
+import llvm
+import toy
+
+%main : Nil = function<Nil>() ():
+    %0 : toy.Tensor<[3], F64> = [1.0, 2.0, 3.0]
+    %1 : Index = 3
+    %2 : Nil = llvm.call<"print_memref">([%0, %1])
+    %3 : Nil = return(())
