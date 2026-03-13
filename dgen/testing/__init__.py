@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from dgen.asm.parser import parse_module
 from dgen.ir_diff import structural_diff
 from dgen.ir_equiv import graph_equivalent
 from dgen.module import Module
 
 
-def assert_ir_equivalent(actual: Module, expected_ir: str) -> None:
-    """Assert that actual is graph-equivalent to the IR described by expected_ir.
+def assert_ir_equivalent(actual: Module, expected: Module) -> None:
+    """Assert that two IR modules are graph-equivalent.
 
-    Parses expected_ir and compares use-def graph structure. Passes if the
+    Compares use-def graph structure via Merkle fingerprinting. Passes if the
     two modules compute the same thing, regardless of op ordering or SSA names.
-    On failure, shows both formatted IRs side-by-side.
+    On failure, shows a semantic diff.
     """
-    expected = parse_module(expected_ir)
     if not graph_equivalent(actual, expected):
         raise AssertionError(structural_diff(actual, expected))

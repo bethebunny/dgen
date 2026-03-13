@@ -34,7 +34,7 @@ def test_typetype_constant_asm_roundtrip():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
 def test_ssa_ref_as_op_type():
@@ -63,7 +63,7 @@ def test_ssa_ref_as_op_type_roundtrip():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
 def test_typetype_memory_roundtrip():
@@ -98,7 +98,7 @@ def test_parameterized_typetype_constant_roundtrip():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
 def test_array_with_ssa_dimension():
@@ -110,7 +110,7 @@ def test_array_with_ssa_dimension():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     # Verify the Array type's `n` param is the SSA value %n
     ops = module.functions[0].body.ops
@@ -129,7 +129,7 @@ def test_array_with_ssa_element_type():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     # Verify the Array type's element_type param is the SSA value %t
     ops = module.functions[0].body.ops
@@ -172,7 +172,7 @@ def test_pointer_with_ssa_pointee():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     ops = module.functions[0].body.ops
     t_op = ops[0]
@@ -230,7 +230,7 @@ def test_list_with_ssa_element_type():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     ops = module.functions[0].body.ops
     t_op = ops[0]
@@ -252,7 +252,7 @@ def test_fat_pointer_with_ssa_pointee():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     ops = module.functions[0].body.ops
     t_op = ops[0]
@@ -273,7 +273,7 @@ def test_function_with_ssa_result_type():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     ops = module.functions[0].body.ops
     t_op = ops[0]
