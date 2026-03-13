@@ -50,6 +50,8 @@ class SlotTracker:
         for op in ops:
             if _is_sugar_op(op):
                 continue
+            if op in self._slots:
+                continue
             self.track_name(op)
             for _, block in op.blocks:
                 for arg in block.args:
@@ -139,8 +141,19 @@ def type_asm(type_obj: Type, tracker: SlotTracker | None = None) -> str:
 # ===----------------------------------------------------------------------=== #
 
 
-def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
+def op_asm(
+    op: Op,
+    tracker: SlotTracker | None = None,
+    _formatted: set[int] | None = None,
+) -> Iterable[str]:
     """Generic asm emitter driven by field declarations."""
+    if _formatted is None:
+        _formatted = set()
+    oid = id(op)
+    if oid in _formatted:
+        return
+    _formatted.add(oid)
+
     cls = type(op)
     asm_name = cls.asm_name
     dialect_name = op.dialect.name
@@ -203,4 +216,4 @@ def op_asm(op: Op, tracker: SlotTracker | None = None) -> Iterable[str]:
         for child_op in block.ops:
             if _is_sugar_op(child_op):
                 continue
-            yield from indent(op_asm(child_op, tracker))
+            yield from indent(op_asm(child_op, tracker, _formatted))

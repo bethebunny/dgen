@@ -26,8 +26,8 @@ class Block:
 
     Stores the result value (root of the use-def graph). When constructed
     with result=, ops are derived by walking the use-def graph. When
-    constructed with ops= (for terminal LLVM lowering passes where control
-    flow ops are not use-def connected), the provided list is used directly.
+    constructed with ops=, the provided list is used directly. Both can
+    be provided: result for use-def connectivity, ops for iteration.
     """
 
     result: dgen.Value
@@ -42,7 +42,7 @@ class Block:
     ) -> None:
         if result is not None:
             self.result = result
-            self._stored_ops: list[dgen.Op] | None = None
+            self._stored_ops: list[dgen.Op] | None = ops
         elif ops is not None and ops:
             self.result = ops[-1]
             self._stored_ops = ops

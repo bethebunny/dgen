@@ -103,7 +103,25 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     # Register block args (function parameters) first
     for arg in f.body.args:
         tracker.track_name(arg)
-    tracker.register(f.body.ops)
+
+    # Separate entry ops from label ops
+    entry_ops: list[dgen.Op] = []
+    label_ops: list[llvm.LabelOp] = []
+    for op in f.body.ops:
+        if isinstance(op, llvm.LabelOp):
+            label_ops.append(op)
+        else:
+            entry_ops.append(op)
+
+    # Collect all ops (entry + label bodies) for registration
+    all_ops: list[dgen.Op] = list(entry_ops)
+    for label_op in label_ops:
+        all_ops.extend(label_op.body.ops)
+
+    tracker.register(all_ops)
+    # Also register label ops themselves (they're not in all_ops since they're structural)
+    for label_op in label_ops:
+        tracker.track_name(label_op)
 
     # Pre-scan: build constants and types maps
     constants: dict[dgen.Value, str] = {}
@@ -130,7 +148,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for arg in f.body.args:
         types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
-    for op in f.body.ops:
+    for op in all_ops:
         if isinstance(op, ConstantOp):
             _register_constant(op)
         elif isinstance(op, PackOp):
@@ -138,8 +156,6 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         elif isinstance(op, builtin.ChainOp):
             # Chain is transparent: alias to lhs at runtime
             types[op] = types.get(op.lhs, "i64")
-        elif isinstance(op, llvm.LabelOp):
-            pass  # Label ops have no LLVM type
         elif isinstance(op, llvm.PhiOp):
             types[op] = types.get(op.a, "i64")
         else:
@@ -152,7 +168,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                     _register_constant(operand)
 
     # Resolve chain aliases: ChainOp is transparent, maps to its lhs
-    for op in f.body.ops:
+    for op in all_ops:
         if isinstance(op, builtin.ChainOp):
             if op.lhs in constants:
                 constants[op] = constants[op.lhs]
@@ -174,32 +190,14 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             return constants[val].split(" ", 1)[1]
         return f"%{tracker.track_name(val)}"
 
-    assert f.name is not None
-    func_name = tracker.track_name(f)
-    # Derive LLVM return type from function signature
-    result_type = f.result
-    if isinstance(result_type, builtin.Nil):
-        llvm_ret = "void"
-    else:
-        llvm_ret = _llvm_type(dgen.type.type_constant(result_type).__layout__)
-    # Build parameter list from block args
-    params = []
-    for arg in f.body.args:
-        name = tracker.track_name(arg)
-        ty = types.get(arg, "i64")
-        params.append(f"{ty} %{name}")
-    param_str = ", ".join(params)
-    lines = [f"define {llvm_ret} @{func_name}({param_str}) {{", "entry:"]
-
-    for op in f.body.ops:
+    def emit_op(op: dgen.Op, lines: list[str]) -> None:
+        """Emit a single op as LLVM IR."""
         if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
-            continue
+            return
 
         name = tracker.track_name(op)
 
-        if isinstance(op, llvm.LabelOp):
-            lines.append(f"{name}:")
-        elif isinstance(op, llvm.AllocaOp):
+        if isinstance(op, llvm.AllocaOp):
             lines.append(
                 f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
             )
@@ -238,10 +236,10 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.BrOp):
-            lines.append(f"  br label %{tracker.track_name(op.label)}")
+            lines.append(f"  br label %{tracker.track_name(op.target)}")
         elif isinstance(op, llvm.CondBrOp):
             lines.append(
-                f"  br i1 %{tracker.track_name(op.cond)}, label %{tracker.track_name(op.true_dest)}, label %{tracker.track_name(op.false_dest)}"
+                f"  br i1 %{tracker.track_name(op.cond)}, label %{tracker.track_name(op.true_target)}, label %{tracker.track_name(op.false_target)}"
             )
         elif isinstance(op, llvm.PhiOp):
             ty = types.get(op, "i64")
@@ -264,6 +262,34 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 lines.append("  ret void")
             else:
                 lines.append(f"  ret {typed_ref(op.value)}")
+
+    assert f.name is not None
+    func_name = tracker.track_name(f)
+    # Derive LLVM return type from function signature
+    result_type = f.result
+    if isinstance(result_type, builtin.Nil):
+        llvm_ret = "void"
+    else:
+        llvm_ret = _llvm_type(dgen.type.type_constant(result_type).__layout__)
+    # Build parameter list from block args
+    params = []
+    for arg in f.body.args:
+        name = tracker.track_name(arg)
+        ty = types.get(arg, "i64")
+        params.append(f"{ty} %{name}")
+    param_str = ", ".join(params)
+    lines = [f"define {llvm_ret} @{func_name}({param_str}) {{", "entry:"]
+
+    # Emit entry block ops
+    for op in entry_ops:
+        emit_op(op, lines)
+
+    # Emit each label's body
+    for label_op in label_ops:
+        label_name = tracker.track_name(label_op)
+        lines.append(f"{label_name}:")
+        for body_op in label_op.body.ops:
+            emit_op(body_op, lines)
 
     lines.append("}")
     return lines

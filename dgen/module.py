@@ -87,12 +87,22 @@ def string_value(v: Value[String]) -> str:
 # ===----------------------------------------------------------------------=== #
 
 
-def _walk_all_ops(op: Op) -> Iterable[Op]:
-    """Recursively yield all ops, descending into op bodies."""
+def _walk_all_ops(op: Op, _visited: set[int] | None = None) -> Iterable[Op]:
+    """Recursively yield all ops, descending into op bodies.
+
+    Tracks visited ops to avoid infinite recursion when label bodies
+    reference other labels (e.g. loops with back-edges).
+    """
+    if _visited is None:
+        _visited = set()
+    oid = id(op)
+    if oid in _visited:
+        return
+    _visited.add(oid)
     yield op
     for _, block in op.blocks:
         for child in block.ops:
-            yield from _walk_all_ops(child)
+            yield from _walk_all_ops(child, _visited)
 
 
 def _collect_dialects(func: FunctionOp, dialects: set[Dialect]) -> None:
