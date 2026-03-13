@@ -73,9 +73,11 @@ def test_roundtrip_icmp_condbr():
         |     %0 : Index = 0
         |     %1 : Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
-        |     %loop_body : llvm.Label = llvm.label()
-        |     %loop_exit : llvm.Label = llvm.label()
-        |     %_ : Nil = llvm.cond_br<%loop_body, %loop_exit>(%cmp)
+        |     %loop_body : llvm.Label = llvm.label() ():
+        |         %_ : Nil = return(())
+        |     %loop_exit : llvm.Label = llvm.label() ():
+        |         %_ : Nil = return(())
+        |     %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit)
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
@@ -87,8 +89,9 @@ def test_roundtrip_label_br():
         | import llvm
         |
         | %f : Nil = function<Nil>() ():
-        |     %loop_header : llvm.Label = llvm.label()
-        |     %_ : Nil = llvm.br<%loop_header>()
+        |     %loop_header : llvm.Label = llvm.label() ():
+        |         %_ : Nil = return(())
+        |     %_ : Nil = llvm.br(%loop_header)
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
@@ -100,8 +103,10 @@ def test_roundtrip_phi():
         | import llvm
         |
         | %f : Nil = function<Nil>() ():
-        |     %entry : llvm.Label = llvm.label()
-        |     %loop_body : llvm.Label = llvm.label()
+        |     %entry : llvm.Label = llvm.label() ():
+        |         %_ : Nil = return(())
+        |     %loop_body : llvm.Label = llvm.label() ():
+        |         %_ : Nil = return(())
         |     %i0 : Nil = llvm.phi<%entry, %loop_body>(%init, %next)
         |     %_ : Nil = return(())
     """)
@@ -144,27 +149,29 @@ def test_roundtrip_return_value():
 
 
 def test_roundtrip_loop_pattern():
-    """Full loop pattern: br, label, phi, icmp, condbr, body, increment."""
+    """Full loop pattern: br, label with body, phi, icmp, condbr, body, increment."""
     ir = strip_prefix("""
         | import llvm
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : Nil = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %loop_header0 : llvm.Label = llvm.label()
-        |     %entry : llvm.Label = llvm.label()
-        |     %loop_body0 : llvm.Label = llvm.label()
-        |     %i0 : Nil = llvm.phi<%entry, %loop_body0>(%init, %next0)
-        |     %hi : Index = 3
-        |     %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
-        |     %loop_exit0 : llvm.Label = llvm.label()
-        |     %_ : Nil = llvm.cond_br<%loop_body0, %loop_exit0>(%cmp)
-        |     %val : F64 = 1.0
-        |     %ptr : Nil = llvm.gep(%0, %i0)
-        |     %_ : Nil = llvm.store(%val, %ptr)
-        |     %one : Index = 1
-        |     %next0 : Nil = llvm.add(%i0, %one)
-        |     %_ : Nil = llvm.br<%loop_header0>()
+        |     %entry : llvm.Label = llvm.label() ():
+        |         %_ : Nil = return(())
+        |     %loop_header0 : llvm.Label = llvm.label() ():
+        |         %i0 : Nil = llvm.phi<%entry, %loop_body0>(%init, %next0)
+        |         %hi : Index = 3
+        |         %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
+        |         %_ : Nil = llvm.cond_br(%cmp, %loop_body0, %loop_exit0)
+        |     %loop_body0 : llvm.Label = llvm.label() ():
+        |         %val : F64 = 1.0
+        |         %ptr : Nil = llvm.gep(%0, %i0)
+        |         %_ : Nil = llvm.store(%val, %ptr)
+        |         %one : Index = 1
+        |         %next0 : Nil = llvm.add(%i0, %one)
+        |         %_ : Nil = llvm.br(%loop_header0)
+        |     %loop_exit0 : llvm.Label = llvm.label() ():
+        |         %_ : Nil = return(())
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
