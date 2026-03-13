@@ -5,6 +5,13 @@ extend-select = ["ANN"]
 "toy/test/**" = ["ANN"]
 "test/**" = ["ANN"]
 
+[project]
+name = "dgen"
+dependencies = [
+    "click",
+    "llvmlite",
+]
+
 [project.optional-dependencies]
 notebook = ["ipython", "ipykernel"]
-notebook-test = ["papermill"]
+dev = ["papermill", "ipykernel", "syrupy", "pytest", "ruff"]
