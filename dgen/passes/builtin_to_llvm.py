@@ -11,57 +11,8 @@ from collections.abc import Iterator
 import dgen
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
+from dgen.graph import chain_body, group_into_blocks, placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
-
-# Sentinel value for label body placeholders (replaced during grouping phase)
-_SENTINEL = dgen.Value(type=Nil())
-
-
-def _placeholder_block() -> dgen.Block:
-    """Create a placeholder block for label ops whose bodies aren't known yet."""
-    return dgen.Block(result=_SENTINEL)
-
-
-def _group_into_blocks(
-    flat_ops: list[dgen.Op],
-) -> tuple[list[dgen.Op], list[tuple[llvm.LabelOp, list[dgen.Op]]]]:
-    """Split a flat op list at LabelOp boundaries into (entry_ops, label_groups)."""
-    entry_ops: list[dgen.Op] = []
-    label_groups: list[tuple[llvm.LabelOp, list[dgen.Op]]] = []
-    current_label: llvm.LabelOp | None = None
-    current_body: list[dgen.Op] = []
-
-    for op in flat_ops:
-        if isinstance(op, llvm.LabelOp):
-            if current_label is not None:
-                label_groups.append((current_label, current_body))
-            else:
-                entry_ops = current_body
-            current_label = op
-            current_body = []
-        else:
-            current_body.append(op)
-
-    if current_label is not None:
-        label_groups.append((current_label, current_body))
-    else:
-        entry_ops = current_body
-
-    return entry_ops, label_groups
-
-
-def _chain_body(ops: list[dgen.Op]) -> dgen.Value:
-    """Chain all body ops so they're reachable from a single root via use-def.
-
-    The last op is treated as the terminator. All preceding ops are chained
-    to it via ChainOp(lhs=op, rhs=rest) so walk_ops visits them in order.
-    """
-    if not ops:
-        return _SENTINEL
-    terminator: dgen.Value = ops[-1]
-    for op in reversed(ops[:-1]):
-        terminator = builtin.ChainOp(lhs=op, rhs=terminator, type=op.type)
-    return terminator
 
 
 class BuiltinToLLVMLowering:
@@ -83,7 +34,7 @@ class BuiltinToLLVMLowering:
         # Flatten existing label bodies so their ops are processed too.
         flat_ops: list[dgen.Op] = []
         for op in f.body.ops:
-            if isinstance(op, llvm.LabelOp) and op.body is not None:
+            if isinstance(op, llvm.LabelOp) and op.body.ops:
                 flat_ops.append(op)
                 for body_op in op.body.ops:
                     flat_ops.extend(self.lower_op(body_op))
@@ -91,9 +42,9 @@ class BuiltinToLLVMLowering:
                 flat_ops.extend(self.lower_op(op))
 
         # Phase 2: Group into basic blocks and build label body blocks
-        entry_ops, label_groups = _group_into_blocks(flat_ops)
+        entry_ops, label_groups = group_into_blocks(flat_ops)
         for label_op, body_ops in label_groups:
-            label_op.body = dgen.Block(result=_chain_body(body_ops), ops=body_ops)
+            label_op.body = dgen.Block(result=chain_body(body_ops), ops=body_ops)
 
         func_ops: list[dgen.Op] = entry_ops + [lg[0] for lg in label_groups]
         return FunctionOp(
@@ -145,9 +96,9 @@ class BuiltinToLLVMLowering:
         if_id = self.if_counter
         self.if_counter += 1
 
-        then_label_op = llvm.LabelOp(name=f"then_{if_id}", body=_placeholder_block())
-        else_label_op = llvm.LabelOp(name=f"else_{if_id}", body=_placeholder_block())
-        merge_label_op = llvm.LabelOp(name=f"merge_{if_id}", body=_placeholder_block())
+        then_label_op = llvm.LabelOp(name=f"then_{if_id}", body=placeholder_block())
+        else_label_op = llvm.LabelOp(name=f"else_{if_id}", body=placeholder_block())
+        merge_label_op = llvm.LabelOp(name=f"merge_{if_id}", body=placeholder_block())
 
         # Convert i64 condition to i1 via icmp ne 0
         zero = ConstantOp(value=0, type=builtin.Index())

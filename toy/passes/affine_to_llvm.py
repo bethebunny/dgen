@@ -8,60 +8,11 @@ from math import prod
 import dgen
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
+from dgen.graph import chain_body, group_into_blocks, placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import affine, toy
 
 _PTR_TYPE = llvm.Ptr()
-
-# Sentinel value for label body placeholders (replaced during grouping phase)
-_SENTINEL = dgen.Value(type=Nil())
-
-
-def _placeholder_block() -> dgen.Block:
-    """Create a placeholder block for label ops whose bodies aren't known yet."""
-    return dgen.Block(result=_SENTINEL)
-
-
-def _group_into_blocks(
-    flat_ops: list[dgen.Op],
-) -> tuple[list[dgen.Op], list[tuple[llvm.LabelOp, list[dgen.Op]]]]:
-    """Split a flat op list at LabelOp boundaries into (entry_ops, label_groups)."""
-    entry_ops: list[dgen.Op] = []
-    label_groups: list[tuple[llvm.LabelOp, list[dgen.Op]]] = []
-    current_label: llvm.LabelOp | None = None
-    current_body: list[dgen.Op] = []
-
-    for op in flat_ops:
-        if isinstance(op, llvm.LabelOp):
-            if current_label is not None:
-                label_groups.append((current_label, current_body))
-            else:
-                entry_ops = current_body
-            current_label = op
-            current_body = []
-        else:
-            current_body.append(op)
-
-    if current_label is not None:
-        label_groups.append((current_label, current_body))
-    else:
-        entry_ops = current_body
-
-    return entry_ops, label_groups
-
-
-def _chain_body(ops: list[dgen.Op]) -> dgen.Value:
-    """Chain all body ops so they're reachable from a single root via use-def.
-
-    The last op is treated as the terminator. All preceding ops are chained
-    to it via ChainOp(lhs=op, rhs=rest) so walk_ops visits them in order.
-    """
-    if not ops:
-        return _SENTINEL
-    terminator: dgen.Value = ops[-1]
-    for op in reversed(ops[:-1]):
-        terminator = builtin.ChainOp(lhs=op, rhs=terminator, type=op.type)
-    return terminator
 
 
 def _extract_list_elements(
@@ -113,9 +64,9 @@ class AffineToLLVMLowering:
             flat_ops.extend(self.lower_op(op))
 
         # Phase 2: Group into basic blocks and build label body blocks
-        entry_ops, label_groups = _group_into_blocks(flat_ops)
+        entry_ops, label_groups = group_into_blocks(flat_ops)
         for label_op, body_ops in label_groups:
-            label_op.body = dgen.Block(result=_chain_body(body_ops), ops=body_ops)
+            label_op.body = dgen.Block(result=chain_body(body_ops), ops=body_ops)
 
         func_ops: list[dgen.Op] = entry_ops + [lg[0] for lg in label_groups]
         return FunctionOp(
@@ -222,9 +173,7 @@ class AffineToLLVMLowering:
 
         result_val = None
         for i, idx_val in enumerate(indices):
-            stride = 1
-            for j in range(i + 1, len(shape)):
-                stride *= shape[j]
+            stride = prod(shape[i + 1 :])
 
             if stride == 1:
                 if result_val is None:
@@ -271,9 +220,9 @@ class AffineToLLVMLowering:
             yield init_op
             self.value_map[op.lo] = init_op
             self._seen.add(op.lo)
-        header_label_op = llvm.LabelOp(name=header_label, body=_placeholder_block())
-        body_label_op = llvm.LabelOp(name=body_label, body=_placeholder_block())
-        exit_label_op = llvm.LabelOp(name=exit_label, body=_placeholder_block())
+        header_label_op = llvm.LabelOp(name=header_label, body=placeholder_block())
+        body_label_op = llvm.LabelOp(name=body_label, body=placeholder_block())
+        exit_label_op = llvm.LabelOp(name=exit_label, body=placeholder_block())
 
         prev_label = self.current_label
         yield llvm.BrOp(target=header_label_op)
