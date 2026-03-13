@@ -66,7 +66,7 @@ def test_chain_asm_round_trip():
         |     %_ : Nil = return(())
     """)
     m = parse_module(ir_text)
-    assert_ir_equivalent(m, asm.format(m))
+    assert_ir_equivalent(m, asm.parse(asm.format(m)))
 
 
 def test_walk_ops_follows_chain_dependencies():

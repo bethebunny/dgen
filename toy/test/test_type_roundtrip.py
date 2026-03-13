@@ -373,7 +373,7 @@ def test_packop_mixed_constants_and_refs():
         |     %_ : Nil = affine.store(%x, %x, [%0, %x, %1])
         |     %_ : Nil = return(())
     """)
-    assert_ir_equivalent(parsed, ir_expected)
+    assert_ir_equivalent(parsed, asm.parse(ir_expected))
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +407,7 @@ def test_string_as_op_param():
         |     %_ : Nil = return(())
     """)
     parsed = parse_module(ir)
-    assert_ir_equivalent(parsed, asm.format(parsed))
+    assert_ir_equivalent(parsed, asm.parse(asm.format(parsed)))
 
 
 def test_string_jit_identity():

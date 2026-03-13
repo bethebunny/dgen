@@ -18,7 +18,7 @@ def test_llvm_via_imports():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
 def test_llvm_full_loop():
@@ -43,4 +43,4 @@ def test_llvm_full_loop():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))

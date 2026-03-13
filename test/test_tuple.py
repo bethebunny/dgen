@@ -50,7 +50,7 @@ def test_tuple_constant_roundtrip():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
 def test_tuple_type_constant_serialization():
@@ -95,4 +95,4 @@ def test_tuple_type_values():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert_ir_equivalent(module, asm.format(module))
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
