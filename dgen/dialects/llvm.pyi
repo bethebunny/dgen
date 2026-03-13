@@ -86,25 +86,24 @@ class IcmpOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class BrOp(Op):
-    dest: Value[String]
+    label: Value[Label]
     type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class CondBrOp(Op):
-    true_dest: Value[String]
-    false_dest: Value[String]
+    true_dest: Value[Label]
+    false_dest: Value[Label]
     cond: Value
     type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
-    label_name: Value[Label]
-    type: Type = Nil()
+    type: Type = Label()
 
 @dataclass(eq=False, kw_only=True)
 class PhiOp(Op):
-    label_a: Value[String]
-    label_b: Value[String]
+    label_a: Value[Label]
+    label_b: Value[Label]
     a: Value
     b: Value
     type: Type = Nil()

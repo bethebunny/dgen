@@ -138,6 +138,8 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         elif isinstance(op, builtin.ChainOp):
             # Chain is transparent: alias to lhs at runtime
             types[op] = types.get(op.lhs, "i64")
+        elif isinstance(op, llvm.LabelOp):
+            pass  # Label ops have no LLVM type
         elif isinstance(op, llvm.PhiOp):
             types[op] = types.get(op.a, "i64")
         else:
@@ -196,9 +198,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         name = tracker.track_name(op)
 
         if isinstance(op, llvm.LabelOp):
-            label = op.label_name.__constant__.to_json()
-            assert isinstance(label, str)
-            lines.append(f"{label}:")
+            lines.append(f"{name}:")
         elif isinstance(op, llvm.AllocaOp):
             lines.append(
                 f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
@@ -238,17 +238,17 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.BrOp):
-            lines.append(f"  br label %{string_value(op.dest)}")
+            lines.append(f"  br label %{tracker.track_name(op.label)}")
         elif isinstance(op, llvm.CondBrOp):
             lines.append(
-                f"  br i1 %{tracker.track_name(op.cond)}, label %{string_value(op.true_dest)}, label %{string_value(op.false_dest)}"
+                f"  br i1 %{tracker.track_name(op.cond)}, label %{tracker.track_name(op.true_dest)}, label %{tracker.track_name(op.false_dest)}"
             )
         elif isinstance(op, llvm.PhiOp):
             ty = types.get(op, "i64")
             lines.append(
                 f"  %{name} = phi {ty} "
-                f"[ {bare_ref(op.a)}, %{string_value(op.label_a)} ], "
-                f"[ {bare_ref(op.b)}, %{string_value(op.label_b)} ]"
+                f"[ {bare_ref(op.a)}, %{tracker.track_name(op.label_a)} ], "
+                f"[ {bare_ref(op.b)}, %{tracker.track_name(op.label_b)} ]"
             )
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)

@@ -18,7 +18,7 @@ class BuiltinToLLVMLowering:
     def __init__(self) -> None:
         self.if_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}
-        self.current_label = "entry"
+        self.current_label: dgen.Value = dgen.Value(name="entry", type=llvm.Label())
 
     def lower_module(self, m: Module) -> Module:
         functions = [self.lower_function(f) for f in m.functions]
@@ -27,7 +27,7 @@ class BuiltinToLLVMLowering:
     def lower_function(self, f: FunctionOp) -> FunctionOp:
         self.if_counter = 0
         self.value_map = {}
-        self.current_label = "entry"
+        self.current_label = dgen.Value(name="entry", type=llvm.Label())
         ops = []
         for op in f.body.ops:
             ops.extend(self.lower_op(op))
@@ -80,9 +80,9 @@ class BuiltinToLLVMLowering:
         if_id = self.if_counter
         self.if_counter += 1
 
-        then_label = f"then_{if_id}"
-        else_label = f"else_{if_id}"
-        merge_label = f"merge_{if_id}"
+        then_label_op = llvm.LabelOp(name=f"then_{if_id}")
+        else_label_op = llvm.LabelOp(name=f"else_{if_id}")
+        merge_label_op = llvm.LabelOp(name=f"merge_{if_id}")
 
         # Convert i64 condition to i1 via icmp ne 0
         zero = ConstantOp(value=0, type=builtin.Index())
@@ -95,43 +95,43 @@ class BuiltinToLLVMLowering:
         yield cond_i1
         yield llvm.CondBrOp(
             cond=cond_i1,
-            true_dest=String().constant(then_label),
-            false_dest=String().constant(else_label),
+            true_dest=then_label_op,
+            false_dest=else_label_op,
         )
 
         # Then block
-        yield llvm.LabelOp(label_name=llvm.Label().constant(then_label))
-        self.current_label = then_label
+        yield then_label_op
+        self.current_label = then_label_op
         then_result: dgen.Value | None = None
         for child in op.then_body.ops:
             if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
                 then_result = self._map(child.value)
-                yield llvm.BrOp(dest=String().constant(merge_label))
+                yield llvm.BrOp(label=merge_label_op)
             else:
                 yield from self.lower_op(child)
         then_source_label = self.current_label
 
         # Else block
-        yield llvm.LabelOp(label_name=llvm.Label().constant(else_label))
-        self.current_label = else_label
+        yield else_label_op
+        self.current_label = else_label_op
         else_result: dgen.Value | None = None
         for child in op.else_body.ops:
             if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
                 else_result = self._map(child.value)
-                yield llvm.BrOp(dest=String().constant(merge_label))
+                yield llvm.BrOp(label=merge_label_op)
             else:
                 yield from self.lower_op(child)
         else_source_label = self.current_label
 
         # Merge with phi
-        yield llvm.LabelOp(label_name=llvm.Label().constant(merge_label))
-        self.current_label = merge_label
+        yield merge_label_op
+        self.current_label = merge_label_op
         assert then_result is not None and else_result is not None
         phi_op = llvm.PhiOp(
             a=then_result,
             b=else_result,
-            label_a=String().constant(then_source_label),
-            label_b=String().constant(else_source_label),
+            label_a=then_source_label,
+            label_b=else_source_label,
         )
         yield phi_op
         self.value_map[op] = phi_op

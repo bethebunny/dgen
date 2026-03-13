@@ -29,7 +29,7 @@ class AffineToLLVMLowering:
         self.value_map: dict[dgen.Value, dgen.Value] = {}  # affine -> llvm
         self.alloc_shapes: dict[dgen.Value, list[int]] = {}  # llvm alloca -> shape
         self.alloc_sizes: dict[dgen.Value, int] = {}  # llvm alloca -> total size
-        self.current_label = "entry"
+        self.current_label: dgen.Value = dgen.Value(name="entry", type=llvm.Label())
         self._seen: set[dgen.Value] = set()  # ops already processed
 
     def lower_module(self, m: Module) -> Module:
@@ -41,7 +41,7 @@ class AffineToLLVMLowering:
         self.value_map = {}
         self.alloc_shapes = {}
         self.alloc_sizes = {}
-        self.current_label = "entry"
+        self.current_label = dgen.Value(name="entry", type=llvm.Label())
         self._seen: set[dgen.Value] = set()
         # Register block args (function parameters)
         prologue: list[dgen.Op] = []
@@ -212,20 +212,24 @@ class AffineToLLVMLowering:
             yield init_op
             self.value_map[op.lo] = init_op
             self._seen.add(op.lo)
+        header_label_op = llvm.LabelOp(name=header_label)
+        body_label_op = llvm.LabelOp(name=body_label)
+        exit_label_op = llvm.LabelOp(name=exit_label)
+
         prev_label = self.current_label
-        yield llvm.BrOp(dest=String().constant(header_label))
+        yield llvm.BrOp(label=header_label_op)
 
         # Header label
-        yield llvm.LabelOp(label_name=llvm.Label().constant(header_label))
-        self.current_label = header_label
+        yield header_label_op
+        self.current_label = header_label_op
 
         # Phi node for loop variable (back-edge value patched after body)
         back_edge = dgen.Value(type=builtin.Index())  # placeholder, patched below
         phi_op = llvm.PhiOp(
             a=init_op,
             b=back_edge,
-            label_a=String().constant(prev_label),
-            label_b=String().constant(body_label),
+            label_a=prev_label,
+            label_b=body_label_op,
         )
         yield phi_op
         # Map the affine loop variable to the LLVM phi node
@@ -242,20 +246,20 @@ class AffineToLLVMLowering:
         yield cmp_op
         yield llvm.CondBrOp(
             cond=cmp_op,
-            true_dest=String().constant(body_label),
-            false_dest=String().constant(exit_label),
+            true_dest=body_label_op,
+            false_dest=exit_label_op,
         )
 
         # Body label
-        yield llvm.LabelOp(label_name=llvm.Label().constant(body_label))
-        self.current_label = body_label
+        yield body_label_op
+        self.current_label = body_label_op
 
         # Lower body ops
         for child_op in op.body.ops:
             yield from self.lower_op(child_op)
 
         # Patch phi back-edge label to actual current block
-        phi_op.label_b = String().constant(self.current_label)
+        phi_op.label_b = self.current_label
 
         # Increment and branch back
         one_op = ConstantOp(value=1, type=builtin.Index())
@@ -264,11 +268,11 @@ class AffineToLLVMLowering:
         yield next_op
         # Patch phi back-edge value
         phi_op.b = next_op
-        yield llvm.BrOp(dest=String().constant(header_label))
+        yield llvm.BrOp(label=header_label_op)
 
         # Exit label
-        yield llvm.LabelOp(label_name=llvm.Label().constant(exit_label))
-        self.current_label = exit_label
+        yield exit_label_op
+        self.current_label = exit_label_op
 
     def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> Iterator[dgen.Op]:
         """Unrolled nonzero_count: count non-zero elements in a tensor."""
