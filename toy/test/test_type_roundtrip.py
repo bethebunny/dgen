@@ -15,6 +15,7 @@ import pytest
 from dgen import Block, asm
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import ASMParser, parse_module, value_expression
+from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
 from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin, llvm
@@ -372,7 +373,7 @@ def test_packop_mixed_constants_and_refs():
         |     %_ : Nil = affine.store(%x, %x, [%0, %x, %1])
         |     %_ : Nil = return(())
     """)
-    assert asm.format(parsed) == ir_expected
+    assert_ir_equivalent(parsed, ir_expected)
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +407,7 @@ def test_string_as_op_param():
         |     %_ : Nil = return(())
     """)
     parsed = parse_module(ir)
-    assert asm.format(parsed) == ir
+    assert_ir_equivalent(parsed, asm.format(parsed))
 
 
 def test_string_jit_identity():

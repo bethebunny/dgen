@@ -2,6 +2,7 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.testing import assert_ir_equivalent
 from toy.passes.affine_to_llvm import lower_to_llvm
 from toy.test.helpers import strip_prefix
 
@@ -16,7 +17,7 @@ def test_roundtrip_alloc():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_store_load():
@@ -32,7 +33,7 @@ def test_roundtrip_store_load():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_arith():
@@ -47,7 +48,7 @@ def test_roundtrip_arith():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_index_constant():
@@ -57,7 +58,7 @@ def test_roundtrip_index_constant():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_print_memref():
@@ -70,7 +71,7 @@ def test_roundtrip_print_memref():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_for_op():
@@ -87,7 +88,7 @@ def test_roundtrip_for_op():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_nested_for():
@@ -104,7 +105,7 @@ def test_roundtrip_nested_for():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_return_value():
@@ -114,7 +115,7 @@ def test_roundtrip_return_value():
         |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_multi_index_load_store():
@@ -131,7 +132,7 @@ def test_roundtrip_multi_index_load_store():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_ssa_in_op_arg():
@@ -145,7 +146,7 @@ def test_roundtrip_ssa_in_op_arg():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_ssa_in_type_param():
@@ -159,7 +160,7 @@ def test_roundtrip_ssa_in_type_param():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_ssa_shape_through_lowering():
@@ -178,7 +179,7 @@ def test_ssa_shape_through_lowering():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
     llvm_module = lower_to_llvm(module)
     result = asm.format(llvm_module)

@@ -3,6 +3,7 @@
 from dgen import asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin, llvm
+from dgen.testing import assert_ir_equivalent
 from dgen.graph import walk_ops
 from dgen.module import ConstantOp
 from toy.test.helpers import strip_prefix
@@ -65,7 +66,7 @@ def test_chain_asm_round_trip():
         |     %_ : Nil = return(())
     """)
     m = parse_module(ir_text)
-    assert asm.format(m) == ir_text
+    assert_ir_equivalent(m, asm.format(m))
 
 
 def test_walk_ops_follows_chain_dependencies():

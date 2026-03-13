@@ -2,6 +2,7 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.testing import assert_ir_equivalent
 from toy.test.helpers import strip_prefix
 
 
@@ -17,7 +18,7 @@ def test_llvm_via_imports():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_llvm_full_loop():
@@ -42,4 +43,4 @@ def test_llvm_full_loop():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))

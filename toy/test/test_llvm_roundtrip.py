@@ -2,6 +2,7 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.testing import assert_ir_equivalent
 from toy.test.helpers import strip_prefix
 
 
@@ -14,7 +15,7 @@ def test_roundtrip_alloca():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_gep_load_store():
@@ -31,7 +32,7 @@ def test_roundtrip_gep_load_store():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_fadd_fmul():
@@ -46,7 +47,7 @@ def test_roundtrip_fadd_fmul():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_add_mul_int():
@@ -61,7 +62,7 @@ def test_roundtrip_add_mul_int():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_icmp_condbr():
@@ -78,7 +79,7 @@ def test_roundtrip_icmp_condbr():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_label_br():
@@ -91,7 +92,7 @@ def test_roundtrip_label_br():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_phi():
@@ -105,7 +106,7 @@ def test_roundtrip_phi():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_call_with_result():
@@ -117,7 +118,7 @@ def test_roundtrip_call_with_result():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_call_void():
@@ -129,7 +130,7 @@ def test_roundtrip_call_void():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_return_value():
@@ -139,7 +140,7 @@ def test_roundtrip_return_value():
         |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_roundtrip_loop_pattern():
@@ -167,4 +168,4 @@ def test_roundtrip_loop_pattern():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))

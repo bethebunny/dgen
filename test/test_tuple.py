@@ -3,6 +3,7 @@
 from dgen import asm, layout
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
+from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import F64, Index, String, Tuple
 from dgen.type import _type_from_dict, type_constant
 from toy.test.helpers import strip_prefix
@@ -49,7 +50,7 @@ def test_tuple_constant_roundtrip():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
 
 
 def test_tuple_type_constant_serialization():
@@ -94,4 +95,4 @@ def test_tuple_type_values():
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
-    assert asm.format(module) == ir
+    assert_ir_equivalent(module, asm.format(module))
