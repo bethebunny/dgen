@@ -42,7 +42,7 @@ def test_roundtrip_constant():
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
-def test_explicit_constant():
+def test_explicit_constant(ir_snapshot):
     """Explicit constant(...) syntax is accepted and normalizes to implicit form."""
     ir = strip_prefix("""
         | import toy
@@ -52,14 +52,7 @@ def test_explicit_constant():
         |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %f : Nil = function<toy.Tensor<[2, 3], F64>>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %_ : Nil = return(%0)
-    """)
-    assert_ir_equivalent(module, asm.parse(expected))
+    assert module == ir_snapshot
 
 
 def test_roundtrip_mul():

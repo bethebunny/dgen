@@ -351,9 +351,8 @@ def test_list_of_strings_memory_roundtrip():
 # ---------------------------------------------------------------------------
 
 
-def test_packop_mixed_constants_and_refs():
+def test_packop_mixed_constants_and_refs(ir_snapshot):
     """Parser handles [literal, %ref, literal] by creating ConstantOps."""
-    # Input: mixed integer literals and SSA refs in list sugar
     ir_input = strip_prefix("""
         | import affine
         |
@@ -362,18 +361,7 @@ def test_packop_mixed_constants_and_refs():
         |     %_ : Nil = return(())
     """)
     parsed = parse_module(ir_input)
-
-    # After parsing, the literals become ConstantOps emitted before the store
-    ir_expected = strip_prefix("""
-        | import affine
-        |
-        | %main : Nil = function<Nil>() (%x: Index):
-        |     %0 : Index = 3
-        |     %1 : Index = 5
-        |     %_ : Nil = affine.store(%x, %x, [%0, %x, %1])
-        |     %_ : Nil = return(())
-    """)
-    assert_ir_equivalent(parsed, asm.parse(ir_expected))
+    assert parsed == ir_snapshot
 
 
 # ---------------------------------------------------------------------------
