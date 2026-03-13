@@ -196,7 +196,9 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         name = tracker.track_name(op)
 
         if isinstance(op, llvm.LabelOp):
-            lines.append(f"{string_value(op.label_name)}:")
+            label = op.label_name.__constant__.to_json()
+            assert isinstance(label, str)
+            lines.append(f"{label}:")
         elif isinstance(op, llvm.AllocaOp):
             lines.append(
                 f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
