@@ -216,7 +216,7 @@ class AffineToLLVMLowering:
         yield llvm.BrOp(dest=String().constant(header_label))
 
         # Header label
-        yield llvm.LabelOp(label_name=String().constant(header_label))
+        yield llvm.LabelOp(label_name=llvm.Label().constant(header_label))
         self.current_label = header_label
 
         # Phi node for loop variable (back-edge value patched after body)
@@ -247,7 +247,7 @@ class AffineToLLVMLowering:
         )
 
         # Body label
-        yield llvm.LabelOp(label_name=String().constant(body_label))
+        yield llvm.LabelOp(label_name=llvm.Label().constant(body_label))
         self.current_label = body_label
 
         # Lower body ops
@@ -267,7 +267,7 @@ class AffineToLLVMLowering:
         yield llvm.BrOp(dest=String().constant(header_label))
 
         # Exit label
-        yield llvm.LabelOp(label_name=String().constant(exit_label))
+        yield llvm.LabelOp(label_name=llvm.Label().constant(exit_label))
         self.current_label = exit_label
 
     def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> Iterator[dgen.Op]:

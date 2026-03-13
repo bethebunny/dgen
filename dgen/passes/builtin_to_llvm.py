@@ -100,7 +100,7 @@ class BuiltinToLLVMLowering:
         )
 
         # Then block
-        yield llvm.LabelOp(label_name=String().constant(then_label))
+        yield llvm.LabelOp(label_name=llvm.Label().constant(then_label))
         self.current_label = then_label
         then_result: dgen.Value | None = None
         for child in op.then_body.ops:
@@ -112,7 +112,7 @@ class BuiltinToLLVMLowering:
         then_source_label = self.current_label
 
         # Else block
-        yield llvm.LabelOp(label_name=String().constant(else_label))
+        yield llvm.LabelOp(label_name=llvm.Label().constant(else_label))
         self.current_label = else_label
         else_result: dgen.Value | None = None
         for child in op.else_body.ops:
@@ -124,7 +124,7 @@ class BuiltinToLLVMLowering:
         else_source_label = self.current_label
 
         # Merge with phi
-        yield llvm.LabelOp(label_name=String().constant(merge_label))
+        yield llvm.LabelOp(label_name=llvm.Label().constant(merge_label))
         self.current_label = merge_label
         assert then_result is not None and else_result is not None
         phi_op = llvm.PhiOp(

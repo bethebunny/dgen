@@ -22,6 +22,9 @@ class Float(Type): ...
 @dataclass(frozen=True)
 class Void(Type): ...
 
+@dataclass(frozen=True)
+class Label(Type): ...
+
 @dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
     elem_count: Value[Index]
@@ -95,7 +98,7 @@ class CondBrOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
-    label_name: Value[String]
+    label_name: Value[Label]
     type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
