@@ -13,7 +13,7 @@ type Void:
     data: Nil
 
 type Label:
-    layout Void
+    data: Nil
 
 op alloca<elem_count: Index>() -> Ptr
 op gep(base: Ptr, index: Int<64>) -> Ptr
