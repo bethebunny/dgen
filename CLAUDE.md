@@ -61,6 +61,13 @@ Implementation language: **Python**.
 
 ## Build & Test
 
+Install dependencies with `uv pip` before running tests:
+
+```bash
+# Install all dependencies (including dev extras)
+uv pip install -e ".[dev]"
+```
+
 ```bash
 # Run all tests
 pytest . -q
