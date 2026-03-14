@@ -1,0 +1,89 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "DGEN Assembly",
+    "scopeName": "source.dgen-asm",
+    "fileTypes": ["ir", "asm"],
+    "patterns": [
+        {"include": "#comment"},
+        {"include": "#import"},
+        {"include": "#ssa-value"},
+        {"include": "#dialect-type"},
+        {"include": "#dialect-op"},
+        {"include": "#op-call"},
+        {"include": "#type-name"},
+        {"include": "#number"},
+        {"include": "#string"},
+        {"include": "#punctuation"}
+    ],
+    "repository": {
+        "comment": {
+            "name": "comment.line.number-sign.dgen-asm",
+            "match": "#.*$"
+        },
+        "import": {
+            "match": "^(import)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+            "captures": {
+                "1": {"name": "keyword.control.import.dgen-asm"},
+                "2": {"name": "entity.name.namespace.dgen-asm"}
+            }
+        },
+        "ssa-value": {
+            "name": "variable.other.ssa.dgen-asm",
+            "match": "%[a-zA-Z_][a-zA-Z0-9_]*|%[0-9]+|%_"
+        },
+        "dialect-type": {
+            "match": "\\b([a-z][a-zA-Z0-9_]*)\\.([A-Z][a-zA-Z0-9_]*)",
+            "captures": {
+                "1": {"name": "entity.name.namespace.dgen-asm"},
+                "2": {"name": "entity.name.type.dgen-asm"}
+            }
+        },
+        "dialect-op": {
+            "match": "\\b([a-z][a-zA-Z0-9_]*)\\.([a-z_][a-zA-Z0-9_]*)",
+            "captures": {
+                "1": {"name": "entity.name.namespace.dgen-asm"},
+                "2": {"name": "entity.name.function.dgen-asm"}
+            }
+        },
+        "op-call": {
+            "name": "entity.name.function.dgen-asm",
+            "match": "\\b[a-z_][a-zA-Z0-9_]*(?=\\s*[<(])"
+        },
+        "type-name": {
+            "name": "entity.name.type.dgen-asm",
+            "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        },
+        "number": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.float.dgen-asm",
+                    "match": "-?\\b[0-9]+\\.[0-9]*([eE][+-]?[0-9]+)?\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.dgen-asm",
+                    "match": "-?\\b[0-9]+\\b"
+                }
+            ]
+        },
+        "string": {
+            "name": "string.quoted.double.dgen-asm",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.dgen-asm",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "punctuation": {
+            "patterns": [
+                {"name": "keyword.operator.assignment.dgen-asm", "match": "="},
+                {"name": "keyword.operator.type-annotation.dgen-asm", "match": ":"},
+                {"name": "keyword.operator.arrow.dgen-asm", "match": "->"},
+                {"name": "punctuation.separator.dgen-asm", "match": ","},
+                {"name": "punctuation.bracket.dgen-asm", "match": "[()\\[\\]<>]"}
+            ]
+        }
+    }
+}

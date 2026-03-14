@@ -1,0 +1,9 @@
+# GitHub.com syntax highlighting (Linguist only supports its built-in languages;
+# these are the closest available matches until dgen is contributed to Linguist).
+*.dgen linguist-language=Python
+*.ir   linguist-language=LLVM
+*.asm  linguist-language=LLVM
+
+# Don't count grammar/editor config files toward repo language stats.
+editors/vscode/syntaxes/** linguist-vendored
+editors/vscode/package.json linguist-vendored

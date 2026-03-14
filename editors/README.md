@@ -1,5 +1,21 @@
 # Editor Support for `.dgen` Files
 
+## VS Code Setup
+
+Install as a development extension:
+
+1. Open VS Code in this repo root: `code .`
+2. Run **Extensions: Install from VSIX...** — or, to load without packaging, copy
+   `editors/vscode/` into your VS Code extensions folder:
+   ```bash
+   cp -r editors/vscode ~/.vscode/extensions/dgen
+   ```
+3. Reload VS Code.
+
+This gives you syntax highlighting for:
+- `.dgen` dialect definition files
+- `.ir` and `.asm` IR assembly files
+
 ## Zed Setup
 
 ### 1. Install the Zed extension (syntax highlighting + outline)
