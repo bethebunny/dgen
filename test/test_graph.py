@@ -6,7 +6,7 @@ from dgen.dialects import builtin, llvm
 from dgen.testing import assert_ir_equivalent
 from dgen.graph import walk_ops
 from dgen.module import ConstantOp
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 
 def test_walk_ops_linear_chain():

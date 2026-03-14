@@ -8,7 +8,7 @@ from dgen.dialects import builtin
 from dgen.ir_diff import structural_diff
 from dgen.ir_equiv import Fingerprinter, graph_equivalent
 from dgen.module import ConstantOp
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 
 def test_identical_ops_same_fingerprint():

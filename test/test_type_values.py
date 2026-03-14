@@ -10,7 +10,7 @@ from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index
 from dgen.module import ConstantOp, Module
 from dgen.type import Memory, TypeType
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 
 def test_parse_dict_literal():

@@ -4,7 +4,7 @@ from dgen.asm.parser import parse_module
 from dgen.ir_diff import diff_modules
 from dgen.module import Module
 from toy.dialects import toy  # noqa: F401 — registers toy dialect
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 
 def test_diff_empty_when_identical():

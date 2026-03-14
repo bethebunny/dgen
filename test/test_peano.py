@@ -23,7 +23,7 @@ from dgen.dialects.builtin import Index
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.staging import compile_staged
 from dgen.type import Fields, TypeType, type_constant
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 # ============================================================================
 # Dialect
