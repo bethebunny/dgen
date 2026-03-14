@@ -6,7 +6,7 @@ from dgen.asm.parser import parse_module
 from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import F64, Index, String, Tuple
 from dgen.type import _type_from_dict, type_constant
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 
 def test_tuple_construction():

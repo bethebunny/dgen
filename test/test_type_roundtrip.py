@@ -26,7 +26,7 @@ from dgen.type import Memory
 from toy.dialects import shape_constant
 from toy.dialects.affine import MemRef, Shape
 from toy.dialects.toy import InferredShapeTensor, Tensor
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 # ---------------------------------------------------------------------------
 # Test data: (type, python_value, asm_literal, expected_unpack)

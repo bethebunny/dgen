@@ -5,7 +5,7 @@ import pytest
 from dgen.asm.parser import parse_module
 from dgen.testing.syrupy import IRSnapshotExtension
 from toy.dialects import toy  # noqa: F401 — registers toy dialect
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 
 IR = strip_prefix("""

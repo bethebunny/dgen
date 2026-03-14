@@ -7,7 +7,7 @@ from dgen.dialects import builtin
 from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import toy
-from toy.test.helpers import strip_prefix
+from dgen.testing import strip_prefix
 
 
 # ---------------------------------------------------------------------------

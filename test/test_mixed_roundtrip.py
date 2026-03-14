@@ -2,8 +2,7 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
-from dgen.testing import assert_ir_equivalent
-from toy.test.helpers import strip_prefix
+from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
 def test_llvm_via_imports():
