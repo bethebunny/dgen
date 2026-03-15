@@ -6,7 +6,10 @@ import re
 
 import pytest
 
-from dgen.asm.parser import ASMParser, ParseError
+import toy.dialects.toy  # noqa: F401 — registers dialect
+
+from dgen.asm.parser import ASMParser, ParseError, parse_module
+from dgen.testing import strip_prefix
 
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 
@@ -108,18 +111,30 @@ class TestReadList:
         assert ASMParser("1, 2, 3").read_list(number) == [1, 2, 3]
 
 
-class TestBareLiteralError:
-    """Bare literals for parameterized types produce a clear error."""
+class TestParseErrors:
+    """Error reporting for common ASM mistakes."""
 
     def test_bare_list_for_parameterized_type(self) -> None:
-        from dgen.asm.parser import parse_module
-
-        import toy.dialects.toy  # noqa: F401 — registers dialect
-
-        ir = (
-            "import toy\n\n"
-            "%f : Nil = function<toy.Tensor<[2, 3], F64>>() ():\n"
-            "    %_ : Nil = return()\n"
-        )
+        ir = strip_prefix("""
+            | import toy
+            |
+            | %f : Nil = function<toy.Tensor<[2, 3], F64>>() ():
+            |     %_ : Nil = return()
+        """)
         with pytest.raises(RuntimeError, match=r"bare literal.*Shape.*Shape<\.\.\.>"):
+            parse_module(ir)
+
+    @pytest.mark.xfail(
+        reason="parser doesn't track imports; resolves any registered dialect"
+    )
+    def test_unimported_dialect_rejected(self) -> None:
+        """Referencing a dialect not declared via `import` should fail."""
+        ir = strip_prefix("""
+            | import toy
+            |
+            | %f : Nil = function<Nil>() ():
+            |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+            |     %_ : Nil = return(%0)
+        """)
+        with pytest.raises(Exception):
             parse_module(ir)
