@@ -24,11 +24,11 @@ type Array<element_type: Type, n: Index>:
 type Pointer<pointee: Type>:
     layout Pointer
 
-type FatPointer<pointee: Type>:
-    layout FatPointer
+type Span<pointee: Type>:
+    layout Span
 
 type List<element_type: Type>:
-    storage: FatPointer<element_type>
+    storage: Span<element_type>
 
 type Tuple<types: List<Type>>:
     layout Record

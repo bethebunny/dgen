@@ -68,11 +68,11 @@ def test_parse_type_with_default_param():
 
 
 def test_parse_type_fatpointer_field():
-    result = parse("type String:\n    storage: FatPointer<Byte>\n")
+    result = parse("type String:\n    storage: Span<Byte>\n")
     t = result.types[0]
     assert len(t.data) == 1
     assert t.data[0].name == "storage"
-    assert t.data[0].type.name == "FatPointer"
+    assert t.data[0].type.name == "Span"
     assert len(t.data[0].type.args) == 1
     assert t.data[0].type.args[0].name == "Byte"
 

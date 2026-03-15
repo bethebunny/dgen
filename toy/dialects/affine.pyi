@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import F64, HasSingleBlock, Index, Nil
+from dgen.dialects.builtin import Array, F64, HasSingleBlock, Index, Nil, Pointer
 
 affine = Dialect("affine")
 
@@ -65,3 +65,4 @@ class ForOp(HasSingleBlock, Op):
     hi: Value[Index]
     type: Type = Nil()
     body: Block
+

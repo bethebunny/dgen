@@ -1,7 +1,7 @@
 """Memory layout types for language-agnostic type descriptions.
 
 Layouts are value-level descriptors: Byte(), Int(), Float64() are leaf types;
-Array, Pointer, FatPointer are parameterized via constructors.
+Array, Pointer, Span are parameterized via constructors.
 
 Each layout has a `struct` attribute (a `struct.Struct`) that describes
 its binary encoding. The `Memory` class pairs a layout with a buffer
@@ -151,7 +151,7 @@ class Pointer(Layout):
         self.struct.pack_into(buf, offset, ptr)
 
 
-class FatPointer(Layout):
+class Span(Layout):
     """Pointer + i64 length (16 bytes)."""
 
     struct = Struct("PQ")
@@ -261,7 +261,7 @@ class TypeValue(Layout):
                 self._is_type_kinded(pt) for _, pt in param_type.__params__
             ):
                 # List of types (e.g. Tuple's types: List param with TypeType element)
-                fields.append((param_name, FatPointer(TypeValue())))
+                fields.append((param_name, Span(TypeValue())))
             else:
                 # Value-kinded param: use the param type's layout
                 fields.append((param_name, param_type().__layout__))
@@ -281,7 +281,7 @@ class TypeValue(Layout):
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
         (ptr,) = self.struct.unpack_from(buf, offset)
-        # Read just the tag first (String = FatPointer<Byte> at offset 0)
+        # Read just the tag first (String = Span<Byte> at offset 0)
         tag_layout = String()
         tag_data = bytes((ctypes.c_char * tag_layout.struct.size).from_address(ptr))
         tag = tag_layout.to_json(tag_data, 0)
@@ -292,8 +292,8 @@ class TypeValue(Layout):
         return pointee_layout.to_json(data, 0)
 
 
-class String(FatPointer):
-    """FatPointer(Byte()) with str ↔ list[int] conversion in to_json/from_json."""
+class String(Span):
+    """Span(Byte()) with str ↔ list[int] conversion in to_json/from_json."""
 
     def __init__(self, pointee: Layout | None = None) -> None:
         super().__init__(pointee or Byte())

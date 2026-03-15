@@ -238,17 +238,17 @@ def test_list_with_ssa_element_type():
     assert isinstance(xs_op.type, builtin.List)
     assert xs_op.type.element_type is t_op
     assert xs_op.type.ready
-    assert xs_op.type.__layout__ == layout.FatPointer(layout.Int())
+    assert xs_op.type.__layout__ == layout.Span(layout.Int())
 
 
 def test_fat_pointer_with_ssa_pointee():
-    """FatPointer<%t> — SSA type value as pointee param, round-trips through ASM."""
+    """Span<%t> — SSA type value as pointee param, round-trips through ASM."""
     from dgen import layout
 
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : Type = {"tag": "builtin.F64"}
-        |     %p : FatPointer<%t> = [0.0, 0.0]
+        |     %p : Span<%t> = [0.0, 0.0]
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
@@ -257,10 +257,10 @@ def test_fat_pointer_with_ssa_pointee():
     ops = module.functions[0].body.ops
     t_op = ops[0]
     p_op = ops[1]
-    assert isinstance(p_op.type, builtin.FatPointer)
+    assert isinstance(p_op.type, builtin.Span)
     assert p_op.type.pointee is t_op
     assert p_op.type.ready
-    assert p_op.type.__layout__ == layout.FatPointer(layout.Float64())
+    assert p_op.type.__layout__ == layout.Span(layout.Float64())
 
 
 def test_function_with_ssa_result_type():

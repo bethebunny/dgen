@@ -33,7 +33,7 @@ def _is_list_of_types(param_type: type[Type]) -> bool:
         return False
     try:
         kwargs = {name: TypeType() for name, pt in params if _is_type_kinded(pt)}
-        return isinstance(param_type(**kwargs).__layout__, layout.FatPointer)
+        return isinstance(param_type(**kwargs).__layout__, layout.Span)
     except Exception:
         return False
 

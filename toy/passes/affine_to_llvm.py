@@ -48,7 +48,7 @@ class AffineToLLVMLowering:
         prologue: list[dgen.Op] = []
         for arg in f.body.args:
             if isinstance(arg.type, toy.Tensor):
-                # arg is a FatPointer struct ptr; load the data ptr from it
+                # arg is a Span struct ptr; load the data ptr from it
                 load_op = llvm.LoadOp(ptr=arg, type=_PTR_TYPE)
                 prologue.append(load_op)
                 self.value_map[arg] = load_op
@@ -97,7 +97,7 @@ class AffineToLLVMLowering:
             new_op = ConstantOp(value=op.value, type=op.type)
             yield new_op
             if isinstance(op.type, toy.Tensor):
-                # new_op is a FatPointer struct ptr; load the data ptr from it
+                # new_op is a Span struct ptr; load the data ptr from it
                 load_op = llvm.LoadOp(ptr=new_op, type=_PTR_TYPE)
                 yield load_op
                 self.value_map[op] = load_op

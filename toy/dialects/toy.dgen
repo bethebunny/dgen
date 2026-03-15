@@ -1,8 +1,8 @@
-from builtin import Index, Nil, F64, String, FatPointer
+from builtin import Index, Nil, F64, String, Span
 import affine
 
 type Tensor<shape: affine.Shape, dtype: Type = F64>:
-    data: FatPointer<dtype>
+    data: Span<dtype>
 
 type InferredShapeTensor<dtype: Type = F64>:
     data: Nil
