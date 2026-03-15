@@ -12,7 +12,7 @@ def test_roundtrip_alloc():
         | import affine
         |
         | %f : Nil = function<Nil>() ():
-        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc([2, 3])
+        |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(affine.Shape<2>([2, 3]))
         |     %_ : Nil = affine.dealloc(%0)
         |     %_ : Nil = return(())
     """)
@@ -25,7 +25,7 @@ def test_roundtrip_store_load():
         | import affine
         |
         | %f : Nil = function<Nil>() ():
-        |     %0 : affine.MemRef<[3], F64> = affine.alloc([3])
+        |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
         |     %1 : F64 = 1.0
         |     %2 : Index = 0
         |     %_ : Nil = affine.store(%1, %0, [%2])
@@ -66,7 +66,7 @@ def test_roundtrip_print_memref():
         | import affine
         |
         | %f : Nil = function<Nil>() ():
-        |     %0 : affine.MemRef<[3], F64> = affine.alloc([3])
+        |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
         |     %_ : Nil = affine.print_memref(%0)
         |     %_ : Nil = return(())
     """)
@@ -79,7 +79,7 @@ def test_roundtrip_for_op():
         | import affine
         |
         | %f : Nil = function<Nil>() ():
-        |     %0 : affine.MemRef<[3], F64> = affine.alloc([3])
+        |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
         |     %_ : Nil = affine.for<0, 3>() (%i0: Index):
         |         %1 : F64 = 1.0
         |         %2 : Index = 0
@@ -96,7 +96,7 @@ def test_roundtrip_nested_for():
         | import affine
         |
         | %f : Nil = function<Nil>() ():
-        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc([2, 3])
+        |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(affine.Shape<2>([2, 3]))
         |     %_ : Nil = affine.for<0, 2>() (%i0: Index):
         |         %_ : Nil = affine.for<0, 3>() (%i1: Index):
         |             %1 : F64 = 1.0
@@ -123,7 +123,7 @@ def test_roundtrip_multi_index_load_store():
         | import affine
         |
         | %f : Nil = function<Nil>() ():
-        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc([2, 3])
+        |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(affine.Shape<2>([2, 3]))
         |     %1 : F64 = 5.0
         |     %2 : Index = 0
         |     %3 : Index = 1
@@ -142,7 +142,7 @@ def test_roundtrip_ssa_in_op_arg():
         |
         | %f : Nil = function<Nil>() ():
         |     %shape : affine.Shape<2> = [2, 3]
-        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc(%shape)
+        |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(%shape)
         |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
@@ -170,7 +170,7 @@ def test_ssa_shape_through_lowering():
         |
         | %f : Nil = function<Nil>() ():
         |     %shape : affine.Shape<2> = [2, 3]
-        |     %0 : affine.MemRef<[2, 3], F64> = affine.alloc(%shape)
+        |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(%shape)
         |     %1 : F64 = 1.0
         |     %2 : Index = 0
         |     %_ : Nil = affine.store(%1, %0, [%2, %2])

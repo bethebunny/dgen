@@ -211,7 +211,12 @@ def value_expression(parser: ASMParser) -> object:
         return string[1:-1]
     if (number := parser.parse_token(_NUMBER)) is not None:
         return float(number) if "." in number else int(number)
-    return _named_type(parser)
+    type_val = _named_type(parser)
+    if parser.try_read("(") is not None:
+        raw = value_expression(parser)
+        parser.read(")")
+        return type_val.constant(raw)
+    return type_val
 
 
 def _named_type(parser: ASMParser) -> Type:
@@ -320,12 +325,6 @@ def _coerce_operand(
 
 
 def _wrap_constant(field_type: type[Type], raw: object) -> Constant:
-    if field_type.__params__:
-        kwargs = {}
-        for param_name, param_type in field_type.__params__:
-            assert isinstance(raw, list)
-            kwargs[param_name] = param_type().constant(len(raw))
-        return field_type(**kwargs).constant(raw)
     return field_type().constant(raw)
 
 

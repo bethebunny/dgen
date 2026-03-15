@@ -10,9 +10,10 @@ from dgen.testing import strip_prefix
 def test_diff_empty_when_identical():
     ir = strip_prefix("""
         | import toy
+import affine
         |
         | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
         |     %_ : Nil = return(%1)
     """)
@@ -23,17 +24,19 @@ def test_diff_empty_when_ssa_names_differ():
     """Same computation with different SSA names → no diff."""
     a = strip_prefix("""
         | import toy
+import affine
         |
         | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
         |     %_ : Nil = return(%1)
     """)
     b = strip_prefix("""
         | import toy
+import affine
         |
         | %main : Nil = function<Nil>() ():
-        |     %tensor : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %tensor : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %result : Nil = toy.print(%tensor)
         |     %_ : Nil = return(%result)
     """)
@@ -44,17 +47,19 @@ def test_diff_empty_when_function_order_differs():
     """Same functions listed in different module order → no diff."""
     a = strip_prefix("""
         | import toy
+import affine
         |
         | %func_a : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
         |     %_ : Nil = return(%1)
     """)
     b = strip_prefix("""
         | import toy
+import affine
         |
         | %func_b : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %1 : Nil = toy.print(%0)
         |     %_ : Nil = return(%1)
     """)
@@ -69,21 +74,23 @@ def test_diff_empty_when_op_order_differs():
     """Independent ops in a different block order → no diff (same graph)."""
     a = strip_prefix("""
         | import toy
+import affine
         |
-        | %main : toy.Tensor<[2, 3], F64> = function<toy.Tensor<[2, 3], F64>>() ():
-        |     %a : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %b : toy.Tensor<[2, 3], F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
-        |     %c : toy.Tensor<[2, 3], F64> = toy.mul(%a, %b)
-        |     %_ : toy.Tensor<[2, 3], F64> = return(%c)
+        | %main : toy.Tensor<affine.Shape<2>([2, 3]), F64> = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
+        |     %a : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %b : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        |     %c : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.mul(%a, %b)
+        |     %_ : toy.Tensor<affine.Shape<2>([2, 3]), F64> = return(%c)
     """)
     b = strip_prefix("""
         | import toy
+import affine
         |
-        | %main : toy.Tensor<[2, 3], F64> = function<toy.Tensor<[2, 3], F64>>() ():
-        |     %x : toy.Tensor<[2, 3], F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
-        |     %y : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %z : toy.Tensor<[2, 3], F64> = toy.mul(%y, %x)
-        |     %_ : toy.Tensor<[2, 3], F64> = return(%z)
+        | %main : toy.Tensor<affine.Shape<2>([2, 3]), F64> = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
+        |     %x : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        |     %y : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %z : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.mul(%y, %x)
+        |     %_ : toy.Tensor<affine.Shape<2>([2, 3]), F64> = return(%z)
     """)
     assert diff_modules(parse_module(a), parse_module(b)) == ""
 
@@ -92,17 +99,19 @@ def test_diff_format_semantic_change():
     """A changed constant produces a proper unified-diff output."""
     expected = strip_prefix("""
         | import toy
+import affine
         |
         | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
         |     %_ : Nil = return(%1)
     """)
     actual = strip_prefix("""
         | import toy
+import affine
         |
         | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
         |     %_ : Nil = return(%1)
     """)
@@ -118,9 +127,10 @@ def test_diff_format_missing_function():
     """A function present only in expected shows as all-deleted lines."""
     expected = strip_prefix("""
         | import toy
+import affine
         |
         | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
         |     %_ : Nil = return(%1)
     """)
@@ -140,9 +150,10 @@ def test_diff_format_extra_function():
     """A function present only in actual shows as all-added lines."""
     actual = strip_prefix("""
         | import toy
+import affine
         |
         | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
         |     %_ : Nil = return(%1)
     """)

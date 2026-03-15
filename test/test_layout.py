@@ -4,7 +4,6 @@ import ctypes
 from dataclasses import dataclass
 from typing import ClassVar
 
-import pytest
 
 from dgen import Dialect, layout
 from dgen.asm.formatting import type_asm
@@ -336,13 +335,11 @@ def test_static_span_type_asm():
     assert type_asm(ss) == "StaticSpan<F64, 4>"
 
 
-@pytest.mark.xfail(reason="_wrap_constant doesn't handle type-kinded params")
 def test_parse_type_with_static_span_param():
-    """Parsing a type whose param is StaticSpan with a list literal should work.
+    """Parsing a type whose param is StaticSpan with an explicit typed literal.
 
-    Analogous to how Tensor<[2, 3], F64> triggers _wrap_constant(Shape, [2, 3]),
-    this triggers _wrap_constant(StaticSpan, [10, 20, 30]) which fails because
-    StaticSpan has a type-kinded param (pointee) that _wrap_constant can't infer.
+    With the Type<params>(literal) syntax, StaticSpan<F64, 3>([10, 20, 30])
+    is parsed without any inference — the type is fully specified.
     """
     test_dialect = Dialect("_test_ss")
 
@@ -356,7 +353,7 @@ def test_parse_type_with_static_span_param():
     ir = strip_prefix("""
         | import _test_ss
         |
-        | %f : Nil = function<_test_ss.Wrapper<[10, 20, 30]>>() ():
+        | %f : Nil = function<_test_ss.Wrapper<StaticSpan<F64, 3>([10, 20, 30])>>() ():
         |     %_ : Nil = return()
     """)
     parse_module(ir)

@@ -1,10 +1,11 @@
 import llvm
 import toy
+import affine
 
 %main : Nil = function<Nil>() ():
     %0 : llvm.Ptr = llvm.alloca<6>()
     %1 : llvm.Ptr = llvm.alloca<6>()
-    %2 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    %2 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     %3 : llvm.Ptr = llvm.load(%2)
     %4 : Index = 0
     %5 : Nil = llvm.br(%loop_header0)
@@ -40,7 +41,7 @@ import toy
         %30 : Nil = llvm.br(%loop_header0)
     %loop_exit0 : llvm.Label = llvm.label() ():
         %31 : llvm.Ptr = llvm.alloca<6>()
-        %32 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        %32 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         %33 : llvm.Ptr = llvm.load(%32)
         %34 : Nil = llvm.br(%loop_header2)
     %loop_header2 : llvm.Label = llvm.label() ():

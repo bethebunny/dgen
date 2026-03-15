@@ -1,10 +1,11 @@
 import toy
+import affine
 
 %main : Nil = function<Nil>() ():
-    %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    %7 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
-    %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    %8 : toy.Tensor<[3, 2], F64> = toy.transpose(%0)
-    %9 : toy.Tensor<[3, 2], F64> = toy.mul(%7, %8)
+    %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    %7 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
+    %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    %8 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
+    %9 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.mul(%7, %8)
     %10 : Nil = toy.print(%9)
     %_ : Nil = return(%10)
