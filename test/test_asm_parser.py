@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from dgen.asm.parser import ASMParser
+from dgen.asm.parser import ASMParser, ParseError
 
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 
@@ -56,7 +56,7 @@ class TestReadAndTryRead:
 
     def test_try_read_function_failure(self) -> None:
         def fail(parser: ASMParser) -> int:
-            raise RuntimeError("no match")
+            raise ParseError("no match")
 
         p = ASMParser("  abc")
         assert p.try_read(fail) is None
@@ -84,7 +84,7 @@ class TestReadList:
         def number(parser: ASMParser) -> int:
             token = parser.parse_token(re.compile(r"\d+"))
             if token is None:
-                raise RuntimeError("expected number")
+                raise ParseError("expected number")
             return int(token)
 
         assert ASMParser("").read_list(number) == []
@@ -93,7 +93,7 @@ class TestReadList:
         def number(parser: ASMParser) -> int:
             token = parser.parse_token(re.compile(r"\d+"))
             if token is None:
-                raise RuntimeError("expected number")
+                raise ParseError("expected number")
             return int(token)
 
         assert ASMParser("42").read_list(number) == [42]
@@ -102,7 +102,7 @@ class TestReadList:
         def number(parser: ASMParser) -> int:
             token = parser.parse_token(re.compile(r"\d+"))
             if token is None:
-                raise RuntimeError("expected number")
+                raise ParseError("expected number")
             return int(token)
 
         assert ASMParser("1, 2, 3").read_list(number) == [1, 2, 3]

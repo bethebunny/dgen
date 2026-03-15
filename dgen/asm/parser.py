@@ -15,6 +15,11 @@ from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module, PackOp
 
+
+class ParseError(RuntimeError):
+    """Recoverable parse failure — caught by try_read for backtracking."""
+
+
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 _QUALIFIED = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*")
 _STRING = re.compile(r'"[^"]*"')
@@ -60,7 +65,7 @@ class ASMParser:
         saved = self.pos
         try:
             return self.read(grammar)
-        except RuntimeError:
+        except ParseError:
             self.pos = saved
             return None
 
@@ -74,7 +79,7 @@ class ASMParser:
     def expect_token(self, regex: re.Pattern[str], name: str) -> str:
         if (token := self.parse_token(regex)) is not None:
             return token
-        raise RuntimeError(f"Expected {name} at {self.pos}")
+        raise ParseError(f"Expected {name} at {self.pos}")
 
     def read_list(self, reader: Callable[..., Any]) -> list[Any]:
         """Read comma-separated items until reader fails."""
@@ -101,7 +106,7 @@ class ASMParser:
     def _expect(self, string: str) -> None:
         for ch in string:
             if self.pos >= len(self.text) or self.text[self.pos] != ch:
-                raise RuntimeError(f"Expected '{string}' at {self.pos}")
+                raise ParseError(f"Expected '{string}' at {self.pos}")
             self.pos += 1
 
 
@@ -113,7 +118,7 @@ def _lookup_op(name: str) -> type[Op]:
     dialect, local = _resolve_name(name)
     op_cls = dialect.ops.get(local)
     if op_cls is None:
-        raise RuntimeError(f"Unknown op: {name}")
+        raise ParseError(f"Unknown op: {name}")
     return op_cls
 
 
@@ -122,7 +127,7 @@ def _lookup_type(name: str) -> type[Type]:
     dialect, local = _resolve_name(name)
     type_cls = dialect.types.get(local)
     if type_cls is None:
-        raise RuntimeError(f"Unknown type: {name}")
+        raise ParseError(f"Unknown type: {name}")
     return type_cls
 
 
@@ -133,7 +138,7 @@ def _resolve_name(name: str) -> tuple[Dialect, str]:
         try:
             return Dialect.get(dialect_name), local
         except KeyError:
-            raise RuntimeError(f"Unknown dialect: {dialect_name}") from None
+            raise ParseError(f"Unknown dialect: {dialect_name}") from None
     return Dialect.get("builtin"), name
 
 
@@ -153,7 +158,7 @@ def _import_line(parser: ASMParser) -> str:
     parser._skip_all()
     keyword = parser.expect_token(_IDENT, "keyword")
     if keyword != "import":
-        raise RuntimeError(f"Expected 'import', got '{keyword}'")
+        raise ParseError(f"Expected 'import', got '{keyword}'")
     dialect_name = parser.expect_token(_IDENT, "dialect name")
     newline(parser)
     return dialect_name
@@ -325,6 +330,11 @@ def _coerce_operand(
 
 
 def _wrap_constant(field_type: type[Type], raw: object) -> Constant:
+    if field_type.__params__:
+        raise RuntimeError(
+            f"Cannot use a bare literal for parameterized type {field_type.asm_name}; "
+            f"use {field_type.asm_name}<...>({raw!r}) to specify type parameters explicitly"
+        )
     return field_type().constant(raw)
 
 
