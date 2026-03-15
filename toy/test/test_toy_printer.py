@@ -27,7 +27,7 @@ def test_constant_op():
     )
     assert (
         asm.format(op)
-        == "%0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
+        == "%0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
     )
 
 
@@ -40,7 +40,10 @@ def test_transpose_op():
 def test_reshape_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
-    assert asm.format(op) == "%1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)"
+    assert (
+        asm.format(op)
+        == "%1 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%0)"
+    )
 
 
 def test_mul_op():
@@ -193,10 +196,10 @@ def test_full_module():
         |     %3 : Nil = return(%2)
         |
         | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<[2, 3], F64> = toy.reshape(%0)
-        |     %2 : toy.Tensor<[6], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor<[2, 3], F64> = toy.reshape(%2)
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%0)
+        |     %2 : toy.Tensor<affine.Shape<1>([6]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%2)
         |     %4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])
         |     %5 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%3, %1])
         |     %6 : Nil = toy.print(%5)

@@ -10,27 +10,30 @@ from dgen.testing import strip_prefix
 
 IR = strip_prefix("""
     | import toy
+import affine
     |
     | %main : Nil = function<Nil>() ():
-    |     %0 : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     |     %1 : Nil = toy.print(%0)
     |     %_ : Nil = return(%1)
 """)
 
 IR_RENAMED = strip_prefix("""
     | import toy
+import affine
     |
     | %main : Nil = function<Nil>() ():
-    |     %tensor : toy.Tensor<[2, 3], F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    |     %tensor : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     |     %result : Nil = toy.print(%tensor)
     |     %_ : Nil = return(%result)
 """)
 
 IR_DIFFERENT = strip_prefix("""
     | import toy
+import affine
     |
     | %main : Nil = function<Nil>() ():
-    |     %0 : toy.Tensor<[2, 3], F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+    |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
     |     %1 : Nil = toy.print(%0)
     |     %_ : Nil = return(%1)
 """)

@@ -1,8 +1,9 @@
 import toy
+import affine
 
 %main : Nil = function<Nil>() ():
-    %0 : toy.Tensor<[2, 2], F64> = [1.0, 2.0, 3.0, 4.0]
-    %1 : toy.Tensor<[2, 2], F64> = [5.0, 6.0, 7.0, 8.0]
-    %2 : toy.Tensor<[2, 2], F64> = toy.mul(%0, %1)
+    %0 : toy.Tensor<affine.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]
+    %1 : toy.Tensor<affine.Shape<2>([2, 2]), F64> = [5.0, 6.0, 7.0, 8.0]
+    %2 : toy.Tensor<affine.Shape<2>([2, 2]), F64> = toy.mul(%0, %1)
     %3 : Nil = toy.print(%2)
     %4 : Nil = return(%3)

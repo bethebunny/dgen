@@ -94,7 +94,10 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
     if isinstance(value, PackOp):
         return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
     if isinstance(value, Constant) and not isinstance(value, Op):
-        return format_expr(value.__constant__.to_json(), tracker)
+        json_str = format_expr(value.__constant__.to_json(), tracker)
+        if type(value.type).__params__:
+            return f"{type_asm(value.type, tracker)}({json_str})"
+        return json_str
     if isinstance(value, Type):
         return type_asm(value, tracker)
     if isinstance(value, Value):
