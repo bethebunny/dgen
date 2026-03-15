@@ -17,7 +17,6 @@ def test_simple_constant(ir_snapshot):
     """Tensor constant passes through to LLVM level."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
@@ -31,7 +30,6 @@ def test_constant_preserved(ir_snapshot):
     """Constants are preserved as tensor constants (not expanded to scalar stores)."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
@@ -45,7 +43,6 @@ def test_2d_constant_preserved(ir_snapshot):
     """2D constants are preserved as tensor constants."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -59,7 +56,6 @@ def test_load_store_linearization(ir_snapshot):
     """Load/store with multi-dim indices are linearized."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -74,7 +70,6 @@ def test_3d_constant_preserved(ir_snapshot):
     """3D constants are preserved as tensor constants."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<3>([2, 2, 2]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
@@ -88,7 +83,6 @@ def test_3d_load_store_linearization(ir_snapshot):
     """3D load/store indices are linearized with stride multiplication."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<3>([2, 2, 2]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
@@ -104,7 +98,6 @@ def test_full_example(ir_snapshot):
     """Full pipeline: constant + transpose + mul + print -> LLVM IR."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

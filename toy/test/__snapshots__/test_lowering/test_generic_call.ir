@@ -1,5 +1,4 @@
 import toy
-import affine
 
 %multiply_transpose : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>):
     %0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)

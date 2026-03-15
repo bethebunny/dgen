@@ -354,7 +354,6 @@ def test_list_of_strings_memory_roundtrip():
 def test_packop_mixed_constants_and_refs(ir_snapshot):
     """Parser handles [literal, %ref, literal] by creating ConstantOps."""
     ir_input = strip_prefix("""
-        | import affine
         |
         | %main : Nil = function<Nil>() (%x: Index):
         |     %_ : Nil = affine.store(%x, %x, [3, %x, 5])

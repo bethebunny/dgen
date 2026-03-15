@@ -9,7 +9,6 @@ def test_transpose_elimination(ir_snapshot):
     """transpose(transpose(x)) -> x"""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -26,7 +25,6 @@ def test_reshape_of_matching_constant(ir_snapshot):
     """Reshape to same shape as constant -> remove reshape."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -42,7 +40,6 @@ def test_constant_folding_reshape(ir_snapshot):
     """Reshape of constant with different shape -> fold into new constant."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<1>([6]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -58,7 +55,6 @@ def test_dce(ir_snapshot):
     """Dead code elimination removes unused ops."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -75,7 +71,6 @@ def test_full_pipeline(ir_snapshot):
     """Full optimization on multiply_transpose-like example."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

@@ -9,7 +9,6 @@ from toy.test.helpers import strip_prefix
 
 def test_roundtrip_alloc():
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(affine.Shape<2>([2, 3]))
@@ -22,7 +21,6 @@ def test_roundtrip_alloc():
 
 def test_roundtrip_store_load():
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
@@ -38,7 +36,6 @@ def test_roundtrip_store_load():
 
 def test_roundtrip_arith():
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : F64 = 2.5
@@ -63,7 +60,6 @@ def test_roundtrip_index_constant():
 
 def test_roundtrip_print_memref():
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
@@ -76,7 +72,6 @@ def test_roundtrip_print_memref():
 
 def test_roundtrip_for_op():
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
@@ -93,7 +88,6 @@ def test_roundtrip_for_op():
 
 def test_roundtrip_nested_for():
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(affine.Shape<2>([2, 3]))
@@ -120,7 +114,6 @@ def test_roundtrip_return_value():
 
 def test_roundtrip_multi_index_load_store():
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(affine.Shape<2>([2, 3]))
@@ -138,7 +131,6 @@ def test_roundtrip_multi_index_load_store():
 def test_roundtrip_ssa_in_op_arg():
     """SSA value used as an op argument where a literal list would normally go."""
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %shape : affine.Shape<2> = [2, 3]
@@ -152,7 +144,6 @@ def test_roundtrip_ssa_in_op_arg():
 def test_roundtrip_ssa_in_type_param():
     """SSA value used inside a type parameter position."""
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %shape : affine.Shape<2> = [2, 3]
@@ -166,7 +157,6 @@ def test_roundtrip_ssa_in_type_param():
 def test_ssa_shape_through_lowering():
     """SSA shape reference form works through affine-to-LLVM lowering."""
     ir = strip_prefix("""
-        | import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %shape : affine.Shape<2> = [2, 3]

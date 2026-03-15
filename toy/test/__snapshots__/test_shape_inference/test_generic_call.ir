@@ -1,5 +1,4 @@
 import toy
-import affine
 
 %multiply_transpose : Nil = function<toy.Tensor<affine.Shape<2>([3, 2]), F64>>() (%a: toy.Tensor<affine.Shape<2>([2, 3]), F64>, %b: toy.Tensor<affine.Shape<2>([2, 3]), F64>):
     %0 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%a)
