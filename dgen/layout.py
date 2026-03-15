@@ -1,7 +1,7 @@
 """Memory layout types for language-agnostic type descriptions.
 
 Layouts are value-level descriptors: Byte(), Int(), Float64() are leaf types;
-Array, Pointer, Span are parameterized via constructors.
+Array, Pointer, Span, StaticSpan are parameterized via constructors.
 
 Each layout has a `struct` attribute (a `struct.Struct`) that describes
 its binary encoding. The `Memory` class pairs a layout with a buffer
@@ -178,6 +178,33 @@ class Span(Layout):
             pointee.from_json(origin, i * ps, v, origins)
         ptr = _bytearray_address(origin)
         self.struct.pack_into(buf, offset, ptr, len(value))
+
+
+class StaticSpan(Layout):
+    """Pointer to *count* elements of *pointee* (8 bytes — length is static)."""
+
+    struct = Struct("P")
+
+    def __init__(self, pointee: Layout, count: int) -> None:
+        self.pointee = pointee
+        self.count = count
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
+        (ptr,) = self.struct.unpack_from(buf, offset)
+        ps = self.pointee.struct.size
+        data = bytes((ctypes.c_char * (self.count * ps)).from_address(ptr))
+        return [self.pointee.to_json(data, i * ps) for i in range(self.count)]
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+    ) -> None:
+        assert isinstance(value, list)
+        ps = self.pointee.struct.size
+        origin = bytearray(ps * len(value))
+        origins.append(origin)
+        for i, v in enumerate(value):
+            self.pointee.from_json(origin, i * ps, v, origins)
+        self.struct.pack_into(buf, offset, _bytearray_address(origin))
 
 
 class Record(Layout):

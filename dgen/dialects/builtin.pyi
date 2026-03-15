@@ -9,32 +9,25 @@ from dgen import Block, Dialect, Op, Type, Value
 
 builtin = Dialect("builtin")
 
-class HasSingleBlock:
-    ...
+class HasSingleBlock: ...
 
 @dataclass(frozen=True)
-class Index(Type):
-    ...
+class Index(Type): ...
 
 @dataclass(frozen=True)
-class F64(Type):
-    ...
+class F64(Type): ...
 
 @dataclass(frozen=True)
-class Nil(Type):
-    ...
+class Nil(Type): ...
 
 @dataclass(frozen=True)
-class String(Type):
-    ...
+class String(Type): ...
 
 @dataclass(frozen=True)
-class TypeTag(Type):
-    ...
+class TypeTag(Type): ...
 
 @dataclass(frozen=True)
-class Byte(Type):
-    ...
+class Byte(Type): ...
 
 @dataclass(frozen=True)
 class Array(Type):
@@ -48,6 +41,11 @@ class Pointer(Type):
 @dataclass(frozen=True)
 class Span(Type):
     pointee: Value[dgen.TypeType]
+
+@dataclass(frozen=True)
+class StaticSpan(Type):
+    pointee: Value[dgen.TypeType]
+    n: Value[Index]
 
 @dataclass(frozen=True)
 class List(Type):
@@ -114,4 +112,3 @@ class CallOp(Op):
     callee: Value[Function]
     args: Value
     type: Type
-

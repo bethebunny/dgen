@@ -9,7 +9,7 @@
 
 ## Experiments / scope creep
 - Rename `List` / `FatPointer` to `Span`
-- Create a `StaticSpan` type (statically-known-length span, like `FatPointer` but with compile-time shape)
+- ~~Create a `StaticSpan` type (statically-known-length span, like `FatPointer` but with compile-time shape)~~ Done
 - Update `toy.Tensor` to use `StaticSpan` — removes the need for the runtime `llvm.load` to extract the data pointer (shape is compile-time, so no indirection is needed)
 - Tuple type
   - `Nil` becomes an alias for `Tuple<[]>`
@@ -32,6 +32,14 @@
 - Simple pass infrastructure
 - Formally support symbols
 - Parser / lowering support for forward references and cyclic references
+
+## `_wrap_constant` is fragile
+`_wrap_constant` in `dgen/asm/parser.py` infers type parameters from a raw list literal by setting *every* param to `param_type().constant(len(raw))`. This only works for types where all params are value-kinded scalars that equal the list length (today: just `Shape<rank: Index>`). It silently breaks for:
+- Types with type-kinded params (e.g. `StaticSpan<pointee: Type, n: Index>` — tries `TypeType().constant(len(raw))`)
+- Types with multiple value params that mean different things (e.g. a hypothetical `Matrix<rows: Index, cols: Index>` — both get `len(raw)`)
+- Any param whose value isn't the list length
+
+This should be replaced with something explicit — either a per-type `from_literal` hook, or at minimum skip type-kinded params and only infer value-kinded ones.
 
 ## Parser / formatting improvements
 - Massively simplify / clean the asm parser and formatter code

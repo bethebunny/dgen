@@ -1,13 +1,19 @@
 """Tests for memory layout types."""
 
 import ctypes
+from dataclasses import dataclass
+from typing import ClassVar
 
-from dgen import layout
+import pytest
+
+from dgen import Dialect, layout
 from dgen.asm.formatting import type_asm
+from dgen.asm.parser import parse_module
 from dgen.dialects import builtin
-from dgen.layout import Array, Byte, Span, Float64, Pointer
+from dgen.layout import Array, Byte, Float64, Pointer, Span, StaticSpan
 from dgen.module import string_value
-from dgen.type import Constant, Memory, Type, TypeType, Value
+from dgen.testing import strip_prefix
+from dgen.type import Constant, Fields, Memory, Type, TypeType, Value
 
 
 def test_primitive_sizes():
@@ -294,3 +300,63 @@ def test_type_params_are_bare_types():
     assert isinstance(ty.element_type, builtin.Index)
     assert isinstance(ty.element_type, Type)
     assert not isinstance(ty.element_type, Constant)
+
+
+# ===----------------------------------------------------------------------=== #
+# StaticSpan tests
+# ===----------------------------------------------------------------------=== #
+
+
+def test_static_span_size():
+    """StaticSpan is always pointer-sized (8 bytes) regardless of count."""
+    assert StaticSpan(Float64(), 4).byte_size == 8
+    assert StaticSpan(Byte(), 100).byte_size == 8
+    assert StaticSpan(layout.Int(), 1).byte_size == 8
+
+
+def test_static_span_type_layout():
+    """StaticSpan builtin type produces a StaticSpan layout."""
+    ss = builtin.StaticSpan(pointee=builtin.F64(), n=builtin.Index().constant(4))
+    ly = ss.__layout__
+    assert isinstance(ly, StaticSpan)
+    assert ly.byte_size == 8
+    assert ly.count == 4
+
+
+def test_static_span_roundtrip():
+    """StaticSpan constant round-trips through Memory."""
+    ss = builtin.StaticSpan(pointee=builtin.Index(), n=builtin.Index().constant(3))
+    mem = Memory.from_json(ss, [10, 20, 30])
+    assert mem.to_json() == [10, 20, 30]
+
+
+def test_static_span_type_asm():
+    """StaticSpan type formats as 'StaticSpan<F64, 4>'."""
+    ss = builtin.StaticSpan(pointee=builtin.F64(), n=builtin.Index().constant(4))
+    assert type_asm(ss) == "StaticSpan<F64, 4>"
+
+
+@pytest.mark.xfail(reason="_wrap_constant doesn't handle type-kinded params")
+def test_parse_type_with_static_span_param():
+    """Parsing a type whose param is StaticSpan with a list literal should work.
+
+    Analogous to how Tensor<[2, 3], F64> triggers _wrap_constant(Shape, [2, 3]),
+    this triggers _wrap_constant(StaticSpan, [10, 20, 30]) which fails because
+    StaticSpan has a type-kinded param (pointee) that _wrap_constant can't infer.
+    """
+    test_dialect = Dialect("_test_ss")
+
+    @test_dialect.type("Wrapper")
+    @dataclass(frozen=True)
+    class Wrapper(Type):
+        data: Value[builtin.StaticSpan]
+        __params__: ClassVar[Fields] = (("data", builtin.StaticSpan),)
+        __layout__ = layout.Void()
+
+    ir = strip_prefix("""
+        | import _test_ss
+        |
+        | %f : Nil = function<_test_ss.Wrapper<[10, 20, 30]>>() ():
+        |     %_ : Nil = return()
+    """)
+    parse_module(ir)
