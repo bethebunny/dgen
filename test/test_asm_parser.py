@@ -106,3 +106,20 @@ class TestReadList:
             return int(token)
 
         assert ASMParser("1, 2, 3").read_list(number) == [1, 2, 3]
+
+
+class TestBareLiteralError:
+    """Bare literals for parameterized types produce a clear error."""
+
+    def test_bare_list_for_parameterized_type(self) -> None:
+        from dgen.asm.parser import parse_module
+
+        import toy.dialects.toy  # noqa: F401 — registers dialect
+
+        ir = (
+            "import toy\n\n"
+            "%f : Nil = function<toy.Tensor<[2, 3], F64>>() ():\n"
+            "    %_ : Nil = return()\n"
+        )
+        with pytest.raises(RuntimeError, match=r"bare literal.*Shape.*Shape<\.\.\.>"):
+            parse_module(ir)

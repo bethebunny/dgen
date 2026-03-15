@@ -86,7 +86,6 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
     """A pass that eliminates transpose(transpose(x)) -> x."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -115,7 +114,6 @@ def test_pass_unregistered_ops_error():
     """allow_unregistered_ops=False raises on unhandled ops."""
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -169,7 +167,6 @@ def test_pass_manager_verification_catches_range_violation():
 
     ir_text = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

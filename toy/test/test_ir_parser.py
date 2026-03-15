@@ -21,7 +21,6 @@ def test_roundtrip_transpose():
 def test_roundtrip_reshape():
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() (%a: toy.InferredShapeTensor<F64>):
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%a)
@@ -34,7 +33,6 @@ import affine
 def test_roundtrip_constant():
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -48,7 +46,6 @@ def test_explicit_constant(ir_snapshot):
     """Explicit constant(...) syntax is accepted and normalizes to implicit form."""
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
@@ -100,7 +97,6 @@ def test_roundtrip_call():
 def test_roundtrip_print():
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<Nil>() (%a: toy.Tensor<affine.Shape<2>([2, 3]), F64>):
         |     %_ : Nil = toy.print(%a)
@@ -122,7 +118,6 @@ def test_roundtrip_void_return():
 def test_roundtrip_concat():
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 8]), F64>>() (%a: toy.Tensor<affine.Shape<2>([2, 3]), F64>, %b: toy.Tensor<affine.Shape<2>([2, 5]), F64>):
         |     %0 : toy.Tensor<affine.Shape<2>([2, 8]), F64> = toy.concat<1>(%a, %b)
@@ -135,7 +130,6 @@ import affine
 def test_roundtrip_tile():
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([4, 3]), F64>>() (%a: toy.Tensor<affine.Shape<1>([3]), F64>, %n: Index):
         |     %0 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%a>(%n)
@@ -149,7 +143,6 @@ def test_roundtrip_tile_with_index_constant():
     """Tile where count is an index constant — shape inference can peek through."""
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([4, 3]), F64>>() (%a: toy.Tensor<affine.Shape<1>([3]), F64>):
         |     %0 : Index = 4
@@ -164,7 +157,6 @@ def test_roundtrip_tile_with_computed_count():
     """Tile where count is computed — shape inference CANNOT resolve without evaluation."""
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.Tensor<affine.Shape<1>([3]), F64>):
         |     %0 : Index = 2
@@ -190,7 +182,6 @@ def test_roundtrip_add_index():
 def test_roundtrip_full_program():
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %multiply_transpose : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>):
         |     %0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)

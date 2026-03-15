@@ -1,6 +1,5 @@
 import llvm
 import toy
-import affine
 
 %main : Nil = function<Nil>() ():
     %0 : llvm.Ptr = llvm.alloca<8>()

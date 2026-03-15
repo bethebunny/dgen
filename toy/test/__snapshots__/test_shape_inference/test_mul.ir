@@ -1,5 +1,4 @@
 import toy
-import affine
 
 %main : Nil = function<Nil>() ():
     %0 : toy.Tensor<affine.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]

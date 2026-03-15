@@ -10,7 +10,6 @@ from dgen.testing import strip_prefix
 def test_diff_empty_when_identical():
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -24,7 +23,6 @@ def test_diff_empty_when_ssa_names_differ():
     """Same computation with different SSA names → no diff."""
     a = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -33,7 +31,6 @@ import affine
     """)
     b = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %tensor : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -47,7 +44,6 @@ def test_diff_empty_when_function_order_differs():
     """Same functions listed in different module order → no diff."""
     a = strip_prefix("""
         | import toy
-import affine
         |
         | %func_a : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -56,7 +52,6 @@ import affine
     """)
     b = strip_prefix("""
         | import toy
-import affine
         |
         | %func_b : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
@@ -74,7 +69,6 @@ def test_diff_empty_when_op_order_differs():
     """Independent ops in a different block order → no diff (same graph)."""
     a = strip_prefix("""
         | import toy
-import affine
         |
         | %main : toy.Tensor<affine.Shape<2>([2, 3]), F64> = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
         |     %a : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -84,7 +78,6 @@ import affine
     """)
     b = strip_prefix("""
         | import toy
-import affine
         |
         | %main : toy.Tensor<affine.Shape<2>([2, 3]), F64> = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
         |     %x : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
@@ -99,7 +92,6 @@ def test_diff_format_semantic_change():
     """A changed constant produces a proper unified-diff output."""
     expected = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -108,7 +100,6 @@ import affine
     """)
     actual = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
@@ -127,7 +118,6 @@ def test_diff_format_missing_function():
     """A function present only in expected shows as all-deleted lines."""
     expected = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -150,7 +140,6 @@ def test_diff_format_extra_function():
     """A function present only in actual shows as all-added lines."""
     actual = strip_prefix("""
         | import toy
-import affine
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

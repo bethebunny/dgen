@@ -87,7 +87,6 @@ def test_concat(ir_snapshot):
     """Concat shape is computed from input shapes: [2,3] concat [3,3] axis=0 -> [5,3]."""
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -104,7 +103,6 @@ def test_concat_axis1(ir_snapshot):
     """Concat along axis 1: [2,3] concat [2,5] -> [2,8]."""
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -121,7 +119,6 @@ def test_tile_with_constant_count(ir_snapshot):
     """Tile where count is a constant — shape inference peeks through the constant."""
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
@@ -142,7 +139,6 @@ def test_tile_with_computed_count():
     """
     ir = strip_prefix("""
         | import toy
-import affine
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
