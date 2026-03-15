@@ -61,9 +61,13 @@ Implementation language: **Python**.
 
 ## Build & Test
 
-Install dependencies with `uv pip` before running tests:
+Install dependencies with `uv pip` before running tests. `uv pip` requires a virtual environment — create and activate one first if it doesn't exist:
 
 ```bash
+# Create and activate a virtual environment (if one doesn't exist)
+[ -d .venv ] || uv venv
+source .venv/bin/activate
+
 # Install all dependencies (including dev extras)
 uv pip install -e ".[dev]"
 ```
