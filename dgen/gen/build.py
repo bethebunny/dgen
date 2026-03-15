@@ -39,6 +39,7 @@ _CONSTRUCTOR_LAYOUTS: dict[str, type[layout.Layout]] = {
     "Pointer": layout.Pointer,
     "Array": layout.Array,
     "Span": layout.Span,
+    "StaticSpan": layout.StaticSpan,
     "Record": layout.Record,
 }
 

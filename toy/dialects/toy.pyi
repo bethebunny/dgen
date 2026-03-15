@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import dgen
 from dgen import Dialect, Op, Type, Value
 import toy.dialects.affine as affine
-from dgen.dialects.builtin import F64, Index, Nil, Span, String
+from dgen.dialects.builtin import F64, Index, Nil
 
 toy = Dialect("toy")
 
@@ -70,4 +70,3 @@ class DimSizeOp(Op):
 class PrintOp(Op):
     input: Value
     type: Type = Nil()
-

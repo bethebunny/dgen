@@ -552,9 +552,7 @@ def test_memory_equality_scalars():
     assert a == b
 
 
-@pytest.mark.xfail(
-    reason="Span equality compares raw pointer values, not content"
-)
+@pytest.mark.xfail(reason="Span equality compares raw pointer values, not content")
 def test_memory_equality_strings():
     """Two String memories from the same Python value should be equal.
 
@@ -566,9 +564,7 @@ def test_memory_equality_strings():
     assert a == b
 
 
-@pytest.mark.xfail(
-    reason="Span equality compares raw pointer values, not content"
-)
+@pytest.mark.xfail(reason="Span equality compares raw pointer values, not content")
 def test_memory_equality_lists():
     """Two List memories from the same Python value should be equal."""
     ty = builtin.List(element_type=builtin.Index())

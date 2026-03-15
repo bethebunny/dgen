@@ -47,9 +47,9 @@ Implementation language: **Python**.
   - `test/` — All tests (pytest)
   - `test/testdata/` — `.toy` source files for CLI tests
   - `cli.py` — CLI entry point (compile and run `.toy` files)
-  - `TODO.md` — Current task list
 - `docs/` — Design documents (see `staging.md` for compile-time type staging model)
 - `test/` — `dgen`-level tests
+- `TODO.md` — Current task list
 
 ## Key Architecture Patterns
 

@@ -27,6 +27,9 @@ type Pointer<pointee: Type>:
 type Span<pointee: Type>:
     layout Span
 
+type StaticSpan<pointee: Type, n: Index>:
+    layout StaticSpan
+
 type List<element_type: Type>:
     storage: Span<element_type>
 
