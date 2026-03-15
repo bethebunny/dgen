@@ -133,7 +133,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         mem = c.__constant__
         layout = mem.layout
         if _ctype(layout) is ctypes.c_void_p:
-            # Pointer-passed layout: emit struct address (FatPointer: [data_ptr, len])
+            # Pointer-passed layout: emit struct address (Span: [data_ptr, len])
             host_buffers.append(mem)
             constants[c] = f"ptr inttoptr (i64 {mem.address} to ptr)"
             types[c] = "ptr"

@@ -50,7 +50,7 @@ BUILTIN_TYPES = [
         (3.14,),
         id="builtin.f64",
     ),
-    # String and List use FatPointer — tested separately below (not in from_value tests)
+    # String and List use Span — tested separately below (not in from_value tests)
 ]
 
 LLVM_TYPES = [
@@ -199,8 +199,8 @@ def test_type_asm_roundtrip(ty):
 _PARSEABLE_TYPES = [
     pytest.param(builtin.Index(), 42, "42", (42,), id="builtin.index"),
     pytest.param(builtin.F64(), 3.14, "3.14", (3.14,), id="builtin.f64"),
-    # String uses FatPointer — tested separately (not via from_value)
-    # Tensor uses FatPointer — tested separately below (not via unpack)
+    # String uses Span — tested separately (not via from_value)
+    # Tensor uses Span — tested separately below (not via unpack)
     pytest.param(
         llvm.Int(bits=builtin.Index().constant(64)),
         42,
@@ -286,11 +286,11 @@ def test_tensor_from_asm_roundtrip():
 
 
 def test_tensor_layout_is_fatpointer():
-    """Tensor layout is FatPointer(F64) — 16 bytes."""
-    from dgen.layout import FatPointer
+    """Tensor layout is Span(F64) — 16 bytes."""
+    from dgen.layout import Span
 
     ty = Tensor(shape=shape_constant([3]))
-    assert isinstance(ty.__layout__, FatPointer)
+    assert isinstance(ty.__layout__, Span)
     assert ty.__layout__.byte_size == 16
 
 
@@ -305,7 +305,7 @@ def test_list_jit_identity():
     mem = Memory.from_value(ty, [10, 20, 30])
     exe = _identity_exe(ty)
     result = exe.run(mem)
-    # List is passed as ptr (16-byte FatPointer), verify address round-trip
+    # List is passed as ptr (16-byte Span), verify address round-trip
     assert result == mem.address
 
 
@@ -376,11 +376,11 @@ def test_string_constant_roundtrip():
 
 
 def test_string_constant_different_lengths():
-    """String type is the same regardless of value length (FatPointer)."""
+    """String type is the same regardless of value length (Span)."""
     s3 = builtin.String()
     s5 = builtin.String()
     assert s3 == s5  # Same type — length is in the value, not the type
-    assert s3.__layout__.byte_size == 16  # FatPointer is always 16 bytes
+    assert s3.__layout__.byte_size == 16  # Span is always 16 bytes
 
 
 def test_string_as_op_param():
@@ -405,7 +405,7 @@ def test_string_jit_identity():
     mem = c.__constant__
     exe = _identity_exe(ty)
     result = exe.run(mem)
-    # String is passed as ptr (16-byte FatPointer), verify address round-trip
+    # String is passed as ptr (16-byte Span), verify address round-trip
     assert result == mem.address
 
 
@@ -537,7 +537,7 @@ def test_deepcopy_module_with_list_constant():
 # 11. Value equality for pointer types
 #
 # TODO: Memory.__eq__ compares buffers byte-for-byte, which means two
-# FatPointer memories created from the same Python value compare as NOT
+# Span memories created from the same Python value compare as NOT
 # equal (different heap pointers in the buffer). This breaks constant
 # deduplication and makes equality checks unreliable for pointer types.
 # Options: (a) define equality via to_json() for pointer layouts,
@@ -553,7 +553,7 @@ def test_memory_equality_scalars():
 
 
 @pytest.mark.xfail(
-    reason="FatPointer equality compares raw pointer values, not content"
+    reason="Span equality compares raw pointer values, not content"
 )
 def test_memory_equality_strings():
     """Two String memories from the same Python value should be equal.
@@ -567,7 +567,7 @@ def test_memory_equality_strings():
 
 
 @pytest.mark.xfail(
-    reason="FatPointer equality compares raw pointer values, not content"
+    reason="Span equality compares raw pointer values, not content"
 )
 def test_memory_equality_lists():
     """Two List memories from the same Python value should be equal."""
@@ -597,14 +597,14 @@ def test_single_element_list():
 
 
 def test_list_of_f64():
-    """List<F64> round-trips through Memory (float variant of FatPointer)."""
+    """List<F64> round-trips through Memory (float variant of Span)."""
     ty = builtin.List(element_type=builtin.F64())
     mem = Memory.from_value(ty, [1.5, 2.5, 3.5])
     assert mem.to_json() == [1.5, 2.5, 3.5]
 
 
 def test_three_level_nesting():
-    """List<List<List<index>>> — 3 levels of FatPointer nesting."""
+    """List<List<List<index>>> — 3 levels of Span nesting."""
     l1 = builtin.List(element_type=builtin.Index())
     l2 = builtin.List(element_type=l1)
     l3 = builtin.List(element_type=l2)

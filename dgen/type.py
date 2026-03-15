@@ -184,7 +184,7 @@ class TypeType(Type):
 class Memory(Generic[T]):
     """Typed memory buffer — the ABI for a type.
 
-    For pointer-based layouts (FatPointer, Pointer), the buffer contains
+    For pointer-based layouts (Span, Pointer), the buffer contains
     raw pointers into backing data stored in `origins`. Origins are shared
     on deepcopy (immutable constant data) so packed pointers stay valid.
     """

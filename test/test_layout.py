@@ -5,7 +5,7 @@ import ctypes
 from dgen import layout
 from dgen.asm.formatting import type_asm
 from dgen.dialects import builtin
-from dgen.layout import Array, Byte, FatPointer, Float64, Pointer
+from dgen.layout import Array, Byte, Span, Float64, Pointer
 from dgen.module import string_value
 from dgen.type import Constant, Memory, Type, TypeType, Value
 
@@ -27,18 +27,18 @@ def test_pointer():
 
 
 def test_fat_pointer():
-    assert FatPointer(Byte()).byte_size == 16
-    assert FatPointer(layout.Int()).byte_size == 16
+    assert Span(Byte()).byte_size == 16
+    assert Span(layout.Int()).byte_size == 16
 
 
 def test_string_layout():
     s = builtin.String()
-    assert isinstance(s.__layout__, FatPointer)
+    assert isinstance(s.__layout__, Span)
     assert s.__layout__.byte_size == 16
 
 
 def test_string_layout_is_string_layout():
-    """String type uses layout.String — 16 bytes, FatPointer subclass."""
+    """String type uses layout.String — 16 bytes, Span subclass."""
     s = builtin.String()
     ly = s.__layout__
     assert isinstance(ly, layout.String)
@@ -46,7 +46,7 @@ def test_string_layout_is_string_layout():
 
 
 def test_string_constant_fatpointer():
-    """String constant via FatPointer: data in origin, pointer in Memory."""
+    """String constant via Span: data in origin, pointer in Memory."""
     c = builtin.String().constant("hello")
     mem = c.__constant__
     # Memory is 16 bytes (ptr + i64 length)
@@ -68,16 +68,16 @@ def test_string_type_asm_no_params():
 
 
 def test_list_fatpointer_layout():
-    """List type uses FatPointer(element.__layout__) — 16 bytes, not inline."""
+    """List type uses Span(element.__layout__) — 16 bytes, not inline."""
     list_type = builtin.List(element_type=builtin.Index())
     ly = list_type.__layout__
-    assert isinstance(ly, FatPointer)
+    assert isinstance(ly, Span)
     assert ly.byte_size == 16
     assert isinstance(ly.pointee, layout.Int)
 
 
 def test_list_constant_fatpointer():
-    """List constant via FatPointer: data in origin, pointer in Memory."""
+    """List constant via Span: data in origin, pointer in Memory."""
     list_type = builtin.List(element_type=builtin.Index())
     c = list_type.constant([10, 20, 30])
     mem = c.__constant__

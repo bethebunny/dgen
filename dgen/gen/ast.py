@@ -44,7 +44,7 @@ class DataField:
     """A data field declaration on a type: name: TypeExpr.
 
     Describes the type's memory layout using type references.
-    E.g. ``dims: Array<Index, rank>`` or ``data: FatPointer<Byte>``.
+    E.g. ``dims: Array<Index, rank>`` or ``data: Span<Byte>``.
     """
 
     name: str

@@ -38,7 +38,7 @@ _PRIMITIVE_LAYOUTS: dict[str, layout.Layout] = {
 _CONSTRUCTOR_LAYOUTS: dict[str, type[layout.Layout]] = {
     "Pointer": layout.Pointer,
     "Array": layout.Array,
-    "FatPointer": layout.FatPointer,
+    "Span": layout.Span,
     "Record": layout.Record,
 }
 
@@ -69,8 +69,8 @@ def _is_list_of_types(param_type: type[Type]) -> bool:
     """True when *param_type* holds a list of types (e.g. the builtin List<Type>).
 
     A type qualifies when it has a type-kinded param AND its layout is
-    FatPointer-based (i.e. it stores elements as a variable-length array).
-    This distinguishes List<Type> (FatPointer layout) from Function<Type>
+    Span-based (i.e. it stores elements as a variable-length array).
+    This distinguishes List<Type> (Span layout) from Function<Type>
     (Void layout).
     """
     params: tuple[tuple[str, type[Type]], ...] = getattr(param_type, "__params__", ())
@@ -78,7 +78,7 @@ def _is_list_of_types(param_type: type[Type]) -> bool:
         return False
     try:
         kwargs = {name: TypeType() for name, pt in params if _is_type_kinded(pt)}
-        return isinstance(param_type(**kwargs).__layout__, layout.FatPointer)
+        return isinstance(param_type(**kwargs).__layout__, layout.Span)
     except Exception:
         return False
 
