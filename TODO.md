@@ -38,6 +38,7 @@
 - Remove anything that's thinking about "origin"s and generic python types or annotations
 - What are "special fields" in the parser? They shouldn't exist
 - Add parser failure tests
+- Parser should reject references to dialects/types that weren't declared via `import` — currently `affine.Shape` resolves as long as the dialect is registered at the Python level, even without an `import affine` line in the IR text
 - Formatter: use %_ for unused outputs
 - Formatter: clearly delineate names in sub-blocks
 
