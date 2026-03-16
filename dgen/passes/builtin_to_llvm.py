@@ -13,19 +13,20 @@ from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.graph import chain_body, group_into_blocks, placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
+from dgen.passes.pass_ import Pass
 
 
-class BuiltinToLLVMLowering:
+class BuiltinToLLVMLowering(Pass):
     def __init__(self) -> None:
         self.if_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}
         self.current_label: dgen.Value = dgen.Value(name="entry", type=llvm.Label())
 
-    def lower_module(self, m: Module) -> Module:
-        functions = [self.lower_function(f) for f in m.functions]
+    def run(self, m: Module) -> Module:
+        functions = [self._lower_function(f) for f in m.functions]
         return Module(functions=functions)
 
-    def lower_function(self, f: FunctionOp) -> FunctionOp:
+    def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.if_counter = 0
         self.value_map = {}
         self.current_label = dgen.Value(name="entry", type=llvm.Label())
@@ -172,5 +173,4 @@ class BuiltinToLLVMLowering:
 
 
 def lower_builtin_to_llvm(m: Module) -> Module:
-    lowering = BuiltinToLLVMLowering()
-    return lowering.lower_module(m)
+    return BuiltinToLLVMLowering().run(m)

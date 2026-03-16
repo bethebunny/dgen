@@ -9,8 +9,10 @@ from dgen.codegen import compile as compile_module
 from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index
 from dgen.module import ConstantOp, Module
+from dgen.staging import compile_staged
 from dgen.type import Memory, TypeType
 from dgen.testing import strip_prefix
+from toy.passes.affine_to_llvm import lower_to_llvm
 
 
 def test_parse_dict_literal():
@@ -419,9 +421,6 @@ def test_staging_resolves_block_arg_type():
     compiles a callback-based thunk, then resolves %t from the runtime
     arg when called.
     """
-    from dgen.staging import compile_staged
-    from toy.passes.affine_to_llvm import lower_to_llvm
-
     lower_calls: int = 0
 
     def lower(m: Module) -> Module:
@@ -505,9 +504,6 @@ def test_staging_with_ssa_result_type():
     The inner function %f has result = %t (ConstantOp), and its block arg
     %rt is a TypeType<Index>. The staging system must resolve both %t and %rt.
     """
-    from dgen.staging import compile_staged
-    from toy.passes.affine_to_llvm import lower_to_llvm
-
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : Type = {"tag": "builtin.Index"}

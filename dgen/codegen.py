@@ -14,6 +14,7 @@ from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, llvm
 from dgen.module import ConstantOp, Module, PackOp, string_value
 from dgen.layout import Layout
+from dgen.passes.builtin_to_llvm import lower_builtin_to_llvm
 from dgen.type import Constant, Memory, Value
 
 # ---------------------------------------------------------------------------
@@ -341,8 +342,6 @@ class Executable:
 
 def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
     """Emit LLVM IR and bundle with execution metadata."""
-    from dgen.passes.builtin_to_llvm import lower_builtin_to_llvm
-
     module = lower_builtin_to_llvm(module)
     ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]

@@ -10,6 +10,7 @@ from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.graph import chain_body, group_into_blocks, placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
+from dgen.passes.pass_ import Pass
 from toy.dialects import affine, toy
 
 _PTR_TYPE = llvm.Ptr()
@@ -24,7 +25,7 @@ def _extract_list_elements(
     return [value_map.get(v, v) for v in list_val.values]
 
 
-class AffineToLLVMLowering:
+class AffineToLLVMLowering(Pass):
     def __init__(self) -> None:
         self.loop_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}  # affine -> llvm
@@ -33,11 +34,11 @@ class AffineToLLVMLowering:
         self.current_label: dgen.Value = dgen.Value(name="entry", type=llvm.Label())
         self._seen: set[dgen.Value] = set()  # ops already processed
 
-    def lower_module(self, m: Module) -> Module:
-        functions = [self.lower_function(f) for f in m.functions]
+    def run(self, m: Module) -> Module:
+        functions = [self._lower_function(f) for f in m.functions]
         return Module(functions=functions)
 
-    def lower_function(self, f: FunctionOp) -> FunctionOp:
+    def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.loop_counter = 0
         self.value_map = {}
         self.alloc_shapes = {}
@@ -328,5 +329,4 @@ class AffineToLLVMLowering:
 
 
 def lower_to_llvm(m: Module) -> Module:
-    lowering = AffineToLLVMLowering()
-    return lowering.lower_module(m)
+    return AffineToLLVMLowering().run(m)
