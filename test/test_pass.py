@@ -157,13 +157,14 @@ def test_pass_multiple_handlers_first_wins():
 
 
 # ---------------------------------------------------------------------------
-# Task 8: PassManager
+# Task 8: Compiler.run with verification
 # ---------------------------------------------------------------------------
 
 
-def test_pass_manager_verification_catches_range_violation():
+def test_compiler_run_verification_catches_range_violation():
     """Post-condition check detects ops outside the declared range."""
-    from dgen.passes.pass_manager import PassManager
+    from dgen.codegen import LLVMCodegen
+    from dgen.compiler import Compiler
 
     ir_text = strip_prefix("""
         | import toy
@@ -183,6 +184,6 @@ def test_pass_manager_verification_catches_range_violation():
         allow_unregistered_ops = True
 
     m = parse_module(ir_text)
-    pm = PassManager([StrictPass()], verify=True)
+    compiler = Compiler(passes=[StrictPass()], exit=LLVMCodegen())
     with pytest.raises(AssertionError):
-        pm.run(m)
+        compiler.run(m, verify=True)

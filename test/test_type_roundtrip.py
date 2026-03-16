@@ -17,11 +17,11 @@ from dgen.asm.formatting import type_asm
 from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
-from dgen.codegen import compile as compile_module
+from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
+from dgen.compiler import Compiler
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, String
 from dgen.module import ConstantOp, Module, string_value
-from dgen.staging import compile_and_run_staged, compile_staged
 from dgen.type import Memory
 from toy.dialects import shape_constant
 from toy.dialects.affine import MemRef, Shape
@@ -425,23 +425,15 @@ def test_string_param_staging():
     """)
     module = parse_module(ir)
 
-    identity = lambda m: m  # noqa: E731
+    identity_compiler: Compiler[Executable] = Compiler(passes=[], exit=LLVMCodegen())
 
     # "slt": 5 < 10 = true → 1
-    assert (
-        compile_and_run_staged(
-            module, infer=identity, lower=identity, args=["slt", 5, 10]
-        )
-        == 1
-    )
+    exe = identity_compiler.compile(module)
+    assert exe.run("slt", 5, 10) == 1
 
     # "sge": 5 >= 10 = false → 0
-    assert (
-        compile_and_run_staged(
-            module, infer=identity, lower=identity, args=["sge", 5, 10]
-        )
-        == 0
-    )
+    exe = identity_compiler.compile(module)
+    assert exe.run("sge", 5, 10) == 0
 
 
 def test_compile_once_run_twice():
@@ -461,9 +453,9 @@ def test_compile_once_run_twice():
     """)
     module = parse_module(ir)
 
-    identity = lambda m: m  # noqa: E731
+    identity_compiler: Compiler[Executable] = Compiler(passes=[], exit=LLVMCodegen())
 
-    exe = compile_staged(module, infer=identity, lower=identity)
+    exe = identity_compiler.compile(module)
 
     # Same executable, different arguments — each run JITs a specialized stage-2
     assert exe.run("slt", 5, 10) == 1  # 5 < 10 = true → 1

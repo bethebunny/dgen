@@ -366,3 +366,15 @@ def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
     target = _llvm.Target.from_default_triple()
     tm = target.create_target_machine()
     return _llvm.create_mcjit_compiler(mod, tm)
+
+
+# ---------------------------------------------------------------------------
+# LLVMCodegen exit pass
+# ---------------------------------------------------------------------------
+
+
+class LLVMCodegen:
+    """Exit pass: lower builtin ops to LLVM, emit IR, bundle as Executable."""
+
+    def run(self, module: Module) -> Executable:
+        return compile(module)

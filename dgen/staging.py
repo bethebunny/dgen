@@ -6,16 +6,21 @@ import ctypes
 import itertools
 from collections.abc import Callable, Sequence
 from copy import deepcopy
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator, TypeVar
 
 import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
-from dgen.codegen import _ctype, _llvm_type
+from dgen.codegen import Executable, _ctype, _llvm_type
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, String
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.type import Constant, Memory
+
+if TYPE_CHECKING:
+    from dgen.compiler import Compiler
+
+T = TypeVar("T")
 
 
 def _walk_inputs(op: dgen.Op) -> Iterator[dgen.Value]:
@@ -47,6 +52,11 @@ def _is_stage0_evaluable(target: dgen.Value) -> bool:
 
     Returns False if any value in the dependency tree is a BlockArgument
     (function parameter), meaning it depends on runtime input.
+
+    Note: this is NOT equivalent to ``compute_stages(func)[target] == 0``.
+    Stage numbers include a +1 bump for param crossings, so an op whose
+    params are all Constants still has stage >= 1 — but it IS evaluable
+    because no BlockArgument appears in its dependency tree.
     """
     visited: set[dgen.Value] = set()
     worklist = [target]
@@ -182,7 +192,7 @@ def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
     return result
 
 
-def compute_stages(func: FunctionOp) -> dict[int, int]:
+def compute_stages(func: FunctionOp) -> dict[dgen.Value, int]:
     """Assign a stage number to every Value in a function.
 
     Base cases:
@@ -342,38 +352,6 @@ def _has_nested_boundaries(func: FunctionOp) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_all_comptime(
-    module: Module,
-    *,
-    infer: Callable[[Module], Module],
-    lower: Callable[[Module], Module],
-) -> Module:
-    """Deepcopy + resolve all Constant fields in stage order.
-
-    Computes stage numbers, then processes unresolved ``__params__``
-    boundaries from lowest stage first.  Stops when remaining boundaries
-    depend on runtime values (BlockArguments).
-    """
-    module = deepcopy(module)
-    while True:
-        resolved_any = False
-        for func in module.functions:
-            stages = compute_stages(func)
-            boundaries = _unresolved_boundaries(func, stages)
-            if not boundaries:
-                continue
-            _stage_num, op, field_name, value = boundaries[0]
-            if not _is_stage0_evaluable(value):
-                continue
-            _resolve_comptime_field(func, op, field_name, value, lower)
-            module = infer(module)
-            resolved_any = True
-            break  # re-iterate from the start after each resolution
-        if not resolved_any:
-            break
-    return module
-
-
 def _raw_to_json(raw: object, ty: dgen.Type) -> object:
     """Convert a raw ctypes callback value to a Python value.
 
@@ -390,13 +368,69 @@ def _raw_to_json(raw: object, ty: dgen.Type) -> object:
     return raw
 
 
-def _compile_with_callbacks(
+def resolve_stage0(
+    module: Module,
+    lower: Callable[[Module], Module],
+) -> Module:
+    """Deepcopy + resolve all stage-0 comptime boundaries.
+
+    Iteratively resolves the lowest-stage boundary whose value can be
+    evaluated without runtime values (no BlockArgument dependencies).
+    Stops when only runtime-dependent boundaries remain.
+    """
+    module = deepcopy(module)
+    while True:
+        resolved_any = False
+        for func in module.functions:
+            stages = compute_stages(func)
+            boundaries = _unresolved_boundaries(func, stages)
+            if not boundaries:
+                continue
+            _stage_num, op, field_name, value = boundaries[0]
+            if not _is_stage0_evaluable(value):
+                continue
+            _resolve_comptime_field(func, op, field_name, value, lower)
+            resolved_any = True
+            break  # re-iterate from the start after each resolution
+        if not resolved_any:
+            break
+    return module
+
+
+def _resolve_with_runtime_args(
+    func: FunctionOp,
+    lower: Callable[[Module], Module],
+    block_args: Sequence[BlockArgument],
+    python_args: Sequence,
+) -> None:
+    """Resolve all boundaries in a function using runtime argument values.
+
+    Unlike ``resolve_stage0``, this resolves boundaries at any stage
+    by passing runtime args to the JIT evaluator. Used inside callback
+    thunks when runtime values become available.
+    """
+    while True:
+        stages = compute_stages(func)
+        boundaries = _unresolved_boundaries(func, stages)
+        if not boundaries:
+            break
+        _stage_num, op, field_name, value = boundaries[0]
+        _resolve_comptime_field(
+            func,
+            op,
+            field_name,
+            value,
+            lower,
+            block_args=block_args,
+            args=python_args,
+        )
+
+
+def _build_callback_thunk(
     resolved: Module,
     func: FunctionOp,
-    *,
-    infer: Callable[[Module], Module],
-    lower: Callable[[Module], Module],
-) -> codegen.Executable:
+    compiler: Compiler[T],
+) -> Executable:
     """Build a stage-1 thunk that calls a host callback for stage-2 JIT.
 
     The compiled function passes all its arguments to a host callback.
@@ -423,7 +457,7 @@ def _compile_with_callbacks(
     param_ctypes = [_ctype(t.__layout__) for t in orig_types]
     cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
 
-    # Capture template + pipeline in closure
+    # Capture template + compiler in closure
     func_name = func.name
     callback_host_refs: list[object] = []  # Keep JIT data alive across calls
 
@@ -433,38 +467,24 @@ def _compile_with_callbacks(
             _raw_to_json(raw_args[i], orig_types[i]) for i in range(len(orig_types))
         ]
 
-        # Deep-copy template and resolve all __params__ in stage order
+        # Deep-copy template and resolve all __params__ with runtime args
         template = deepcopy(stage2_template)
         s2_func = next(f for f in template.functions if f.name == func_name)
 
         # Specialize IfOps: evaluate conditions, inline taken branches
-        _specialize_ifs(s2_func, lower, s2_func.body.args, python_args)
+        _specialize_ifs(s2_func, compiler.run, s2_func.body.args, python_args)
 
-        while True:
-            stages = compute_stages(s2_func)
-            boundaries = _unresolved_boundaries(s2_func, stages)
-            if not boundaries:
-                break
-            _stage_num, op, field_name, value = boundaries[0]
-            _resolve_comptime_field(
-                s2_func,
-                op,
-                field_name,
-                value,
-                lower,
-                block_args=s2_func.body.args,
-                args=python_args,
-            )
-            template = infer(template)
-            s2_func = next(f for f in template.functions if f.name == func_name)
+        # Resolve all remaining boundaries with runtime args
+        _resolve_with_runtime_args(
+            s2_func, compiler.run, s2_func.body.args, python_args
+        )
 
-        # Compile and run stage-2 (only this function, not the full template)
+        # Compile the fully-resolved function through the full pipeline
         func_module = Module(functions=[s2_func])
-        typed = infer(func_module)
-        lowered = lower(typed)
-        exe = codegen.compile(lowered)
-        callback_host_refs.extend(exe.host_refs)  # Keep memory alive for callers
-        return exe.run(*python_args)
+        result = compiler.compile(func_module)
+        assert isinstance(result, Executable)
+        callback_host_refs.extend(result.host_refs)  # Keep memory alive
+        return result.run(*python_args)
 
     callback_func = cb_type(_callback)
 
@@ -503,23 +523,20 @@ def _compile_with_callbacks(
     return exe
 
 
-def compile_staged(
-    module: Module,
-    *,
-    infer: Callable[[Module], Module],
-    lower: Callable[[Module], Module],
-) -> codegen.Executable:
-    """Stage-resolve, infer, lower, and compile to an Executable.
+def compile_module(module: Module, compiler: Compiler[T]) -> T:
+    """Full staged compilation: resolve stage-0, run passes, exit.
 
-    If all __params__ are resolvable at compile time (stage-0), compiles directly.
-    If some __params__ depend on runtime values, builds a callback-based executable
-    that JIT-compiles stage-2 code when runtime values become available.
+    If all __params__ are resolvable at compile time (stage-0), resolves them
+    and proceeds through the normal pass pipeline.
 
-    For multi-function modules where multiple functions have unresolved boundaries,
-    each is compiled as a callback-based thunk and registered as a global symbol
-    so cross-function calls (including recursion) work.
+    If some __params__ depend on runtime values (stage-1+), builds callback-
+    based thunks that JIT-compile when runtime values become available.
+
+    For multi-function modules where multiple functions have unresolved
+    boundaries, each is compiled as a callback thunk and registered as a
+    global symbol so cross-function calls (including recursion) work.
     """
-    resolved = _resolve_all_comptime(module, infer=infer, lower=lower)
+    resolved = resolve_stage0(module, compiler.run)
 
     # Find all functions with unresolved boundaries (including nested blocks)
     unresolved_funcs: list[FunctionOp] = []
@@ -529,9 +546,8 @@ def compile_staged(
             unresolved_funcs.append(func)
 
     if not unresolved_funcs:
-        typed = infer(resolved)
-        lowered = lower(typed)
-        return codegen.compile(lowered)
+        lowered = compiler.run(resolved)
+        return compiler.exit.run(lowered)
 
     # Compile each unresolved function as a callback thunk
     # and register it as a global symbol for cross-function calls.
@@ -545,10 +561,10 @@ def compile_staged(
     ]
 
     all_host_refs: list[object] = []
-    entry_exe: codegen.Executable | None = None
+    entry_exe: Executable | None = None
 
     for func in ordered:
-        exe = _compile_with_callbacks(resolved, func, infer=infer, lower=lower)
+        exe = _build_callback_thunk(resolved, func, compiler)
         all_host_refs.extend(exe.host_refs)
 
         # JIT the thunk and register its address as a global symbol
@@ -558,29 +574,17 @@ def compile_staged(
         _llvm_binding.add_symbol(func.name, func_ptr)
         all_host_refs.append(engine)  # keep JIT engine alive
 
-        if func is resolved.functions[0]:
+        if func is entry:
             entry_exe = exe
 
     if entry_exe is not None:
         entry_exe.host_refs = all_host_refs
-        return entry_exe
+        return entry_exe  # type: ignore[return-value]
 
     # Entry point has no unresolved boundaries — compile normally
     # but keep callback thunks alive
-    typed = infer(resolved)
-    lowered = lower(typed)
-    exe = codegen.compile(lowered)
-    exe.host_refs.extend(all_host_refs)
-    return exe
-
-
-def compile_and_run_staged(
-    module: Module,
-    *,
-    infer: Callable[[Module], Module],
-    lower: Callable[[Module], Module],
-    args: Sequence = (),
-) -> object:
-    """Full staged compilation pipeline: resolve, compile, and run."""
-    exe = compile_staged(module, infer=infer, lower=lower)
-    return exe.run(*args)
+    lowered = compiler.run(resolved)
+    result = compiler.exit.run(lowered)
+    assert isinstance(result, Executable)
+    result.host_refs.extend(all_host_refs)
+    return result

@@ -5,11 +5,12 @@ from dgen.asm.formatting import format_expr
 from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
-from dgen.codegen import compile as compile_module
+from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
+from dgen.compiler import Compiler
 from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index
 from dgen.module import ConstantOp, Module
-from dgen.staging import compile_staged
+from dgen.passes.pass_ import Pass
 from dgen.type import Memory, TypeType
 from dgen.testing import strip_prefix
 from toy.passes.affine_to_llvm import lower_to_llvm
@@ -423,10 +424,13 @@ def test_staging_resolves_block_arg_type():
     """
     lower_calls: int = 0
 
-    def lower(m: Module) -> Module:
-        nonlocal lower_calls
-        lower_calls += 1
-        return lower_to_llvm(m)
+    class CountingLowerToLLVM(Pass):
+        allow_unregistered_ops = True
+
+        def run(self, m: Module) -> Module:
+            nonlocal lower_calls
+            lower_calls += 1
+            return lower_to_llvm(m)
 
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%t: Type, %x: Index):
@@ -440,7 +444,10 @@ def test_staging_resolves_block_arg_type():
     assert isinstance(add_op.type, BlockArgument)
 
     # Compile produces a callback-based thunk — lower is NOT called yet
-    exe = compile_staged(module, infer=lambda m: m, lower=lower)
+    compiler: Compiler[Executable] = Compiler(
+        passes=[CountingLowerToLLVM()], exit=LLVMCodegen()
+    )
+    exe = compiler.compile(module)
     compile_time_calls = lower_calls
 
     # Each run() triggers runtime JIT — lower is called for each invocation
@@ -517,11 +524,16 @@ def test_staging_with_ssa_result_type():
     assert isinstance(inner_func, FunctionOp)
     assert isinstance(inner_func.result, ConstantOp)
 
-    exe = compile_staged(
-        Module(functions=[inner_func]),
-        infer=lambda m: m,
-        lower=lower_to_llvm,
+    class LowerToLLVMPass(Pass):
+        allow_unregistered_ops = True
+
+        def run(self, m: Module) -> Module:
+            return lower_to_llvm(m)
+
+    compiler: Compiler[Executable] = Compiler(
+        passes=[LowerToLLVMPass()], exit=LLVMCodegen()
     )
+    exe = compiler.compile(Module(functions=[inner_func]))
     assert exe.run({"tag": "builtin.Index"}, 21) == 42
 
 
@@ -537,25 +549,27 @@ def test_staging_resolves_type_value():
     from copy import deepcopy
 
     from dgen.dialects import llvm
-    from dgen.staging import compile_and_run_staged
 
-    def lower(m: Module) -> Module:
-        """Lower add_index to llvm.add."""
-        m = deepcopy(m)
-        for func in m.functions:
-            for i, op in enumerate(func.body.ops):
-                if isinstance(op, builtin.AddIndexOp):
-                    new_op = llvm.AddOp(
-                        name=op.name, lhs=op.lhs, rhs=op.rhs, type=op.type
-                    )
-                    func.body.ops[i] = new_op
-                    # Patch references
-                    for other in func.body.ops:
-                        for field_name, _ in other.__operands__:
-                            val = getattr(other, field_name)
-                            if val is op:
-                                setattr(other, field_name, new_op)
-        return m
+    class LowerAddIndex(Pass):
+        allow_unregistered_ops = True
+
+        def run(self, m: Module) -> Module:
+            """Lower add_index to llvm.add."""
+            m = deepcopy(m)
+            for func in m.functions:
+                for i, op in enumerate(func.body.ops):
+                    if isinstance(op, builtin.AddIndexOp):
+                        new_op = llvm.AddOp(
+                            name=op.name, lhs=op.lhs, rhs=op.rhs, type=op.type
+                        )
+                        func.body.ops[i] = new_op
+                        # Patch references
+                        for other in func.body.ops:
+                            for field_name, _ in other.__operands__:
+                                val = getattr(other, field_name)
+                                if val is op:
+                                    setattr(other, field_name, new_op)
+            return m
 
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%t: Type, %x: Index):
@@ -564,10 +578,9 @@ def test_staging_resolves_type_value():
     """)
     module = parse_module(ir)
 
-    result = compile_and_run_staged(
-        module,
-        infer=lambda m: m,
-        lower=lower,
-        args=[{"tag": "builtin.Index"}, 21],
+    compiler: Compiler[Executable] = Compiler(
+        passes=[LowerAddIndex()], exit=LLVMCodegen()
     )
+    exe = compiler.compile(module)
+    result = exe.run({"tag": "builtin.Index"}, 21)
     assert result == 42
