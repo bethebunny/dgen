@@ -9,7 +9,7 @@ from dgen import Dialect, layout
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin
-from dgen.layout import Array, Byte, Float64, Pointer, Span, StaticSpan
+from dgen.layout import Array, Byte, Float64, Pointer, Span
 from dgen.module import string_value
 from dgen.testing import strip_prefix
 from dgen.type import Constant, Fields, Memory, Type, TypeType, Value
@@ -302,58 +302,59 @@ def test_type_params_are_bare_types():
 
 
 # ===----------------------------------------------------------------------=== #
-# StaticSpan tests
+# Pointer<Array> tests
 # ===----------------------------------------------------------------------=== #
 
 
-def test_static_span_size():
-    """StaticSpan is always pointer-sized (8 bytes) regardless of count."""
-    assert StaticSpan(Float64(), 4).byte_size == 8
-    assert StaticSpan(Byte(), 100).byte_size == 8
-    assert StaticSpan(layout.Int(), 1).byte_size == 8
+def test_pointer_array_size():
+    """Pointer(Array(...)) is always pointer-sized (8 bytes) regardless of count."""
+    assert Pointer(Array(Float64(), 4)).byte_size == 8
+    assert Pointer(Array(Byte(), 100)).byte_size == 8
+    assert Pointer(Array(layout.Int(), 1)).byte_size == 8
 
 
-def test_static_span_type_layout():
-    """StaticSpan builtin type produces a StaticSpan layout."""
-    ss = builtin.StaticSpan(pointee=builtin.F64(), n=builtin.Index().constant(4))
-    ly = ss.__layout__
-    assert isinstance(ly, StaticSpan)
+def test_pointer_array_type_layout():
+    """Pointer<Array<F64, 4>> type produces a Pointer(Array) layout."""
+    pa = builtin.Pointer(pointee=builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4)))
+    ly = pa.__layout__
+    assert isinstance(ly, Pointer)
     assert ly.byte_size == 8
-    assert ly.count == 4
+    assert isinstance(ly.pointee, Array)
+    assert ly.pointee.count == 4
 
 
-def test_static_span_roundtrip():
-    """StaticSpan constant round-trips through Memory."""
-    ss = builtin.StaticSpan(pointee=builtin.Index(), n=builtin.Index().constant(3))
-    mem = Memory.from_json(ss, [10, 20, 30])
+def test_pointer_array_roundtrip():
+    """Pointer<Array> constant round-trips through Memory."""
+    pa = builtin.Pointer(pointee=builtin.Array(element_type=builtin.Index(), n=builtin.Index().constant(3)))
+    mem = Memory.from_json(pa, [10, 20, 30])
     assert mem.to_json() == [10, 20, 30]
 
 
-def test_static_span_type_asm():
-    """StaticSpan type formats as 'StaticSpan<F64, 4>'."""
-    ss = builtin.StaticSpan(pointee=builtin.F64(), n=builtin.Index().constant(4))
-    assert type_asm(ss) == "StaticSpan<F64, 4>"
+def test_pointer_array_type_asm():
+    """Pointer<Array<F64, 4>> formats correctly."""
+    pa = builtin.Pointer(pointee=builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4)))
+    assert type_asm(pa) == "Pointer<Array<F64, 4>>"
 
 
-def test_parse_type_with_static_span_param():
-    """Parsing a type whose param is StaticSpan with an explicit typed literal.
+def test_parse_type_with_pointer_array_param():
+    """Parsing a type whose param is Pointer<Array<...>> with an explicit typed literal.
 
-    With the Type<params>(literal) syntax, StaticSpan<F64, 3>([10, 20, 30])
+    With the Type<params>(literal) syntax, Pointer<Array<F64, 3>>([10, 20, 30])
     is parsed without any inference — the type is fully specified.
     """
-    test_dialect = Dialect("_test_ss")
+    test_dialect = Dialect("_test_pa")
 
     @test_dialect.type("Wrapper")
     @dataclass(frozen=True)
     class Wrapper(Type):
-        data: Value[builtin.StaticSpan]
-        __params__: ClassVar[Fields] = (("data", builtin.StaticSpan),)
+        data: Value[builtin.Pointer]
+        __params__: ClassVar[Fields] = (("data", builtin.Pointer),)
         __layout__ = layout.Void()
 
     ir = strip_prefix("""
-        | import _test_ss
+        | import _test_pa
         |
-        | %f : Nil = function<_test_ss.Wrapper<StaticSpan<F64, 3>([10, 20, 30])>>() ():
+        | %f : Nil = function<_test_pa.Wrapper<Pointer<Array<F64, 3>>([10, 20, 30])>>() ():
         |     %_ : Nil = return()
     """)
     parse_module(ir)
