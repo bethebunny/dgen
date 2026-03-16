@@ -47,30 +47,6 @@ def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
     return [op for op in func.body.ops if op in needed]
 
 
-def _is_stage0_evaluable(target: dgen.Value) -> bool:
-    """True if target's dependencies can be evaluated without runtime values.
-
-    Returns False if any value in the dependency tree is a BlockArgument
-    (function parameter), meaning it depends on runtime input.
-
-    Note: this is NOT equivalent to ``compute_stages(func)[target] == 0``.
-    Stage numbers include a +1 bump for param crossings, so an op whose
-    params are all Constants still has stage >= 1 — but it IS evaluable
-    because no BlockArgument appears in its dependency tree.
-    """
-    visited: set[dgen.Value] = set()
-    worklist = [target]
-    while worklist:
-        val = worklist.pop()
-        if val in visited:
-            continue
-        visited.add(val)
-        if isinstance(val, BlockArgument):
-            return False
-        if isinstance(val, dgen.Op):
-            worklist.extend(_walk_inputs(val))
-    return True
-
 
 def _make_memories(
     block_args: Sequence[BlockArgument], python_args: Sequence
@@ -195,14 +171,17 @@ def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
 def compute_stages(func: FunctionOp) -> dict[dgen.Value, int]:
     """Assign a stage number to every Value in a function.
 
+    Stage 0 means the value can be evaluated at compile time (no runtime
+    dependencies). Stage 1+ means it depends on runtime values.
+
     Base cases:
       - Constant / ConstantOp: stage 0
       - BlockArgument: stage 1
 
-    For ops::
+    For ops, params bump the stage only when they depend on runtime::
 
         stage = max((
-            *(1 + stage(p) for p in __params__),
+            *((1 + stage(p) if stage(p) > 0 else stage(p)) for p in __params__),
             *(stage(v) for v in __operands__),
         ))
 
@@ -225,14 +204,19 @@ def compute_stages(func: FunctionOp) -> dict[dgen.Value, int]:
             return 0
         parts: list[int] = []
         for pv in _field_values(value, value.__params__):
-            parts.append(1 + _stage(pv))
+            s = _stage(pv)
+            # +1 only when the param depends on runtime values (stage > 0).
+            # Stage-0 params (all-constant deps) don't bump the stage —
+            # the op is still evaluable at compile time.
+            parts.append(1 + s if s > 0 else s)
         for ov in _field_values(value, value.__operands__):
             parts.append(_stage(ov))
         # Unresolved type ref counts as a param boundary
         if isinstance(value.type, dgen.Value) and not isinstance(
             value.type, (Constant, dgen.Type)
         ):
-            parts.append(1 + _stage(value.type))
+            s = _stage(value.type)
+            parts.append(1 + s if s > 0 else s)
         result = max(parts, default=0)
         stages[value] = result
         return result
@@ -387,7 +371,7 @@ def resolve_stage0(
             if not boundaries:
                 continue
             _stage_num, op, field_name, value = boundaries[0]
-            if not _is_stage0_evaluable(value):
+            if stages.get(value, 0) != 0:
                 continue
             _resolve_comptime_field(func, op, field_name, value, lower)
             resolved_any = True
