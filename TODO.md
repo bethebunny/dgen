@@ -1,5 +1,5 @@
 ## Make the JIT work in the general case
-- Generalize `compile_and_run_staged` to not need an `infer` stage
+- ~~Generalize `compile_and_run_staged` to not need an `infer` stage~~ Done: `Compiler` owns the full pipeline; staging no longer takes `infer`/`lower` callbacks
 - Remove any "if stage0/stage1" logic
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 - ~~Delete `DimSizeOp.resolve_constant` monkey-patch~~ Done: `DimSizeOp` now has a proper lowering in `toy_to_affine.py`

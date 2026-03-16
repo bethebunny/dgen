@@ -16,12 +16,15 @@ from typing import ClassVar
 
 import dgen
 from dgen import Dialect, Op, Type, Value, layout
+from dgen import codegen
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin
 from dgen.dialects.builtin import Index
+from dgen.codegen import LLVMCodegen
+from dgen.compiler import Compiler
 from dgen.module import ConstantOp, Module, PackOp
-from dgen.staging import compile_staged
+from dgen.passes.pass_ import Pass
 from dgen.type import Fields, TypeType, type_constant
 from dgen.testing import strip_prefix
 
@@ -171,6 +174,21 @@ def lower_peano(module: Module) -> Module:
     return module
 
 
+class PeanoLowering(Pass):
+    """Pass wrapper for lower_peano."""
+
+    allow_unregistered_ops = True
+
+    def run(self, module: Module) -> Module:
+        return lower_peano(module)
+
+
+peano_compiler: Compiler[codegen.Executable] = Compiler(
+    passes=[PeanoLowering()],
+    exit=LLVMCodegen(),
+)
+
+
 # ============================================================================
 # Tests
 # ============================================================================
@@ -246,7 +264,7 @@ def test_peano_constant():
     module = parse_module(ir)
 
     print("\n=== Compile ===")
-    exe = compile_staged(module, infer=lambda m: m, lower=lower_peano)
+    exe = peano_compiler.compile(module)
 
     print("\n=== Run ===")
     result = exe.run()
@@ -384,7 +402,7 @@ def test_multi_function_staged():
         |     %_ : Nil = return(%r)
     """)
     module = parse_module(ir)
-    exe = compile_staged(module, infer=lambda m: m, lower=lower_peano)
+    exe = peano_compiler.compile(module)
     result = exe.run()
     assert result == 2  # value(Successor(Zero)) = 1, then add 1 = 2
 
@@ -435,7 +453,7 @@ def test_recursive_peano():
         |     %_ : Nil = return(%value)
     """)
     module = parse_module(ir)
-    exe = compile_staged(module, infer=lambda m: m, lower=lower_peano)
+    exe = peano_compiler.compile(module)
 
     # natural(0) = Successor(Zero) → value = 1, so main(0) = 1
     assert exe.run(0) == 1
