@@ -9,8 +9,7 @@
 
 ## Experiments / scope creep
 - Rename `List` / `FatPointer` to `Span`
-- ~~Create a `StaticSpan` type (statically-known-length span, like `FatPointer` but with compile-time shape)~~ Done
-- Update `toy.Tensor` to use `StaticSpan` — removes the need for the runtime `llvm.load` to extract the data pointer (shape is compile-time, so no indirection is needed)
+- Update `toy.Tensor` to use `Pointer<Array<...>>` — removes the need for the runtime `llvm.load` to extract the data pointer (shape is compile-time, so no indirection is needed)
 - Tuple type
   - `Nil` becomes an alias for `Tuple<[]>`
   - Add a `Sequence` trait so Tuple's type parameter could accept `Array<Type, ...>` or `List<Type>`
