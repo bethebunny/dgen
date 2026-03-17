@@ -9,7 +9,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
-from dgen.graph import chain_body, group_into_blocks
+from dgen.graph import chain_body, group_into_blocks, placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
 from toy.dialects import affine, toy
@@ -255,7 +255,7 @@ class AffineToLLVMLowering(Pass):
         ]
         body_args = [body_loop_var] + body_alloca_args
 
-        # Create label ops (bodies will be set during phase 2)
+        # Create label ops with block args (bodies filled in phase 2)
         header_label_op = llvm.LabelOp(
             name=header_label,
             body=dgen.Block(result=dgen.Value(type=Nil()), args=header_args),
@@ -266,19 +266,16 @@ class AffineToLLVMLowering(Pass):
         )
         exit_label_op = llvm.LabelOp(
             name=exit_label,
-            body=dgen.Block(result=dgen.Value(type=Nil()), args=[]),
+            body=placeholder_block(),
         )
 
         # --- Entry branch: pass init + alloca ptrs to header ---
-        entry_args_pack = _make_pack(
-            [init_op] + alloca_entries
-        )
-        yield llvm.BrOp(target=header_label_op, args=entry_args_pack)
+        entry_pack = _make_pack([init_op] + alloca_entries)
+        yield llvm.BrOp(target=header_label_op, args=entry_pack)
 
         # --- Header label ---
         yield header_label_op
 
-        # Header body: cmp + cond_br. References header block args.
         # Map the affine loop variable to the header's block arg
         self.value_map[op.body.args[0]] = header_loop_var
 
@@ -289,40 +286,46 @@ class AffineToLLVMLowering(Pass):
             yield hi_op
             self.value_map[op.hi] = hi_op
             self._seen.add(op.hi)
-        cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=header_loop_var, rhs=hi_op)
+        cmp_op = llvm.IcmpOp(
+            pred=String().constant("slt"), lhs=header_loop_var, rhs=hi_op
+        )
         yield cmp_op
 
         # cond_br passes header's loop_var + alloca args to body
-        cond_true_args = _make_pack(
-            [header_loop_var] + header_alloca_args
-        )
+        cond_true_pack = _make_pack([header_loop_var] + header_alloca_args)
         yield llvm.CondBrOp(
             cond=cmp_op,
             true_target=body_label_op,
             false_target=exit_label_op,
-            true_args=cond_true_args,
+            true_args=cond_true_pack,
             false_args=_EMPTY_PACK,
         )
 
         # --- Body label ---
         yield body_label_op
 
-        # Save value_map state so we can restore after the loop body
+        # Save all mutable state so we can restore after the loop body.
         saved_value_map = dict(self.value_map)
         saved_alloc_shapes = dict(self.alloc_shapes)
         saved_alloc_sizes = dict(self.alloc_sizes)
 
-        # Remap: inside body, loop var resolves to body's block arg,
-        # and alloca pointers resolve to body's block args.
+        # Remap: inside body, loop var resolves to body's block arg.
         self.value_map[op.body.args[0]] = body_loop_var
+
+        # For each alloca entry, redirect all value_map entries that currently
+        # point to it so they point to the corresponding body block arg instead.
+        # This ensures _map(affine_op) returns the body block arg, not the
+        # entry-block alloca (critical for nested loops).
         for entry_alloca, body_arg in zip(alloca_entries, body_alloca_args):
-            self.value_map[entry_alloca] = body_arg
-            # Update alloc_shapes/alloc_sizes so _lower_load/_lower_store
-            # and _linearize_indices work with the body block arg copies
+            # Register shape/size metadata on the body block arg
             self.alloc_shapes[body_arg] = self.alloc_shapes[entry_alloca]
             self.alloc_sizes[body_arg] = self.alloc_sizes[entry_alloca]
+            # Redirect any value_map entry that resolves to this alloca
+            for key, val in list(self.value_map.items()):
+                if val is entry_alloca:
+                    self.value_map[key] = body_arg
 
-        # Lower body ops
+        # Lower body ops -- these now resolve to body block args via value_map
         for child_op in op.body.ops:
             yield from self.lower_op(child_op)
 
@@ -333,10 +336,8 @@ class AffineToLLVMLowering(Pass):
         yield next_op
 
         # Back-edge: pass next loop var + body's alloca args back to header
-        back_args_pack = _make_pack(
-            [next_op] + body_alloca_args
-        )
-        yield llvm.BrOp(target=header_label_op, args=back_args_pack)
+        back_pack = _make_pack([next_op] + body_alloca_args)
+        yield llvm.BrOp(target=header_label_op, args=back_pack)
 
         # --- Exit label ---
         yield exit_label_op
