@@ -109,28 +109,30 @@ def _collect_labels(ops: list[dgen.Op]) -> list[llvm.LabelOp]:
 
 
 def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
-    # Build a SlotTracker so all ops get stable names
-    tracker = SlotTracker()
-    # Register block args (function parameters) first
-    for arg in f.body.args:
-        tracker.track_name(arg)
-
-    # Separate entry ops from label ops (recursively collect nested labels)
+    # Linearize: build a flat list of (label_or_none, block_args, body_ops)
+    # sections in LLVM emission order. This determines SSA numbering.
     entry_ops: list[dgen.Op] = []
     for op in f.body.ops:
         if not isinstance(op, llvm.LabelOp):
             entry_ops.append(op)
     label_ops = _collect_labels(f.body.ops)
 
-    # Collect all ops (entry + all label bodies) for registration
+    # Register everything in emission order so SSA numbers are sequential.
+    # LLVM requires unnamed values (%0, %1, ...) to be numbered in order.
+    tracker = SlotTracker()
+    for arg in f.body.args:
+        tracker.track_name(arg)
+    tracker.register(entry_ops)
+    for label_op in label_ops:
+        tracker.track_name(label_op)
+        for arg in label_op.body.args:
+            tracker.track_name(arg)
+        tracker.register(label_op.body.ops)
+
+    # Flat list for type/constant scanning
     all_ops: list[dgen.Op] = list(entry_ops)
     for label_op in label_ops:
         all_ops.extend(label_op.body.ops)
-
-    tracker.register(all_ops)
-    # Also register label ops themselves (they're not in all_ops since they're structural)
-    for label_op in label_ops:
-        tracker.track_name(label_op)
 
     # Pre-scan: build constants and types maps
     constants: dict[dgen.Value, str] = {}
@@ -161,7 +163,6 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for label_op in label_ops:
         for arg in label_op.body.args:
             types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
-            tracker.track_name(arg)
 
     # Build predecessor map: label → [(source_label, passed_arg_values)]
     entry_sentinel = dgen.Value(name="entry", type=llvm.Label())

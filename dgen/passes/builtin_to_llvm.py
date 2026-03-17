@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import dgen
+from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.graph import chain_body, group_into_blocks, placeholder_block
@@ -48,7 +49,9 @@ class BuiltinToLLVMLowering(Pass):
         # Phase 2: Group into basic blocks and build label body blocks
         entry_ops, label_groups = group_into_blocks(flat_ops)
         for label_op, body_ops in label_groups:
-            label_op.body = dgen.Block(result=chain_body(body_ops), ops=body_ops)
+            label_op.body = dgen.Block(
+                result=chain_body(body_ops), ops=body_ops, args=label_op.body.args
+            )
 
         func_ops: list[dgen.Op] = entry_ops + [lg[0] for lg in label_groups]
         return FunctionOp(
@@ -104,9 +107,7 @@ class BuiltinToLLVMLowering(Pass):
         else_label_op = llvm.LabelOp(name=f"else_{if_id}", body=placeholder_block())
 
         # Merge label has a block arg for the if/else result value
-        merge_result_arg = dgen.BlockArgument(
-            name=f"merge_val{if_id}", type=op.type
-        )
+        merge_result_arg = BlockArgument(name=f"merge_val{if_id}", type=op.type)
         merge_label_op = llvm.LabelOp(
             name=f"merge_{if_id}",
             body=dgen.Block(
