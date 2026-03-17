@@ -41,6 +41,7 @@ class Fingerprinter:
         self._cache: dict[Value, bytes] = {}
         self._arg_positions: dict[BlockArgument, int] = {}
 
+
     def register_block(self, block: Block) -> None:
         """Register block argument positions and recurse into nested blocks."""
         for i, arg in enumerate(block.args):
