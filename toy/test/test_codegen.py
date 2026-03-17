@@ -1,5 +1,7 @@
 """Tests for codegen: full pipeline with JIT execution."""
 
+import llvmlite.binding as llvm_binding
+
 from dgen.codegen import emit_llvm_ir
 from dgen.passes.builtin_to_llvm import lower_builtin_to_llvm
 from toy.parser.lowering import lower
@@ -32,7 +34,6 @@ def test_transpose_phi_emission():
     # Every label block arg should produce a phi instruction
     assert "phi" in llvm_ir, f"No phi in LLVM IR:\n{llvm_ir}"
     # Verify the IR is valid LLVM
-    import llvmlite.binding as llvm_binding
     llvm_binding.initialize_native_target()
     mod = llvm_binding.parse_assembly(llvm_ir)
     mod.verify()

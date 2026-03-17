@@ -10,7 +10,6 @@ building up Successor<Successor<...<Zero>...>> incrementally.
 
 from __future__ import annotations
 
-import pytest
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import ClassVar
@@ -328,7 +327,6 @@ def test_if_else_parse_roundtrip():
     assert asm_text == asm_text2
 
 
-@pytest.mark.xfail(reason="if/else codegen needs block args (closed-blocks migration)")
 def test_if_else_jit():
     """if/else executes correctly via JIT."""
     ir = strip_prefix("""

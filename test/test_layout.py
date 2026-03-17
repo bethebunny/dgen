@@ -315,7 +315,9 @@ def test_pointer_array_size():
 
 def test_pointer_array_type_layout():
     """Pointer<Array<F64, 4>> type produces a Pointer(Array) layout."""
-    pa = builtin.Pointer(pointee=builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4)))
+    pa = builtin.Pointer(
+        pointee=builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4))
+    )
     ly = pa.__layout__
     assert isinstance(ly, Pointer)
     assert ly.byte_size == 8
@@ -325,14 +327,20 @@ def test_pointer_array_type_layout():
 
 def test_pointer_array_roundtrip():
     """Pointer<Array> constant round-trips through Memory."""
-    pa = builtin.Pointer(pointee=builtin.Array(element_type=builtin.Index(), n=builtin.Index().constant(3)))
+    pa = builtin.Pointer(
+        pointee=builtin.Array(
+            element_type=builtin.Index(), n=builtin.Index().constant(3)
+        )
+    )
     mem = Memory.from_json(pa, [10, 20, 30])
     assert mem.to_json() == [10, 20, 30]
 
 
 def test_pointer_array_type_asm():
     """Pointer<Array<F64, 4>> formats correctly."""
-    pa = builtin.Pointer(pointee=builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4)))
+    pa = builtin.Pointer(
+        pointee=builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4))
+    )
     assert type_asm(pa) == "Pointer<Array<F64, 4>>"
 
 
