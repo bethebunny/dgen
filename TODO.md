@@ -7,6 +7,9 @@
 ## General pass infrastructure
 - Passes should guarantee they can lower all ops in their input dialect — add validation that no un-lowered ops survive a pass
 
+## Parser / type values
+- Parser stores Type objects (e.g. `Index()`) as constant values for TypeType fields. It should store their JSON dict form (`{"tag": "builtin.Index"}`) so `TypeValue.from_json` doesn't need special-casing. Affects `value_expression` returning bare types from `_named_type` — these should go through `__constant__.to_json()` when used as constant values.
+
 ## Experiments / scope creep
 - Rename `List` / `FatPointer` to `Span`
 - Update `toy.Tensor` to use `Pointer<Array<...>>` — removes the need for the runtime `llvm.load` to extract the data pointer (shape is compile-time, so no indirection is needed)
