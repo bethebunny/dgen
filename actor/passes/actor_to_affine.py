@@ -36,16 +36,12 @@ def _extract_chain(body: Block) -> list[ActorOp]:
     return chain
 
 
-def _inline_body(actor: ActorOp, input_val: Value) -> Value:
-    """Inline an actor's body by rewiring its block arg to input_val.
+def _inline_actor(actor: ActorOp, input_val: Value) -> Value:
+    """Inline an actor's body, replacing its block arg with input_val.
 
     Returns the value fed to the produce op (the actor's output).
     """
-    block_arg = actor.body.args[0]
-    for op in actor.body.ops:
-        for name, operand in op.operands:
-            if operand is block_arg:
-                setattr(op, name, input_val)
+    Rewriter(actor.body).replace_uses(actor.body.args[0], input_val)
     result = actor.body.result
     assert isinstance(result, ProduceOp)
     return result.value
@@ -82,7 +78,7 @@ class ActorToAffine(Pass):
 
         current: Value = affine.LoadOp(memref=pipeline.input, indices=idx)
         for actor in chain:
-            current = _inline_body(actor, current)
+            current = _inline_actor(actor, current)
 
         store = affine.StoreOp(value=current, memref=output, indices=idx)
         loop = affine.ForOp(
@@ -107,7 +103,7 @@ class ActorToAffine(Pass):
         iv1 = BlockArgument(type=Index())
         idx1 = PackOp(values=[iv1], type=List(element_type=Index()))
         val1 = affine.LoadOp(memref=pipeline.input, indices=idx1)
-        out1 = _inline_body(a, val1)
+        out1 = _inline_actor(a, val1)
         store1 = affine.StoreOp(value=out1, memref=buffer, indices=idx1)
         loop1 = affine.ForOp(
             lo=Index().constant(0),
@@ -119,7 +115,7 @@ class ActorToAffine(Pass):
         iv2 = BlockArgument(type=Index())
         idx2 = PackOp(values=[iv2], type=List(element_type=Index()))
         val2 = affine.LoadOp(memref=buffer, indices=idx2)
-        out2 = _inline_body(b, val2)
+        out2 = _inline_actor(b, val2)
         store2 = affine.StoreOp(value=out2, memref=output, indices=idx2)
         loop2 = affine.ForOp(
             lo=Index().constant(0),
