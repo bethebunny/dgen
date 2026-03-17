@@ -89,9 +89,6 @@ def test_tuple_three_types():
     assert t.__layout__ == expected
 
 
-@pytest.mark.xfail(
-    reason="TypeValue.from_json can't serialize type names in Tuple constants"
-)
 def test_tuple_type_values():
     """Tuple of type values: %types : Tuple<[Type, Type]> = [Index, String]."""
     ir = strip_prefix("""
