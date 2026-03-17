@@ -140,16 +140,22 @@ class AffineToLLVMLowering(Pass):
             shape = op.type.shape.__constant__.to_json()
             assert isinstance(shape, list)
             total = prod(shape)
-            alloca = llvm.AllocaOp(elem_count=builtin.Index().constant(total))
-            self.value_map[op] = alloca
-            self.alloc_shapes[alloca] = shape
-            # Return alloca as an effect so it is reachable from the function
+            # Heap-allocate: malloc(total * 8) for 8-byte doubles.
+            # Stack alloca would be invalid if the pointer escapes the function.
+            byte_count = ConstantOp(value=total * 8, type=builtin.Index())
+            malloc_args = PackOp(
+                values=[byte_count], type=builtin.List(element_type=builtin.Index())
+            )
+            malloc_op = llvm.CallOp(
+                callee=String().constant("malloc"), args=malloc_args, type=_PTR_TYPE
+            )
+            self.value_map[op] = malloc_op
+            self.alloc_shapes[malloc_op] = shape
+            # Return malloc as an effect so it is reachable from the function
             # body result and claimed by the entry block (LLVM dominance).
-            return alloca
-
+            return malloc_op
         if isinstance(op, affine.DeallocOp):
-            return None  # stack-allocated; no free needed
-
+            return None  # heap-allocated; no free (leak for now)
         if isinstance(op, affine.LoadOp):
             self._lower_load(op)
             return None
