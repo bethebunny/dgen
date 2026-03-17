@@ -117,6 +117,10 @@ python -m dgen.gen toy/dialects/affine.dgen > toy/dialects/affine.pyi
 python -m dgen.gen toy/dialects/toy.dgen > toy/dialects/toy.pyi
 ```
 
+## Debugging and Investigation
+
+**Never write throwaway Python scripts.** All investigation, debugging, value inspection, and behavior exploration must go through pytest. Use the `debugging-with-pytest` skill — invoke it before writing any standalone `.py` file, any `python -c` command, any `if __name__ == "__main__"` block, or any script that imports project modules. No exceptions.
+
 ## Code style
 
 - **No function-level imports.** The only acceptable exception is breaking a genuine circular dependency between two modules (e.g. `type.py` ↔ `value.py`). If the import _can_ be top-level, it _must_ be top-level.
