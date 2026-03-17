@@ -4,26 +4,31 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Index, Nil, String
+from dgen.dialects.builtin import F64, Index, List, Nil, Pointer, String
 
 llvm = Dialect("llvm")
 
 @dataclass(frozen=True)
-class Ptr(Type): ...
+class Ptr(Type):
+    ...
 
 @dataclass(frozen=True)
 class Int(Type):
     bits: Value[Index]
 
 @dataclass(frozen=True)
-class Float(Type): ...
+class Float(Type):
+    ...
 
 @dataclass(frozen=True)
-class Void(Type): ...
+class Void(Type):
+    ...
 
 @dataclass(frozen=True)
-class Label(Type): ...
+class Label(Type):
+    ...
 
 @dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
@@ -92,6 +97,7 @@ class LabelOp(Op):
 @dataclass(eq=False, kw_only=True)
 class BrOp(Op):
     target: Value
+    args: Value
     type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
@@ -99,14 +105,8 @@ class CondBrOp(Op):
     cond: Value
     true_target: Value
     false_target: Value
-    type: Type = Nil()
-
-@dataclass(eq=False, kw_only=True)
-class PhiOp(Op):
-    label_a: Value[Label]
-    label_b: Value[Label]
-    a: Value
-    b: Value
+    true_args: Value
+    false_args: Value
     type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
@@ -126,3 +126,4 @@ class CallOp(Op):
     callee: Value[String]
     args: Value
     type: Type = Nil()
+

@@ -14,6 +14,7 @@ from dgen.passes.pass_ import Pass
 from toy.dialects import affine, toy
 
 _PTR_TYPE = llvm.Ptr()
+_EMPTY_PACK = PackOp(values=[], type=builtin.List(element_type=Nil()))
 
 
 def _extract_list_elements(
@@ -225,24 +226,16 @@ class AffineToLLVMLowering(Pass):
         body_label_op = llvm.LabelOp(name=body_label, body=placeholder_block())
         exit_label_op = llvm.LabelOp(name=exit_label, body=placeholder_block())
 
-        prev_label = self.current_label
-        yield llvm.BrOp(target=header_label_op)
+        yield llvm.BrOp(target=header_label_op, args=_EMPTY_PACK)
 
         # Header label
         yield header_label_op
         self.current_label = header_label_op
 
-        # Phi node for loop variable (back-edge value patched after body)
-        back_edge = dgen.Value(type=builtin.Index())  # placeholder, patched below
-        phi_op = llvm.PhiOp(
-            a=init_op,
-            b=back_edge,
-            label_a=prev_label,
-            label_b=body_label_op,
-        )
-        yield phi_op
-        # Map the affine loop variable to the LLVM phi node
-        self.value_map[op.body.args[0]] = phi_op
+        # TODO(closed-blocks): replace phi with block args on header label
+        # For now, use a placeholder Value for the loop variable
+        loop_var_placeholder = dgen.Value(name=f"i{loop_id}", type=builtin.Index())
+        self.value_map[op.body.args[0]] = loop_var_placeholder
 
         # Same deduplication as lo above (see comment there).
         hi_op = self._map(op.hi)
@@ -251,12 +244,14 @@ class AffineToLLVMLowering(Pass):
             yield hi_op
             self.value_map[op.hi] = hi_op
             self._seen.add(op.hi)
-        cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=phi_op, rhs=hi_op)
+        cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=loop_var_placeholder, rhs=hi_op)
         yield cmp_op
         yield llvm.CondBrOp(
             cond=cmp_op,
             true_target=body_label_op,
             false_target=exit_label_op,
+            true_args=_EMPTY_PACK,
+            false_args=_EMPTY_PACK,
         )
 
         # Body label
@@ -267,17 +262,12 @@ class AffineToLLVMLowering(Pass):
         for child_op in op.body.ops:
             yield from self.lower_op(child_op)
 
-        # Patch phi back-edge label to actual current block
-        phi_op.label_b = self.current_label
-
         # Increment and branch back
         one_op = ConstantOp(value=1, type=builtin.Index())
         yield one_op
-        next_op = llvm.AddOp(lhs=phi_op, rhs=one_op)
+        next_op = llvm.AddOp(lhs=loop_var_placeholder, rhs=one_op)
         yield next_op
-        # Patch phi back-edge value
-        phi_op.b = next_op
-        yield llvm.BrOp(target=header_label_op)
+        yield llvm.BrOp(target=header_label_op, args=_EMPTY_PACK)
 
         # Exit label
         yield exit_label_op

@@ -157,8 +157,6 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         elif isinstance(op, builtin.ChainOp):
             # Chain is transparent: alias to lhs at runtime
             types[op] = types.get(op.lhs, "i64")
-        elif isinstance(op, llvm.PhiOp):
-            types[op] = types.get(op.a, "i64")
         else:
             if (rt := _result_type_str(op.type)) is not None:
                 types[op] = rt
@@ -241,13 +239,6 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         elif isinstance(op, llvm.CondBrOp):
             lines.append(
                 f"  br i1 %{tracker.track_name(op.cond)}, label %{tracker.track_name(op.true_target)}, label %{tracker.track_name(op.false_target)}"
-            )
-        elif isinstance(op, llvm.PhiOp):
-            ty = types.get(op, "i64")
-            lines.append(
-                f"  %{name} = phi {ty} "
-                f"[ {bare_ref(op.a)}, %{tracker.track_name(op.label_a)} ], "
-                f"[ {bare_ref(op.b)}, %{tracker.track_name(op.label_b)} ]"
             )
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
