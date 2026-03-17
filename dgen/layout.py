@@ -274,10 +274,6 @@ class TypeValue(Layout):
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
     ) -> None:
-        from dgen.type import Type
-
-        if isinstance(value, Type):
-            value = value.__constant__.to_json()
         assert isinstance(value, dict)
         tag = value["tag"]
         assert isinstance(tag, str)
