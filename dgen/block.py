@@ -26,8 +26,8 @@ class Block:
 
     Stores the result value (root of the use-def graph). When constructed
     with result=, ops are derived by walking the use-def graph. When
-    constructed with ops=, the provided list is used directly. Both can
-    be provided: result for use-def connectivity, ops for iteration.
+    constructed with ops=, the provided list is used directly until
+    _stored_ops is cleared (e.g. after a pass runs).
     """
 
     result: dgen.Value

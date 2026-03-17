@@ -5,31 +5,6 @@ from __future__ import annotations
 import dgen
 
 
-def unwrap_chain(result: dgen.Value) -> list[dgen.Op]:
-    """Unwrap ChainOp nesting to recover local block ops.
-
-    The chain structure is: ChainOp(lhs=op1, rhs=ChainOp(lhs=op2, rhs=terminator)).
-    This walks only the chain spine, returning exactly the ops that were
-    chained together — without following transitive operands that may cross
-    block boundaries.
-    """
-    from dgen.dialects.builtin import ChainOp
-
-    ops: list[dgen.Op] = []
-    current: dgen.Value = result
-    while isinstance(current, ChainOp):
-        if isinstance(current.lhs, dgen.Op):
-            ops.append(current.lhs)
-        current = current.rhs
-    if isinstance(current, dgen.Op):
-        ops.append(current)
-    return ops
-
-
-# ---------------------------------------------------------------------------
-# Label-body block utilities (two-phase lowering support)
-# ---------------------------------------------------------------------------
-
 
 def placeholder_block() -> dgen.Block:
     """Create a placeholder block for label ops whose bodies aren't known yet."""
