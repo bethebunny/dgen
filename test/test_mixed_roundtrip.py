@@ -21,25 +21,25 @@ def test_llvm_via_imports():
 
 
 def test_llvm_full_loop():
-    """Full LLVM loop pattern parsed with import headers."""
+    """Full LLVM loop pattern parsed with import headers — block args, no phi."""
     ir = strip_prefix("""
         | import llvm
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : Nil = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %_ : Nil = llvm.br(%loop_header)
-        |     %loop_header : llvm.Label = llvm.label() ():
-        |         %i0 : Nil = llvm.phi<%entry, %loop_body>(%init, %next)
+        |     %loop_header : llvm.Label = llvm.label() (%i0: Index):
         |         %hi : Index = 3
         |         %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
-        |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit)
-        |     %loop_body : llvm.Label = llvm.label() ():
-        |         %one : Index = 1
-        |         %next : Nil = llvm.add(%i0, %one)
-        |         %_ : Nil = llvm.br(%loop_header)
-        |     %loop_exit : llvm.Label = llvm.label() ():
-        |         %_ : Nil = return(())
+        |         %loop_body : llvm.Label = llvm.label() (%j: Index):
+        |             %one : Index = 1
+        |             %next : Nil = llvm.add(%j, %one)
+        |             %_ : Nil = llvm.br(%loop_header, [%next])
+        |         %loop_exit : llvm.Label = llvm.label() ():
+        |             %_ : Nil = return(())
+        |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [%i0], [])
+        |     %_ : Nil = llvm.br(%loop_header, [%init])
+        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
