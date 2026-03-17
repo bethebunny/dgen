@@ -321,7 +321,9 @@ def _coerce_operand(
     if isinstance(value, Value):
         return value
     if isinstance(value, list):
-        if any(isinstance(v, Value) for v in value) or issubclass(field_type, builtin.List):
+        if any(isinstance(v, Value) for v in value) or issubclass(
+            field_type, builtin.List
+        ):
             return _pack_list(parser, value, field_type)
         return value
     if issubclass(op_cls, ConstantOp):

@@ -97,8 +97,6 @@ def test_roundtrip_label_br():
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
-
-
 def test_roundtrip_call_with_result():
     ir = strip_prefix("""
         | import llvm

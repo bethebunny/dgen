@@ -31,9 +31,7 @@ def _make_pack(values: list[dgen.Value]) -> PackOp:
     """Create a PackOp wrapping the given values."""
     if not values:
         return _EMPTY_PACK
-    return PackOp(
-        values=values, type=builtin.List(element_type=values[0].type)
-    )
+    return PackOp(values=values, type=builtin.List(element_type=values[0].type))
 
 
 class AffineToLLVMLowering(Pass):
@@ -236,26 +234,17 @@ class AffineToLLVMLowering(Pass):
         # Collect alloca pointers that need to be threaded through the loop.
         # Filter out ChainOps — they're transparent aliases for the actual alloca.
         alloca_entries: list[dgen.Value] = [
-            v for v in self.alloc_shapes
-            if not isinstance(v, builtin.ChainOp)
+            v for v in self.alloc_shapes if not isinstance(v, builtin.ChainOp)
         ]
 
         # --- Block args for header: loop_var + alloca ptrs ---
-        header_loop_var = BlockArgument(
-            name=f"i{loop_id}", type=builtin.Index()
-        )
-        header_alloca_args = [
-            BlockArgument(type=_PTR_TYPE) for _ in alloca_entries
-        ]
+        header_loop_var = BlockArgument(name=f"i{loop_id}", type=builtin.Index())
+        header_alloca_args = [BlockArgument(type=_PTR_TYPE) for _ in alloca_entries]
         header_args = [header_loop_var] + header_alloca_args
 
         # --- Block args for body: loop_var + alloca ptrs ---
-        body_loop_var = BlockArgument(
-            name=f"j{loop_id}", type=builtin.Index()
-        )
-        body_alloca_args = [
-            BlockArgument(type=_PTR_TYPE) for _ in alloca_entries
-        ]
+        body_loop_var = BlockArgument(name=f"j{loop_id}", type=builtin.Index())
+        body_alloca_args = [BlockArgument(type=_PTR_TYPE) for _ in alloca_entries]
         body_args = [body_loop_var] + body_alloca_args
 
         # Create label ops with block args (bodies filled in phase 2)

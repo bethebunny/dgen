@@ -47,7 +47,6 @@ def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
     return [op for op in func.body.ops if op in needed]
 
 
-
 def _make_memories(
     block_args: Sequence[BlockArgument], python_args: Sequence
 ) -> list[Memory]:

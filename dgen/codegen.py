@@ -181,8 +181,16 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             predecessors.setdefault(op.target, []).append((src, args))
         elif isinstance(op, llvm.CondBrOp):
             src = op_to_label[op]
-            true_args = op.true_args.values if isinstance(op.true_args, PackOp) else [op.true_args]
-            false_args = op.false_args.values if isinstance(op.false_args, PackOp) else [op.false_args]
+            true_args = (
+                op.true_args.values
+                if isinstance(op.true_args, PackOp)
+                else [op.true_args]
+            )
+            false_args = (
+                op.false_args.values
+                if isinstance(op.false_args, PackOp)
+                else [op.false_args]
+            )
             predecessors.setdefault(op.true_target, []).append((src, true_args))
             predecessors.setdefault(op.false_target, []).append((src, false_args))
 

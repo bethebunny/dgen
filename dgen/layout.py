@@ -180,7 +180,6 @@ class Span(Layout):
         self.struct.pack_into(buf, offset, ptr, len(value))
 
 
-
 class Record(Layout):
     """Fixed struct of named fields, laid out sequentially."""
 

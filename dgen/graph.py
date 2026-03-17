@@ -5,7 +5,6 @@ from __future__ import annotations
 import dgen
 
 
-
 def placeholder_block() -> dgen.Block:
     """Create a placeholder block for label ops whose bodies aren't known yet."""
     from dgen.dialects.builtin import Nil
