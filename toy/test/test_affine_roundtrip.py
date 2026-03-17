@@ -176,4 +176,4 @@ def test_ssa_shape_through_lowering():
 
     llvm_module = lower_to_llvm(module)
     result = asm.format(llvm_module)
-    assert "llvm.alloca<6>()" in result
+    assert 'llvm.call<"malloc">' in result

@@ -85,7 +85,10 @@ def emit_llvm_ir(module: Module, *, externs: Sequence[str] = ()) -> tuple[str, l
     alive for the lifetime of the JIT.
     """
     host_buffers: list = []
-    lines: list[str] = ["declare void @print_memref(ptr, i64)"]
+    lines: list[str] = [
+        "declare void @print_memref(ptr, i64)",
+        "declare ptr @malloc(i64)",
+    ]
     lines.extend(externs)
     lines.append("")
     for func in module.functions:
