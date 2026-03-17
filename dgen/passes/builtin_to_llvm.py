@@ -16,6 +16,9 @@ from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
 
 
+_EMPTY_PACK = PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
+
+
 class BuiltinToLLVMLowering(Pass):
     def __init__(self) -> None:
         self.if_counter = 0
@@ -114,6 +117,8 @@ class BuiltinToLLVMLowering(Pass):
             cond=cond_i1,
             true_target=then_label_op,
             false_target=else_label_op,
+            true_args=_EMPTY_PACK,
+            false_args=_EMPTY_PACK,
         )
 
         # Then block
@@ -123,35 +128,22 @@ class BuiltinToLLVMLowering(Pass):
         for child in op.then_body.ops:
             if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
                 then_result = self._map(child.value)
-                yield llvm.BrOp(target=merge_label_op)
+                yield llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
             else:
                 yield from self.lower_op(child)
-        then_source_label = self.current_label
 
         # Else block
         yield else_label_op
         self.current_label = else_label_op
-        else_result: dgen.Value | None = None
         for child in op.else_body.ops:
             if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
-                else_result = self._map(child.value)
-                yield llvm.BrOp(target=merge_label_op)
+                yield llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
             else:
                 yield from self.lower_op(child)
-        else_source_label = self.current_label
 
-        # Merge with phi
+        # Merge — TODO(closed-blocks): use block arg for merge result
         yield merge_label_op
         self.current_label = merge_label_op
-        assert then_result is not None and else_result is not None
-        phi_op = llvm.PhiOp(
-            a=then_result,
-            b=else_result,
-            label_a=then_source_label,
-            label_b=else_source_label,
-        )
-        yield phi_op
-        self.value_map[op] = phi_op
 
     def _lower_call(self, op: builtin.CallOp) -> Iterator[dgen.Op]:
         callee_name = op.callee.name
