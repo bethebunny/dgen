@@ -79,11 +79,20 @@ def walk_ops(root: dgen.Value) -> list[dgen.Op]:
                 visit(item)
             return
         if not isinstance(value, dgen.Value):
+            # Traverse Type params to find SSA-valued references
+            if isinstance(value, dgen.Type):
+                for param_name, _ in value.__params__:
+                    visit(getattr(value, param_name))
             return
         vid = id(value)
         if vid in visited:
             return
         visited.add(vid)
+
+        # Type is a Value subclass — traverse its params to find SSA-valued refs
+        if isinstance(value, dgen.Type):
+            for param_name, _ in value.__params__:
+                visit(getattr(value, param_name))
 
         if not isinstance(value, dgen.Op):
             return
@@ -92,7 +101,18 @@ def walk_ops(root: dgen.Value) -> list[dgen.Op]:
         for _, operand in value.operands:
             visit(operand)
         for _, param in value.parameters:
-            visit(param)
+            # FunctionOps are module-level declarations, not block-local ops
+            # (circular import: builtin → dgen → block → graph)
+            from dgen.dialects.builtin import FunctionOp
+
+            if not isinstance(param, FunctionOp):
+                visit(param)
+        # Visit type (may be an SSA value or a Type with SSA-valued params)
+        visit(value.type)
+        # Visit block arg types (captured variables from outer scope)
+        for _, block in value.blocks:
+            for arg in block.args:
+                visit(arg.type)
 
         order.append(value)
 

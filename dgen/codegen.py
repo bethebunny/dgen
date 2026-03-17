@@ -100,22 +100,40 @@ def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
 
 def _collect_labels(ops: list[dgen.Op]) -> list[llvm.LabelOp]:
     """Recursively collect all LabelOps (labels may be nested)."""
+    seen: set[int] = set()
     labels: list[llvm.LabelOp] = []
-    for op in ops:
-        if isinstance(op, llvm.LabelOp):
-            labels.append(op)
-            labels.extend(_collect_labels(op.body.ops))
+
+    def _walk(op_list: list[dgen.Op]) -> None:
+        for op in op_list:
+            if isinstance(op, llvm.LabelOp) and id(op) not in seen:
+                seen.add(id(op))
+                labels.append(op)
+                _walk(op.body.ops)
+
+    _walk(ops)
     return labels
 
 
 def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     # Linearize: build a flat list of (label_or_none, block_args, body_ops)
     # sections in LLVM emission order. This determines SSA numbering.
+    # Collect labels and deduplicate ops across blocks: each op belongs to
+    # the first block that claims it (entry first, then labels in order).
+    label_ops = _collect_labels(f.body.ops)
+    claimed: set[int] = set()
     entry_ops: list[dgen.Op] = []
     for op in f.body.ops:
-        if not isinstance(op, llvm.LabelOp):
+        if not isinstance(op, llvm.LabelOp) and id(op) not in claimed:
+            claimed.add(id(op))
             entry_ops.append(op)
-    label_ops = _collect_labels(f.body.ops)
+    label_body_ops: dict[int, list[dgen.Op]] = {}
+    for label_op in label_ops:
+        deduped: list[dgen.Op] = []
+        for op in label_op.body.ops:
+            if not isinstance(op, llvm.LabelOp) and id(op) not in claimed:
+                claimed.add(id(op))
+                deduped.append(op)
+        label_body_ops[id(label_op)] = deduped
 
     # Register everything in emission order so SSA numbers are sequential.
     # LLVM requires unnamed values (%0, %1, ...) to be numbered in order.
@@ -127,12 +145,12 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         tracker.track_name(label_op)
         for arg in label_op.body.args:
             tracker.track_name(arg)
-        tracker.register(label_op.body.ops)
+        tracker.register(label_body_ops[id(label_op)])
 
     # Flat list for type/constant scanning
     all_ops: list[dgen.Op] = list(entry_ops)
     for label_op in label_ops:
-        all_ops.extend(label_op.body.ops)
+        all_ops.extend(label_body_ops[id(label_op)])
 
     # Pre-scan: build constants and types maps
     constants: dict[dgen.Value, str] = {}
@@ -170,7 +188,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for op in entry_ops:
         op_to_label[op] = entry_sentinel
     for label_op in label_ops:
-        for body_op in label_op.body.ops:
+        for body_op in label_body_ops[id(label_op)]:
             op_to_label[body_op] = label_op
 
     predecessors: dict[dgen.Value, list[tuple[dgen.Value, list[dgen.Value]]]] = {}
@@ -339,7 +357,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                     )
             if phi_parts:
                 lines.append(f"  %{arg_name} = phi {ty} {', '.join(phi_parts)}")
-        for body_op in label_op.body.ops:
+        for body_op in label_body_ops[id(label_op)]:
             emit_op(body_op, lines)
 
     lines.append("}")

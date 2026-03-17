@@ -125,8 +125,6 @@ class Pass(metaclass=_PassMeta):
                 # Recurse into nested blocks for unhandled ops
                 for _, child_block in op.blocks:
                     self._run_block(child_block)
-        # Graph takes over: derive ops from use-def walk
-        block._stored_ops = None
 
     def verify_preconditions(self, module: Module) -> None:
         """Check that all ops/types are in the declared domain."""

@@ -162,8 +162,6 @@ def _lower_peano_func(func: builtin.FunctionOp) -> None:
     replacements: dict[Value, Value] = {}
     new_ops = _lower_peano_ops(func.body.ops, replacements)
     func.body.result = new_ops[-1]
-    if func.body._stored_ops is not None:
-        func.body._stored_ops = new_ops
 
 
 def lower_peano(module: Module) -> Module:
@@ -308,11 +306,11 @@ def test_if_else_parse_roundtrip():
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%n: Index):
         |     %cond : Index = equal_index(%n, 0)
-        |     %ten : Index = 10
-        |     %twenty : Index = 20
         |     %result : Index = if(%cond) ():
+        |         %ten : Index = 10
         |         %_ : Nil = return(%ten)
         |     else ():
+        |         %twenty : Index = 20
         |         %_ : Nil = return(%twenty)
         |     %_ : Nil = return(%result)
     """)
@@ -332,8 +330,8 @@ def test_if_else_jit():
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%n: Index):
         |     %cond : Index = equal_index(%n, 0)
-        |     %one : Index = 1
         |     %result : Index = if(%cond) ():
+        |         %one : Index = 1
         |         %_ : Nil = return(%one)
         |     else ():
         |         %val : Index = subtract_index(%n, 1)

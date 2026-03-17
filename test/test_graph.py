@@ -63,7 +63,7 @@ def test_chain_asm_round_trip():
         |     %0 : Index = 0
         |     %1 : Index = 1
         |     %2 : Index = chain(%1, %0)
-        |     %_ : Nil = return(())
+        |     %_ : Nil = return(%2)
     """)
     m = parse_module(ir_text)
     assert_ir_equivalent(m, asm.parse(asm.format(m)))

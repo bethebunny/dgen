@@ -99,8 +99,8 @@ def test_roundtrip_print():
         | import toy
         |
         | %f : Nil = function<Nil>() (%a: toy.Tensor<affine.Shape<2>([2, 3]), F64>):
-        |     %_ : Nil = toy.print(%a)
-        |     %_ : Nil = return(())
+        |     %0 : Nil = toy.print(%a)
+        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -196,8 +196,9 @@ def test_roundtrip_full_program():
         |     %3 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%2)
         |     %4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])
         |     %5 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%3, %1])
-        |     %_ : Nil = toy.print(%5)
-        |     %_ : Nil = return(())
+        |     %6 : toy.InferredShapeTensor<F64> = chain(%5, %4)
+        |     %7 : Nil = toy.print(%6)
+        |     %_ : Nil = return(%7)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

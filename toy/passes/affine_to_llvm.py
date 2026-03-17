@@ -66,24 +66,23 @@ class AffineToLLVMLowering(Pass):
             else:
                 self.value_map[arg] = arg
 
-        # Phase 1: Generate ops linearly (labels as boundary markers)
-        flat_ops = list(prologue)
+        # Generate ops (header/body labels are built directly in _lower_for;
+        # exit labels are yielded as boundary markers for subsequent ops)
+        flat_ops: list[dgen.Op] = list(prologue)
         for op in f.body.ops:
             flat_ops.extend(self.lower_op(op))
 
-        # Phase 2: Group into basic blocks and build label body blocks
+        # Group at exit-label boundaries (header/body labels are already built)
         entry_ops, label_groups = group_into_blocks(flat_ops)
         for label_op, body_ops in label_groups:
             label_op.body = dgen.Block(
                 result=chain_body(body_ops),
-                ops=body_ops,
                 args=label_op.body.args,
             )
 
-        func_ops: list[dgen.Op] = entry_ops + [lg[0] for lg in label_groups]
         return FunctionOp(
             name=f.name,
-            body=dgen.Block(ops=func_ops, args=f.body.args),
+            body=dgen.Block(result=chain_body(entry_ops), args=f.body.args),
             result=f.result,
         )
 
@@ -247,55 +246,53 @@ class AffineToLLVMLowering(Pass):
         body_alloca_args = [BlockArgument(type=_PTR_TYPE) for _ in alloca_entries]
         body_args = [body_loop_var] + body_alloca_args
 
-        # Create label ops with block args (bodies filled in phase 2)
-        header_label_op = llvm.LabelOp(
-            name=header_label,
-            body=dgen.Block(result=dgen.Value(type=Nil()), args=header_args),
-        )
-        body_label_op = llvm.LabelOp(
-            name=body_label,
-            body=dgen.Block(result=dgen.Value(type=Nil()), args=body_args),
-        )
-        exit_label_op = llvm.LabelOp(
-            name=exit_label,
-            body=placeholder_block(),
-        )
-
-        # --- Entry branch: pass init + alloca ptrs to header ---
-        entry_pack = _make_pack([init_op] + alloca_entries)
-        yield llvm.BrOp(target=header_label_op, args=entry_pack)
-
-        # --- Header label ---
-        yield header_label_op
-
+        # --- Build header block body ---
         # Map the affine loop variable to the header's block arg
         self.value_map[op.body.args[0]] = header_loop_var
 
+        header_ops: list[dgen.Op] = []
         # Same deduplication as lo above (see comment there).
         hi_op = self._map(op.hi)
         if hi_op is op.hi:
             hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.Index())
-            yield hi_op
+            header_ops.append(hi_op)
             self.value_map[op.hi] = hi_op
             self._seen.add(op.hi)
         cmp_op = llvm.IcmpOp(
             pred=String().constant("slt"), lhs=header_loop_var, rhs=hi_op
         )
-        yield cmp_op
+        header_ops.append(cmp_op)
+
+        # Exit label (needs to exist before cond_br references it)
+        exit_label_op = llvm.LabelOp(
+            name=exit_label,
+            body=placeholder_block(),
+        )
+
+        # Body label (forward-declared, body filled below)
+        body_label_op = llvm.LabelOp(
+            name=body_label,
+            body=dgen.Block(result=dgen.Value(type=Nil()), args=body_args),
+        )
 
         # cond_br passes header's loop_var + alloca args to body
         cond_true_pack = _make_pack([header_loop_var] + header_alloca_args)
-        yield llvm.CondBrOp(
+        cond_br = llvm.CondBrOp(
             cond=cmp_op,
             true_target=body_label_op,
             false_target=exit_label_op,
             true_args=cond_true_pack,
             false_args=_EMPTY_PACK,
         )
+        header_ops.append(cond_br)
 
-        # --- Body label ---
-        yield body_label_op
+        # Header label — all header ops reachable from cond_br via operands
+        header_label_op = llvm.LabelOp(
+            name=header_label,
+            body=dgen.Block(result=chain_body(header_ops), args=header_args),
+        )
 
+        # --- Build body block ---
         # Save all mutable state so we can restore after the loop body.
         saved_value_map = dict(self.value_map)
         saved_alloc_shapes = dict(self.alloc_shapes)
@@ -312,32 +309,54 @@ class AffineToLLVMLowering(Pass):
             # Register shape/size metadata on the body block arg
             self.alloc_shapes[body_arg] = self.alloc_shapes[entry_alloca]
             self.alloc_sizes[body_arg] = self.alloc_sizes[entry_alloca]
+            # Remove the original so inner loops only see body block args
+            del self.alloc_shapes[entry_alloca]
+            del self.alloc_sizes[entry_alloca]
             # Redirect any value_map entry that resolves to this alloca
             for key, val in list(self.value_map.items()):
                 if val is entry_alloca:
                     self.value_map[key] = body_arg
 
-        # Lower body ops -- these now resolve to body block args via value_map
+        # Lower body ops into a local list
+        body_flat: list[dgen.Op] = []
         for child_op in op.body.ops:
-            yield from self.lower_op(child_op)
+            body_flat.extend(self.lower_op(child_op))
 
         # Increment and branch back to header
         one_op = ConstantOp(value=1, type=builtin.Index())
-        yield one_op
+        body_flat.append(one_op)
         next_op = llvm.AddOp(lhs=body_loop_var, rhs=one_op)
-        yield next_op
+        body_flat.append(next_op)
 
         # Back-edge: pass next loop var + body's alloca args back to header
         back_pack = _make_pack([next_op] + body_alloca_args)
-        yield llvm.BrOp(target=header_label_op, args=back_pack)
+        back_br = llvm.BrOp(target=header_label_op, args=back_pack)
+        body_flat.append(back_br)
 
-        # --- Exit label ---
-        yield exit_label_op
+        # Group at exit-label boundaries (inner loops yield exit labels)
+        body_ops, body_label_groups = group_into_blocks(body_flat)
+        for lbl, lbl_body_ops in body_label_groups:
+            lbl.body = dgen.Block(
+                result=chain_body(lbl_body_ops),
+                args=lbl.body.args,
+            )
+
+        # Fill body label's block with chained body ops
+        body_label_op.body = dgen.Block(
+            result=chain_body(body_ops),
+            args=body_args,
+        )
 
         # Restore value_map so code after the loop references entry-block allocas
         self.value_map = saved_value_map
         self.alloc_shapes = saved_alloc_shapes
         self.alloc_sizes = saved_alloc_sizes
+
+        # Yield ops for the enclosing block:
+        # branch to header, then the exit label as a boundary marker
+        entry_pack = _make_pack([init_op] + alloca_entries)
+        yield llvm.BrOp(target=header_label_op, args=entry_pack)
+        yield exit_label_op
 
     def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> Iterator[dgen.Op]:
         """Unrolled nonzero_count: count non-zero elements in a tensor."""

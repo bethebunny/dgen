@@ -8,7 +8,6 @@ from dgen.block import BlockArgument
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
-from toy.test.helpers import strip_prefix
 
 
 def inferred() -> dgen.Type:
@@ -126,7 +125,7 @@ def test_add_index_op():
     assert asm.format(op) == "%0 : Index = add_index(%x, %y)"
 
 
-def test_full_module():
+def test_full_module(ir_snapshot):
     # Build multiply_transpose function
     mt_arg_a = BlockArgument(name="a", type=inferred())
     mt_arg_b = BlockArgument(name="b", type=inferred())
@@ -186,23 +185,4 @@ def test_full_module():
 
     module = Module(functions=[mt_func, main_func])
 
-    expected = strip_prefix("""
-        | import toy
-        |
-        | %multiply_transpose : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>):
-        |     %0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)
-        |     %1 : toy.InferredShapeTensor<F64> = toy.transpose(%b)
-        |     %2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)
-        |     %3 : Nil = return(%2)
-        |
-        | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%0)
-        |     %2 : toy.Tensor<affine.Shape<1>([6]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%2)
-        |     %4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])
-        |     %5 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%3, %1])
-        |     %6 : Nil = toy.print(%5)
-        |     %7 : Nil = return(())
-    """)
-    assert asm.format(module) == expected
+    assert module == ir_snapshot

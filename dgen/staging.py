@@ -138,16 +138,6 @@ def _resolve_comptime_field(
         const_type = dgen.type.TypeType()
     const_op = ConstantOp(value=result, type=const_type)
     setattr(op, field_name, const_op)
-    # For stored-ops blocks (parser-created), also insert const_op into the list
-    # so it's visible to subsequent codegen and analysis passes.
-    stored = func.body._stored_ops
-    if stored is not None:
-        if block_args:
-            subgraph_ids = {id(o) for o in subgraph}
-            stored = [o for o in stored if id(o) not in subgraph_ids]
-        idx = stored.index(op)
-        stored.insert(idx, const_op)
-        func.body._stored_ops = stored
 
 
 # ---------------------------------------------------------------------------
@@ -313,8 +303,6 @@ def _specialize_ifs(
                     setattr(op, fname, mapped)
 
     func.body.result = new_ops[-1]
-    if func.body._stored_ops is not None:
-        func.body._stored_ops = new_ops
 
 
 def _has_nested_boundaries(func: FunctionOp) -> bool:
@@ -488,10 +476,7 @@ def _build_callback_thunk(
         args=pack,
         type=result_type,
     )
-    if isinstance(result_type, builtin.Nil):
-        ret_op = builtin.ReturnOp()
-    else:
-        ret_op = builtin.ReturnOp(value=call_op)
+    ret_op = builtin.ReturnOp(value=call_op)
 
     thunk_func = FunctionOp(
         name=func.name,
