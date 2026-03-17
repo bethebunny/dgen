@@ -234,8 +234,11 @@ class AffineToLLVMLowering(Pass):
             self._seen.add(op.lo)
 
         # Collect alloca pointers that need to be threaded through the loop.
-        # These are all the alloca values currently tracked in alloc_shapes.
-        alloca_entries: list[dgen.Value] = list(self.alloc_shapes.keys())
+        # Filter out ChainOps — they're transparent aliases for the actual alloca.
+        alloca_entries: list[dgen.Value] = [
+            v for v in self.alloc_shapes
+            if not isinstance(v, builtin.ChainOp)
+        ]
 
         # --- Block args for header: loop_var + alloca ptrs ---
         header_loop_var = BlockArgument(
