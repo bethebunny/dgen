@@ -12,6 +12,7 @@ from typing import Any
 import dgen.type
 from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.block import BlockArgument
+from dgen.graph import walk_ops
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module, PackOp
 
@@ -386,4 +387,10 @@ def _read_block_body(parser: ASMParser) -> Block:
         ops.extend(parser.pending_ops)
         parser.pending_ops.clear()
         ops.append(op)
-    return Block(ops=ops, args=args)
+    block = Block(ops=ops, args=args)
+    live = set(walk_ops(block.result))
+    dead = [op for op in ops if op not in live]
+    if dead:
+        names = [op.name or type(op).__name__ for op in dead]
+        raise ParseError(f"Dead ops in block (not reachable from result): {names}")
+    return block
