@@ -72,17 +72,24 @@ class Rewriter:
         self._block = block
 
     def replace_uses(self, old: dgen.Value, new: dgen.Value) -> bool:
-        """Eagerly replace all references to old with new in the block."""
-        for op in self._block.ops:
+        """Eagerly replace all references to old with new, recursively."""
+        self._replace_in_block(self._block, old, new)
+        return True
+
+    def _replace_in_block(
+        self, block: dgen.Block, old: dgen.Value, new: dgen.Value
+    ) -> None:
+        for op in block.ops:
             for name, operand in op.operands:
                 if operand is old:
                     setattr(op, name, new)
             for name, param in op.parameters:
                 if param is old:
                     setattr(op, name, new)
-        if self._block.result is old:
-            self._block.result = new
-        return True
+            for _, child_block in op.blocks:
+                self._replace_in_block(child_block, old, new)
+        if block.result is old:
+            block.result = new
 
 
 # ---------------------------------------------------------------------------
