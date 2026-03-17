@@ -1,0 +1,11 @@
+from builtin import Index, Nil, HasSingleBlock
+
+op actor<consume_rate: Index, produce_rate: Index>(input) -> Nil:
+    block body
+    has trait HasSingleBlock
+
+op produce(value) -> Nil
+
+op pipeline(input):
+    block body
+    has trait HasSingleBlock
