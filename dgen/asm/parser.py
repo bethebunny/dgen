@@ -25,7 +25,7 @@ _QUALIFIED = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*")
 _STRING = re.compile(r'"[^"]*"')
 _SSA = re.compile(r"%[a-zA-Z0-9_]+")
 _NUMBER = re.compile(r"-?\d+\.\d*|-?\d*\.\d+|-?\d+")
-_LITERAL_START = set('-0123456789{["')
+_LITERAL_START = set('-0123456789{["(')
 
 
 def parse_module(text: str) -> Module:
@@ -321,7 +321,7 @@ def _coerce_operand(
     if isinstance(value, Value):
         return value
     if isinstance(value, list):
-        if any(isinstance(v, Value) for v in value):
+        if any(isinstance(v, Value) for v in value) or issubclass(field_type, builtin.List):
             return _pack_list(parser, value, field_type)
         return value
     if issubclass(op_cls, ConstantOp):
