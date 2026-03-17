@@ -102,7 +102,18 @@ class BuiltinToLLVMLowering(Pass):
 
         then_label_op = llvm.LabelOp(name=f"then_{if_id}", body=placeholder_block())
         else_label_op = llvm.LabelOp(name=f"else_{if_id}", body=placeholder_block())
-        merge_label_op = llvm.LabelOp(name=f"merge_{if_id}", body=placeholder_block())
+
+        # Merge label has a block arg for the if/else result value
+        merge_result_arg = dgen.BlockArgument(
+            name=f"merge_val{if_id}", type=op.type
+        )
+        merge_label_op = llvm.LabelOp(
+            name=f"merge_{if_id}",
+            body=dgen.Block(
+                result=dgen.Value(type=builtin.Nil()),
+                args=[merge_result_arg],
+            ),
+        )
 
         # Convert i64 condition to i1 via icmp ne 0
         zero = ConstantOp(value=0, type=builtin.Index())
@@ -121,29 +132,48 @@ class BuiltinToLLVMLowering(Pass):
             false_args=_EMPTY_PACK,
         )
 
-        # Then block
+        # Then block — lower body ops, intercept ReturnOp to get result
         yield then_label_op
         self.current_label = then_label_op
         then_result: dgen.Value | None = None
         for child in op.then_body.ops:
             if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
                 then_result = self._map(child.value)
-                yield llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
             else:
                 yield from self.lower_op(child)
+        if then_result is not None:
+            result_pack = PackOp(
+                values=[then_result],
+                type=builtin.List(element_type=then_result.type),
+            )
+            yield result_pack
+            yield llvm.BrOp(target=merge_label_op, args=result_pack)
+        else:
+            yield llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
 
-        # Else block
+        # Else block — same pattern
         yield else_label_op
         self.current_label = else_label_op
+        else_result: dgen.Value | None = None
         for child in op.else_body.ops:
             if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
-                yield llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
+                else_result = self._map(child.value)
             else:
                 yield from self.lower_op(child)
+        if else_result is not None:
+            result_pack = PackOp(
+                values=[else_result],
+                type=builtin.List(element_type=else_result.type),
+            )
+            yield result_pack
+            yield llvm.BrOp(target=merge_label_op, args=result_pack)
+        else:
+            yield llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
 
-        # Merge — TODO(closed-blocks): use block arg for merge result
+        # Merge — block arg receives the result from whichever branch was taken
         yield merge_label_op
         self.current_label = merge_label_op
+        self.value_map[op] = merge_result_arg
 
     def _lower_call(self, op: builtin.CallOp) -> Iterator[dgen.Op]:
         callee_name = op.callee.name

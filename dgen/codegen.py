@@ -98,6 +98,16 @@ def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
     return _llvm_type(resolved.__layout__)
 
 
+def _collect_labels(ops: list[dgen.Op]) -> list[llvm.LabelOp]:
+    """Recursively collect all LabelOps (labels may be nested)."""
+    labels: list[llvm.LabelOp] = []
+    for op in ops:
+        if isinstance(op, llvm.LabelOp):
+            labels.append(op)
+            labels.extend(_collect_labels(op.body.ops))
+    return labels
+
+
 def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     # Build a SlotTracker so all ops get stable names
     tracker = SlotTracker()
@@ -105,16 +115,14 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for arg in f.body.args:
         tracker.track_name(arg)
 
-    # Separate entry ops from label ops
+    # Separate entry ops from label ops (recursively collect nested labels)
     entry_ops: list[dgen.Op] = []
-    label_ops: list[llvm.LabelOp] = []
     for op in f.body.ops:
-        if isinstance(op, llvm.LabelOp):
-            label_ops.append(op)
-        else:
+        if not isinstance(op, llvm.LabelOp):
             entry_ops.append(op)
+    label_ops = _collect_labels(f.body.ops)
 
-    # Collect all ops (entry + label bodies) for registration
+    # Collect all ops (entry + all label bodies) for registration
     all_ops: list[dgen.Op] = list(entry_ops)
     for label_op in label_ops:
         all_ops.extend(label_op.body.ops)
@@ -145,9 +153,37 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             constants[c] = f"{lt} {val_str}"
             types[c] = lt
 
-    # Register block arg types
+    # Register block arg types (function parameters)
     for arg in f.body.args:
         types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
+
+    # Register label body block arg types
+    for label_op in label_ops:
+        for arg in label_op.body.args:
+            types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
+            tracker.track_name(arg)
+
+    # Build predecessor map: label → [(source_label, passed_arg_values)]
+    entry_sentinel = dgen.Value(name="entry", type=llvm.Label())
+    op_to_label: dict[dgen.Op, dgen.Value] = {}
+    for op in entry_ops:
+        op_to_label[op] = entry_sentinel
+    for label_op in label_ops:
+        for body_op in label_op.body.ops:
+            op_to_label[body_op] = label_op
+
+    predecessors: dict[dgen.Value, list[tuple[dgen.Value, list[dgen.Value]]]] = {}
+    for op in all_ops:
+        if isinstance(op, llvm.BrOp):
+            src = op_to_label[op]
+            args = op.args.values if isinstance(op.args, PackOp) else [op.args]
+            predecessors.setdefault(op.target, []).append((src, args))
+        elif isinstance(op, llvm.CondBrOp):
+            src = op_to_label[op]
+            true_args = op.true_args.values if isinstance(op.true_args, PackOp) else [op.true_args]
+            false_args = op.false_args.values if isinstance(op.false_args, PackOp) else [op.false_args]
+            predecessors.setdefault(op.true_target, []).append((src, true_args))
+            predecessors.setdefault(op.false_target, []).append((src, false_args))
 
     for op in all_ops:
         if isinstance(op, ConstantOp):
@@ -191,7 +227,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
 
     def emit_op(op: dgen.Op, lines: list[str]) -> None:
         """Emit a single op as LLVM IR."""
-        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
+        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, llvm.LabelOp)):
             return
 
         name = tracker.track_name(op)
@@ -276,10 +312,24 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for op in entry_ops:
         emit_op(op, lines)
 
-    # Emit each label's body
+    # Emit each label's body (with phi instructions for block args)
     for label_op in label_ops:
         label_name = tracker.track_name(label_op)
         lines.append(f"{label_name}:")
+        # Emit phi instructions for block args from predecessor branches
+        preds = predecessors.get(label_op, [])
+        for arg_idx, arg in enumerate(label_op.body.args):
+            arg_name = tracker.track_name(arg)
+            ty = types.get(arg, "i64")
+            phi_parts = []
+            for pred_label, pred_args in preds:
+                if arg_idx < len(pred_args):
+                    pred_label_name = tracker.track_name(pred_label)
+                    phi_parts.append(
+                        f"[ {bare_ref(pred_args[arg_idx])}, %{pred_label_name} ]"
+                    )
+            if phi_parts:
+                lines.append(f"  %{arg_name} = phi {ty} {', '.join(phi_parts)}")
         for body_op in label_op.body.ops:
             emit_op(body_op, lines)
 
