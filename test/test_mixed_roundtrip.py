@@ -13,8 +13,8 @@ def test_llvm_via_imports():
         | %f : Nil = function<Nil>() ():
         |     %0 : Nil = llvm.alloca<6>()
         |     %1 : F64 = 1.0
-        |     %_ : Nil = llvm.store(%1, %0)
-        |     %_ : Nil = return(())
+        |     %store : Nil = llvm.store(%1, %0)
+        |     %_ : Nil = return(%store)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -38,8 +38,10 @@ def test_llvm_full_loop():
         |         %loop_exit : llvm.Label = llvm.label() ():
         |             %_ : Nil = return(())
         |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [%i0], [])
-        |     %_ : Nil = llvm.br(%loop_header, [%init])
-        |     %_ : Nil = return(())
+        |     %br : Nil = llvm.br(%loop_header, [%init])
+        |     %ret : Nil = return(())
+        |     %c0 : Nil = chain(%0, %ret)
+        |     %_ : Nil = chain(%br, %c0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

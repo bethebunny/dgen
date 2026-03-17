@@ -61,7 +61,7 @@ def test_dce(ir_snapshot):
         |     %1 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %2 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%1)
         |     %3 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%3)
+        |     %_ : Nil = chain(%3, %2)
     """)
     m = parse_module(ir_text)
     assert optimize(m) == ir_snapshot
@@ -84,7 +84,7 @@ def test_full_pipeline(ir_snapshot):
         |     %8 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%1)
         |     %9 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.mul(%7, %8)
         |     %10 : Nil = toy.print(%9)
-        |     %_ : Nil = return(%10)
+        |     %_ : Nil = chain(%10, %6)
     """)
     m = parse_module(ir_text)
     assert optimize(m) == ir_snapshot

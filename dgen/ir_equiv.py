@@ -15,6 +15,7 @@ import struct
 import dgen
 from dgen.block import Block, BlockArgument
 from dgen.module import Module, PackOp
+from dgen.dialects.builtin import Nil
 from dgen.type import Constant, Type, Value
 
 
@@ -121,6 +122,8 @@ class Fingerprinter:
                     operand_fingerprints,
                     block_fingerprints,
                 )
+            case Value(type=Nil()):
+                return _hash_parts(b"nil")
             case _:
                 raise TypeError(f"Cannot fingerprint {type(value).__name__}")
 

@@ -1,7 +1,7 @@
 import llvm
 
 %main : Nil = function<Nil>() ():
-    %0 : Index = 1
     %1 : Index = 2
     %2 : Index = llvm.add(%1, %1)
-    %_ : Nil = return(%2)
+    %3 : Index = chain(%2, %1)
+    %_ : Nil = return(%3)

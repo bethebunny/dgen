@@ -1,0 +1,10 @@
+import toy
+
+%multiply_transpose : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>):
+    %0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)
+    %1 : toy.InferredShapeTensor<F64> = toy.transpose(%b)
+    %2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)
+    %3 : Nil = return(%2)
+
+%main : Nil = function<Nil>() ():
+    %0 : Nil = return(())

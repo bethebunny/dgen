@@ -356,8 +356,8 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
     ir_input = strip_prefix("""
         |
         | %main : Nil = function<Nil>() (%x: Index):
-        |     %_ : Nil = affine.store(%x, %x, [3, %x, 5])
-        |     %_ : Nil = return(())
+        |     %store : Nil = affine.store(%x, %x, [3, %x, 5])
+        |     %_ : Nil = return(%store)
     """)
     parsed = parse_module(ir_input)
     assert parsed == ir_snapshot
@@ -390,8 +390,8 @@ def test_string_as_op_param():
         | %main : Nil = function<Nil>() ():
         |     %0 : Index = 1
         |     %1 : Index = 2
-        |     %_ : Nil = llvm.icmp<"slt">(%0, %1)
-        |     %_ : Nil = return(())
+        |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
+        |     %_ : Nil = return(%cmp)
     """)
     parsed = parse_module(ir)
     assert_ir_equivalent(parsed, asm.parse(asm.format(parsed)))

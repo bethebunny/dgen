@@ -7,4 +7,7 @@ import toy
     %8 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
     %9 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.mul(%7, %8)
     %10 : Nil = toy.print(%9)
-    %_ : Nil = return(%10)
+    %4 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
+    %5 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
+    %6 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.mul(%4, %5)
+    %_ : Nil = chain(%10, %6)

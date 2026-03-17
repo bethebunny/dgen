@@ -12,8 +12,8 @@ def test_roundtrip_alloc():
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(affine.Shape<2>([2, 3]))
-        |     %_ : Nil = affine.dealloc(%0)
-        |     %_ : Nil = return(())
+        |     %dealloc : Nil = affine.dealloc(%0)
+        |     %_ : Nil = return(%dealloc)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -26,9 +26,10 @@ def test_roundtrip_store_load():
         |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
         |     %1 : F64 = 1.0
         |     %2 : Index = 0
-        |     %_ : Nil = affine.store(%1, %0, [%2])
-        |     %3 : Nil = affine.load(%0, [%2])
-        |     %_ : Nil = return(())
+        |     %store : Nil = affine.store(%1, %0, [%2])
+        |     %3 : F64 = affine.load(%0, [%2])
+        |     %4 : F64 = chain(%3, %store)
+        |     %_ : Nil = return(%4)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -40,9 +41,10 @@ def test_roundtrip_arith():
         | %f : Nil = function<Nil>() ():
         |     %0 : F64 = 2.5
         |     %1 : F64 = 3.0
-        |     %2 : Nil = affine.mul_f(%0, %1)
-        |     %3 : Nil = affine.add_f(%0, %1)
-        |     %_ : Nil = return(())
+        |     %2 : F64 = affine.mul_f(%0, %1)
+        |     %3 : F64 = affine.add_f(%0, %1)
+        |     %4 : F64 = chain(%2, %3)
+        |     %_ : Nil = return(%4)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -52,7 +54,7 @@ def test_roundtrip_index_constant():
     ir = strip_prefix("""
         | %f : Nil = function<Nil>() ():
         |     %0 : Index = 42
-        |     %_ : Nil = return(())
+        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -63,8 +65,8 @@ def test_roundtrip_print_memref():
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
-        |     %_ : Nil = affine.print_memref(%0)
-        |     %_ : Nil = return(())
+        |     %print : Nil = affine.print_memref(%0)
+        |     %_ : Nil = return(%print)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -75,12 +77,13 @@ def test_roundtrip_for_op():
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<1>([3]), F64> = affine.alloc(affine.Shape<1>([3]))
-        |     %_ : Nil = affine.for<0, 3>() (%i0: Index):
+        |     %loop : Nil = affine.for<0, 3>() (%i0: Index):
         |         %1 : F64 = 1.0
         |         %2 : Index = 0
         |         %_ : Nil = affine.store(%1, %0, [%2])
-        |     %_ : Nil = affine.print_memref(%0)
-        |     %_ : Nil = return(())
+        |     %print : Nil = affine.print_memref(%0)
+        |     %3 : Nil = chain(%print, %loop)
+        |     %_ : Nil = return(%3)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -91,12 +94,13 @@ def test_roundtrip_nested_for():
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(affine.Shape<2>([2, 3]))
-        |     %_ : Nil = affine.for<0, 2>() (%i0: Index):
+        |     %loop : Nil = affine.for<0, 2>() (%i0: Index):
         |         %_ : Nil = affine.for<0, 3>() (%i1: Index):
         |             %1 : F64 = 1.0
         |             %2 : Index = 0
         |             %_ : Nil = affine.store(%1, %0, [%2, %2])
-        |     %_ : Nil = return(())
+        |     %3 : Nil = chain(%loop, %0)
+        |     %_ : Nil = return(%3)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -120,9 +124,10 @@ def test_roundtrip_multi_index_load_store():
         |     %1 : F64 = 5.0
         |     %2 : Index = 0
         |     %3 : Index = 1
-        |     %_ : Nil = affine.store(%1, %0, [%2, %3])
-        |     %4 : Nil = affine.load(%0, [%2, %3])
-        |     %_ : Nil = return(())
+        |     %store : Nil = affine.store(%1, %0, [%2, %3])
+        |     %4 : F64 = affine.load(%0, [%2, %3])
+        |     %5 : F64 = chain(%4, %store)
+        |     %_ : Nil = return(%5)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -135,7 +140,7 @@ def test_roundtrip_ssa_in_op_arg():
         | %f : Nil = function<Nil>() ():
         |     %shape : affine.Shape<2> = [2, 3]
         |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(%shape)
-        |     %_ : Nil = return(())
+        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -148,7 +153,7 @@ def test_roundtrip_ssa_in_type_param():
         | %f : Nil = function<Nil>() ():
         |     %shape : affine.Shape<2> = [2, 3]
         |     %0 : affine.MemRef<%shape, F64> = affine.alloc(%shape)
-        |     %_ : Nil = return(())
+        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -163,10 +168,12 @@ def test_ssa_shape_through_lowering():
         |     %0 : affine.MemRef<affine.Shape<2>([2, 3]), F64> = affine.alloc(%shape)
         |     %1 : F64 = 1.0
         |     %2 : Index = 0
-        |     %_ : Nil = affine.store(%1, %0, [%2, %2])
-        |     %3 : Nil = affine.load(%0, [%2, %2])
-        |     %_ : Nil = affine.dealloc(%0)
-        |     %_ : Nil = return(())
+        |     %store : Nil = affine.store(%1, %0, [%2, %2])
+        |     %3 : F64 = affine.load(%0, [%2, %2])
+        |     %4 : F64 = chain(%3, %store)
+        |     %dealloc : Nil = affine.dealloc(%0)
+        |     %5 : Nil = chain(%dealloc, %4)
+        |     %_ : Nil = return(%5)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

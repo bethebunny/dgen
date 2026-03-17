@@ -64,12 +64,14 @@ def test_rewriter_eager_replace(ir_snapshot):
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %2 : Index = llvm.add(%0, %0)
-        |     %_ : Nil = return(%2)
+        |     %3 : Index = chain(%2, %1)
+        |     %_ : Nil = return(%3)
     """)
     m = parse_module(ir_text)
     func = m.functions[0]
-    old = func.body.ops[0]  # %0 = 1
-    new = func.body.ops[1]  # %1 = 2
+    ops_by_name = {op.name: op for op in func.body.ops}
+    old = ops_by_name["0"]  # %0 = 1
+    new = ops_by_name["1"]  # %1 = 2
 
     rewriter = Rewriter(func.body)
     rewriter.replace_uses(old, new)

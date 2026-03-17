@@ -35,30 +35,56 @@ class BuiltinToLLVMLowering(Pass):
         self.value_map = {}
         self.current_label = dgen.Value(name="entry", type=llvm.Label())
 
-        # Phase 1: Generate ops linearly (labels as boundary markers)
-        # Flatten existing label bodies so their ops are processed too.
+        # Recursively lower pre-built label bodies (from affine_to_llvm),
+        # then lower entry ops. _lower_if may yield new labels into the flat
+        # stream, so we still need group_into_blocks afterwards.
+        visited: set[int] = set()
+        for op in f.body.ops:
+            if isinstance(op, llvm.LabelOp):
+                self._lower_label_bodies(op, visited)
+
         flat_ops: list[dgen.Op] = []
         for op in f.body.ops:
-            if isinstance(op, llvm.LabelOp) and op.body.ops:
-                flat_ops.append(op)
-                for body_op in op.body.ops:
-                    flat_ops.extend(self.lower_op(body_op))
-            else:
-                flat_ops.extend(self.lower_op(op))
+            if isinstance(op, llvm.LabelOp):
+                continue  # pre-built labels are already lowered
+            flat_ops.extend(self.lower_op(op))
 
-        # Phase 2: Group into basic blocks and build label body blocks
+        # Group at label boundaries (new labels from _lower_if)
         entry_ops, label_groups = group_into_blocks(flat_ops)
         for label_op, body_ops in label_groups:
             label_op.body = dgen.Block(
-                result=chain_body(body_ops), ops=body_ops, args=label_op.body.args
+                result=chain_body(body_ops), args=label_op.body.args
             )
 
-        func_ops: list[dgen.Op] = entry_ops + [lg[0] for lg in label_groups]
         return FunctionOp(
             name=f.name,
-            body=dgen.Block(ops=func_ops, args=f.body.args),
+            body=dgen.Block(result=chain_body(entry_ops), args=f.body.args),
             result=f.result,
         )
+
+    def _lower_label_bodies(self, label_op: llvm.LabelOp, visited: set[int]) -> None:
+        """Recursively lower builtin ops inside pre-built label body blocks."""
+        if id(label_op) in visited:
+            return
+        visited.add(id(label_op))
+
+        # First, recurse into any nested labels found in this body
+        for op in label_op.body.ops:
+            if isinstance(op, llvm.LabelOp):
+                self._lower_label_bodies(op, visited)
+
+        # Lower body ops, rebuilding the block. _lower_if may yield new labels
+        # so we need group_into_blocks here too.
+        body_flat: list[dgen.Op] = []
+        for op in label_op.body.ops:
+            if isinstance(op, llvm.LabelOp):
+                continue  # nested labels already lowered
+            body_flat.extend(self.lower_op(op))
+
+        body_ops, body_label_groups = group_into_blocks(body_flat)
+        for lbl, lbl_body_ops in body_label_groups:
+            lbl.body = dgen.Block(result=chain_body(lbl_body_ops), args=lbl.body.args)
+        label_op.body = dgen.Block(result=chain_body(body_ops), args=label_op.body.args)
 
     def _map(self, old: dgen.Value) -> dgen.Value:
         return self.value_map.get(old, old)

@@ -216,9 +216,13 @@ class Record(Layout):
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
     ) -> None:
-        assert isinstance(value, dict)
-        for (name, lay), field_offset in zip(self.fields, self._offsets):
-            lay.from_json(buf, offset + field_offset, value[name], origins)
+        if isinstance(value, list):
+            for (_, lay), field_offset, v in zip(self.fields, self._offsets, value):
+                lay.from_json(buf, offset + field_offset, v, origins)
+        else:
+            assert isinstance(value, dict)
+            for (name, lay), field_offset in zip(self.fields, self._offsets):
+                lay.from_json(buf, offset + field_offset, value[name], origins)
 
 
 class TypeValue(Layout):

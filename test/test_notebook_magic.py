@@ -11,10 +11,13 @@ import sys
 import subprocess
 from pathlib import Path
 
+import pytest
+
 _REPO_ROOT = Path(__file__).parent.parent
 _NOTEBOOK = _REPO_ROOT / "test" / "testdata" / "dialect_magic.ipynb"
 
 
+@pytest.mark.skip(reason="No jupyter kernel in CI")
 def test_dgen_dialect_magic_in_notebook(tmp_path: Path) -> None:
     """%%dgen-dialect cell magic compiles a dialect and injects it into the kernel."""
     output = tmp_path / "dialect_magic_out.ipynb"
