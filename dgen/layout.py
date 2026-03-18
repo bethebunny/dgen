@@ -24,6 +24,7 @@ class Layout:
     """Base for memory layout types."""
 
     struct: Struct
+    register_passable: bool = False
 
     @property
     def byte_size(self) -> int:
@@ -50,6 +51,7 @@ class Void(Layout):
     """Zero-size layout for types with no runtime representation."""
 
     struct = Struct("0s")
+    register_passable = True
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> None:
         return None
@@ -62,6 +64,7 @@ class Void(Layout):
 
 class Byte(Layout):
     struct = Struct("B")
+    register_passable = True
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
@@ -77,6 +80,7 @@ class Int(Layout):
     """64-bit integer (i64)."""
 
     struct = Struct("q")
+    register_passable = True
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
@@ -92,6 +96,7 @@ class Float64(Layout):
     """64-bit float (f64)."""
 
     struct = Struct("d")
+    register_passable = True
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> float:
         return self.struct.unpack_from(buf, offset)[0]
@@ -130,6 +135,7 @@ class Pointer(Layout):
     """8-byte pointer to T."""
 
     struct = Struct("P")
+    register_passable = True
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee

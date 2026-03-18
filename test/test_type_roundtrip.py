@@ -7,7 +7,6 @@ Each type is tested for:
 4. JIT identity round-trip (Memory → JIT function → result)
 """
 
-import ctypes
 from copy import deepcopy
 
 import pytest
@@ -246,12 +245,7 @@ def test_jit_identity_roundtrip(ty, value, _asm, expected):
     exe = _identity_exe(ty)
     mem = Memory.from_value(ty, value)
     result = exe.run(mem)
-    if exe.ctype._restype_ is ctypes.c_void_p:
-        # Pointer type: verify the address survives the round-trip
-        assert result == mem.address
-    else:
-        # Scalar type: verify the value survives
-        assert result == expected[0]
+    assert result.to_json() == mem.to_json()
 
 
 # ---------------------------------------------------------------------------
@@ -305,8 +299,7 @@ def test_list_jit_identity():
     mem = Memory.from_value(ty, [10, 20, 30])
     exe = _identity_exe(ty)
     result = exe.run(mem)
-    # List is passed as ptr (16-byte Span), verify address round-trip
-    assert result == mem.address
+    assert result.to_json() == mem.to_json()
 
 
 def test_list_constant_jit_return():
@@ -319,10 +312,8 @@ def test_list_constant_jit_return():
         result=list_type,
     )
     exe = compile_module(Module(functions=[func]))
-    raw = exe.run()
-    assert isinstance(raw, int)
-    result = Memory.from_raw(list_type, raw).to_json()
-    assert result == [3, 5, 7]
+    result = exe.run()
+    assert result.to_json() == [3, 5, 7]
 
 
 # ---------------------------------------------------------------------------
@@ -401,8 +392,7 @@ def test_string_jit_identity():
     mem = c.__constant__
     exe = _identity_exe(ty)
     result = exe.run(mem)
-    # String is passed as ptr (16-byte Span), verify address round-trip
-    assert result == mem.address
+    assert result.to_json() == mem.to_json()
 
 
 def test_string_param_staging():
@@ -425,11 +415,11 @@ def test_string_param_staging():
 
     # "slt": 5 < 10 = true → 1
     exe = identity_compiler.compile(module)
-    assert exe.run("slt", 5, 10) == 1
+    assert exe.run("slt", 5, 10).to_json() == 1
 
     # "sge": 5 >= 10 = false → 0
     exe = identity_compiler.compile(module)
-    assert exe.run("sge", 5, 10) == 0
+    assert exe.run("sge", 5, 10).to_json() == 0
 
 
 def test_compile_once_run_twice():
@@ -453,11 +443,11 @@ def test_compile_once_run_twice():
     exe = identity_compiler.compile(module)
 
     # Same executable, different arguments — each run JITs a specialized stage-2
-    assert exe.run("slt", 5, 10) == 1  # 5 < 10 = true → 1
-    assert exe.run("sge", 5, 10) == 0  # 5 >= 10 = false → 0
-    assert exe.run("sgt", 10, 5) == 1  # 10 > 5 = true → 1
-    assert exe.run("sle", 7, 7) == 1  # 7 <= 7 = true → 1
-    assert exe.run("slt", 7, 7) == 0  # 7 < 7 = false → 0
+    assert exe.run("slt", 5, 10).to_json() == 1  # 5 < 10 = true → 1
+    assert exe.run("sge", 5, 10).to_json() == 0  # 5 >= 10 = false → 0
+    assert exe.run("sgt", 10, 5).to_json() == 1  # 10 > 5 = true → 1
+    assert exe.run("sle", 7, 7).to_json() == 1  # 7 <= 7 = true → 1
+    assert exe.run("slt", 7, 7).to_json() == 0  # 7 < 7 = false → 0
 
 
 # ---------------------------------------------------------------------------
@@ -617,10 +607,8 @@ def test_list_identity_jit_roundtrip_full():
     list_type = builtin.List(element_type=builtin.Index())
     mem = Memory.from_value(list_type, [10, 20, 30])
     exe = _identity_exe(list_type)
-    raw = exe.run(mem)
-    assert isinstance(raw, int)
-    result = Memory.from_raw(list_type, raw).to_json()
-    assert result == [10, 20, 30]
+    result = exe.run(mem)
+    assert result.to_json() == [10, 20, 30]
 
 
 def test_list_f64_jit_roundtrip():
@@ -628,7 +616,5 @@ def test_list_f64_jit_roundtrip():
     list_type = builtin.List(element_type=builtin.F64())
     mem = Memory.from_value(list_type, [1.1, 2.2, 3.3])
     exe = _identity_exe(list_type)
-    raw = exe.run(mem)
-    assert isinstance(raw, int)
-    result = Memory.from_raw(list_type, raw).to_json()
-    assert result == [1.1, 2.2, 3.3]
+    result = exe.run(mem)
+    assert result.to_json() == [1.1, 2.2, 3.3]

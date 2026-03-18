@@ -193,8 +193,7 @@ def test_type_value_jit_identity():
     )
     exe = compile_module(Module(functions=[func]))
     result = exe.run(mem)
-    # TypeType is pointer-passed (Record layout), verify address survives
-    assert result == mem.address
+    assert result.to_json() == mem.to_json()
 
 
 def test_type_constant_jit_return():
@@ -207,10 +206,8 @@ def test_type_constant_jit_return():
         result=idx.type,
     )
     exe = compile_module(Module(functions=[func]))
-    raw = exe.run()
-    assert isinstance(raw, int)
-    result = Memory.from_raw(idx.type, raw).to_json()
-    assert result == {"tag": "builtin.Index"}
+    result = exe.run()
+    assert result.to_json() == {"tag": "builtin.Index"}
 
 
 def test_list_with_ssa_element_type():
@@ -427,11 +424,11 @@ def test_staging_resolves_block_arg_type():
     compile_time_calls = lower_calls
 
     # Each run() triggers runtime JIT — lower is called for each invocation
-    assert exe.run({"tag": "builtin.Index"}, 21) == 42
+    assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
     calls_after_first_run = lower_calls
     assert calls_after_first_run > compile_time_calls
 
-    assert exe.run({"tag": "builtin.Index"}, 100) == 200
+    assert exe.run({"tag": "builtin.Index"}, 100).to_json() == 200
     assert lower_calls > calls_after_first_run
 
 
@@ -505,7 +502,7 @@ def test_staging_with_ssa_result_type():
         passes=[LowerToLLVMPass()], exit=LLVMCodegen()
     )
     exe = compiler.compile(Module(functions=[inner_func]))
-    assert exe.run({"tag": "builtin.Index"}, 21) == 42
+    assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
 
 
 def test_staging_resolves_type_value():
@@ -551,5 +548,4 @@ def test_staging_resolves_type_value():
         passes=[LowerAddIndex()], exit=LLVMCodegen()
     )
     exe = compiler.compile(module)
-    result = exe.run({"tag": "builtin.Index"}, 21)
-    assert result == 42
+    assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
