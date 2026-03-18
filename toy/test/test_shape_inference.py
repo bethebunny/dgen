@@ -142,7 +142,7 @@ def test_tile_with_computed_count():
         |     %1 : Index = 2
         |     %2 : Index = 2
         |     %3 : Index = add_index(%1, %2)
-        |     %4 : toy.InferredShapeTensor<F64> = toy.tile<%0>(%3)
+        |     %4 : toy.InferredShapeTensor<F64> = toy.tile<%3>(%0)
         |     %5 : Nil = toy.print(%4)
     """)
     module = parse_module(ir)

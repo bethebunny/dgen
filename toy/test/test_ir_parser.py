@@ -121,7 +121,7 @@ def test_roundtrip_tile():
         | import toy
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([4, 3]), F64>>() (%a: toy.Tensor<affine.Shape<1>([3]), F64>, %n: Index):
-        |     %0 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%a>(%n)
+        |     %0 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%n>(%a)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -134,7 +134,7 @@ def test_roundtrip_tile_with_index_constant():
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([4, 3]), F64>>() (%a: toy.Tensor<affine.Shape<1>([3]), F64>):
         |     %0 : Index = 4
-        |     %1 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%a>(%0)
+        |     %1 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%0>(%a)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -149,7 +149,7 @@ def test_roundtrip_tile_with_computed_count():
         |     %0 : Index = 2
         |     %1 : Index = 2
         |     %2 : Index = add_index(%0, %1)
-        |     %3 : toy.InferredShapeTensor<F64> = toy.tile<%a>(%2)
+        |     %3 : toy.InferredShapeTensor<F64> = toy.tile<%2>(%a)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

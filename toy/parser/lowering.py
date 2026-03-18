@@ -60,7 +60,12 @@ class Lowering:
         if self.has_value_return:
             result = toy.InferredShapeTensor()
 
-        block_result = self.return_value if self.return_value is not None else ops[-1]
+        if self.return_value is not None:
+            block_result: dgen.Value = self.return_value
+        elif ops:
+            block_result = ops[-1]
+        else:
+            block_result = dgen.Value(type=builtin.Nil())
         return builtin.FunctionOp(
             name=f.proto.name,
             result=result,
