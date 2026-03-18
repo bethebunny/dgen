@@ -263,7 +263,7 @@ def test_peano_constant():
     result = exe.run()
     print(f"result = {result}")
 
-    assert result == 3
+    assert result.to_json() == 3
 
 
 def test_equal_and_subtract_roundtrip():
@@ -291,7 +291,7 @@ def test_subtract_jit():
     from dgen import codegen
 
     exe = codegen.compile(module)
-    assert exe.run(5) == 4
+    assert exe.run(5).to_json() == 4
 
 
 def test_if_else_parse_roundtrip():
@@ -329,9 +329,9 @@ def test_if_else_jit():
     from dgen import codegen
 
     exe = codegen.compile(module)
-    assert exe.run(0) == 1
-    assert exe.run(5) == 4
-    assert exe.run(1) == 0
+    assert exe.run(0).to_json() == 1
+    assert exe.run(5).to_json() == 4
+    assert exe.run(1).to_json() == 0
 
 
 def test_call_op_roundtrip():
@@ -362,8 +362,8 @@ def test_call_jit():
     from dgen import codegen
 
     exe = codegen.compile(module)
-    assert exe.run(5) == 6
-    assert exe.run(0) == 1
+    assert exe.run(5).to_json() == 6
+    assert exe.run(0).to_json() == 1
 
 
 def test_multi_function_staged():
@@ -383,7 +383,7 @@ def test_multi_function_staged():
     module = parse_module(ir)
     exe = peano_compiler.compile(module)
     result = exe.run()
-    assert result == 2  # value(Successor(Zero)) = 1, then add 1 = 2
+    assert result.to_json() == 2  # value(Successor(Zero)) = 1, then add 1 = 2
 
 
 def test_equal_jit():
@@ -396,8 +396,8 @@ def test_equal_jit():
     from dgen import codegen
 
     exe = codegen.compile(module)
-    assert exe.run(0) == 1
-    assert exe.run(5) == 0
+    assert exe.run(0).to_json() == 1
+    assert exe.run(5).to_json() == 0
 
 
 def test_recursive_peano():
@@ -430,8 +430,8 @@ def test_recursive_peano():
     exe = peano_compiler.compile(module)
 
     # natural(0) = Successor(Zero) → value = 1, so main(0) = 1
-    assert exe.run(0) == 1
+    assert exe.run(0).to_json() == 1
     # natural(2) = Successor(Successor(Successor(Zero))) → value = 3, so main(2) = 3
-    assert exe.run(2) == 3
+    assert exe.run(2).to_json() == 3
     # natural(4) = Successor^5(Zero) → value = 5, so main(4) = 5
-    assert exe.run(4) == 5
+    assert exe.run(4).to_json() == 5

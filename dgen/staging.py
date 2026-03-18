@@ -107,10 +107,8 @@ def _jit_evaluate(
     lowered = lower(module)
     exe = codegen.compile(lowered, externs=externs)
     memories = _make_memories(block_args, args)
-    raw = exe.run(*memories)
-
-    # Convert result back to Python while JIT buffers are still alive
-    return _raw_to_json(raw, dgen.type.type_constant(target.type))
+    result = exe.run(*memories)
+    return result.to_json()
 
 
 def _resolve_comptime_field(
@@ -328,8 +326,7 @@ def _raw_to_json(raw: object, ty: dgen.Type) -> object:
     TypeType values use the self-describing TypeValue layout which reads
     through the pointer and resolves the tag to determine the full Record.
     """
-    layout = ty.__layout__
-    if _ctype(layout) is ctypes.c_void_p:
+    if not ty.__layout__.register_passable:
         assert isinstance(raw, int)
         return Memory.from_raw(ty, raw).to_json()
     return raw
@@ -451,7 +448,12 @@ def _build_callback_thunk(
         result = compiler.compile(func_module)
         assert isinstance(result, Executable)
         callback_host_refs.extend(result.host_refs)  # Keep memory alive
-        return result.run(*python_args)
+        mem = result.run(*python_args)
+        callback_host_refs.append(mem)  # Keep memory alive
+        # Return raw ctypes value for the callback
+        if not mem.type.__layout__.register_passable:
+            return mem.address
+        return mem.to_json()
 
     callback_func = cb_type(_callback)
 

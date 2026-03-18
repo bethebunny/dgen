@@ -18,7 +18,7 @@ from dgen.passes.builtin_to_llvm import lower_builtin_to_llvm
 from dgen.type import Constant, Memory, Value
 
 # ---------------------------------------------------------------------------
-# struct.format → LLVM / ctypes mapping
+# Layout → LLVM / ctypes mapping
 # ---------------------------------------------------------------------------
 
 _FMT_LLVM = {"q": "i64", "d": "double"}
@@ -26,13 +26,17 @@ _FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double}
 
 
 def _llvm_type(layout: Layout) -> str:
-    """Derive LLVM type from a layout's struct format."""
+    """Derive LLVM IR type string from a layout."""
+    if not layout.register_passable:
+        return "ptr"
     fmt = layout.struct.format.lstrip("=@<>!")
     return _FMT_LLVM.get(fmt, "ptr")
 
 
 def _ctype(layout: Layout) -> type[ctypes._CData]:
-    """Derive ctypes type from a layout's struct format."""
+    """Derive ctypes type from a layout."""
+    if not layout.register_passable:
+        return ctypes.c_void_p
     fmt = layout.struct.format.lstrip("=@<>!")
     return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
 
@@ -161,7 +165,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             return
         mem = c.__constant__
         layout = mem.layout
-        if _ctype(layout) is ctypes.c_void_p:
+        if not layout.register_passable:
             # Pointer-passed layout: emit struct address (Span: [data_ptr, len])
             host_buffers.append(mem)
             constants[c] = f"ptr inttoptr (i64 {mem.address} to ptr)"
@@ -400,8 +404,8 @@ class Executable:
         result_ctype = _ctype(self.result_type.__layout__)
         return ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
 
-    def run(self, *args: Memory | object) -> object:
-        """JIT and execute, returning the function's result.
+    def run(self, *args: Memory | object) -> Memory:
+        """JIT and execute, returning the function's result as a Memory.
 
         Args can be Memory objects or raw Python values (str, int, float).
         Raw values are converted to Memory via Memory.from_value.
@@ -414,12 +418,14 @@ class Executable:
         engine = _jit_engine(self)
         func_ptr = engine.get_function_address(self.main_name)
         cfunc = self.ctype(func_ptr)
-        param_ctypes = [_ctype(t.__layout__) for t in self.input_types]
         ctypes_args = [
-            m.address if ct is ctypes.c_void_p else m.unpack()[0]
-            for m, ct, t in zip(memories, param_ctypes, self.input_types)
+            m.unpack()[0] if t.__layout__.register_passable else m.address
+            for m, t in zip(memories, self.input_types)
         ]
-        return cfunc(*ctypes_args)
+        result = cfunc(*ctypes_args)
+        if self.result_type.__layout__.register_passable:
+            return Memory.from_value(self.result_type, result)
+        return Memory.from_raw(self.result_type, result)
 
 
 def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
