@@ -58,8 +58,16 @@
 ## Harder cleanup
 - Go through and rename files
 - Read, understand, clean passes
+- Rewrite passes to generate good IR from the start. Axe `chain_body` and block grouping.
 - Function calls and GOTOs should use the SSA name, not a string
+- Label and function values violate closed block semantics. Design this cleanly.
 - Disambiguate `Type` — it means 3 things: "type value" (in `__params__`), "any type" wildcard (in `__operands__`), and "polymorphic return" (in `-> Type`). The `__operands__` wildcard and `-> Type` should use a different name or mechanism so `Type` consistently means "type value" per `docs/dialect-files.md`
+
+## Block / value infrastructure
+- Remove the `ops=` constructor from `Block`
+- Eliminate `walk_ops`; implement directly in `Block.ops`
+- Have values track their uses for forward iteration and fast `replace_uses`
+- Reimplement `Block.ops` as a generator, iterating in topological order from the block arguments following usage
 
 ## Misc
 - Write more down into design docs
