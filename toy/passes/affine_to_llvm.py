@@ -8,7 +8,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import ChainOp, FunctionOp, Nil, String
-from dgen.graph import chain_body, placeholder_block
+from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
 from toy.dialects import affine, toy
@@ -265,7 +265,7 @@ class AffineToLLVMLowering(Pass):
         )
         header_label_op = llvm.LabelOp(
             name=header_label,
-            body=dgen.Block(result=chain_body([cmp_op, cond_br]), args=header_args),
+            body=dgen.Block(result=cond_br, args=header_args),
         )
 
         # --- Build body block ---

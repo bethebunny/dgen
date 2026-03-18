@@ -12,22 +12,6 @@ def placeholder_block() -> dgen.Block:
     return dgen.Block(result=dgen.Value(type=Nil()))
 
 
-def chain_body(ops: list[dgen.Op]) -> dgen.Value:
-    """Chain all body ops so they're reachable from a single root via use-def.
-
-    The last op is treated as the terminator. All preceding ops are chained
-    to it via ChainOp(lhs=op, rhs=rest) so walk_ops visits them in order.
-    """
-    from dgen.dialects.builtin import ChainOp, Nil
-
-    if not ops:
-        return dgen.Value(type=Nil())
-    terminator: dgen.Value = ops[-1]
-    for op in reversed(ops[:-1]):
-        terminator = ChainOp(lhs=op, rhs=terminator, type=op.type)
-    return terminator
-
-
 def walk_ops(root: dgen.Value) -> list[dgen.Op]:
     """Walk the use-def graph from root, return ops in topological order.
 
