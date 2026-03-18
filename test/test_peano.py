@@ -174,7 +174,7 @@ class PeanoLowering(Pass):
 
     allow_unregistered_ops = True
 
-    def run(self, module: Module) -> Module:
+    def run(self, module: Module, compiler: Compiler) -> Module:
         return lower_peano(module)
 
 

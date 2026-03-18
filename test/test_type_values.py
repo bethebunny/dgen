@@ -13,7 +13,14 @@ from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass
 from dgen.type import Memory, TypeType
 from dgen.testing import strip_prefix
-from toy.passes.affine_to_llvm import lower_to_llvm
+from dgen.compiler import IdentityPass
+from toy.passes.affine_to_llvm import AffineToLLVMLowering
+
+_compiler = Compiler([], IdentityPass())
+
+
+def lower_to_llvm(m: Module) -> Module:
+    return AffineToLLVMLowering().run(m, _compiler)
 
 
 def test_parse_dict_literal():
@@ -401,7 +408,7 @@ def test_staging_resolves_block_arg_type():
     class CountingLowerToLLVM(Pass):
         allow_unregistered_ops = True
 
-        def run(self, m: Module) -> Module:
+        def run(self, m: Module, compiler: Compiler) -> Module:
             nonlocal lower_calls
             lower_calls += 1
             return lower_to_llvm(m)
@@ -495,7 +502,7 @@ def test_staging_with_ssa_result_type():
     class LowerToLLVMPass(Pass):
         allow_unregistered_ops = True
 
-        def run(self, m: Module) -> Module:
+        def run(self, m: Module, compiler: Compiler) -> Module:
             return lower_to_llvm(m)
 
     compiler: Compiler[Executable] = Compiler(
@@ -520,7 +527,7 @@ def test_staging_resolves_type_value():
     class LowerAddIndex(Pass):
         allow_unregistered_ops = True
 
-        def run(self, m: Module) -> Module:
+        def run(self, m: Module, compiler: Compiler) -> Module:
             """Lower add_index to llvm.add."""
             m = deepcopy(m)
             for func in m.functions:

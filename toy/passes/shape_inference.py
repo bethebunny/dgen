@@ -9,6 +9,11 @@ from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import shape_constant
 from toy.dialects import toy
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dgen.compiler import Compiler
+
 
 def _resolve_index_value(val: dgen.Value) -> int | None:
     """Try to resolve an index Value to a concrete int.
@@ -31,7 +36,7 @@ class ShapeInference(Pass):
         self.type_of: dict[dgen.Value, toy.Tensor] = {}
         self.func_map: dict[str, builtin.FunctionOp] = {}
 
-    def run(self, module: Module) -> Module:
+    def run(self, module: Module, compiler: Compiler[object]) -> Module:
         """Override run to build func_map and process main first."""
         self.func_map = {f.name: f for f in module.functions if f.name is not None}
         self.type_of = {}
@@ -143,7 +148,3 @@ class ShapeInference(Pass):
                     )
                     self.type_of[op] = op.type
         return True
-
-
-def infer_shapes(m: Module) -> Module:
-    return ShapeInference().run(m)

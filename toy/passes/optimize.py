@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
-from toy.dialects import shape_constant, toy
-
-
-# ===----------------------------------------------------------------------=== #
-# ToyOptimize pass
-# ===----------------------------------------------------------------------=== #
+from toy.dialects import toy
 
 
 class ToyOptimize(Pass):
@@ -17,54 +11,13 @@ class ToyOptimize(Pass):
 
     @lowering_for(toy.TransposeOp)
     def eliminate_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
-        if not isinstance(op.input, toy.TransposeOp):
-            return False
-        rewriter.replace_uses(op, op.input.input)
-        return True
-
-    @lowering_for(toy.ReshapeOp)
-    def fold_constants(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
-        defn = op.input
-        if not isinstance(defn, ConstantOp):
-            return False
-        if not isinstance(op.type, toy.Tensor):
-            return False
-        target_shape = op.type.shape
-        # Skip same-shape folds (simplify_reshape handles those)
-        if isinstance(defn.type, toy.Tensor):
-            if defn.type.shape == target_shape:
-                return False
-        new_op = ConstantOp(
-            value=defn.memory.to_json(),
-            type=toy.Tensor(shape=shape_constant(target_shape.__constant__.to_json())),
-        )
-        rewriter.replace_uses(op, new_op)
-        return True
+        if isinstance(op.input, toy.TransposeOp):
+            return rewriter.replace_uses(op, op.input.input)
 
     @lowering_for(toy.ReshapeOp)
     def simplify_reshape(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
-        defn = op.input
-
-        # Reshape of constant with matching shape -> remove
-        if isinstance(defn, ConstantOp):
-            if isinstance(op.type, toy.Tensor) and isinstance(defn.type, toy.Tensor):
-                if op.type.shape == defn.type.shape:
-                    rewriter.replace_uses(op, defn)
-                    return True
-
-        # Reshape of reshape -> collapse
-        if isinstance(defn, toy.ReshapeOp):
-            new_op = toy.ReshapeOp(input=defn.input, type=op.type)
-            rewriter.replace_uses(op, new_op)
-            return True
-
-        return False
-
-
-# ===----------------------------------------------------------------------=== #
-# Pipeline
-# ===----------------------------------------------------------------------=== #
-
-
-def optimize(m: Module) -> Module:
-    return ToyOptimize().run(m)
+        # Collapse sequences of reshapes
+        if isinstance(op.input, toy.ReshapeOp):
+            return rewriter.replace_uses(
+                op, toy.ReshapeOp(input=op.input.input, type=op.type)
+            )

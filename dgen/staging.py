@@ -17,6 +17,8 @@ from dgen.dialects.builtin import FunctionOp, String
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.type import Constant, Memory
 
+from dgen.passes.pass_ import Pass
+
 if TYPE_CHECKING:
     from dgen.compiler import Compiler
 
@@ -330,6 +332,21 @@ def _raw_to_json(raw: object, ty: dgen.Type) -> object:
         assert isinstance(raw, int)
         return Memory.from_raw(ty, raw).to_json()
     return raw
+
+
+class ConstantFold(Pass):
+    """Pass that resolves all stage-0 comptime boundaries.
+
+    Iteratively finds unresolved parameters whose dependency subgraphs
+    consist entirely of constants, JIT-evaluates them, and patches the
+    results back as ConstantOps. Uses the continuation compiler's run
+    method to lower extracted subgraphs for JIT.
+    """
+
+    allow_unregistered_ops = True
+
+    def run(self, module: Module, compiler: Compiler[object]) -> Module:
+        return resolve_stage0(module, compiler.run)
 
 
 def resolve_stage0(

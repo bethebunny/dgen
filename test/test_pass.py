@@ -3,7 +3,7 @@
 import pytest
 
 from dgen.asm.parser import parse_module
-from dgen.module import ConstantOp
+from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import toy
 from dgen.testing import strip_prefix
@@ -104,8 +104,11 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
             rewriter.replace_uses(op, op.input.input)
             return True
 
+    from dgen.compiler import Compiler, IdentityPass
+
     m = parse_module(ir_text)
-    result = ElimTranspose().run(m)
+    compiler = Compiler(passes=[], exit=IdentityPass())
+    result = ElimTranspose().run(m, compiler)
     assert result == ir_snapshot
 
 
@@ -122,9 +125,12 @@ def test_pass_unregistered_ops_error():
     class StrictPass(Pass):
         allow_unregistered_ops = False
 
+    from dgen.compiler import Compiler, IdentityPass
+
     m = parse_module(ir_text)
+    compiler = Compiler(passes=[], exit=IdentityPass())
     with pytest.raises(TypeError, match="No handler for"):
-        StrictPass().run(m)
+        StrictPass().run(m, compiler)
 
 
 def test_pass_multiple_handlers_first_wins():
@@ -148,8 +154,11 @@ def test_pass_multiple_handlers_first_wins():
         | %main : Nil = function<Nil>() ():
         |     %0 : Index = 42
     """)
+    from dgen.compiler import Compiler, IdentityPass
+
     m = parse_module(ir_text)
-    MultiPass().run(m)
+    compiler = Compiler(passes=[], exit=IdentityPass())
+    MultiPass().run(m, compiler)
     assert call_log == ["first"]
 
 
@@ -180,6 +189,93 @@ def test_compiler_run_verification_catches_range_violation():
         allow_unregistered_ops = True
 
     m = parse_module(ir_text)
-    compiler = Compiler(passes=[StrictPass()], exit=LLVMCodegen())
+    compiler: Compiler = Compiler(passes=[StrictPass()], exit=LLVMCodegen())
     with pytest.raises(AssertionError):
         compiler.run(m, verify=True)
+
+
+# ---------------------------------------------------------------------------
+# ConstantFold pass
+# ---------------------------------------------------------------------------
+
+
+def test_constant_fold_resolves_stage0_boundary():
+    """ConstantFold pass resolves stage-0 type boundaries in the pipeline.
+
+    %t is a ConstantOp producing a type value. The inner function uses %t
+    as its result type — a stage-0 boundary. ConstantFold should resolve it
+    so that subsequent passes see a concrete type.
+    """
+    from dgen.codegen import Executable, LLVMCodegen
+    from dgen.compiler import Compiler
+    from dgen.dialects.builtin import FunctionOp
+    from dgen.staging import ConstantFold
+    from toy.passes.affine_to_llvm import AffineToLLVMLowering
+
+    ir = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %t : Type = {"tag": "builtin.Index"}
+        |     %f : Nil = function<%t>() (%rt: Type, %x: Index):
+        |         %y : %rt = add_index(%x, %x)
+    """)
+    module = parse_module(ir)
+    inner_func = module.functions[0].body.ops[1]
+    assert isinstance(inner_func, FunctionOp)
+
+    # Before constant folding: result is a ConstantOp SSA ref, not a Type
+    assert isinstance(inner_func.result, ConstantOp)
+
+    class LowerToLLVMPass(Pass):
+        allow_unregistered_ops = True
+
+        def run(self, m: Module, compiler: Compiler) -> Module:
+            return AffineToLLVMLowering().run(m, compiler)
+
+    compiler: Compiler[Executable] = Compiler(
+        passes=[ConstantFold(), LowerToLLVMPass()],
+        exit=LLVMCodegen(),
+    )
+    exe = compiler.compile(Module(functions=[inner_func]))
+    assert exe.run({"tag": "builtin.Index"}, 21) == 42
+
+
+def test_constant_fold_is_noop_without_boundaries():
+    """ConstantFold does nothing when there are no stage-0 boundaries."""
+    from dgen import asm
+    from dgen.compiler import Compiler, IdentityPass
+    from dgen.staging import ConstantFold
+
+    ir_text = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %0 : Index = 42
+    """)
+    m = parse_module(ir_text)
+    before = asm.format(m)
+    compiler = Compiler(passes=[ConstantFold()], exit=IdentityPass())
+    result = compiler.run(m)
+    after = asm.format(result)
+    assert after == before
+
+
+def test_pass_run_receives_continuation_compiler():
+    """Pass.run receives a Compiler representing the remaining pipeline."""
+    from dgen.compiler import Compiler, IdentityPass
+
+    seen_pass_count: list[int] = []
+
+    class SpyPass(Pass):
+        allow_unregistered_ops = True
+
+        def run(self, module: Module, compiler: Compiler) -> Module:
+            seen_pass_count.append(len(compiler.passes))
+            return module
+
+    ir_text = strip_prefix("""
+        | %main : Nil = function<Nil>() ():
+        |     %0 : Index = 42
+    """)
+    m = parse_module(ir_text)
+    compiler = Compiler(passes=[SpyPass(), SpyPass(), SpyPass()], exit=IdentityPass())
+    compiler.run(m)
+    # First pass sees 2 remaining, second sees 1, third sees 0
+    assert seen_pass_count == [2, 1, 0]

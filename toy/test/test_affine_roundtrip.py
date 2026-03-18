@@ -2,9 +2,17 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.compiler import Compiler, IdentityPass
+from dgen.module import Module
 from dgen.testing import assert_ir_equivalent
-from toy.passes.affine_to_llvm import lower_to_llvm
+from toy.passes.affine_to_llvm import AffineToLLVMLowering
 from toy.test.helpers import strip_prefix
+
+_compiler = Compiler([], IdentityPass())
+
+
+def lower_to_llvm(m: Module) -> Module:
+    return AffineToLLVMLowering().run(m, _compiler)
 
 
 def test_roundtrip_alloc():

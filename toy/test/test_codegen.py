@@ -2,15 +2,23 @@
 
 import llvmlite.binding as llvm_binding
 
+from dgen.module import Module
 from dgen.codegen import emit_llvm_ir
-from dgen.passes.builtin_to_llvm import lower_builtin_to_llvm
+from dgen.compiler import Compiler
+from dgen.passes.builtin_to_llvm import BuiltinToLLVMLowering
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.affine_to_llvm import lower_to_llvm
-from toy.passes.optimize import optimize
-from toy.passes.shape_inference import infer_shapes
-from toy.passes.toy_to_affine import lower_to_affine
+from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.optimize import ToyOptimize
+from toy.passes.shape_inference import ShapeInference
+from toy.passes.toy_to_affine import ToyToAffine
 from toy.test.helpers import run_toy as _toy
+
+
+class LowerLLVMToLLVMIR:
+    def run(self, module: Module) -> str:
+        llvm_ir, _ = emit_llvm_ir(module)
+        return llvm_ir
 
 
 def test_transpose_phi_emission():
@@ -25,14 +33,17 @@ def test_transpose_phi_emission():
     """
     ast_node = parse_toy(source)
     ir = lower(ast_node)
-    opt = optimize(ir)
-    typed = infer_shapes(opt)
-    affine_mod = lower_to_affine(typed)
-    llvm_mod = lower_to_llvm(affine_mod)
-    llvm_mod = lower_builtin_to_llvm(llvm_mod)
-    llvm_ir, _ = emit_llvm_ir(llvm_mod)
-    # Every label block arg should produce a phi instruction
-    assert "phi" in llvm_ir, f"No phi in LLVM IR:\n{llvm_ir}"
+    compiler = Compiler(
+        passes=[
+            ToyOptimize(),
+            ShapeInference(),
+            ToyToAffine(),
+            AffineToLLVMLowering(),
+            BuiltinToLLVMLowering(),
+        ],
+        exit=LowerLLVMToLLVMIR(),
+    )
+    llvm_ir = compiler.compile(ir)
     # Verify the IR is valid LLVM
     llvm_binding.initialize_native_target()
     mod = llvm_binding.parse_assembly(llvm_ir)

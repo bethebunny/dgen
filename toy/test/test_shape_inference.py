@@ -2,11 +2,18 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.shape_inference import infer_shapes
+from toy.passes.shape_inference import ShapeInference
 from toy.test.helpers import strip_prefix
+
+_compiler = Compiler([], IdentityPass())
+
+
+def infer_shapes(m: Module) -> Module:
+    return ShapeInference().run(m, _compiler)
 
 
 def compile_and_infer(source: str) -> Module:

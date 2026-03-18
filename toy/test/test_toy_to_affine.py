@@ -1,8 +1,16 @@
 """Ch5 tests: Toy IR to Affine IR lowering."""
 
 from dgen.asm.parser import parse_module
-from toy.passes.toy_to_affine import lower_to_affine
+from dgen.compiler import Compiler, IdentityPass
+from dgen.module import Module
+from toy.passes.toy_to_affine import ToyToAffine
 from toy.test.helpers import strip_prefix
+
+_compiler = Compiler([], IdentityPass())
+
+
+def lower_to_affine(m: Module) -> Module:
+    return ToyToAffine().run(m, _compiler)
 
 
 def test_simple_constant(ir_snapshot):
