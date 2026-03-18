@@ -12,7 +12,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
-from dgen.graph import chain_body, group_into_blocks, placeholder_block
+from dgen.graph import build_result, chain_body, group_into_blocks, placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
 
@@ -58,10 +58,8 @@ class BuiltinToLLVMLowering(Pass):
                 new_body_result = label_op.body.result
             label_op.body = dgen.Block(result=new_body_result, args=label_op.body.args)
 
-        if entry_ops:
-            new_result = chain_body(entry_ops)
-        else:
-            new_result = self.value_map.get(f.body.result, f.body.result)
+        return_val = self.value_map.get(f.body.result, f.body.result)
+        new_result = build_result(return_val, entry_ops)
         return FunctionOp(
             name=f.name,
             body=dgen.Block(result=new_result, args=f.body.args),

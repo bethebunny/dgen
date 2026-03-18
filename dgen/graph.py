@@ -28,6 +28,49 @@ def chain_body(ops: list[dgen.Op]) -> dgen.Value:
     return terminator
 
 
+def build_result(return_val: dgen.Value, ops: list[dgen.Op]) -> dgen.Value:
+    """Build a block result anchored on return_val, chaining in side-effecting ops.
+
+    - Empty ops: return_val directly.
+    - Ops ending with BrOp/CondBrOp: block won't emit ret; chain_body handles reachability.
+    - Otherwise: chain only side-effecting ops (BrOp, CondBrOp, StoreOp, void CallOp)
+      into return_val. Pure ops are already reachable via data dependencies.
+    """
+    from dgen.dialects import llvm
+    from dgen.dialects.builtin import ChainOp, Nil
+    from dgen.module import ConstantOp, PackOp
+
+    if not ops:
+        return return_val
+    last_real = next(
+        (
+            op
+            for op in reversed(ops)
+            if not isinstance(op, (ConstantOp, PackOp, ChainOp))
+        ),
+        None,
+    )
+    if isinstance(last_real, (llvm.BrOp, llvm.CondBrOp)):
+        return chain_body(ops)
+    # Collect side-effecting ops in the order they appear in ops.
+    # Chain them before return_val so walk_ops visits them in that order:
+    #   ChainOp(lhs=e0, rhs=ChainOp(lhs=e1, rhs=...(return_val)...))
+    # gives walk_ops order: e0, e1, ..., return_val.
+    effects = [
+        op
+        for op in ops
+        if op is not return_val
+        and (
+            isinstance(op, (llvm.BrOp, llvm.CondBrOp, llvm.StoreOp))
+            or (isinstance(op, llvm.CallOp) and isinstance(op.type, Nil))
+        )
+    ]
+    result: dgen.Value = return_val
+    for effect in reversed(effects):
+        result = ChainOp(lhs=effect, rhs=result, type=return_val.type)
+    return result
+
+
 def group_into_blocks(
     flat_ops: list[dgen.Op],
 ) -> tuple[list[dgen.Op], list[tuple[dgen.Op, list[dgen.Op]]]]:

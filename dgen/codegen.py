@@ -321,55 +321,11 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             return not isinstance(op, (llvm.BrOp, llvm.CondBrOp))
         return True
 
-    # Ops that never produce a usable LLVM value
-    _VOID_OPS = (
-        PackOp,
-        builtin.ChainOp,
-        llvm.LabelOp,
-        llvm.BrOp,
-        llvm.CondBrOp,
-        llvm.StoreOp,
-    )
-
-    def _find_return_value(ops: list[dgen.Op]) -> dgen.Value | None:
-        """Find the return value op, matching the function's LLVM return type."""
-        # Walk backward; skip void/transparent ops. Prefer type-matching ops.
-        for op in reversed(ops):
-            if isinstance(op, _VOID_OPS):
-                continue
-            if isinstance(op, ConstantOp):
-                if op in constants:
-                    const_ty = constants[op].split(" ", 1)[0]
-                    if const_ty == llvm_ret:
-                        return op
-                continue
-            # types.get defaults to "i64" (same as typed_ref)
-            op_type = types.get(op, "i64")
-            if op_type == llvm_ret:
-                return op
-        # Fallback: any non-void op
-        for op in reversed(ops):
-            if isinstance(op, _VOID_OPS):
-                continue
-            if isinstance(op, ConstantOp) and op in constants:
-                return op
-            if not isinstance(op, ConstantOp):
-                return op
-        return None
-
-    def emit_ret(
-        lines: list[str], ops: list[dgen.Op], block_result: dgen.Value | None = None
-    ) -> None:
+    def emit_ret(lines: list[str], block_result: dgen.Value) -> None:
         if llvm_ret == "void":
             lines.append("  ret void")
         else:
-            ret_val = _find_return_value(ops)
-            if ret_val is not None:
-                lines.append(f"  ret {typed_ref(ret_val)}")
-            elif block_result is not None:
-                lines.append(f"  ret {typed_ref(block_result)}")
-            else:
-                lines.append(f"  ret {typed_ref(f.body.result)}")
+            lines.append(f"  ret {typed_ref(block_result)}")
 
     assert f.name is not None
     func_name = tracker.track_name(f)
@@ -392,7 +348,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for op in entry_ops:
         emit_op(op, lines)
     if _needs_ret(entry_ops):
-        emit_ret(lines, entry_ops)
+        emit_ret(lines, f.body.result)
 
     # Emit each label's body (with phi instructions for block args)
     for label_op in label_ops:
@@ -416,7 +372,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         for body_op in body_ops:
             emit_op(body_op, lines)
         if _needs_ret(body_ops):
-            emit_ret(lines, body_ops, block_result=label_op.body.result)
+            emit_ret(lines, label_op.body.result)
 
     lines.append("}")
     return lines
