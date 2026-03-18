@@ -1,19 +1,24 @@
 """Tests for type values as first-class SSA citizens."""
 
+from copy import deepcopy
+
+import pytest
+
 from dgen import Block, asm
 from dgen.asm.formatting import format_expr
 from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
-from dgen.compiler import Compiler
-from dgen.dialects import builtin
+from dgen.compiler import Compiler, IdentityPass
+from dgen import layout
+from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Index
+from dgen.layout import TypeValue
 from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass
-from dgen.type import Memory, TypeType
+from dgen.type import Memory, TypeType, type_constant
 from dgen.testing import strip_prefix
-from dgen.compiler import IdentityPass
 from toy.passes.affine_to_llvm import AffineToLLVMLowering
 
 _compiler = Compiler([], IdentityPass())
@@ -145,8 +150,6 @@ def test_array_with_ssa_element_type():
 
 def test_array_with_ssa_element_type_layout():
     """Array<%t, 4> — type_constant resolves the element type for layout computation."""
-    from dgen import layout
-
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : Type = {"tag": "builtin.Index"}
@@ -166,8 +169,6 @@ def test_array_with_ssa_element_type_layout():
 
 def test_pointer_with_ssa_pointee():
     """Pointer<%t> — SSA type value as pointee param, round-trips through ASM."""
-    from dgen import layout
-
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : Type = {"tag": "builtin.Index"}
@@ -219,8 +220,6 @@ def test_type_constant_jit_return():
 
 def test_list_with_ssa_element_type():
     """List<%t> — SSA type value as element_type param, round-trips through ASM."""
-    from dgen import layout
-
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : Type = {"tag": "builtin.Index"}
@@ -240,8 +239,6 @@ def test_list_with_ssa_element_type():
 
 def test_fat_pointer_with_ssa_pointee():
     """Span<%t> — SSA type value as pointee param, round-trips through ASM."""
-    from dgen import layout
-
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : Type = {"tag": "builtin.F64"}
@@ -278,10 +275,6 @@ def test_function_with_ssa_result_type():
 
 def test_block_argument_constant_raises_type_error():
     """BlockArgument.__constant__ raises TypeError — it's not a constant."""
-    import pytest
-
-    from dgen.type import type_constant
-
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%t: Type, %x: Index):
         |     %y : %t = add_index(%x, %x)
@@ -302,8 +295,6 @@ def test_block_argument_constant_raises_type_error():
 
 def test_type_constant_resolves_ssa_constant():
     """type_constant resolves a ConstantOp TypeType value to a concrete Type."""
-    from dgen.type import type_constant
-
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : Type = {"tag": "builtin.Index"}
@@ -446,8 +437,6 @@ def test_typetype_layout_with_block_arg_is_fixed():
     the concrete type at layout time. Resolution happens at read time via
     the self-describing tag.
     """
-    from dgen.layout import TypeValue
-
     tt = TypeType()
     assert isinstance(tt.__layout__, TypeValue)
     assert tt.__layout__.byte_size == 8
@@ -520,9 +509,6 @@ def test_staging_resolves_type_value():
 
     The staging system resolves %t to Index, then codegen proceeds normally.
     """
-    from copy import deepcopy
-
-    from dgen.dialects import llvm
 
     class LowerAddIndex(Pass):
         allow_unregistered_ops = True

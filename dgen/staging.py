@@ -8,6 +8,8 @@ from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import TYPE_CHECKING, Iterator, TypeVar
 
+import llvmlite.binding as llvmlite_binding
+
 import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
@@ -476,9 +478,7 @@ def _build_callback_thunk(
 
     # Register callback with llvmlite
     codegen._ensure_initialized()
-    import llvmlite.binding as _llvm_binding
-
-    _llvm_binding.add_symbol(
+    llvmlite_binding.add_symbol(
         callback_name,
         ctypes.cast(callback_func, ctypes.c_void_p).value,
     )
@@ -534,8 +534,6 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
     # and register it as a global symbol for cross-function calls.
     # Process non-entry functions first so their symbols are available
     # when the entry function's callback fires.
-    import llvmlite.binding as _llvm_binding
-
     entry = resolved.functions[0]
     ordered = [f for f in unresolved_funcs if f is not entry] + [
         f for f in unresolved_funcs if f is entry
@@ -552,7 +550,7 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
         engine = codegen._jit_engine(exe)
         assert func.name is not None
         func_ptr = engine.get_function_address(func.name)
-        _llvm_binding.add_symbol(func.name, func_ptr)
+        llvmlite_binding.add_symbol(func.name, func_ptr)
         all_host_refs.append(engine)  # keep JIT engine alive
 
         if func is entry:

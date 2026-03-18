@@ -9,7 +9,7 @@ from dgen import Dialect, layout
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin
-from dgen.layout import Array, Byte, Float64, Pointer, Span
+from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
 from dgen.module import string_value
 from dgen.testing import strip_prefix
 from dgen.type import Constant, Fields, Memory, Type, TypeType, Value
@@ -172,8 +172,6 @@ def test_nested_list_from_json_roundtrip():
 
 def test_type_layout_non_parametric():
     """Non-parametric type layout is a fixed-size TypeValue pointer (8 bytes)."""
-    from dgen.layout import TypeValue
-
     ty = builtin.Index()
     tl = ty.type.__layout__
     assert isinstance(tl, TypeValue)
@@ -182,8 +180,6 @@ def test_type_layout_non_parametric():
 
 def test_type_layout_parametric_value_param():
     """Parametric type layout is a fixed-size TypeValue pointer (8 bytes)."""
-    from dgen.layout import TypeValue
-
     list_type = builtin.List(element_type=builtin.Index())
     tl = list_type.type.__layout__
     assert isinstance(tl, TypeValue)
@@ -192,8 +188,6 @@ def test_type_layout_parametric_value_param():
 
 def test_type_layout_parametric_type_param_nested():
     """Nested parametric type layout is still a fixed-size TypeValue pointer."""
-    from dgen.layout import TypeValue
-
     inner = builtin.List(element_type=builtin.F64())
     outer = builtin.List(element_type=inner)
     tl = outer.type.__layout__

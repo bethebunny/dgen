@@ -1,7 +1,9 @@
 """Tests for use-def graph utilities."""
 
+import dgen
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.testing import assert_ir_equivalent
 from dgen.graph import walk_ops
@@ -33,8 +35,6 @@ def test_walk_ops_diamond():
 
 def test_walk_ops_skips_block_args():
     """BlockArguments are not ops and should not appear in the result."""
-    from dgen.block import BlockArgument
-
     arg = BlockArgument(type=builtin.Index())
     op = llvm.AddOp(lhs=arg, rhs=arg)
     ops = walk_ops(op)
@@ -43,8 +43,6 @@ def test_walk_ops_skips_block_args():
 
 def test_walk_ops_does_not_descend_into_blocks():
     """Ops nested inside another op's block are not included."""
-    import dgen
-
     inner = ConstantOp(value=42, type=builtin.Index())
     func = builtin.FunctionOp(
         name="f",
