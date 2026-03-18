@@ -480,7 +480,7 @@ def _build_callback_thunk(
 
     thunk_func = FunctionOp(
         name=func.name,
-        body=dgen.Block(ops=[pack, call_op, ret_op], args=thunk_args),
+        body=dgen.Block(result=ret_op, args=thunk_args),
         result=result_type,
     )
     thunk_module = Module(functions=[thunk_func])

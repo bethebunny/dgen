@@ -177,10 +177,7 @@ def test_full_module(ir_snapshot):
     main_func = builtin.FunctionOp(
         name="main",
         result=builtin.Nil(),
-        body=dgen.Block(
-            ops=[c0, r1, c2, r3, pack4, call4, pack5, call5, print_op, ret_main],
-            args=[],
-        ),
+        body=dgen.Block(result=ret_main, args=[]),
     )
 
     module = Module(functions=[mt_func, main_func])

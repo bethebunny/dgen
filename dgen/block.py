@@ -33,16 +33,10 @@ class Block:
     def __init__(
         self,
         *,
-        result: dgen.Value | None = None,
-        ops: list[dgen.Op] | None = None,
+        result: dgen.Value,
         args: list[BlockArgument] | None = None,
     ) -> None:
-        if result is not None:
-            self.result = result
-        elif ops is not None and ops:
-            self.result = ops[-1]
-        else:
-            raise ValueError("Block needs either result= or non-empty ops=")
+        self.result = result
         self.args = args if args is not None else []
 
     @property
