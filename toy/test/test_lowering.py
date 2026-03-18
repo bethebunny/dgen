@@ -117,3 +117,26 @@ def test_full_tutorial_example(ir_snapshot):
         | }
     """)
     assert compile_toy(source) == ir_snapshot
+
+
+def test_void_function_bare_return(ir_snapshot):
+    """Function with only a bare return; — no ops, no side effects."""
+    source = strip_prefix("""
+        | def main() {
+        |   return;
+        | }
+    """)
+    assert compile_toy(source) == ir_snapshot
+
+
+def test_tile_builtin(ir_snapshot):
+    """tile() lowers to TileOp with count as parameter and input as operand."""
+    source = strip_prefix("""
+        | def main() {
+        |   var a = [[1, 2, 3], [4, 5, 6]];
+        |   var b = tile(a, 3);
+        |   print(b);
+        |   return;
+        | }
+    """)
+    assert compile_toy(source) == ir_snapshot
