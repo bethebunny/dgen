@@ -387,7 +387,7 @@ def _read_block_body(parser: ASMParser) -> Block:
         ops.extend(parser.pending_ops)
         parser.pending_ops.clear()
         ops.append(op)
-    block = Block(ops=ops, args=args)
+    block = Block(result=ops[-1], args=args)
     live = set(walk_ops(block.result))
     dead = [op for op in ops if op not in live]
     if dead:
