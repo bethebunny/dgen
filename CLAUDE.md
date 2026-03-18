@@ -173,6 +173,8 @@ stage(op) = max(stage(v) for v in op.operands,
 ```
 Constants are stage 0. Block arguments (function parameters) are stage 1.
 
+Every op's result type (`op.type`) is itself a `Value[TypeType]` — a first-class SSA value in the same dataflow graph. Types can therefore depend on other ops (e.g. a tensor type whose shape is computed at runtime), and those type values participate in staging just like any other value. An op whose type is not yet resolved is simply at a higher stage than its type dependencies.
+
 `builtin.ConstantOp` is the canonical stage boundary: it embeds a compile-time `Memory` value as a runtime SSA value. Unlike MLIR, which requires per-dialect constant ops (e.g. `arith.constant`, `toy.constant`), dgen's single `builtin.ConstantOp` works for every dialect — the type's `__layout__` drives serialization and materialization.
 
 ### Compile-Time Resolution and JIT Paths
