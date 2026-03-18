@@ -12,6 +12,11 @@ from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import affine, shape_constant, toy
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dgen.compiler import Compiler
+
 
 def _make_index_list(
     values: Sequence[dgen.Value],
@@ -31,7 +36,7 @@ class ToyToAffine(Pass):
     def __init__(self) -> None:
         self.live_allocs: list[dgen.Value] = []
 
-    def run(self, module: Module) -> Module:
+    def run(self, module: Module, compiler: Compiler[object]) -> Module:
         functions = [self._lower_function(f) for f in module.functions]
         return Module(functions=functions)
 
@@ -269,7 +274,3 @@ class ToyToAffine(Pass):
         new_op = toy.NonzeroCountOp(input=op.input)
         rewriter.replace_uses(op, new_op)
         return True
-
-
-def lower_to_affine(m: Module) -> Module:
-    return ToyToAffine().run(m)

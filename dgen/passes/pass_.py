@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import dgen
 from dgen.module import Module, _walk_all_ops
 
+if TYPE_CHECKING:
+    from dgen.compiler import Compiler
 
 # ---------------------------------------------------------------------------
 # Handler registration
@@ -68,7 +71,7 @@ class Rewriter:
     def __init__(self, block: dgen.Block) -> None:
         self._block = block
 
-    def replace_uses(self, old: dgen.Value, new: dgen.Value) -> None:
+    def replace_uses(self, old: dgen.Value, new: dgen.Value) -> bool:
         """Eagerly replace all references to old with new in the block."""
         for op in self._block.ops:
             for name, operand in op.operands:
@@ -79,6 +82,7 @@ class Rewriter:
                     setattr(op, name, new)
         if self._block.result is old:
             self._block.result = new
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +108,7 @@ class Pass(metaclass=_PassMeta):
     type_range: set[type]
     allow_unregistered_ops: bool = True
 
-    def run(self, module: Module) -> Module:
+    def run(self, module: Module, compiler: Compiler[object]) -> Module:
         """Run this pass on all functions in the module."""
         for func in module.functions:
             self._run_block(func.body)

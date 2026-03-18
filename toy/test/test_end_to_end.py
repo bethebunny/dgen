@@ -1,22 +1,30 @@
 """End-to-end tests: Toy source -> parse -> lower -> optimize -> affine -> LLVM IR."""
 
+from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.affine_to_llvm import lower_to_llvm
-from toy.passes.optimize import optimize
-from toy.passes.shape_inference import infer_shapes
-from toy.passes.toy_to_affine import lower_to_affine
+from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.optimize import ToyOptimize
+from toy.passes.shape_inference import ShapeInference
+from toy.passes.toy_to_affine import ToyToAffine
 from toy.test.helpers import strip_prefix
+
+compiler = Compiler(
+    passes=[
+        ToyOptimize(),
+        ShapeInference(),
+        ToyToAffine(),
+        AffineToLLVMLowering(),
+    ],
+    exit=IdentityPass(),
+)
 
 
 def compile(source: str) -> Module:
     ast = parse_toy(source)
     ir = lower(ast)
-    opt = optimize(ir)
-    typed = infer_shapes(opt)
-    affine = lower_to_affine(typed)
-    return lower_to_llvm(affine)
+    return compiler.run(ir)
 
 
 def test_constant_print(ir_snapshot):

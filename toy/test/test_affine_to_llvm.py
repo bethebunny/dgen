@@ -1,16 +1,19 @@
 """Ch6 tests: Affine IR to LLVM-like IR lowering."""
 
 from dgen.asm.parser import parse_module
+from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
-from toy.passes.affine_to_llvm import lower_to_llvm
-from toy.passes.toy_to_affine import lower_to_affine
+from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.toy_to_affine import ToyToAffine
 from toy.test.helpers import strip_prefix
+
+_compiler = Compiler([], IdentityPass())
 
 
 def compile_to_llvm(ir_text: str) -> Module:
     m = parse_module(ir_text)
-    affine = lower_to_affine(m)
-    return lower_to_llvm(affine)
+    affine = ToyToAffine().run(m, _compiler)
+    return AffineToLLVMLowering().run(affine, _compiler)
 
 
 def test_simple_constant(ir_snapshot):

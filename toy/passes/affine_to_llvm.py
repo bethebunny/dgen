@@ -13,6 +13,11 @@ from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
 from toy.dialects import affine, toy
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dgen.compiler import Compiler
+
 _PTR_TYPE = llvm.Ptr()
 _EMPTY_PACK = PackOp(values=[], type=builtin.List(element_type=Nil()))
 
@@ -49,7 +54,7 @@ class AffineToLLVMLowering(Pass):
         self.alloc_sizes: dict[dgen.Value, int] = {}  # llvm alloca -> total size
         self._seen: set[dgen.Value] = set()  # ops already processed
 
-    def run(self, m: Module) -> Module:
+    def run(self, m: Module, compiler: Compiler[object]) -> Module:
         functions = [self._lower_function(f) for f in m.functions]
         return Module(functions=functions)
 
@@ -327,7 +332,3 @@ class AffineToLLVMLowering(Pass):
         )
         self.value_map[op] = call_op
         return call_op
-
-
-def lower_to_llvm(m: Module) -> Module:
-    return AffineToLLVMLowering().run(m)

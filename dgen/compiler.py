@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import Generic, Protocol, TypeVar
 
 from dgen.module import Module
 from dgen.passes.pass_ import Pass
 
-T = TypeVar("T")
+T = TypeVar("T", covariant=True)
 
 
-class ExitPass(ABC, Generic[T]):
+class ExitPass(Protocol, Generic[T]):
     """Terminal pass that converts Module → T (e.g. Executable)."""
 
-    @abstractmethod
     def run(self, module: Module) -> T: ...
+
+
+class IdentityPass:
+    def run(self, module: Module) -> Module:
+        return module
 
 
 class Compiler(Generic[T]):
@@ -42,10 +45,11 @@ class Compiler(Generic[T]):
 
     def run(self, module: Module, *, verify: bool = False) -> Module:
         """Run passes only (no staging, no exit pass)."""
-        for p in self.passes:
+        for i, p in enumerate(self.passes):
             if verify:
                 p.verify_preconditions(module)
-            module = p.run(module)
+            continuation = Compiler(self.passes[i + 1 :], self.exit)
+            module = p.run(module, continuation)
             if verify:
                 p.verify_postconditions(module)
         return module

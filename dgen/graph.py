@@ -28,7 +28,6 @@ def chain_body(ops: list[dgen.Op]) -> dgen.Value:
     return terminator
 
 
-
 def walk_ops(root: dgen.Value) -> list[dgen.Op]:
     """Walk the use-def graph from root, return ops in topological order.
 

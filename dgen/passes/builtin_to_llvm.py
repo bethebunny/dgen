@@ -14,6 +14,11 @@ from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dgen.compiler import Compiler
+
 
 _EMPTY_PACK = PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
 
@@ -31,7 +36,7 @@ class BuiltinToLLVMLowering(Pass):
         self.if_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}
 
-    def run(self, m: Module) -> Module:
+    def run(self, m: Module, compiler: Compiler[object]) -> Module:
         functions = [self._lower_function(f) for f in m.functions]
         return Module(functions=functions)
 
@@ -200,7 +205,3 @@ class BuiltinToLLVMLowering(Pass):
         if isinstance(op.type, Nil):
             return llvm_call  # side effect: must be chained
         return None  # non-void: reachable via data deps of consumers
-
-
-def lower_builtin_to_llvm(m: Module) -> Module:
-    return BuiltinToLLVMLowering().run(m)
