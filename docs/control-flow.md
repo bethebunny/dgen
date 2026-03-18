@@ -50,9 +50,10 @@ use-def root; `walk_ops` on `result` gives the canonical op list.
 
 A `ChainOp(lhs, rhs)` encodes a **control edge disguised as a data edge**: `rhs` must
 execute and must not be eliminated, and the chain's result is `lhs`'s runtime value.
-Chains are the only ordering guarantee within a block. Two side-effecting ops that are
-not connected on the same chain spine have no guaranteed execution order relative to
-each other.
+Dataflow dependencies are the only ordering guarantee within a block; `ChainOp` is how
+side-effecting ops that produce no useful value are injected into the dataflow graph so
+they participate in that ordering. Two side-effecting ops with no dataflow path between
+them have no guaranteed execution order relative to each other.
 
 ```
 # %val is passed through; %store_op is kept live and must execute
