@@ -25,8 +25,7 @@
     ```
       %0 : () = ...
       %1 : () = ...
-      %2 : () = chain(%0, %1)
-      %_ : () = return(%2)
+      %_ : () = chain(%0, %1)
     ```
 - Generalized dead code elimination (mutable ops _must_ be chained)
 - Try to generalize binary operations, eg. can we have a `builtin.add` op? Does it make sense to model types explicitly as being in a group/field/ring? There's certainly generic optimizations that can be done.
@@ -58,13 +57,13 @@
 ## Harder cleanup
 - Go through and rename files
 - Read, understand, clean passes
-- Rewrite passes to generate good IR from the start. Axe `chain_body` and block grouping.
+- Rewrite passes to generate good IR from the start. Axe `chain_body` and block grouping. `chain_body` currently destroys return value information — the codegen `_find_return_value` heuristic exists solely to recover it by scanning backward for an op whose LLVM type matches the function signature. Once `chain_body` is gone and `block.result` reliably tracks the return value through lowering, `_find_return_value` and the type-matching scan can be deleted.
 - Function calls and GOTOs should use the SSA name, not a string
 - Label and function values violate closed block semantics. Design this cleanly.
 - Disambiguate `Type` — it means 3 things: "type value" (in `__params__`), "any type" wildcard (in `__operands__`), and "polymorphic return" (in `-> Type`). The `__operands__` wildcard and `-> Type` should use a different name or mechanism so `Type` consistently means "type value" per `docs/dialect-files.md`
 
 ## Block / value infrastructure
-- Remove the `ops=` constructor from `Block`
+- ~~Remove the `ops=` constructor from `Block`~~ Done
 - Eliminate `walk_ops`; implement directly in `Block.ops`
 - Have values track their uses for forward iteration and fast `replace_uses`
 - Reimplement `Block.ops` as a generator, iterating in topological order from the block arguments following usage
