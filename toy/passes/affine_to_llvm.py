@@ -80,9 +80,13 @@ class AffineToLLVMLowering(Pass):
                 args=label_op.body.args,
             )
 
+        if entry_ops:
+            new_result = chain_body(entry_ops)
+        else:
+            new_result = self.value_map.get(f.body.result, f.body.result)
         return FunctionOp(
             name=f.name,
-            body=dgen.Block(result=chain_body(entry_ops), args=f.body.args),
+            body=dgen.Block(result=new_result, args=f.body.args),
             result=f.result,
         )
 
@@ -140,11 +144,6 @@ class AffineToLLVMLowering(Pass):
             self.value_map[op] = llvm_op
         elif isinstance(op, toy.NonzeroCountOp):
             yield from self._lower_nonzero_count(op)
-        elif isinstance(op, builtin.ReturnOp):
-            if isinstance(op.value, Nil):
-                yield builtin.ReturnOp()
-            else:
-                yield builtin.ReturnOp(value=self._map(op.value))
 
     def _lower_alloc(self, op: affine.AllocOp) -> Iterator[dgen.Op]:
         assert isinstance(op.type, affine.MemRef)

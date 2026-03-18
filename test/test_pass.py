@@ -65,7 +65,6 @@ def test_rewriter_eager_replace(ir_snapshot):
         |     %1 : Index = 2
         |     %2 : Index = llvm.add(%0, %0)
         |     %3 : Index = chain(%2, %1)
-        |     %_ : Nil = return(%3)
     """)
     m = parse_module(ir_text)
     func = m.functions[0]
@@ -94,7 +93,6 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
         |     %1 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
         |     %2 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.transpose(%1)
         |     %3 : Nil = toy.print(%2)
-        |     %_ : Nil = return(%3)
     """)
 
     class ElimTranspose(Pass):
@@ -120,7 +118,6 @@ def test_pass_unregistered_ops_error():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
 
     class StrictPass(Pass):
@@ -151,7 +148,6 @@ def test_pass_multiple_handlers_first_wins():
     ir_text = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %0 : Index = 42
-        |     %_ : Nil = return(%0)
     """)
     m = parse_module(ir_text)
     MultiPass().run(m)
@@ -175,12 +171,11 @@ def test_compiler_run_verification_catches_range_violation():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
         |     %2 : Nil = toy.print(%1)
-        |     %_ : Nil = return(%2)
     """)
 
     class StrictPass(Pass):
-        op_domain = {*toy.toy.ops.values(), ConstantOp, builtin.ReturnOp}
-        op_range = {ConstantOp, builtin.ReturnOp}  # TransposeOp NOT in range
+        op_domain = {*toy.toy.ops.values(), ConstantOp}
+        op_range = {ConstantOp}  # TransposeOp NOT in range
         type_domain: set[type] = set()
         type_range: set[type] = set()
         allow_unregistered_ops = True

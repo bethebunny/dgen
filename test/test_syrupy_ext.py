@@ -14,7 +14,6 @@ IR = strip_prefix("""
     | %main : Nil = function<Nil>() ():
     |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     |     %1 : Nil = toy.print(%0)
-    |     %_ : Nil = return(%1)
 """)
 
 IR_RENAMED = strip_prefix("""
@@ -23,7 +22,6 @@ IR_RENAMED = strip_prefix("""
     | %main : Nil = function<Nil>() ():
     |     %tensor : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     |     %result : Nil = toy.print(%tensor)
-    |     %_ : Nil = return(%result)
 """)
 
 IR_DIFFERENT = strip_prefix("""
@@ -32,7 +30,6 @@ IR_DIFFERENT = strip_prefix("""
     | %main : Nil = function<Nil>() ():
     |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
     |     %1 : Nil = toy.print(%0)
-    |     %_ : Nil = return(%1)
 """)
 
 

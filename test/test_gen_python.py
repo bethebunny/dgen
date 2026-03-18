@@ -69,9 +69,8 @@ def test_generate_builtin_op_with_default():
 def test_generate_builtin_op_with_optional_operand():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
-    assert "class ReturnOp(Op):" in code
-    assert "value: Value | Nil = Nil()" in code
-    assert "type: Type = Nil()" in code
+    assert "class ChainOp(Op):" in code
+    assert "lhs: Value" in code
 
 
 def test_generate_builtin_op_with_block():

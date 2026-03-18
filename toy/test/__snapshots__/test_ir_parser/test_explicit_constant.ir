@@ -2,4 +2,3 @@ import toy
 
 %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    %_ : Nil = return(%0)

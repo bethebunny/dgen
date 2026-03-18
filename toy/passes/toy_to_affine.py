@@ -26,9 +26,7 @@ def _make_index_list(
 
 
 class ToyToAffine(Pass):
-    allow_unregistered_ops = (
-        True  # ConstantOp, ReturnOp, ChainOp, AddIndexOp pass through
-    )
+    allow_unregistered_ops = True  # ConstantOp, ChainOp, AddIndexOp pass through
 
     def __init__(self) -> None:
         self.live_allocs: list[dgen.Value] = []
@@ -40,6 +38,19 @@ class ToyToAffine(Pass):
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.live_allocs = []
         self._run_block(f.body)
+        current_val = f.body.result
+        for alloc_val in self.live_allocs:
+            underlying = alloc_val
+            while isinstance(underlying, builtin.ChainOp):
+                underlying = underlying.lhs
+            dealloc = affine.DeallocOp(input=underlying)
+            if isinstance(current_val, Nil):
+                current_val = dealloc
+            else:
+                current_val = builtin.ChainOp(
+                    lhs=current_val, rhs=dealloc, type=current_val.type
+                )
+        f.body.result = current_val
         return FunctionOp(name=f.name, body=f.body, result=f.result)
 
     def _make_alloc(self, shape: dgen.Value) -> affine.AllocOp:
@@ -259,24 +270,6 @@ class ToyToAffine(Pass):
         rewriter.replace_uses(op, new_op)
         return True
 
-    @lowering_for(builtin.ReturnOp)
-    def lower_return(self, op: builtin.ReturnOp, rewriter: Rewriter) -> bool:
-        # Chain all deallocs to the return value
-        current_val = op.value
-        for alloc_val in self.live_allocs:
-            # Unwrap ChainOp to get underlying alloc for DeallocOp
-            underlying = alloc_val
-            while isinstance(underlying, builtin.ChainOp):
-                underlying = underlying.lhs
-            dealloc = affine.DeallocOp(input=underlying)
-            if isinstance(current_val, Nil):
-                current_val = dealloc
-            else:
-                current_val = builtin.ChainOp(
-                    lhs=current_val, rhs=dealloc, type=current_val.type
-                )
-        op.value = current_val
-        return True
 
 
 def lower_to_affine(m: Module) -> Module:

@@ -12,7 +12,6 @@ def test_roundtrip_transpose():
         |
         | %f : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>):
         |     %0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -24,7 +23,6 @@ def test_roundtrip_reshape():
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() (%a: toy.InferredShapeTensor<F64>):
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%a)
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -36,7 +34,6 @@ def test_roundtrip_constant():
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -49,7 +46,6 @@ def test_explicit_constant(ir_snapshot):
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert module == ir_snapshot
@@ -61,7 +57,6 @@ def test_roundtrip_mul():
         |
         | %f : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>):
         |     %0 : toy.InferredShapeTensor<F64> = toy.mul(%a, %b)
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -73,7 +68,6 @@ def test_roundtrip_add():
         |
         | %f : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>, %b: toy.InferredShapeTensor<F64>):
         |     %0 : toy.InferredShapeTensor<F64> = toy.add(%a, %b)
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -84,11 +78,9 @@ def test_roundtrip_call():
         | import toy
         |
         | %helper : Nil = function<toy.InferredShapeTensor<F64>>() (%x: toy.InferredShapeTensor<F64>):
-        |     %_ : Nil = return(%x)
         |
         | %f : Nil = function<toy.InferredShapeTensor<F64>>() (%a: toy.InferredShapeTensor<F64>):
         |     %0 : toy.InferredShapeTensor<F64> = call<%helper>([%a])
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -100,7 +92,6 @@ def test_roundtrip_print():
         |
         | %f : Nil = function<Nil>() (%a: toy.Tensor<affine.Shape<2>([2, 3]), F64>):
         |     %0 : Nil = toy.print(%a)
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -109,7 +100,6 @@ def test_roundtrip_print():
 def test_roundtrip_void_return():
     ir = strip_prefix("""
         | %f : Nil = function<Nil>() ():
-        |     %_ : Nil = return(())
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -121,7 +111,6 @@ def test_roundtrip_concat():
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 8]), F64>>() (%a: toy.Tensor<affine.Shape<2>([2, 3]), F64>, %b: toy.Tensor<affine.Shape<2>([2, 5]), F64>):
         |     %0 : toy.Tensor<affine.Shape<2>([2, 8]), F64> = toy.concat<1>(%a, %b)
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -133,7 +122,6 @@ def test_roundtrip_tile():
         |
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([4, 3]), F64>>() (%a: toy.Tensor<affine.Shape<1>([3]), F64>, %n: Index):
         |     %0 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%a>(%n)
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -147,7 +135,6 @@ def test_roundtrip_tile_with_index_constant():
         | %f : Nil = function<toy.Tensor<affine.Shape<2>([4, 3]), F64>>() (%a: toy.Tensor<affine.Shape<1>([3]), F64>):
         |     %0 : Index = 4
         |     %1 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%a>(%0)
-        |     %_ : Nil = return(%1)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -163,7 +150,6 @@ def test_roundtrip_tile_with_computed_count():
         |     %1 : Index = 2
         |     %2 : Index = add_index(%0, %1)
         |     %3 : toy.InferredShapeTensor<F64> = toy.tile<%a>(%2)
-        |     %_ : Nil = return(%3)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -173,7 +159,6 @@ def test_roundtrip_add_index():
     ir = strip_prefix("""
         | %f : Nil = function<Index>() (%x: Index, %y: Index):
         |     %0 : Index = add_index(%x, %y)
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -187,7 +172,6 @@ def test_roundtrip_full_program():
         |     %0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)
         |     %1 : toy.InferredShapeTensor<F64> = toy.transpose(%b)
         |     %2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)
-        |     %_ : Nil = return(%2)
         |
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -198,7 +182,6 @@ def test_roundtrip_full_program():
         |     %5 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%3, %1])
         |     %6 : toy.InferredShapeTensor<F64> = chain(%5, %4)
         |     %7 : Nil = toy.print(%6)
-        |     %_ : Nil = return(%7)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

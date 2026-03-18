@@ -4,4 +4,3 @@ import affine
     %0 : Index = 3
     %1 : Index = 5
     %store : Nil = affine.store(%x, %x, [%0, %x, %1])
-    %_ : Nil = return(%store)

@@ -31,6 +31,7 @@ class Lowering:
         self.scope: dict[str, dgen.Value] = {}
         self.last_effect: dgen.Op | None = None
         self.has_value_return: bool = False
+        self.return_value: dgen.Value | None = None
 
     def lower_module(self, tm: ToyModule) -> Module:
         functions = [self.lower_function(f) for f in tm.functions]
@@ -40,6 +41,7 @@ class Lowering:
         self.scope = {}
         self.last_effect = None
         self.has_value_return = False
+        self.return_value = None
 
         # Create block args for function params
         args: list[BlockArgument] = []
@@ -58,10 +60,11 @@ class Lowering:
         if self.has_value_return:
             result = toy.InferredShapeTensor()
 
+        block_result = self.return_value if self.return_value is not None else ops[-1]
         return builtin.FunctionOp(
             name=f.proto.name,
             result=result,
-            body=dgen.Block(result=ops[-1], args=args),
+            body=dgen.Block(result=block_result, args=args),
         )
 
     def _lower_statement(self, stmt: Statement) -> Iterator[dgen.Op]:
@@ -93,13 +96,11 @@ class Lowering:
             if self.last_effect is not None:
                 chain_op = builtin.ChainOp(lhs=val, rhs=self.last_effect, type=val.type)
                 yield chain_op
-                yield builtin.ReturnOp(value=chain_op)
+                self.return_value = chain_op
             else:
-                yield builtin.ReturnOp(value=val)
+                self.return_value = val
         elif self.last_effect is not None:
-            yield builtin.ReturnOp(value=self.last_effect)
-        else:
-            yield builtin.ReturnOp()
+            self.return_value = self.last_effect
 
     def lower_expr(self, expr: Expression) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression, yielding ops and returning the result Value."""

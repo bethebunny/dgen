@@ -376,7 +376,9 @@ def _read_block_body(parser: ASMParser) -> Block:
     parser.read(":")
     block_indent = newline(parser)
     if block_indent == 0:
-        raise ValueError("Block body must contain at least one op")
+        from dgen.dialects.builtin import Nil
+
+        return Block(result=dgen.Value(type=Nil()), args=args)
     ops: list[Op] = []
     while parser.pos < len(parser.text):
         indent = newline(parser)

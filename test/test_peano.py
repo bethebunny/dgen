@@ -130,9 +130,6 @@ def _lower_peano_ops(
             const = ConstantOp(value=n, type=Index())
             new_ops.append(const)
             replacements[op] = const
-        elif isinstance(op, builtin.ReturnOp):
-            val = replacements.get(op.value, op.value)
-            new_ops.append(builtin.ReturnOp(value=val, type=op.type))
         elif isinstance(op, builtin.CallOp):
             if isinstance(op.args, PackOp):
                 new_values = [replacements.get(a, a) for a in op.args.values]
@@ -222,7 +219,6 @@ def test_natural_in_asm():
         |
         | %main : Nil = function<Index>() ():
         |     %z : peano.Natural = peano.zero()
-        |     %_ : Nil = return(%z)
     """)
     module = parse_module(ir)
     func = module.functions[0]
@@ -257,7 +253,6 @@ def test_peano_constant():
         |     %s2 : Type = peano.successor<%s1>()
         |     %s3 : Type = peano.successor<%s2>()
         |     %n : Index = peano.value<%s3>()
-        |     %_ : Nil = return(%n)
     """)
     module = parse_module(ir)
 
@@ -278,7 +273,6 @@ def test_equal_and_subtract_roundtrip():
         |     %eq : Index = equal_index(%n, 0)
         |     %sub : Index = subtract_index(%n, 1)
         |     %result : Index = add_index(%eq, %sub)
-        |     %_ : Nil = return(%result)
     """)
     module = parse_module(ir)
     asm_lines = list(module.asm)
@@ -292,7 +286,6 @@ def test_subtract_jit():
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%n: Index):
         |     %sub : Index = subtract_index(%n, 1)
-        |     %_ : Nil = return(%sub)
     """)
     module = parse_module(ir)
     from dgen import codegen
@@ -308,11 +301,8 @@ def test_if_else_parse_roundtrip():
         |     %cond : Index = equal_index(%n, 0)
         |     %result : Index = if(%cond) ():
         |         %ten : Index = 10
-        |         %_ : Nil = return(%ten)
         |     else ():
         |         %twenty : Index = 20
-        |         %_ : Nil = return(%twenty)
-        |     %_ : Nil = return(%result)
     """)
     module = parse_module(ir)
     asm_text = "\n".join(module.asm)
@@ -332,11 +322,8 @@ def test_if_else_jit():
         |     %cond : Index = equal_index(%n, 0)
         |     %result : Index = if(%cond) ():
         |         %one : Index = 1
-        |         %_ : Nil = return(%one)
         |     else ():
         |         %val : Index = subtract_index(%n, 1)
-        |         %_ : Nil = return(%val)
-        |     %_ : Nil = return(%result)
     """)
     module = parse_module(ir)
     from dgen import codegen
@@ -352,11 +339,9 @@ def test_call_op_roundtrip():
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%x: Index):
         |     %result : Index = call<%add_one>([%x])
-        |     %_ : Nil = return(%result)
         |
         | %add_one : Nil = function<Index>() (%n: Index):
         |     %r : Index = add_index(%n, 1)
-        |     %_ : Nil = return(%r)
     """)
     module = parse_module(ir)
     asm_text = "\n".join(module.asm)
@@ -369,11 +354,9 @@ def test_call_jit():
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%x: Index):
         |     %result : Index = call<%add_one>([%x])
-        |     %_ : Nil = return(%result)
         |
         | %add_one : Nil = function<Index>() (%n: Index):
         |     %r : Index = add_index(%n, 1)
-        |     %_ : Nil = return(%r)
     """)
     module = parse_module(ir)
     from dgen import codegen
@@ -393,11 +376,9 @@ def test_multi_function_staged():
         |     %s1 : Type = peano.successor<%z>()
         |     %n : Index = peano.value<%s1>()
         |     %result : Index = call<%add_one>([%n])
-        |     %_ : Nil = return(%result)
         |
         | %add_one : Nil = function<Index>() (%x: Index):
         |     %r : Index = add_index(%x, 1)
-        |     %_ : Nil = return(%r)
     """)
     module = parse_module(ir)
     exe = peano_compiler.compile(module)
@@ -410,7 +391,6 @@ def test_equal_jit():
     ir = strip_prefix("""
         | %main : Nil = function<Index>() (%n: Index):
         |     %eq : Index = equal_index(%n, 0)
-        |     %_ : Nil = return(%eq)
     """)
     module = parse_module(ir)
     from dgen import codegen
@@ -435,20 +415,16 @@ def test_recursive_peano():
         | %main : Nil = function<Index>() (%x: Index):
         |     %n : peano.Natural = call<%natural>([%x])
         |     %result : Index = peano.value<%n>()
-        |     %_ : Nil = return(%result)
         |
         | %natural : Nil = function<peano.Natural>() (%n: Index):
         |     %base_case : Index = equal_index(%n, 0)
         |     %value : peano.Natural = if(%base_case) ():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
-        |         %_ : Nil = return(%s)
         |     else ():
         |         %n_minus_one : Index = subtract_index(%n, 1)
         |         %predecessor : peano.Natural = call<%natural>([%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()
-        |         %_ : Nil = return(%s)
-        |     %_ : Nil = return(%value)
     """)
     module = parse_module(ir)
     exe = peano_compiler.compile(module)

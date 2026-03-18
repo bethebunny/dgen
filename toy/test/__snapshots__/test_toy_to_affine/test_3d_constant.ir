@@ -6,4 +6,3 @@ import toy
     %1 : Nil = affine.print_memref(%0)
     %2 : Nil = affine.dealloc(%0)
     %3 : Nil = chain(%1, %2)
-    %_ : Nil = return(%3)
