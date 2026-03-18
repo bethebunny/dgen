@@ -98,10 +98,10 @@ def _jit_evaluate(
     """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
     assert target.ready
     externs = _extern_declarations(subgraph)
-    ops = list(subgraph) + [builtin.ReturnOp(value=target)]
+    ops = list(subgraph)
     func = FunctionOp(
         name="main",
-        body=dgen.Block(result=ops[-1], args=list(block_args)),
+        body=dgen.Block(result=target, args=list(block_args)),
         result=target.type,
     )
     module = Module(functions=[func])
@@ -281,13 +281,10 @@ def _specialize_ifs(
         # Pick the taken branch
         branch = op.then_body if cond_result else op.else_body
 
-        # Inline branch ops, extracting the return value
-        for child in branch.ops:
-            if isinstance(child, builtin.ReturnOp):
-                val = child.value
-                replacements[op] = replacements.get(val, val)
-            else:
-                new_ops.append(child)
+        # Inline branch ops; block.result is the terminator value
+        new_ops.extend(branch.ops)
+        val = branch.result
+        replacements[op] = replacements.get(val, val)
 
     # Apply replacements to all inlined ops
     for op in new_ops:
@@ -476,11 +473,9 @@ def _build_callback_thunk(
         args=pack,
         type=result_type,
     )
-    ret_op = builtin.ReturnOp(value=call_op)
-
     thunk_func = FunctionOp(
         name=func.name,
-        body=dgen.Block(result=ret_op, args=thunk_args),
+        body=dgen.Block(result=call_op, args=thunk_args),
         result=result_type,
     )
     thunk_module = Module(functions=[thunk_func])

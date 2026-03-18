@@ -39,4 +39,3 @@ import toy
     %40 : Nil = chain(%38, %39)
     %41 : Nil = affine.dealloc(%0)
     %42 : Nil = chain(%40, %41)
-    %_ : Nil = return(%42)

@@ -1,7 +1,7 @@
 """Lower builtin dialect ops to LLVM dialect ops.
 
 Handles: AddIndexOp, SubtractIndexOp, EqualIndexOp, IfOp, CallOp.
-Passes through unchanged: ConstantOp, PackOp, ReturnOp, and any LLVM dialect ops.
+Passes through unchanged: ConstantOp, PackOp, and any LLVM dialect ops.
 """
 
 from __future__ import annotations
@@ -56,9 +56,13 @@ class BuiltinToLLVMLowering(Pass):
                 result=chain_body(body_ops), args=label_op.body.args
             )
 
+        if entry_ops:
+            new_result = chain_body(entry_ops)
+        else:
+            new_result = self.value_map.get(f.body.result, f.body.result)
         return FunctionOp(
             name=f.name,
-            body=dgen.Block(result=chain_body(entry_ops), args=f.body.args),
+            body=dgen.Block(result=new_result, args=f.body.args),
             result=f.result,
         )
 
@@ -112,15 +116,6 @@ class BuiltinToLLVMLowering(Pass):
             yield from self._lower_if(op)
         elif isinstance(op, builtin.CallOp):
             yield from self._lower_call(op)
-        elif isinstance(op, builtin.ReturnOp):
-            if isinstance(op.value, Nil):
-                yield op
-            else:
-                mapped = self._map(op.value)
-                if mapped is op.value:
-                    yield op
-                else:
-                    yield builtin.ReturnOp(value=mapped, type=op.type)
         else:
             # Pass through ConstantOp, PackOp, LLVM ops, etc. unchanged
             yield op
@@ -159,16 +154,13 @@ class BuiltinToLLVMLowering(Pass):
             false_args=_EMPTY_PACK,
         )
 
-        # Then block — lower body ops, intercept ReturnOp to get result
+        # Then block — lower body ops; block result is the branch value
         yield then_label_op
         self.current_label = then_label_op
-        then_result: dgen.Value | None = None
         for child in op.then_body.ops:
-            if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
-                then_result = self._map(child.value)
-            else:
-                yield from self.lower_op(child)
-        if then_result is not None:
+            yield from self.lower_op(child)
+        then_result = self._map(op.then_body.result)
+        if not isinstance(then_result, Nil):
             result_pack = PackOp(
                 values=[then_result],
                 type=builtin.List(element_type=then_result.type),
@@ -181,13 +173,10 @@ class BuiltinToLLVMLowering(Pass):
         # Else block — same pattern
         yield else_label_op
         self.current_label = else_label_op
-        else_result: dgen.Value | None = None
         for child in op.else_body.ops:
-            if isinstance(child, builtin.ReturnOp) and not isinstance(child.value, Nil):
-                else_result = self._map(child.value)
-            else:
-                yield from self.lower_op(child)
-        if else_result is not None:
+            yield from self.lower_op(child)
+        else_result = self._map(op.else_body.result)
+        if not isinstance(else_result, Nil):
             result_pack = PackOp(
                 values=[else_result],
                 type=builtin.List(element_type=else_result.type),

@@ -130,7 +130,7 @@ def _identity_exe(ty):
     arg = BlockArgument(name="v0", type=ty)
     func = FunctionOp(
         name="main",
-        body=Block(result=builtin.ReturnOp(value=arg), args=[arg]),
+        body=Block(result=arg, args=[arg]),
         result=ty,
     )
     return compile_module(Module(functions=[func]))
@@ -313,10 +313,9 @@ def test_list_constant_jit_return():
     """JIT function returns a list constant: main() -> List<index>."""
     list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
-    ret = builtin.ReturnOp(value=const)
     func = FunctionOp(
         name="main",
-        body=Block(result=ret, args=[]),
+        body=Block(result=const, args=[]),
         result=list_type,
     )
     exe = compile_module(Module(functions=[func]))
@@ -357,7 +356,6 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
         |
         | %main : Nil = function<Nil>() (%x: Index):
         |     %store : Nil = affine.store(%x, %x, [3, %x, 5])
-        |     %_ : Nil = return(%store)
     """)
     parsed = parse_module(ir_input)
     assert parsed == ir_snapshot
@@ -391,7 +389,6 @@ def test_string_as_op_param():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
-        |     %_ : Nil = return(%cmp)
     """)
     parsed = parse_module(ir)
     assert_ir_equivalent(parsed, asm.parse(asm.format(parsed)))
@@ -421,7 +418,6 @@ def test_string_param_staging():
         | %main : Nil = function<Index>() (%pred : String, %x : Index, %y : Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
-        |     %_ : Nil = return(%ext)
     """)
     module = parse_module(ir)
 
@@ -449,7 +445,6 @@ def test_compile_once_run_twice():
         | %main : Nil = function<Index>() (%pred : String, %x : Index, %y : Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
-        |     %_ : Nil = return(%ext)
     """)
     module = parse_module(ir)
 
@@ -509,10 +504,9 @@ def test_deepcopy_module_with_list_constant():
     """
     list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
-    ret = builtin.ReturnOp(value=const)
     func = FunctionOp(
         name="main",
-        body=Block(result=ret, args=[]),
+        body=Block(result=const, args=[]),
         result=list_type,
     )
     module = Module(functions=[func])

@@ -14,7 +14,6 @@ def test_diff_empty_when_identical():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
     assert diff_modules(parse_module(ir), parse_module(ir)) == ""
 
@@ -27,7 +26,6 @@ def test_diff_empty_when_ssa_names_differ():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
     b = strip_prefix("""
         | import toy
@@ -35,7 +33,6 @@ def test_diff_empty_when_ssa_names_differ():
         | %main : Nil = function<Nil>() ():
         |     %tensor : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %result : Nil = toy.print(%tensor)
-        |     %_ : Nil = return(%result)
     """)
     assert diff_modules(parse_module(a), parse_module(b)) == ""
 
@@ -48,7 +45,6 @@ def test_diff_empty_when_function_order_differs():
         | %func_a : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
     b = strip_prefix("""
         | import toy
@@ -56,7 +52,6 @@ def test_diff_empty_when_function_order_differs():
         | %func_b : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
     fa = parse_module(a).functions[0]
     fb = parse_module(b).functions[0]
@@ -74,7 +69,6 @@ def test_diff_empty_when_op_order_differs():
         |     %a : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %b : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %c : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.mul(%a, %b)
-        |     %_ : toy.Tensor<affine.Shape<2>([2, 3]), F64> = return(%c)
     """)
     b = strip_prefix("""
         | import toy
@@ -83,7 +77,6 @@ def test_diff_empty_when_op_order_differs():
         |     %x : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %y : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %z : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.mul(%y, %x)
-        |     %_ : toy.Tensor<affine.Shape<2>([2, 3]), F64> = return(%z)
     """)
     assert diff_modules(parse_module(a), parse_module(b)) == ""
 
@@ -96,7 +89,6 @@ def test_diff_format_semantic_change():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
     actual = strip_prefix("""
         | import toy
@@ -104,7 +96,6 @@ def test_diff_format_semantic_change():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
     result = diff_modules(parse_module(actual), parse_module(expected))
     assert result.startswith("IR equivalence check failed.")
@@ -122,7 +113,6 @@ def test_diff_format_missing_function():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
     actual_module = Module(functions=[])
     result = diff_modules(actual_module, parse_module(expected))
@@ -144,7 +134,6 @@ def test_diff_format_extra_function():
         | %main : Nil = function<Nil>() ():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
-        |     %_ : Nil = return(%1)
     """)
     expected_module = Module(functions=[])
     result = diff_modules(parse_module(actual), expected_module)

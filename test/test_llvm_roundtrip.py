@@ -11,7 +11,6 @@ def test_roundtrip_alloca():
         |
         | %f : Nil = function<Nil>() ():
         |     %0 : Nil = llvm.alloca<3>()
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -73,9 +72,7 @@ def test_roundtrip_icmp_condbr():
         |     %1 : Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
         |     %loop_body : llvm.Label = llvm.label() ():
-        |         %_ : Nil = return(())
         |     %loop_exit : llvm.Label = llvm.label() ():
-        |         %_ : Nil = return(())
         |     %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [], [])
     """)
     module = parse_module(ir)
@@ -88,7 +85,6 @@ def test_roundtrip_label_br():
         |
         | %f : Nil = function<Nil>() ():
         |     %loop_header : llvm.Label = llvm.label() ():
-        |         %_ : Nil = return(())
         |     %_ : Nil = llvm.br(%loop_header, [])
     """)
     module = parse_module(ir)
@@ -101,7 +97,6 @@ def test_roundtrip_call_with_result():
         |
         | %f : Nil = function<Nil>() (%a: Index, %b: Index):
         |     %0 : Nil = llvm.call<"foo">([%a, %b])
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -113,7 +108,6 @@ def test_roundtrip_call_void():
         |
         | %f : Nil = function<Nil>() (%ptr: Index, %size: Index):
         |     %0 : Nil = llvm.call<"print_memref">([%ptr, %size])
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -123,7 +117,6 @@ def test_roundtrip_return_value():
     ir = strip_prefix("""
         | %f : Nil = function<Nil>() ():
         |     %0 : F64 = 42.0
-        |     %_ : Nil = return(%0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -145,7 +138,6 @@ def test_roundtrip_loop_pattern():
         |             %next : Nil = llvm.add(%j, %one)
         |             %_ : Nil = llvm.br(%loop_header, [%next, %q])
         |         %loop_exit : llvm.Label = llvm.label() ():
-        |             %_ : Nil = return(())
         |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [%i, %p], [])
         |     %_ : Nil = llvm.br(%loop_header, [%init, %alloc])
     """)

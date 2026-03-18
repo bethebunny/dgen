@@ -49,7 +49,6 @@ def test_tuple_constant_roundtrip():
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %x : Tuple<[Index, String]> = [42, "hello"]
-        |     %_ : Nil = return(%x)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -97,7 +96,6 @@ def test_tuple_type_values():
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %types : Tuple<[Type, Type]> = [Index, String]
-        |     %_ : Nil = return(%types)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

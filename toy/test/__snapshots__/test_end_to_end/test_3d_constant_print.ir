@@ -6,9 +6,7 @@ import toy
     %1 : llvm.Ptr = llvm.load(%0)
     %2 : Index = 8
     %3 : Nil = llvm.call<"print_memref">([%1, %2])
-    %4 : Nil = return(%3)
-    %5 : Nil = chain(%3, %4)
-    %6 : List<llvm.Ptr> = chain([%1, %2], %5)
-    %7 : Index = chain(%2, %6)
-    %8 : llvm.Ptr = chain(%1, %7)
-    %9 : toy.Tensor<affine.Shape<3>([2, 2, 2]), F64> = chain(%0, %8)
+    %4 : List<llvm.Ptr> = chain([%1, %2], %3)
+    %5 : Index = chain(%2, %4)
+    %6 : llvm.Ptr = chain(%1, %5)
+    %7 : toy.Tensor<affine.Shape<3>([2, 2, 2]), F64> = chain(%0, %6)

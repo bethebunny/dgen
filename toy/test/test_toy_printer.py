@@ -87,16 +87,6 @@ def test_print_op():
     assert asm.format(op) == "%0 : Nil = toy.print(%5)"
 
 
-def test_return_op_with_value():
-    v2 = dgen.Value(name="2", type=builtin.Nil())
-    op = builtin.ReturnOp(value=v2)
-    assert asm.format(op) == "%0 : Nil = return(%2)"
-
-
-def test_return_op_void():
-    op = builtin.ReturnOp()
-    assert asm.format(op) == "%0 : Nil = return(())"
-
 
 def test_concat_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
@@ -133,12 +123,11 @@ def test_full_module(ir_snapshot):
     t0 = toy.TransposeOp(input=mt_arg_a, type=inferred())
     t1 = toy.TransposeOp(input=mt_arg_b, type=inferred())
     m0 = toy.MulOp(lhs=t0, rhs=t1, type=inferred())
-    ret_mt = builtin.ReturnOp(value=m0)
 
     mt_func = builtin.FunctionOp(
         name="multiply_transpose",
         result=inferred(),
-        body=dgen.Block(result=ret_mt, args=[mt_arg_a, mt_arg_b]),
+        body=dgen.Block(result=m0, args=[mt_arg_a, mt_arg_b]),
     )
 
     # Build main function
@@ -172,12 +161,11 @@ def test_full_module(ir_snapshot):
         type=inferred(),
     )
     print_op = toy.PrintOp(input=call5)
-    ret_main = builtin.ReturnOp()
 
     main_func = builtin.FunctionOp(
         name="main",
         result=builtin.Nil(),
-        body=dgen.Block(result=ret_main, args=[]),
+        body=dgen.Block(result=print_op, args=[]),
     )
 
     module = Module(functions=[mt_func, main_func])

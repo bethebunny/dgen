@@ -22,4 +22,3 @@ import toy
     %20 : Nil = chain(%18, %19)
     %21 : Nil = affine.dealloc(%0)
     %22 : Nil = chain(%20, %21)
-    %_ : Nil = return(%22)

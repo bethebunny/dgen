@@ -77,6 +77,8 @@ class Rewriter:
             for name, param in op.parameters:
                 if param is old:
                     setattr(op, name, new)
+        if self._block.result is old:
+            self._block.result = new
 
 
 # ---------------------------------------------------------------------------

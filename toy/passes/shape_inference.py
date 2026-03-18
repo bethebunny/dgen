@@ -135,17 +135,13 @@ class ShapeInference(Pass):
                     param.type = atype
                     self.type_of[param] = atype
                 self._seed_and_run(callee)
-                ret_op = callee.body.ops[-1]
-                if isinstance(ret_op, builtin.ReturnOp) and not isinstance(
-                    ret_op.value, builtin.Nil
-                ):
-                    ret_type = self.type_of.get(ret_op.value)
-                    if ret_type is not None:
-                        callee.result = ret_type
-                        op.type = toy.Tensor(
-                            shape=shape_constant(ret_type.shape.__constant__.to_json())
-                        )
-                        self.type_of[op] = op.type
+                ret_type = self.type_of.get(callee.body.result)
+                if ret_type is not None:
+                    callee.result = ret_type
+                    op.type = toy.Tensor(
+                        shape=shape_constant(ret_type.shape.__constant__.to_json())
+                    )
+                    self.type_of[op] = op.type
         return True
 
 

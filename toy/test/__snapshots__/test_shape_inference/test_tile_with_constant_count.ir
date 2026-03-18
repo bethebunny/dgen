@@ -5,4 +5,3 @@ import toy
     %1 : Index = 4
     %2 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%1>(%0)
     %3 : Nil = toy.print(%2)
-    %_ : Nil = return(%3)
