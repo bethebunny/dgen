@@ -13,6 +13,8 @@ from __future__ import annotations
 import ctypes
 from struct import Struct
 
+from .dialect import Dialect
+
 
 def _bytearray_address(buf: bytearray) -> int:
     """Get the raw ctypes address of a bytearray."""
@@ -257,8 +259,6 @@ class TypeValue(Layout):
 
     def _resolve_layout(self, tag: str) -> Record:
         """Look up a type class by tag and return its TypeType Record layout."""
-        from .dialect import Dialect
-
         dialect_name, type_name = tag.split(".")
         dialect = Dialect.get(dialect_name)
         cls = dialect.types[type_name]

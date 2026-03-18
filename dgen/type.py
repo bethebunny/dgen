@@ -8,6 +8,7 @@ from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar
 
 import dgen
 
+from .dialect import Dialect
 from .layout import Layout, TypeValue, _bytearray_address
 
 T = TypeVar("T", bound="Type")
@@ -49,8 +50,6 @@ def type_constant(value: Value[TypeType]) -> Type:
 
 def _type_from_dict(data: dict[str, object]) -> Type:
     """Reconstruct a Type from its serialized TypeType dict."""
-    from .dialect import Dialect
-
     tag = data["tag"]
     assert isinstance(tag, str)
     dialect_name, type_name = tag.split(".")

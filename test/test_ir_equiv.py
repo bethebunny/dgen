@@ -5,10 +5,12 @@ import pytest
 from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
 from dgen.dialects import builtin
+from dgen.dialects.llvm import AddOp, MulOp
 from dgen.ir_diff import structural_diff
 from dgen.ir_equiv import Fingerprinter, graph_equivalent
 from dgen.module import ConstantOp
 from dgen.testing import strip_prefix
+from toy.dialects.affine import MemRef, Shape
 
 
 def test_identical_ops_same_fingerprint():
@@ -35,8 +37,6 @@ def test_different_type_different_fingerprint():
 
 def test_op_includes_operands():
     """Ops with different operands fingerprint differently."""
-    from dgen.dialects.llvm import AddOp
-
     x = ConstantOp(value=1, type=builtin.Index())
     y = ConstantOp(value=2, type=builtin.Index())
     z = ConstantOp(value=3, type=builtin.Index())
@@ -48,8 +48,6 @@ def test_op_includes_operands():
 
 def test_op_operand_order_matters():
     """add(%x, %y) != add(%y, %x) — operand order is structural."""
-    from dgen.dialects.llvm import AddOp
-
     x = ConstantOp(value=1, type=builtin.Index())
     y = ConstantOp(value=2, type=builtin.Index())
     fingerprinter = Fingerprinter()
@@ -79,8 +77,6 @@ def test_block_arg_different_position_different_fingerprint():
 
 def test_fingerprint_memoized():
     """fingerprint() is called once per object even in a diamond dependency."""
-    from dgen.dialects.llvm import AddOp, MulOp
-
     x = ConstantOp(value=5, type=builtin.Index())
     add = AddOp(lhs=x, rhs=x)
     mul = MulOp(lhs=add, rhs=add)
@@ -175,8 +171,6 @@ def test_type_constant_with_dynamic_layout_param():
     serialize the "shape" field, but Shape.__layout__ is Array(Index.__layout__,
     self.rank.to_json()), which requires a concrete self.rank.
     """
-    from toy.dialects.affine import MemRef, Shape
-
     rank = ConstantOp(value=2, type=builtin.Index())
     shape = Shape(rank=rank)
     memref_type = MemRef(shape=shape, dtype=builtin.F64())

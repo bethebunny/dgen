@@ -288,8 +288,6 @@ def test_subtract_jit():
         |     %sub : Index = subtract_index(%n, 1)
     """)
     module = parse_module(ir)
-    from dgen import codegen
-
     exe = codegen.compile(module)
     assert exe.run(5).to_json() == 4
 
@@ -326,8 +324,6 @@ def test_if_else_jit():
         |         %val : Index = subtract_index(%n, 1)
     """)
     module = parse_module(ir)
-    from dgen import codegen
-
     exe = codegen.compile(module)
     assert exe.run(0).to_json() == 1
     assert exe.run(5).to_json() == 4
@@ -359,8 +355,6 @@ def test_call_jit():
         |     %r : Index = add_index(%n, 1)
     """)
     module = parse_module(ir)
-    from dgen import codegen
-
     exe = codegen.compile(module)
     assert exe.run(5).to_json() == 6
     assert exe.run(0).to_json() == 1
@@ -393,8 +387,6 @@ def test_equal_jit():
         |     %eq : Index = equal_index(%n, 0)
     """)
     module = parse_module(ir)
-    from dgen import codegen
-
     exe = codegen.compile(module)
     assert exe.run(0).to_json() == 1
     assert exe.run(5).to_json() == 0

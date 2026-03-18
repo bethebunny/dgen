@@ -2,10 +2,16 @@
 
 import pytest
 
+from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.codegen import Executable, LLVMCodegen
+from dgen.compiler import Compiler, IdentityPass
+from dgen.dialects.builtin import FunctionOp
 from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.staging import ConstantFold
 from toy.dialects import toy
+from toy.passes.affine_to_llvm import AffineToLLVMLowering
 from dgen.testing import strip_prefix
 
 
@@ -104,8 +110,6 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
             rewriter.replace_uses(op, op.input.input)
             return True
 
-    from dgen.compiler import Compiler, IdentityPass
-
     m = parse_module(ir_text)
     compiler = Compiler(passes=[], exit=IdentityPass())
     result = ElimTranspose().run(m, compiler)
@@ -124,8 +128,6 @@ def test_pass_unregistered_ops_error():
 
     class StrictPass(Pass):
         allow_unregistered_ops = False
-
-    from dgen.compiler import Compiler, IdentityPass
 
     m = parse_module(ir_text)
     compiler = Compiler(passes=[], exit=IdentityPass())
@@ -154,8 +156,6 @@ def test_pass_multiple_handlers_first_wins():
         | %main : Nil = function<Nil>() ():
         |     %0 : Index = 42
     """)
-    from dgen.compiler import Compiler, IdentityPass
-
     m = parse_module(ir_text)
     compiler = Compiler(passes=[], exit=IdentityPass())
     MultiPass().run(m, compiler)
@@ -169,9 +169,6 @@ def test_pass_multiple_handlers_first_wins():
 
 def test_compiler_run_verification_catches_range_violation():
     """Post-condition check detects ops outside the declared range."""
-    from dgen.codegen import LLVMCodegen
-    from dgen.compiler import Compiler
-
     ir_text = strip_prefix("""
         | import toy
         |
@@ -206,12 +203,6 @@ def test_constant_fold_resolves_stage0_boundary():
     as its result type — a stage-0 boundary. ConstantFold should resolve it
     so that subsequent passes see a concrete type.
     """
-    from dgen.codegen import Executable, LLVMCodegen
-    from dgen.compiler import Compiler
-    from dgen.dialects.builtin import FunctionOp
-    from dgen.staging import ConstantFold
-    from toy.passes.affine_to_llvm import AffineToLLVMLowering
-
     ir = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %t : Type = {"tag": "builtin.Index"}
@@ -241,10 +232,6 @@ def test_constant_fold_resolves_stage0_boundary():
 
 def test_constant_fold_is_noop_without_boundaries():
     """ConstantFold does nothing when there are no stage-0 boundaries."""
-    from dgen import asm
-    from dgen.compiler import Compiler, IdentityPass
-    from dgen.staging import ConstantFold
-
     ir_text = strip_prefix("""
         | %main : Nil = function<Nil>() ():
         |     %0 : Index = 42
@@ -259,8 +246,6 @@ def test_constant_fold_is_noop_without_boundaries():
 
 def test_pass_run_receives_continuation_compiler():
     """Pass.run receives a Compiler representing the remaining pipeline."""
-    from dgen.compiler import Compiler, IdentityPass
-
     seen_pass_count: list[int] = []
 
     class SpyPass(Pass):

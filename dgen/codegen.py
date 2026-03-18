@@ -8,6 +8,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+import llvmlite.binding as llvmlite
+
 import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
@@ -63,11 +65,9 @@ _initialized = False
 def _ensure_initialized() -> None:
     global _initialized
     if not _initialized:
-        import llvmlite.binding as _llvm
-
-        _llvm.initialize_native_target()
-        _llvm.initialize_native_asmprinter()
-        _llvm.add_symbol(
+        llvmlite.initialize_native_target()
+        llvmlite.initialize_native_asmprinter()
+        llvmlite.add_symbol(
             "print_memref", ctypes.cast(_print_memref, ctypes.c_void_p).value
         )
         _initialized = True
@@ -447,14 +447,12 @@ def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
 
 def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
     """Parse, verify, and create MCJIT engine from an Executable."""
-    import llvmlite.binding as _llvm
-
     _ensure_initialized()
-    mod = _llvm.parse_assembly(exe.ir)
+    mod = llvmlite.parse_assembly(exe.ir)
     mod.verify()
-    target = _llvm.Target.from_default_triple()
+    target = llvmlite.Target.from_default_triple()
     tm = target.create_target_machine()
-    return _llvm.create_mcjit_compiler(mod, tm)
+    return llvmlite.create_mcjit_compiler(mod, tm)
 
 
 # ---------------------------------------------------------------------------
