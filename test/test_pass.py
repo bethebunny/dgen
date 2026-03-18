@@ -3,7 +3,6 @@
 import pytest
 
 from dgen.asm.parser import parse_module
-from dgen.dialects import builtin
 from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import toy

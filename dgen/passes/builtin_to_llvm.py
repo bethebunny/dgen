@@ -52,9 +52,11 @@ class BuiltinToLLVMLowering(Pass):
         # Group at label boundaries (new labels from _lower_if)
         entry_ops, label_groups = group_into_blocks(flat_ops)
         for label_op, body_ops in label_groups:
-            label_op.body = dgen.Block(
-                result=chain_body(body_ops), args=label_op.body.args
-            )
+            if body_ops:
+                new_body_result = chain_body(body_ops)
+            else:
+                new_body_result = label_op.body.result
+            label_op.body = dgen.Block(result=new_body_result, args=label_op.body.args)
 
         if entry_ops:
             new_result = chain_body(entry_ops)
@@ -132,7 +134,7 @@ class BuiltinToLLVMLowering(Pass):
         merge_label_op = llvm.LabelOp(
             name=f"merge_{if_id}",
             body=dgen.Block(
-                result=dgen.Value(type=builtin.Nil()),
+                result=merge_result_arg,
                 args=[merge_result_arg],
             ),
         )

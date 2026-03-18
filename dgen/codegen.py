@@ -322,7 +322,14 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         return True
 
     # Ops that never produce a usable LLVM value
-    _VOID_OPS = (PackOp, builtin.ChainOp, llvm.LabelOp, llvm.BrOp, llvm.CondBrOp, llvm.StoreOp)
+    _VOID_OPS = (
+        PackOp,
+        builtin.ChainOp,
+        llvm.LabelOp,
+        llvm.BrOp,
+        llvm.CondBrOp,
+        llvm.StoreOp,
+    )
 
     def _find_return_value(ops: list[dgen.Op]) -> dgen.Value | None:
         """Find the return value op, matching the function's LLVM return type."""
@@ -350,13 +357,17 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 return op
         return None
 
-    def emit_ret(lines: list[str], ops: list[dgen.Op]) -> None:
+    def emit_ret(
+        lines: list[str], ops: list[dgen.Op], block_result: dgen.Value | None = None
+    ) -> None:
         if llvm_ret == "void":
             lines.append("  ret void")
         else:
             ret_val = _find_return_value(ops)
             if ret_val is not None:
                 lines.append(f"  ret {typed_ref(ret_val)}")
+            elif block_result is not None:
+                lines.append(f"  ret {typed_ref(block_result)}")
             else:
                 lines.append(f"  ret {typed_ref(f.body.result)}")
 
@@ -405,7 +416,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         for body_op in body_ops:
             emit_op(body_op, lines)
         if _needs_ret(body_ops):
-            emit_ret(lines, body_ops)
+            emit_ret(lines, body_ops, block_result=label_op.body.result)
 
     lines.append("}")
     return lines
