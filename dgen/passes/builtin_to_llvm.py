@@ -6,13 +6,11 @@ Passes through unchanged: ConstantOp, PackOp, and any LLVM dialect ops.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import dgen
-from dgen.block import BlockArgument
+from dgen.block import BlockArgument, Block
 from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
-from dgen.graph import build_result, chain_body, group_into_blocks, placeholder_block
+from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
 
@@ -20,11 +18,18 @@ from dgen.passes.pass_ import Pass
 _EMPTY_PACK = PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
 
 
+def _chain_before(effects: list[dgen.Op], terminal: dgen.Value) -> dgen.Value:
+    """Chain effects before terminal so they execute in list order."""
+    result: dgen.Value = terminal
+    for effect in reversed(effects):
+        result = builtin.ChainOp(lhs=effect, rhs=result, type=terminal.type)
+    return result
+
+
 class BuiltinToLLVMLowering(Pass):
     def __init__(self) -> None:
         self.if_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}
-        self.current_label: dgen.Value = dgen.Value(name="entry", type=llvm.Label())
 
     def run(self, m: Module) -> Module:
         functions = [self._lower_function(f) for f in m.functions]
@@ -33,36 +38,19 @@ class BuiltinToLLVMLowering(Pass):
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.if_counter = 0
         self.value_map = {}
-        self.current_label = dgen.Value(name="entry", type=llvm.Label())
 
-        # Recursively lower pre-built label bodies (from affine_to_llvm),
-        # then lower entry ops. _lower_if may yield new labels into the flat
-        # stream, so we still need group_into_blocks afterwards.
+        # First pass: recursively lower builtin ops inside pre-built label bodies.
         visited: set[int] = set()
         for op in f.body.ops:
             if isinstance(op, llvm.LabelOp):
                 self._lower_label_bodies(op, visited)
 
-        flat_ops: list[dgen.Op] = []
-        for op in f.body.ops:
-            if isinstance(op, llvm.LabelOp):
-                continue  # pre-built labels are already lowered
-            flat_ops.extend(self.lower_op(op))
-
-        # Group at label boundaries (new labels from _lower_if)
-        entry_ops, label_groups = group_into_blocks(flat_ops)
-        for label_op, body_ops in label_groups:
-            if body_ops:
-                new_body_result = chain_body(body_ops)
-            else:
-                new_body_result = label_op.body.result
-            label_op.body = dgen.Block(result=new_body_result, args=label_op.body.args)
-
-        return_val = self.value_map.get(f.body.result, f.body.result)
-        new_result = build_result(return_val, entry_ops)
+        # Lower entry ops (skip LabelOps — already lowered above).
+        non_label_ops = [op for op in f.body.ops if not isinstance(op, llvm.LabelOp)]
+        result = self._lower_ops(non_label_ops, f.body.result)
         return FunctionOp(
             name=f.name,
-            body=dgen.Block(result=new_result, args=f.body.args),
+            body=dgen.Block(result=result, args=f.body.args),
             result=f.result,
         )
 
@@ -72,81 +60,81 @@ class BuiltinToLLVMLowering(Pass):
             return
         visited.add(id(label_op))
 
-        # First, recurse into any nested labels found in this body
+        # Recurse into nested labels first.
         for op in label_op.body.ops:
             if isinstance(op, llvm.LabelOp):
                 self._lower_label_bodies(op, visited)
 
-        # Lower body ops, rebuilding the block. _lower_if may yield new labels
-        # so we need group_into_blocks here too.
-        body_flat: list[dgen.Op] = []
-        for op in label_op.body.ops:
-            if isinstance(op, llvm.LabelOp):
-                continue  # nested labels already lowered
-            body_flat.extend(self.lower_op(op))
-
-        body_ops, body_label_groups = group_into_blocks(body_flat)
-        for lbl, lbl_body_ops in body_label_groups:
-            lbl.body = dgen.Block(result=chain_body(lbl_body_ops), args=lbl.body.args)
-        label_op.body = dgen.Block(result=chain_body(body_ops), args=label_op.body.args)
+        # Lower body ops (skip nested labels — already handled above).
+        body_ops = [op for op in label_op.body.ops if not isinstance(op, llvm.LabelOp)]
+        result = self._lower_ops(body_ops, label_op.body.result)
+        label_op.body = dgen.Block(result=result, args=label_op.body.args)
 
     def _map(self, old: dgen.Value) -> dgen.Value:
         return self.value_map.get(old, old)
 
-    def lower_op(self, op: dgen.Op) -> Iterator[dgen.Op]:
+    def _lower_ops(self, ops: list[dgen.Op], return_val: dgen.Value) -> dgen.Value:
+        """Lower a sequence of ops, returning the block result with effects chained."""
+        effects: list[dgen.Op] = []
+        for i, op in enumerate(ops):
+            if isinstance(op, builtin.IfOp):
+                cond_br, merge_label = self._lower_if(op)
+                exit_result = self._lower_ops(ops[i + 1 :], return_val)
+                merge_label.body = dgen.Block(
+                    result=exit_result, args=merge_label.body.args
+                )
+                return _chain_before(effects, cond_br)
+            effect = self._lower_single_op(op)
+            if effect is not None:
+                effects.append(effect)
+        mapped = self.value_map.get(return_val, return_val)
+        return _chain_before([e for e in effects if e is not mapped], mapped)
+
+    def _lower_single_op(self, op: dgen.Op) -> dgen.Op | None:
+        """Lower one non-IfOp. Returns the op if it's a side effect, else None."""
         if isinstance(op, builtin.AddIndexOp):
             llvm_op = llvm.AddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
-            yield llvm_op
             self.value_map[op] = llvm_op
-        elif isinstance(op, builtin.SubtractIndexOp):
+            return None
+        if isinstance(op, builtin.SubtractIndexOp):
             llvm_op = llvm.SubOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
-            yield llvm_op
             self.value_map[op] = llvm_op
-        elif isinstance(op, builtin.EqualIndexOp):
+            return None
+        if isinstance(op, builtin.EqualIndexOp):
             icmp_op = llvm.IcmpOp(
                 pred=String().constant("eq"),
                 lhs=self._map(op.lhs),
                 rhs=self._map(op.rhs),
             )
-            yield icmp_op
             zext_op = llvm.ZextOp(input=icmp_op)
-            yield zext_op
             self.value_map[op] = zext_op
-        elif isinstance(op, builtin.IfOp):
-            yield from self._lower_if(op)
-        elif isinstance(op, builtin.CallOp):
-            yield from self._lower_call(op)
-        else:
-            # Pass through ConstantOp, PackOp, LLVM ops, etc. unchanged
-            yield op
+            return None
+        if isinstance(op, builtin.CallOp):
+            return self._lower_call(op)
+        # Pass through: ConstantOp, PackOp, ChainOp, and all LLVM ops.
+        return None
 
-    def _lower_if(self, op: builtin.IfOp) -> Iterator[dgen.Op]:
+    def _lower_if(self, op: builtin.IfOp) -> tuple[llvm.CondBrOp, llvm.LabelOp]:
         if_id = self.if_counter
         self.if_counter += 1
 
         then_label_op = llvm.LabelOp(name=f"then_{if_id}", body=placeholder_block())
         else_label_op = llvm.LabelOp(name=f"else_{if_id}", body=placeholder_block())
 
-        # Merge label has a block arg for the if/else result value
         merge_result_arg = BlockArgument(name=f"merge_val{if_id}", type=op.type)
         merge_label_op = llvm.LabelOp(
             name=f"merge_{if_id}",
-            body=dgen.Block(
-                result=merge_result_arg,
-                args=[merge_result_arg],
-            ),
+            body=dgen.Block(result=merge_result_arg, args=[merge_result_arg]),
         )
 
         # Convert i64 condition to i1 via icmp ne 0
         zero = ConstantOp(value=0, type=builtin.Index())
-        yield zero
         cond_i1 = llvm.IcmpOp(
             pred=String().constant("ne"),
             lhs=self._map(op.cond),
             rhs=zero,
         )
-        yield cond_i1
-        yield llvm.CondBrOp(
+        cond_br = llvm.CondBrOp(
             cond=cond_i1,
             true_target=then_label_op,
             false_target=else_label_op,
@@ -154,60 +142,64 @@ class BuiltinToLLVMLowering(Pass):
             false_args=_EMPTY_PACK,
         )
 
-        # Then block — lower body ops; block result is the branch value
-        yield then_label_op
-        self.current_label = then_label_op
-        for child in op.then_body.ops:
-            yield from self.lower_op(child)
-        then_result = self._map(op.then_body.result)
-        if not isinstance(then_result, Nil):
-            result_pack = PackOp(
-                values=[then_result],
-                type=builtin.List(element_type=then_result.type),
-            )
-            yield result_pack
-            yield llvm.BrOp(target=merge_label_op, args=result_pack)
-        else:
-            yield llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
+        then_label_op.body = self._lower_branch(
+            op.then_body.ops, op.then_body.result, merge_label_op, op.then_body.args
+        )
+        else_label_op.body = self._lower_branch(
+            op.else_body.ops, op.else_body.result, merge_label_op, op.else_body.args
+        )
 
-        # Else block — same pattern
-        yield else_label_op
-        self.current_label = else_label_op
-        for child in op.else_body.ops:
-            yield from self.lower_op(child)
-        else_result = self._map(op.else_body.result)
-        if not isinstance(else_result, Nil):
-            result_pack = PackOp(
-                values=[else_result],
-                type=builtin.List(element_type=else_result.type),
-            )
-            yield result_pack
-            yield llvm.BrOp(target=merge_label_op, args=result_pack)
-        else:
-            yield llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
-
-        # Merge — block arg receives the result from whichever branch was taken
-        yield merge_label_op
-        self.current_label = merge_label_op
         self.value_map[op] = merge_result_arg
+        return cond_br, merge_label_op
 
-    def _lower_call(self, op: builtin.CallOp) -> Iterator[dgen.Op]:
+    def _lower_branch(
+        self,
+        ops: list[dgen.Op],
+        return_val: dgen.Value,
+        merge_label_op: llvm.LabelOp,
+        args: list[BlockArgument],
+    ) -> Block:
+        """Lower branch ops into a Block ending with BrOp to merge_label_op."""
+        effects: list[dgen.Op] = []
+        for i, op in enumerate(ops):
+            if isinstance(op, builtin.IfOp):
+                inner_cond_br, inner_merge = self._lower_if(op)
+                inner_merge.body = self._lower_branch(
+                    ops[i + 1 :], return_val, merge_label_op, inner_merge.body.args
+                )
+                return Block(result=_chain_before(effects, inner_cond_br), args=args)
+            effect = self._lower_single_op(op)
+            if effect is not None:
+                effects.append(effect)
+
+        branch_result = self._map(return_val)
+        if not isinstance(branch_result, Nil):
+            result_pack = PackOp(
+                values=[branch_result],
+                type=builtin.List(element_type=branch_result.type),
+            )
+            br = llvm.BrOp(target=merge_label_op, args=result_pack)
+        else:
+            br = llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
+        return Block(result=_chain_before(effects, br), args=args)
+
+    def _lower_call(self, op: builtin.CallOp) -> llvm.CallOp | None:
         callee_name = op.callee.name
         assert callee_name is not None
-        # Unpack PackOp args
         if isinstance(op.args, PackOp):
             mapped_args = [self._map(v) for v in op.args.values]
         else:
             mapped_args = [self._map(op.args)]
         pack = PackOp(values=mapped_args, type=op.args.type)
-        yield pack
         llvm_call = llvm.CallOp(
             callee=String().constant(callee_name),
             args=pack,
             type=op.type,
         )
-        yield llvm_call
         self.value_map[op] = llvm_call
+        if isinstance(op.type, Nil):
+            return llvm_call  # side effect: must be chained
+        return None  # non-void: reachable via data deps of consumers
 
 
 def lower_builtin_to_llvm(m: Module) -> Module:
