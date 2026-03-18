@@ -98,11 +98,18 @@ def test_diff_format_semantic_change():
         |     %1 : Nil = toy.print(%0)
     """)
     result = diff_modules(parse_module(actual), parse_module(expected))
-    assert result.startswith("IR equivalence check failed.")
-    assert "function 'main':" in result
+    assert result.startswith("--- expected\n+++ actual")
     assert "@@" in result
-    assert any(line.startswith("-  ") for line in result.splitlines())
-    assert any(line.startswith("+  ") for line in result.splitlines())
+    assert any(
+        line.startswith("-")
+        for line in result.splitlines()
+        if not line.startswith("---")
+    )
+    assert any(
+        line.startswith("+")
+        for line in result.splitlines()
+        if not line.startswith("+++")
+    )
 
 
 def test_diff_format_missing_function():
@@ -116,14 +123,10 @@ def test_diff_format_missing_function():
     """)
     actual_module = Module(functions=[])
     result = diff_modules(actual_module, parse_module(expected))
-    assert result.startswith("IR equivalence check failed.")
-    assert "function 'main':" in result
-    assert all(
-        line.startswith("-  ") or not line.startswith((" ", "+"))
-        for line in result.splitlines()
-        if line.startswith("-") or line.startswith("+")
-    )
-    assert not any(line.startswith("+  ") for line in result.splitlines())
+    assert result.startswith("--- expected\n+++ actual")
+    lines = result.splitlines()
+    assert any(ln.startswith("-") for ln in lines if not ln.startswith("---"))
+    assert not any(ln.startswith("+") for ln in lines if not ln.startswith("+++"))
 
 
 def test_diff_format_extra_function():
@@ -137,7 +140,7 @@ def test_diff_format_extra_function():
     """)
     expected_module = Module(functions=[])
     result = diff_modules(parse_module(actual), expected_module)
-    assert result.startswith("IR equivalence check failed.")
-    assert "function 'main':" in result
-    assert any(line.startswith("+  ") for line in result.splitlines())
-    assert not any(line.startswith("-  ") for line in result.splitlines())
+    assert result.startswith("--- expected\n+++ actual")
+    lines = result.splitlines()
+    assert any(ln.startswith("+") for ln in lines if not ln.startswith("+++"))
+    assert not any(ln.startswith("-") for ln in lines if not ln.startswith("---"))

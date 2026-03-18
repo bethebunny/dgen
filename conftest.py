@@ -6,8 +6,19 @@ from syrupy.assertion import SnapshotAssertion
 from dgen.testing.syrupy import IRSnapshotExtension
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--side-by-side",
+        action="store_true",
+        default=False,
+        help="Show IR snapshot diffs side-by-side via delta (requires git-delta).",
+    )
+
+
 @pytest.fixture
-def ir_snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
+def ir_snapshot(
+    snapshot: SnapshotAssertion, request: pytest.FixtureRequest
+) -> SnapshotAssertion:
     """Snapshot fixture using IR graph-equivalence comparison.
 
     Snapshots are stored as ``.ir`` text files in a ``__snapshots__``
@@ -23,4 +34,5 @@ def ir_snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
 
     Run ``pytest --snapshot-update`` to generate or update snapshots.
     """
+    IRSnapshotExtension.side_by_side = request.config.getoption("--side-by-side")
     return snapshot.use_extension(IRSnapshotExtension)
