@@ -33,6 +33,7 @@ rather than a raw text diff, so only real changes are reported.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Iterator
 from typing import Optional
 
@@ -61,6 +62,7 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
 
     file_extension = "ir"
     _write_mode = WriteMode.TEXT
+    side_by_side: bool = False
 
     def serialize(
         self,
@@ -94,4 +96,12 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
         assert isinstance(snapshot_data, str)
         actual = parse_module(serialized_data)
         expected = parse_module(snapshot_data)
-        yield from diff_modules(actual, expected).splitlines()
+        diff: str = diff_modules(actual, expected)
+
+        if self.side_by_side:
+            result = subprocess.run(
+                ["delta", "--side-by-side"], input=diff, capture_output=True, text=True
+            )
+            diff = result.stdout
+
+        yield from diff.splitlines()

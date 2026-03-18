@@ -33,33 +33,38 @@ def structural_diff(actual: Module, expected: Module) -> str:
 
 
 def diff_modules(actual: Module, expected: Module, context: int = 3) -> str:
-    """Return a unified-diff-style string comparing two modules semantically."""
+    """Return a standard unified diff comparing two modules semantically.
+
+    Uses single-char prefixes (``-``, ``+``, `` ``) and includes
+    ``---``/``+++`` file headers so the output can be piped to external
+    diff renderers like ``delta``.
+    """
     actual_funcs = {f.name: f for f in actual.functions}
     expected_funcs = {f.name: f for f in expected.functions}
 
-    diffs: list[str] = []
+    hunks: list[str] = []
 
     for name in sorted(expected_funcs.keys() | actual_funcs.keys()):
         if name not in actual_funcs:
             lines = "\n".join(
-                f"-  {line}" for line in asm.format(expected_funcs[name]).splitlines()
+                f"-{line}" for line in asm.format(expected_funcs[name]).splitlines()
             )
-            diffs.append(f"function '{name}':\n{lines}")
+            hunks.append(lines)
         elif name not in expected_funcs:
             lines = "\n".join(
-                f"+  {line}" for line in asm.format(actual_funcs[name]).splitlines()
+                f"+{line}" for line in asm.format(actual_funcs[name]).splitlines()
             )
-            diffs.append(f"function '{name}':\n{lines}")
+            hunks.append(lines)
         else:
             body = "\n".join(
                 _diff_function(actual_funcs[name], expected_funcs[name], context)
             )
             if body:
-                diffs.append(f"function '{name}':\n{body}")
+                hunks.append(body)
 
-    if not diffs:
+    if not hunks:
         return ""
-    return "\n\n".join(["IR equivalence check failed.", *diffs])
+    return "--- expected\n+++ actual\n" + "\n".join(hunks)
 
 
 def _diff_function(
@@ -110,22 +115,22 @@ def _diff_function(
             if tag == "equal":
                 for op_lines in expected_fmt[pi1:pi2]:
                     for line in op_lines:
-                        yield f"   {line}"
+                        yield f" {line}"
             elif tag == "delete":
                 for op_lines in expected_fmt[pi1:pi2]:
                     for line in op_lines:
-                        yield f"-  {line}"
+                        yield f"-{line}"
             elif tag == "insert":
                 for op_lines in actual_fmt[qi1:qi2]:
                     for line in op_lines:
-                        yield f"+  {line}"
+                        yield f"+{line}"
             elif tag == "replace":
                 for op_lines in expected_fmt[pi1:pi2]:
                     for line in op_lines:
-                        yield f"-  {line}"
+                        yield f"-{line}"
                 for op_lines in actual_fmt[qi1:qi2]:
                     for line in op_lines:
-                        yield f"+  {line}"
+                        yield f"+{line}"
 
 
 def _line_starts(formatted_ops: list[list[str]]) -> list[int]:
@@ -197,8 +202,6 @@ def diff(
             click.echo(click.style(line, fg="red"), color=color)
         elif line.startswith("@@"):
             click.echo(click.style(line, fg="cyan"), color=color)
-        elif line.startswith("IR equivalence"):
-            click.echo(click.style(line, bold=True), color=color)
         else:
             click.echo(line)
 
