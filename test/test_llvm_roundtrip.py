@@ -72,7 +72,9 @@ def test_roundtrip_icmp_condbr():
         |     %1 : Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
         |     %loop_body : llvm.Label = llvm.label() ():
+        |         %_ : Nil = ()
         |     %loop_exit : llvm.Label = llvm.label() ():
+        |         %_ : Nil = ()
         |     %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [], [])
     """)
     module = parse_module(ir)
@@ -138,6 +140,7 @@ def test_roundtrip_loop_pattern():
         |             %next : Nil = llvm.add(%j, %one)
         |             %_ : Nil = llvm.br(%loop_header, [%next, %q])
         |         %loop_exit : llvm.Label = llvm.label() ():
+        |             %_ : Nil = ()
         |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [%i, %p], [])
         |     %_ : Nil = llvm.br(%loop_header, [%init, %alloc])
     """)

@@ -87,7 +87,6 @@ def test_print_op():
     assert asm.format(op) == "%0 : Nil = toy.print(%5)"
 
 
-
 def test_concat_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     v1 = dgen.Value(name="1", type=builtin.Nil())
@@ -146,7 +145,7 @@ def test_full_module(ir_snapshot):
         values=[r1, r3],
         type=builtin.List(element_type=inferred()),
     )
-    call4 = builtin.CallOp(
+    builtin.CallOp(
         callee=mt_ref,
         args=pack4,
         type=inferred(),

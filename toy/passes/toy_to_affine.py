@@ -271,6 +271,5 @@ class ToyToAffine(Pass):
         return True
 
 
-
 def lower_to_affine(m: Module) -> Module:
     return ToyToAffine().run(m)

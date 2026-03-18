@@ -98,7 +98,6 @@ def _jit_evaluate(
     """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
     assert target.ready
     externs = _extern_declarations(subgraph)
-    ops = list(subgraph)
     func = FunctionOp(
         name="main",
         body=dgen.Block(result=target, args=list(block_args)),
