@@ -148,6 +148,43 @@ python -m dgen.gen toy/dialects/toy.dgen > toy/dialects/toy.pyi
 - Avoid `isinstance` specialization, this is generally design smell
 - Don't special case. Refuse to add special cases that aren't explicitly called out in designs. Explicitly ask before adding any special cases to a design.
 
+## JIT, Staging, and the Memory System
+
+### Types and Memory
+
+Every type declares a `__layout__: Layout` — a language-agnostic description of its binary memory representation. Layout instances (`Int`, `Float64`, `Span`, `Pointer`, etc.) own a `struct.Struct` for pack/unpack and know how to convert to/from JSON. Wire format equals memory format.
+
+`Memory[T]` is a typed buffer for a value of type `T`. It can be initialized two ways:
+- `Memory.from_json(type, value)` — from a JSON-compatible Python value
+- `Memory.from_raw(type, address)` — from a raw pointer address (e.g. a JIT result)
+
+All constants carry their data as `Memory` objects. This is how compile-time values cross the stage boundary into JIT-compiled code.
+
+### Staging and Dependent Types
+
+Op fields come in two kinds, accessible via properties:
+- **`op.operands`** — `Value`-typed fields; runtime SSA values, pass through without adding a stage
+- **`op.parameters`** — non-`Value` fields (e.g. `Shape`, `int`); compile-time, each one is a **stage boundary**
+
+Stage numbers are computed as:
+```
+stage(op) = max(stage(v) for v in op.operands,
+               stage(v) + 1 for v in op.parameters)
+```
+Constants are stage 0. Block arguments (function parameters) are stage 1.
+
+`builtin.ConstantOp` is the canonical stage boundary: it embeds a compile-time `Memory` value as a runtime SSA value. Unlike MLIR, which requires per-dialect constant ops (e.g. `arith.constant`, `toy.constant`), dgen's single `builtin.ConstantOp` works for every dialect — the type's `__layout__` drives serialization and materialization.
+
+### Compile-Time Resolution and JIT Paths
+
+`Compiler.compile(module)` runs staging before the pass pipeline. The staging engine finds unresolved `parameters` (fields that still hold a `Value` rather than a resolved `Constant`) and resolves them in ascending stage order:
+
+1. **Stage-0 evaluable** — the dependency subgraph consists entirely of constants. The subgraph is extracted, JIT-compiled in isolation, executed immediately, and the result is patched back as a `ConstantOp`. This is the constant-folding / dependent-type resolution path.
+
+2. **Runtime-dependent** — some `parameters` depend on block arguments. A callback thunk is built: stage-1 code calls back into the compiler at runtime, which JIT-compiles a stage-2 specialization against the actual runtime values.
+
+This gives dgen out-of-the-box: constant folding, compile-time expression evaluation, and dependent types (types parameterized on runtime values, resolved just-in-time). See `docs/staging.md` and `docs/staged-computation.md` for details.
+
 ## Version Control
 
 This repo uses **jj** (Jujutsu) as its VCS frontend over git. Use `jj` commands rather than `git` for day-to-day operations (e.g., `jj st`, `jj log`, `jj new`, `jj commit`, `jj describe`).
