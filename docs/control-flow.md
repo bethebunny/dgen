@@ -48,39 +48,18 @@ use-def root; `walk_ops` on `result` gives the canonical op list.
 
 ### What `ChainOp` Is
 
-`ChainOp(lhs, rhs)` carries `lhs`'s value while keeping `rhs` live. The result of the
-chain is `lhs`'s runtime value; `rhs` is an additional use-def dependency that prevents
-`rhs` from being eliminated. Chains are the only ordering guarantee within a block: two
-side-effecting ops with no chain connection between them have no guaranteed execution
-order relative to each other.
-
-There are two idioms:
-
-**Effect sequencing** — when the chain result is unused (or is the side effect's own
-value), put the side effect in `lhs` and the next thing to sequence in `rhs`:
+A `ChainOp(lhs, rhs)` encodes a **control edge disguised as a data edge**: `rhs` must
+execute and must not be eliminated, and the chain's result is `lhs`'s runtime value.
+Chains are the only ordering guarantee within a block. Two side-effecting ops that are
+not connected on the same chain spine have no guaranteed execution order relative to
+each other.
 
 ```
-# Effect chain: effect1 executes, then effect2, result is effect1's value
-%spine = chain(%effect1, chain(%effect2, %terminator))
+# %val is passed through; %store_op is kept live and must execute
+%_ = chain(%val, %store_op)
 ```
 
-This is what `chain_body` builds: it threads a list of ops into a left-leaning chain
-so that `walk_ops` visits them in order (lhs before rhs).
-
-**Data propagation through an effect** — when you need to pass a data value past a
-side effect that must stay live, put the data in `lhs` and the effect in `rhs`:
-
-```
-# Carry %data's value while keeping %effect live; result is %data
-%v = chain(%data, %effect)
-%next = some_op(%v)   # uses %data's value; %effect is guaranteed to execute
-```
-
-This is the pattern used in lowering when a side effect (e.g. `toy.print`) must be
-kept alive while a data value is threaded to the next consumer.
-
-In both cases `walk_ops` visits `lhs` before `rhs`, giving the linearization order:
-lhs's ops are scheduled before rhs's ops.
+The chain spine is the schedule for a block's side effects.
 
 ---
 
