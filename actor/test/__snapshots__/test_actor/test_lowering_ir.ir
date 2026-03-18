@@ -3,9 +3,15 @@ import affine
 %main : Nil = function<affine.MemRef<affine.Shape<1>([4]), F64>>() (%0: affine.MemRef<affine.Shape<1>([4]), F64>):
     %16 : affine.MemRef<affine.Shape<1>([4]), F64> = affine.alloc(affine.Shape<1>([4]))
     %17 : Nil = affine.for<0, 4>() (%18: Index):
+        %5 : affine.MemRef<affine.Shape<1>([4]), F64> = affine.alloc(affine.Shape<1>([4]))
+        %6 : Nil = affine.for<0, 4>() (%7: Index):
+            %8 : F64 = affine.load(%0, [%7])
+            %9 : F64 = 2.0
+            %10 : F64 = affine.mul_f(%8, %9)
+            %11 : Nil = affine.store(%10, %5, [%7])
+        %12 : affine.MemRef<affine.Shape<1>([4]), F64> = chain(%5, %6)
         %19 : F64 = affine.load(%12, [%18])
         %20 : F64 = 1.0
         %21 : F64 = affine.add_f(%19, %20)
         %22 : Nil = affine.store(%21, %16, [%18])
     %23 : affine.MemRef<affine.Shape<1>([4]), F64> = chain(%16, %17)
-    %25 : Nil = return(%23)
