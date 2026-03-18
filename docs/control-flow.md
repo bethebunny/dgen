@@ -103,16 +103,6 @@ need to be explicitly represented in the parser's scoping rules.
 
 ---
 
-## Why `_stored_ops` Is Gone
-
-With closed blocks, `walk_ops(block.result)` gives the complete and correct op list for
-a block. The `_stored_ops` override existed solely because open blocks caused `walk_ops`
-to cross block boundaries, discovering ops that belonged to other basic blocks. Closed
-blocks eliminate that cross-boundary leakage, making `_stored_ops` redundant. `Block`
-stores only `result` and `args`; the op list is always derived from the graph.
-
----
-
 ## Relationship to Sea-of-Nodes
 
 The within-block execution model is Sea-of-Nodes. The between-block structure is
@@ -127,24 +117,6 @@ regions). Full SoN would require:
 These are not planned. The current hybrid — closed MLIR blocks containing SoN use-def
 graphs — is the intended permanent design. It preserves MLIR's structural clarity at the
 block level while enabling within-block optimization freedom.
-
----
-
-## The Problem This Solves
-
-The old open-block implementation required:
-
-1. `_stored_ops` — because `walk_ops` crossed block boundaries, the schedule diverged
-   from the use-def graph and had to be stored separately.
-2. `unwrap_chain` — because the chain spine was the only safe way to recover the schedule
-   within a block without leaking into adjacent blocks.
-3. Two-phase lowering — passes first emitted ops linearly, then grouped them into label
-   bodies after the fact.
-4. Cycle guards in `SlotTracker`, `op_asm`, `_walk_all_ops` — because open blocks created
-   reference cycles via branch operands.
-
-Closed blocks eliminate all four. The graph structure is the schedule. `walk_ops` from
-any block's result gives the correct op list for that block, nothing more.
 
 ---
 
