@@ -51,6 +51,26 @@ Implementation language: **Python**.
 - `test/` — `dgen`-level tests
 - `TODO.md` — Current task list
 
+## IR Design: Blocks and Use-Def
+
+**Blocks are closed.** An op inside a block may only reference values defined in that same
+block (local ops or block arguments). Values from an enclosing scope must be threaded in
+as explicit block arguments — the same invariant as MLIR. The parser enforces this.
+
+Two current exceptions (both transitional, to be resolved via symbols):
+- `llvm.LabelOp` values (branch targets) may be referenced across block boundaries.
+- `builtin.FunctionOp` values (call targets) may be referenced across block boundaries.
+
+**Within a block, execution order is use-def order.** There is no implicit scheduling.
+Ops with no use-def relationship between them may execute in any order. Side-effecting ops
+must be chained via `ChainOp` to be reachable from `block.result` and to establish
+ordering. Two side-effecting ops not on the same chain spine have no ordering guarantee.
+
+**All ops must be reachable from `block.result` via `walk_ops`.** Unreachable ops are
+dead. `walk_ops(block.result)` gives the complete, canonical op list for a block.
+
+See `docs/control-flow.md` for the full design.
+
 ## Key Architecture Patterns
 
 - **Dialect registration**: Decorators `@dialect.op("name")` and `@dialect.type("name")` register ops/types
