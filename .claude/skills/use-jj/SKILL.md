@@ -24,9 +24,8 @@ description: Reference for using jj (Jujutsu) VCS correctly in this repo. Invoke
 These operations are **banned in this repo**:
 - `jj edit` — mutates history
 - `jj abandon` — mutates history
-- `jj squash` — mutates history
 
-Use `jj new` + `jj describe` instead. Always move forward, never rewrite.
+Always prefer moving forward with `jj new`. `jj squash` is permitted for resolving rebase conflicts, addressing review nits, or amending a commit with follow-up fixes.
 
 ---
 
