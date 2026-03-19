@@ -143,7 +143,6 @@ class Constant(Value[T]):
         return self.value
 
 
-
 Field = tuple[str, type[Type]]
 Fields = tuple[Field, ...]
 
