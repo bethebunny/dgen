@@ -32,7 +32,7 @@ def test_generate_builtin_trait():
 def test_generate_builtin_simple_type():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
-    assert "@dataclass(frozen=True)" in code
+    assert "@dataclass(frozen=True, eq=False)" in code
     assert "class Index(Type):" in code
 
 

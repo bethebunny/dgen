@@ -269,7 +269,7 @@ def _build_type(td: TypeDecl, dialect: Dialect, ns: dict[str, object]) -> type:
         type_ns["__annotations__"] = annotations
 
     bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in td.traits) + (Type,)
-    cls = dataclasses.dataclass(frozen=True)(type(td.name, bases, type_ns))
+    cls = dataclasses.dataclass(frozen=True, eq=False)(type(td.name, bases, type_ns))
     dialect.type(td.name)(cls)
     return cls
 

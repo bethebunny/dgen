@@ -97,7 +97,7 @@ def _stub_class(
 ) -> Iterator[str]:
     """Yield stub lines for one type or op dataclass."""
     if frozen:
-        yield "@dataclass(frozen=True)"
+        yield "@dataclass(frozen=True, eq=False)"
     else:
         yield "@dataclass(eq=False, kw_only=True)"
 

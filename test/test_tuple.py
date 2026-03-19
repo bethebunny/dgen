@@ -71,8 +71,8 @@ def test_tuple_type_from_dict_roundtrip():
     reconstructed = _type_from_dict(data)
     assert isinstance(reconstructed, Tuple)
     assert len(reconstructed.types) == 2
-    assert type_constant(reconstructed.types[0]) == Index()
-    assert type_constant(reconstructed.types[1]) == String()
+    assert isinstance(type_constant(reconstructed.types[0]), Index)
+    assert isinstance(type_constant(reconstructed.types[1]), String)
 
 
 def test_tuple_three_types():

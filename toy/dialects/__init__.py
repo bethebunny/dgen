@@ -27,7 +27,7 @@ def shape_constant(dims: Sequence[int]) -> Constant:
 # ===----------------------------------------------------------------------=== #
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class FunctionType(Function):
     """Toy function signature with explicit input types."""
 

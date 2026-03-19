@@ -6,15 +6,15 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import F64, HasSingleBlock, Index, Nil
+from dgen.dialects.builtin import Array, F64, HasSingleBlock, Index, Nil, Pointer
 
 affine = Dialect("affine")
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Shape(Type):
     rank: Value[Index]
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class MemRef(Type):
     shape: Value[Shape]
     dtype: Value[dgen.TypeType] = F64()
@@ -65,3 +65,4 @@ class ForOp(HasSingleBlock, Op):
     hi: Value[Index]
     type: Type = Nil()
     body: Block
+

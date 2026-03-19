@@ -367,7 +367,7 @@ def test_string_constant_different_lengths():
     """String type is the same regardless of value length (Span)."""
     s3 = builtin.String()
     s5 = builtin.String()
-    assert s3 == s5  # Same type — length is in the value, not the type
+    assert type(s3) is type(s5)  # Same type — length is in the value, not the type
     assert s3.__layout__.byte_size == 16  # Span is always 16 bytes
 
 
