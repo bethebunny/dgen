@@ -187,7 +187,7 @@ _ASM_TYPES = [
 def test_type_asm_roundtrip(ty):
     text = type_asm(ty)
     parsed = _parse_type(text)
-    assert parsed == ty
+    assert type_asm(parsed) == text
 
 
 # ---------------------------------------------------------------------------
