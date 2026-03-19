@@ -321,10 +321,10 @@ class TransposeEliminationScene(Scene):
         """
         Animate replace_uses(old → new) entirely in the IR view.
 
-          A. Flash %old_name in consumer operands (orange).
-          B. Morph %old_name → %new_name in those operands (green).
-          C. Red boxes on now-dead ops.
-          D. Dead ops fade out; survivors slide up to fill the gap.
+          A. Draw boxes around all %old_name occurrences (def line + operand tokens).
+          B. Draw a differently-colored box around the %new_name definition.
+          C. Morph consumer text (%old → %new) and operand box color (orange → cyan).
+          D. Fade all SSA boxes; red boxes on dead ops; slide survivors up.
         """
         # ── Parse ─────────────────────────────────────────────────────────────
         before_uses = _parse_uses(before_lines)
@@ -334,7 +334,6 @@ class TransposeEliminationScene(Scene):
         after_name_set = set(after_order)
         dead_order = [n for n in before_order if n not in after_name_set]
 
-        before_line_map = {n: ln for ln in before_lines if (n := _op_name_from_line(ln))}
         after_line_map = {n: ln for ln in after_lines if (n := _op_name_from_line(ln))}
 
         # Surviving ops that used old_name as an operand
@@ -352,39 +351,77 @@ class TransposeEliminationScene(Scene):
         new_name = new_name_candidates[0] if new_name_candidates else after_refs[0]
 
         ORANGE = "#f9e2af"
-        GREEN = "#a6e3a1"
+        CYAN = "#89dceb"
 
-        # ── Step A: Flash old operand in orange ───────────────────────────────
-        hl_old: dict[str, MarkupText] = {}
+        def _line_box(name: str, color: str) -> SurroundingRectangle | None:
+            m = name_to_mob.get(name)
+            if m is None:
+                return None
+            return SurroundingRectangle(
+                m, color=color, buff=0.07, corner_radius=0.05, stroke_width=2
+            )
+
+        def _token_box(
+            mob: MarkupText, token: str, color: str
+        ) -> SurroundingRectangle | None:
+            # mob.text has spaces stripped; mob.chars has one submob per non-space char.
+            # Search after '=' so we find operand occurrences, not the definition.
+            clean = mob.text
+            eq_idx = clean.find("=")
+            search_from = eq_idx + 1 if eq_idx != -1 else 0
+            # token also has spaces stripped when searching
+            clean_token = token.replace(" ", "")
+            idx = clean.find(clean_token, search_from)
+            if idx == -1:
+                return None
+            glyph_list = mob.chars.submobjects[idx : idx + len(clean_token)]
+            if not glyph_list:
+                return None
+            return SurroundingRectangle(
+                VGroup(*glyph_list),
+                color=color,
+                buff=0.04,
+                corner_radius=0.04,
+                stroke_width=2,
+            )
+
+        # ── Step A: Draw boxes around all %old_name occurrences ───────────────
+        old_def_box = _line_box(old_name, ORANGE)
+        consumer_use_boxes: dict[str, SurroundingRectangle] = {}
         for cn in consumer_names:
-            mob = _ir_mob_hl_operand(before_line_map[cn], old_name, ORANGE)
-            mob.move_to(name_to_mob[cn])
-            hl_old[cn] = mob
+            box = _token_box(name_to_mob[cn], f"%{old_name}", ORANGE)
+            if box is not None:
+                consumer_use_boxes[cn] = box
 
         self.play(
-            *[Transform(name_to_mob[cn], hl_old[cn]) for cn in consumer_names],
+            *([Create(old_def_box)] if old_def_box else []),
+            *[Create(b) for b in consumer_use_boxes.values()],
             Transform(
                 status_mob,
                 _status(f"replace_uses(%{old_name}  →  %{new_name})", STATUS_INFO),
             ),
-            run_time=0.4,
-        )
-        self.wait(0.4)
-
-        # ── Step B: Morph to new operand, highlighted green ───────────────────
-        hl_new: dict[str, MarkupText] = {}
-        for cn in consumer_names:
-            mob = _ir_mob_hl_operand(after_line_map[cn], new_name, GREEN)
-            mob.move_to(name_to_mob[cn])
-            hl_new[cn] = mob
-
-        self.play(
-            *[Transform(name_to_mob[cn], hl_new[cn]) for cn in consumer_names],
             run_time=0.5,
         )
         self.wait(0.4)
 
-        # ── Step C: Red highlight boxes on now-dead ops ───────────────────────
+        # ── Step B: Draw box around %new_name definition ──────────────────────
+        new_def_box = _line_box(new_name, CYAN)
+        if new_def_box is not None:
+            self.play(Create(new_def_box), run_time=0.4)
+        self.wait(0.3)
+
+        # ── Step C: Morph consumer text + operand box orange → cyan ───────────
+        morph_anims: list = []
+        for cn in consumer_names:
+            final_mob = _ir_mob(after_line_map[cn])
+            final_mob.move_to(name_to_mob[cn])
+            morph_anims.append(Transform(name_to_mob[cn], final_mob))
+        for box in consumer_use_boxes.values():
+            morph_anims.append(Transform(box, box.copy().set_color(CYAN)))
+        self.play(*morph_anims, run_time=0.6)
+        self.wait(0.5)
+
+        # ── Step D: Fade SSA boxes → red dead boxes + slide survivors up ──────
         dead_mobs = [name_to_mob[n] for n in dead_order if n in name_to_mob]
         dead_rects = [
             SurroundingRectangle(
@@ -393,28 +430,29 @@ class TransposeEliminationScene(Scene):
             for m in dead_mobs
         ]
         self.play(
+            *([FadeOut(old_def_box)] if old_def_box else []),
+            *([FadeOut(new_def_box)] if new_def_box else []),
+            *[FadeOut(b) for b in consumer_use_boxes.values()],
             *[Create(r) for r in dead_rects],
             Transform(
                 status_mob,
                 _status(f"Eliminating  %{' + %'.join(dead_order)}", STATUS_DEAD),
             ),
-            run_time=0.45,
+            run_time=0.5,
         )
         self.wait(0.6)
 
-        # ── Step D: Build final layout, animate in-place ──────────────────────
         new_body, new_n2m = _build_ir_group(after_lines)
         new_body.align_to(body_group, UP + LEFT)
 
-        anims: list = [FadeOut(r) for r in dead_rects]
-        anims += [FadeOut(name_to_mob[n]) for n in dead_order if n in name_to_mob]
+        slide_anims: list = [FadeOut(r) for r in dead_rects]
+        slide_anims += [FadeOut(name_to_mob[n]) for n in dead_order if n in name_to_mob]
         for name in after_order:
             old_m = name_to_mob.get(name)
             new_m = new_n2m.get(name)
             if old_m is not None and new_m is not None:
-                anims.append(Transform(old_m, new_m))
-
-        self.play(*anims, run_time=0.8)
+                slide_anims.append(Transform(old_m, new_m))
+        self.play(*slide_anims, run_time=0.8)
         self.wait(0.5)
 
         # ── Return surviving mobs ─────────────────────────────────────────────
