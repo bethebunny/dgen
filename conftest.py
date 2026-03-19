@@ -3,7 +3,16 @@
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
+from dgen.compiler import verify_passes
 from dgen.testing.syrupy import IRSnapshotExtension
+
+
+@pytest.fixture(autouse=True)
+def _enable_pass_verification():
+    """Enable IR verification for all pass pre/postconditions in every test."""
+    token = verify_passes.set(True)
+    yield
+    verify_passes.reset(token)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

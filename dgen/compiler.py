@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from typing import Generic, Protocol, TypeVar
 
 from dgen.module import Module
 from dgen.passes.pass_ import Pass
+
+verify_passes: ContextVar[bool] = ContextVar("dgen.verify_passes", default=False)
 
 T = TypeVar("T", covariant=True)
 
@@ -45,11 +48,16 @@ class Compiler(Generic[T]):
 
     def run(self, module: Module, *, verify: bool = False) -> Module:
         """Run passes only (no staging, no exit pass)."""
-        for i, p in enumerate(self.passes):
-            if verify:
-                p.verify_preconditions(module)
-            continuation = Compiler(self.passes[i + 1 :], self.exit)
-            module = p.run(module, continuation)
-            if verify:
-                p.verify_postconditions(module)
+        token = verify_passes.set(True) if verify and not verify_passes.get() else None
+        try:
+            for i, p in enumerate(self.passes):
+                if verify_passes.get():
+                    p.verify_preconditions(module)
+                continuation = Compiler(self.passes[i + 1 :], self.exit)
+                module = p.run(module, continuation)
+                if verify_passes.get():
+                    p.verify_postconditions(module)
+        finally:
+            if token is not None:
+                verify_passes.reset(token)
         return module
