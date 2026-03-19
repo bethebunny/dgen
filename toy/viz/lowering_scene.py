@@ -157,8 +157,7 @@ class TransposeEliminationScene(Scene):
             self.play(Transform(status_mob, new_s), run_time=0.35)
 
         # ── 5. Animate events ─────────────────────────────────────────────────
-        # We rebuild body_group on each step to keep it in sync.
-        # `body_group` is the VGroup currently on screen (visually).
+        # body_group tracks the VGroup currently on screen for the IR body.
         active_rect: SurroundingRectangle | None = None
 
         def clear_rect() -> None:
@@ -186,21 +185,22 @@ class TransposeEliminationScene(Scene):
             animate: bool = True,
         ) -> None:
             """Replace the body_group mobject with a new one for `lines`."""
-            nonlocal body_group, full_ir
+            nonlocal body_group
 
             new_body = _build_ir_group(lines, colors)
             new_body.arrange(DOWN, aligned_edge=LEFT, buff=0.22)
             for mob in new_body:
                 mob.shift(RIGHT * 0.5)
 
-            # Position new body below the header
-            new_full = VGroup(header_group, new_body).arrange(
-                DOWN, aligned_edge=LEFT, buff=0.18
-            )
-            new_full.center().shift(DOWN * 0.2)
+            # Anchor top-left of new body to the same position as the old body.
+            # Avoids repositioning the already-displayed header_group.
+            new_body.align_to(body_group, UP + LEFT)
 
             if animate:
-                self.play(Transform(body_group, new_body), run_time=0.55)
+                self.play(FadeOut(body_group), run_time=0.3)
+                self.remove(body_group)
+                self.add(new_body)
+                self.play(FadeIn(new_body), run_time=0.3)
             else:
                 self.remove(body_group)
                 self.add(new_body)
