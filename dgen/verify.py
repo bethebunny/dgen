@@ -7,18 +7,18 @@ Two top-level functions:
       in block.args).  Hard-coded exceptions: FunctionOp (call targets) and
       LabelOp (branch targets) are permitted to cross block boundaries.
 
-  verify_all_ready(module)  — every op's type must be a resolved Type, and
-      every compile-time parameter (op.__params__) must be a Constant or Type.
-      This is the postcondition of staging: no unresolved SSA values remain in
-      parameter position.
+  verify_all_ready(module)  — every op must satisfy op.ready, meaning all
+      compile-time parameters and the op's type are fully resolved (no
+      BlockArgument dependencies remain in parameter position).
 """
 
 from __future__ import annotations
 
 import dgen
 from dgen.block import Block, BlockArgument
+from dgen.dialects.builtin import FunctionOp
+from dgen.dialects.llvm import LabelOp
 from dgen.module import Module, _walk_all_ops
-from dgen.type import Constant, Type
 
 
 # ---------------------------------------------------------------------------
@@ -27,9 +27,6 @@ from dgen.type import Constant, Type
 
 
 def _is_cross_block_permitted(value: dgen.Value) -> bool:
-    from dgen.dialects.builtin import FunctionOp
-    from dgen.dialects.llvm import LabelOp
-
     return isinstance(value, (FunctionOp, LabelOp))
 
 
@@ -91,26 +88,14 @@ def verify_closed_blocks(module: Module) -> None:
 
 
 def verify_all_ready(module: Module) -> None:
-    """Assert every op's type and __params__ are resolved (no unresolved boundaries).
+    """Assert every op is ready: no BlockArgument dependencies in parameter position.
 
-    Mirrors ``staging._unresolved_boundaries``: a parameter is "not ready" if
-    and only if it is an Op or BlockArgument AND NOT a Constant, Type, or
-    FunctionOp.  Plain Value forward-references (parser placeholders for
-    module-level function names) are stage-0 by design and are valid here.
+    Uses op.ready, which recurses through the op's type and __params__ fields.
+    BlockArgument.ready is False, so any op whose type or parameters depend on
+    a runtime block argument will fail this check.
     """
-    from dgen.dialects.builtin import FunctionOp
-
-    _exempt = (Constant, Type, FunctionOp)
-
     for func in module.functions:
         for op in _walk_all_ops(func):
-            assert isinstance(op.type, (Constant, Type)), (
-                f"{type(op).__name__}.type is not resolved "
-                f"(got {type(op.type).__name__})"
+            assert op.ready, (
+                f"{type(op).__name__} is not ready (has unresolved parameter dependencies)"
             )
-            for name, val in op.parameters:
-                if isinstance(val, (dgen.Op, BlockArgument)) and not isinstance(val, _exempt):
-                    raise AssertionError(
-                        f"{type(op).__name__}.{name} is not a resolved parameter "
-                        f"(got {type(val).__name__})"
-                    )

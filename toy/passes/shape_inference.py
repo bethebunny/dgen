@@ -6,7 +6,6 @@ import dgen
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module, PackOp, _walk_all_ops
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
-from dgen.verify import verify_closed_blocks
 from toy.dialects import shape_constant, toy
 
 from typing import TYPE_CHECKING
@@ -20,11 +19,6 @@ class ShapeInference(Pass):
 
     def __init__(self) -> None:
         self._func_map: dict[str, builtin.FunctionOp] = {}
-
-    def verify_preconditions(self, module: Module) -> None:
-        # Skip verify_all_ready: ShapeInference specifically handles
-        # InferredShapeTensor types, which are not yet fully resolved.
-        verify_closed_blocks(module)
 
     def verify_postconditions(self, module: Module) -> None:
         super().verify_postconditions(module)

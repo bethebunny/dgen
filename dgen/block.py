@@ -17,6 +17,10 @@ class BlockArgument(Value):
     type: Value[TypeType]
 
     @property
+    def ready(self) -> bool:
+        return False
+
+    @property
     def __constant__(self) -> Memory:
         raise TypeError(f"BlockArgument %{self.name} is not a constant")
 

@@ -4,9 +4,10 @@ import pytest
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
-from dgen.dialects.builtin import FunctionOp
+from dgen.dialects.builtin import FunctionOp, Nil
 from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.staging import ConstantFold
@@ -164,9 +165,6 @@ def test_compiler_run_verification_catches_closed_block_violation():
         |     %0 : Nil = {}
     """)
 
-    from dgen.block import BlockArgument
-    from dgen.dialects.builtin import Nil
-
     class CorruptPass(Pass):
         """Introduces a closed-block violation by replacing the block result
         with a BlockArgument not in the block's args list."""
@@ -183,7 +181,7 @@ def test_compiler_run_verification_catches_closed_block_violation():
     m = parse_module(ir_text)
     compiler_inst: Compiler = Compiler(passes=[CorruptPass()], exit=IdentityPass())
     with pytest.raises(AssertionError):
-        compiler_inst.run(m, verify=True)
+        compiler_inst.run(m)
 
 
 # ---------------------------------------------------------------------------
