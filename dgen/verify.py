@@ -56,13 +56,22 @@ def _check_in_scope(
     )
 
 
-def _verify_block(block: Block) -> None:
+def _verify_block(block: Block, visited: set[int] | None = None) -> None:
+    if visited is None:
+        visited = set()
+    bid = id(block)
+    if bid in visited:
+        return
+    visited.add(bid)
+
     valid: set[int] = {id(arg) for arg in block.args}
     for op in block.ops:
         valid.add(id(op))
 
     # The block result itself must be in scope if it is block-scoped.
-    if isinstance(block.result, (dgen.Op, BlockArgument)) and not _is_cross_block_permitted(block.result):
+    if isinstance(
+        block.result, (dgen.Op, BlockArgument)
+    ) and not _is_cross_block_permitted(block.result):
         assert id(block.result) in valid, (
             f"block.result references out-of-scope {type(block.result).__name__}"
         )
@@ -73,7 +82,7 @@ def _verify_block(block: Block) -> None:
         for name, param in op.parameters:
             _check_in_scope(param, valid, op, name)
         for _, child_block in op.blocks:
-            _verify_block(child_block)
+            _verify_block(child_block, visited)
 
 
 def verify_closed_blocks(module: Module) -> None:

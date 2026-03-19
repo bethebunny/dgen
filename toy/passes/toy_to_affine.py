@@ -33,29 +33,37 @@ def _chain(*values: dgen.Value, type: dgen.Type) -> dgen.Value:
 def _nested_for(
     shape: Sequence[int],
     body_fn: Callable[[Sequence[dgen.Value]], dgen.Value],
+    outer_block_args: Sequence[BlockArgument] = (),
 ) -> affine.ForOp:
-    """Build nested ForOps for each dimension, innermost first."""
+    """Build nested ForOps for each dimension, innermost first.
+
+    Outer-loop ivars are threaded as explicit extra block arguments on inner
+    body blocks so that every block remains closed (no out-of-scope captures).
+    outer_block_args: function-parameter BlockArguments referenced in body_fn;
+    threaded at every nesting level so they remain in scope.
+    """
     ivars = [BlockArgument(type=Index()) for _ in shape]
     innermost: dgen.Value = body_fn(ivars)
-    for dim, ivar in reversed(list(zip(shape, ivars))):
+    for depth in range(len(shape) - 1, -1, -1):
+        outer_ivars = ivars[:depth]
         innermost = affine.ForOp(
             lo=Index().constant(0),
-            hi=Index().constant(dim),
-            body=dgen.Block(result=innermost, args=[ivar]),
+            hi=Index().constant(shape[depth]),
+            body=dgen.Block(
+                result=innermost,
+                args=[ivars[depth]] + outer_ivars + list(outer_block_args),
+            ),
         )
     return innermost  # type: ignore[return-value]
 
 
+def _get_block_args(*values: dgen.Value) -> list[BlockArgument]:
+    """Return only the BlockArgument instances from values."""
+    return [v for v in values if isinstance(v, BlockArgument)]
+
+
 class ToyToAffine(Pass):
     allow_unregistered_ops = True
-
-    def verify_postconditions(self, module: Module) -> None:
-        # TODO: _nested_for produces ForOp body blocks whose innermost layers
-        # reference outer-loop BlockArgument ivars directly, which violates the
-        # closed-block invariant.  Fixing this requires ForOp to support
-        # threading outer ivars as explicit body block arguments.  For now we
-        # skip the closed-block postcondition check at the affine IR level.
-        pass
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
         return Module(
@@ -90,7 +98,7 @@ class ToyToAffine(Pass):
                 value=load, memref=alloc, indices=_index_pack(*reversed(list(ivars)))
             )
 
-        loop = _nested_for(in_shape, body)
+        loop = _nested_for(in_shape, body, _get_block_args(op.input))
         rewriter.replace_uses(op, _chain(alloc, op.input, loop, type=alloc.type))
         return True
 
@@ -121,7 +129,7 @@ class ToyToAffine(Pass):
             )
             return affine.StoreOp(value=res, memref=alloc, indices=idx)
 
-        loop = _nested_for(shape, body)
+        loop = _nested_for(shape, body, _get_block_args(lhs, rhs))
         rewriter.replace_uses(op, _chain(alloc, lhs, rhs, loop, type=alloc.type))
         return True
 
@@ -155,7 +163,7 @@ class ToyToAffine(Pass):
             load = affine.LoadOp(memref=op.input, indices=_index_pack(*ivars[1:]))
             return affine.StoreOp(value=load, memref=alloc, indices=_index_pack(*ivars))
 
-        loop = _nested_for(out_shape, body)
+        loop = _nested_for(out_shape, body, _get_block_args(op.input))
         rewriter.replace_uses(op, _chain(alloc, op.input, loop, type=alloc.type))
         return True
 
@@ -177,7 +185,7 @@ class ToyToAffine(Pass):
                 indices=idx,
             )
 
-        lhs_loop = _nested_for(lhs_shape, lhs_body)
+        lhs_loop = _nested_for(lhs_shape, lhs_body, _get_block_args(op.lhs))
         offset = ConstantOp(value=lhs_shape[axis], type=Index())
 
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
@@ -189,7 +197,7 @@ class ToyToAffine(Pass):
                 indices=_index_pack(*shifted),
             )
 
-        rhs_loop = _nested_for(rhs_shape, rhs_body)
+        rhs_loop = _nested_for(rhs_shape, rhs_body, _get_block_args(op.rhs))
         rewriter.replace_uses(
             op, _chain(alloc, op.lhs, lhs_loop, op.rhs, rhs_loop, type=alloc.type)
         )
