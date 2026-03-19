@@ -46,18 +46,13 @@ class Compiler(Generic[T]):
 
         return compile_module(module, self)
 
-    def run(self, module: Module, *, verify: bool = False) -> Module:
+    def run(self, module: Module) -> Module:
         """Run passes only (no staging, no exit pass)."""
-        token = verify_passes.set(True) if verify and not verify_passes.get() else None
-        try:
-            for i, p in enumerate(self.passes):
-                if verify_passes.get():
-                    p.verify_preconditions(module)
-                continuation = Compiler(self.passes[i + 1 :], self.exit)
-                module = p.run(module, continuation)
-                if verify_passes.get():
-                    p.verify_postconditions(module)
-        finally:
-            if token is not None:
-                verify_passes.reset(token)
+        for i, p in enumerate(self.passes):
+            if verify_passes.get():
+                p.verify_preconditions(module)
+            continuation = Compiler(self.passes[i + 1 :], self.exit)
+            module = p.run(module, continuation)
+            if verify_passes.get():
+                p.verify_postconditions(module)
         return module

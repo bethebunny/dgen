@@ -100,7 +100,6 @@ def _jit_evaluate(
     args: Sequence = (),
 ) -> object:
     """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
-    assert target.ready
     externs = _extern_declarations(subgraph)
     func = FunctionOp(
         name="main",

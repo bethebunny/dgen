@@ -5,6 +5,8 @@
 ## General pass infrastructure
 - Passes should guarantee they can lower all ops in their input dialect — add validation that no un-lowered ops survive a pass
 - Canonicalization
+- ForOp closed-block violation: `_nested_for` in `toy_to_affine.py` creates nested ForOp body blocks where inner layers directly reference outer-loop `BlockArgument` ivars, violating the closed-block invariant. Fix by threading outer ivars as explicit body block arguments through each nesting level. Same issue in `_linearize` in `affine_to_llvm.py` where `MulOp`/`AddOp` nodes reference outer-loop `body_iv` BlockArguments inside inner `LabelOp` body blocks. Both `ToyToAffine` and `AffineToLLVMLowering` currently suppress their postcondition/precondition closed-block checks as a workaround.
+- Consider removing the generic `builtin.ChainOp` in favor of a monadic effects design (explicit effect tokens threaded through the use-def graph). ChainOp causes dangling chain ops after passes that remove their operands, and the monadic design makes ordering dependencies explicit and composable.
 
 ## Parser / type values
 - Parser stores Type objects (e.g. `Index()`) as constant values for TypeType fields. It should store their JSON dict form (`{"tag": "builtin.Index"}`) so `TypeValue.from_json` doesn't need special-casing. Affects `value_expression` returning bare types from `_named_type` — these should go through `__constant__.to_json()` when used as constant values.
