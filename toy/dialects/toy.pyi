@@ -7,16 +7,16 @@ from dataclasses import dataclass
 import dgen
 from dgen import Dialect, Op, Type, Value
 import toy.dialects.affine as affine
-from dgen.dialects.builtin import F64, Index, Nil
+from dgen.dialects.builtin import F64, Index, Nil, Span, String
 
 toy = Dialect("toy")
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Tensor(Type):
     shape: Value[affine.Shape]
     dtype: Value[dgen.TypeType] = F64()
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class InferredShapeTensor(Type):
     dtype: Value[dgen.TypeType] = F64()
 
@@ -70,3 +70,4 @@ class DimSizeOp(Op):
 class PrintOp(Op):
     input: Value
     type: Type = Nil()
+

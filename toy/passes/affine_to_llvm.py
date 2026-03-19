@@ -64,11 +64,9 @@ class AffineToLLVMLowering(Pass):
         self._seen = set()
         for arg in f.body.args:
             if isinstance(arg.type, toy.Tensor):
-                load_op = llvm.LoadOp(ptr=arg, type=_PTR_TYPE)
-                self.value_map[arg] = load_op
                 shape = arg.type.shape.__constant__.to_json()
                 assert isinstance(shape, list)
-                self.alloc_shapes[load_op] = shape
+                self.alloc_shapes[arg] = shape
             else:
                 self.value_map[arg] = arg
         result = self._lower_ops(f.body.ops, f.body.result)
@@ -80,6 +78,19 @@ class AffineToLLVMLowering(Pass):
 
     def _map(self, v: dgen.Value) -> dgen.Value:
         return self.value_map.get(v, v)
+
+    def _deref(self, v: dgen.Value) -> dgen.Value:
+        """If v is a tensor value, create a fresh LoadOp to get its data ptr.
+
+        Each call produces a new op so callers in different blocks each own
+        their copy, respecting the closed-block invariant.
+        """
+        if not isinstance(v.type, toy.Tensor):
+            return v
+        load_op = llvm.LoadOp(ptr=v, type=_PTR_TYPE)
+        if v in self.alloc_shapes:
+            self.alloc_shapes[load_op] = self.alloc_shapes[v]
+        return load_op
 
     def _lower_ops(self, ops: list[dgen.Op], return_val: dgen.Value) -> dgen.Value:
         effects: list[dgen.Op] = []
@@ -125,11 +136,11 @@ class AffineToLLVMLowering(Pass):
 
         if isinstance(op, ConstantOp):
             if isinstance(op.type, toy.Tensor):
-                load_op = llvm.LoadOp(ptr=op, type=_PTR_TYPE)
-                self.value_map[op] = load_op
                 shape = op.type.shape.__constant__.to_json()
                 assert isinstance(shape, list)
-                self.alloc_shapes[load_op] = shape
+                self.alloc_shapes[op] = shape
+                # Do not map op; _map(op) returns op itself.
+                # _deref() creates a fresh LoadOp at each use site.
             else:
                 self.value_map[op] = ConstantOp(value=op.value, type=op.type)
             return None
@@ -169,13 +180,13 @@ class AffineToLLVMLowering(Pass):
         return None
 
     def _lower_load(self, op: affine.LoadOp) -> None:
-        memref = self._map(op.memref)
+        memref = self._deref(self._map(op.memref))
         indices = _extract_indices(op.indices, self.value_map)
         gep = llvm.GepOp(base=memref, index=self._linearize(memref, indices))
         self.value_map[op] = llvm.LoadOp(ptr=gep)
 
     def _lower_store(self, op: affine.StoreOp) -> llvm.StoreOp:
-        memref = self._map(op.memref)
+        memref = self._deref(self._map(op.memref))
         indices = _extract_indices(op.indices, self.value_map)
         gep = llvm.GepOp(base=memref, index=self._linearize(memref, indices))
         return llvm.StoreOp(value=self._map(op.value), ptr=gep)
@@ -245,7 +256,7 @@ class AffineToLLVMLowering(Pass):
         return entry_br, exit_label
 
     def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> None:
-        input_ptr = self._map(op.input)
+        input_ptr = self._deref(self._map(op.input))
         assert isinstance(op.input.type, toy.Tensor)
         total = prod(op.input.type.shape.__constant__.to_json())
         zero_f = ConstantOp(value=0.0, type=builtin.F64())
@@ -259,7 +270,7 @@ class AffineToLLVMLowering(Pass):
         self.value_map[op] = acc
 
     def _lower_print(self, op: affine.PrintMemrefOp) -> llvm.CallOp:
-        input_val = self._map(op.input)
+        input_val = self._deref(self._map(op.input))
         size = prod(self.alloc_shapes[input_val])
         pack = PackOp(
             values=[input_val, ConstantOp(value=size, type=builtin.Index())],

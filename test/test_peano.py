@@ -36,7 +36,7 @@ peano = Dialect("peano")
 
 
 @peano.trait("Natural")
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Natural(TypeType):
     """A TypeType constrained to Zero or Successor."""
 
@@ -44,14 +44,14 @@ class Natural(TypeType):
 
 
 @peano.type("Zero")
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Zero(Type):
     __traits__: ClassVar[tuple[type, ...]] = (Natural,)
     __layout__ = layout.Void()
 
 
 @peano.type("Successor")
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Successor(Type):
     pred: Value[TypeType]
     __params__: ClassVar[Fields] = (("pred", TypeType),)

@@ -148,7 +148,7 @@ Field = tuple[str, type[Type]]
 Fields = tuple[Field, ...]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class TypeType(Type):
     """A type whose values are themselves types.
 
@@ -250,10 +250,13 @@ class Memory(Generic[T]):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Memory):
             return NotImplemented
-        return self.type == other.type and self.buffer == other.buffer
+        return (
+            self.type.__constant__.to_json() == other.type.__constant__.to_json()
+            and self.buffer == other.buffer
+        )
 
     def __hash__(self) -> int:
-        return hash((self.type, bytes(self.buffer)))
+        return hash((bytes(self.type.__constant__.buffer), bytes(self.buffer)))
 
     def __repr__(self) -> str:
         return f"Memory({self.type!r}, {self.unpack()!r})"

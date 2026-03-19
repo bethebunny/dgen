@@ -347,7 +347,7 @@ def test_parse_type_with_pointer_array_param():
     test_dialect = Dialect("_test_pa")
 
     @test_dialect.type("Wrapper")
-    @dataclass(frozen=True)
+    @dataclass(frozen=True, eq=False)
     class Wrapper(Type):
         data: Value[builtin.Pointer]
         __params__: ClassVar[Fields] = (("data", builtin.Pointer),)
