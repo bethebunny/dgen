@@ -8,7 +8,7 @@ import toy
     %3 : toy.Tensor<affine.Shape<2>([2, 2]), F64> = [5.0, 6.0, 7.0, 8.0]
     %4 : affine.MemRef<affine.Shape<2>([2, 2]), F64> = chain(%2, %3)
     %5 : Nil = affine.for<0, 2>() (%6: Index):
-        %7 : Nil = affine.for<0, 2>() (%8: Index):
+        %7 : Nil = affine.for<0, 2>() (%8: Index, %6: Index):
             %9 : F64 = affine.load(%1, [%6, %8])
             %10 : F64 = affine.load(%3, [%6, %8])
             %11 : F64 = affine.mul_f(%9, %10)

@@ -32,20 +32,6 @@ def _chain_before(effects: list[dgen.Op], terminal: dgen.Value) -> dgen.Value:
 
 
 class BuiltinToLLVMLowering(Pass):
-    def verify_preconditions(self, module: Module) -> None:
-        # The LLVM IR produced by AffineToLLVMLowering has a known closed-block
-        # violation: _linearize creates MulOp/AddOp nodes that reference
-        # outer-loop BlockArgument ivars inside inner LabelOp body blocks
-        # (TODO: fix by threading outer loop variables through nested label
-        # blocks as explicit block arguments).
-        from dgen.verify import verify_all_ready
-
-        verify_all_ready(module)
-
-    def verify_postconditions(self, module: Module) -> None:
-        # Same known closed-block issue persists through BuiltinToLLVMLowering.
-        pass
-
     def __init__(self) -> None:
         self.if_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}
