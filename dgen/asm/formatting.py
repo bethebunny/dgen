@@ -43,6 +43,7 @@ class SlotTracker:
 
     def __init__(self) -> None:
         self._slots: dict[Value, str] = {}
+        self._used: set[str] = set()
         self._counter = 0
 
     def register(self, ops: Sequence[Op]) -> None:
@@ -64,7 +65,7 @@ class SlotTracker:
     def track_name(self, value: Value) -> str:
         if value in self._slots:
             return self._slots[value]
-        if value.name is not None:
+        if value.name is not None and value.name not in self._used:
             name = value.name
             # If it's a numeric name, advance counter past it
             if name.isdigit():
@@ -72,6 +73,7 @@ class SlotTracker:
         else:
             name = str(self._counter)
             self._counter += 1
+        self._used.add(name)
         self._slots[value] = name
         return name
 
