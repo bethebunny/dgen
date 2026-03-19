@@ -116,8 +116,40 @@ def _op_name_from_line(line: str) -> str | None:
     return None
 
 
+def _hl_markup_highlight_operand(line: str, operand: str, color: str) -> str:
+    """Like _hl_markup but overrides the color of %operand on the RHS."""
+    eq_idx = line.find("=")
+    if eq_idx == -1:
+        return _hl_markup(line)
+    lhs_markup = _hl_markup(line[: eq_idx + 1])
+    rhs = line[eq_idx + 1 :]
+    ssa_target = f"%{operand}"
+    parts: list[str] = []
+    for m in _TOKEN_RE.finditer(rhs):
+        kind = m.lastgroup or "other"
+        raw = m.group()
+        escaped = _pango_escape(raw)
+        if kind == "ssa" and raw == ssa_target:
+            parts.append(
+                f'<span foreground="{color}" font_weight="bold">{escaped}</span>'
+            )
+        else:
+            col = _TOKEN_COLOR.get(kind)
+            if col:
+                parts.append(f'<span foreground="{col}">{escaped}</span>')
+            else:
+                parts.append(escaped)
+    return lhs_markup + "".join(parts)
+
+
 def _ir_mob(line: str) -> MarkupText:
     return MarkupText(_hl_markup(line), font=MONO, font_size=IR_FS)
+
+
+def _ir_mob_hl_operand(line: str, operand: str, color: str) -> MarkupText:
+    return MarkupText(
+        _hl_markup_highlight_operand(line, operand, color), font=MONO, font_size=IR_FS
+    )
 
 
 def _build_ir_group(lines: list[str]) -> tuple[VGroup, dict[str, MarkupText]]:
@@ -287,28 +319,72 @@ class TransposeEliminationScene(Scene):
         status_mob: Text,
     ) -> tuple[VGroup, dict[str, MarkupText]]:
         """
-        Animate replace_uses(old → new) entirely in the IR view — no
-        separate graph panel.
+        Animate replace_uses(old → new) entirely in the IR view.
 
-          1. Red highlight boxes appear around the dead ops.
-          2. Dead ops fade out; surviving ops slide up to fill the gap
-             (the changed consumer line morphs to its new text in place).
-          3. Return surviving mobs as the new body state.
+          A. Flash %old_name in consumer operands (orange).
+          B. Morph %old_name → %new_name in those operands (green).
+          C. Red boxes on now-dead ops.
+          D. Dead ops fade out; survivors slide up to fill the gap.
         """
-        # ── Parse what's dead ─────────────────────────────────────────────────
-        uses = _parse_uses(before_lines)
+        # ── Parse ─────────────────────────────────────────────────────────────
+        before_uses = _parse_uses(before_lines)
+        after_uses = _parse_uses(after_lines)
         before_order = [n for n in (_op_name_from_line(ln) for ln in before_lines) if n]
         after_order = [n for n in (_op_name_from_line(ln) for ln in after_lines) if n]
         after_name_set = set(after_order)
         dead_order = [n for n in before_order if n not in after_name_set]
 
-        consumer_name = next(
-            n
-            for n, deps in uses.items()
-            if old_name in deps and n in after_name_set
-        )
+        before_line_map = {n: ln for ln in before_lines if (n := _op_name_from_line(ln))}
+        after_line_map = {n: ln for ln in after_lines if (n := _op_name_from_line(ln))}
 
-        # ── Step 1: Highlight dead lines ──────────────────────────────────────
+        # Surviving ops that used old_name as an operand
+        consumer_names = [
+            n
+            for n, deps in before_uses.items()
+            if old_name in deps and n in after_name_set
+        ]
+
+        # new_name: what replaced old_name in the first consumer
+        first_consumer = consumer_names[0]
+        after_refs = after_uses.get(first_consumer, [])
+        before_refs = before_uses.get(first_consumer, [])
+        new_name_candidates = [r for r in after_refs if r not in before_refs]
+        new_name = new_name_candidates[0] if new_name_candidates else after_refs[0]
+
+        ORANGE = "#f9e2af"
+        GREEN = "#a6e3a1"
+
+        # ── Step A: Flash old operand in orange ───────────────────────────────
+        hl_old: dict[str, MarkupText] = {}
+        for cn in consumer_names:
+            mob = _ir_mob_hl_operand(before_line_map[cn], old_name, ORANGE)
+            mob.move_to(name_to_mob[cn])
+            hl_old[cn] = mob
+
+        self.play(
+            *[Transform(name_to_mob[cn], hl_old[cn]) for cn in consumer_names],
+            Transform(
+                status_mob,
+                _status(f"replace_uses(%{old_name}  →  %{new_name})", STATUS_INFO),
+            ),
+            run_time=0.4,
+        )
+        self.wait(0.4)
+
+        # ── Step B: Morph to new operand, highlighted green ───────────────────
+        hl_new: dict[str, MarkupText] = {}
+        for cn in consumer_names:
+            mob = _ir_mob_hl_operand(after_line_map[cn], new_name, GREEN)
+            mob.move_to(name_to_mob[cn])
+            hl_new[cn] = mob
+
+        self.play(
+            *[Transform(name_to_mob[cn], hl_new[cn]) for cn in consumer_names],
+            run_time=0.5,
+        )
+        self.wait(0.4)
+
+        # ── Step C: Red highlight boxes on now-dead ops ───────────────────────
         dead_mobs = [name_to_mob[n] for n in dead_order if n in name_to_mob]
         dead_rects = [
             SurroundingRectangle(
@@ -320,22 +396,13 @@ class TransposeEliminationScene(Scene):
             *[Create(r) for r in dead_rects],
             Transform(
                 status_mob,
-                _status(
-                    f"Eliminating  %{' + %'.join(dead_order)}",
-                    STATUS_DEAD,
-                ),
+                _status(f"Eliminating  %{' + %'.join(dead_order)}", STATUS_DEAD),
             ),
             run_time=0.45,
         )
-        self.wait(0.7)
+        self.wait(0.6)
 
-        # ── Step 2: Build final layout, animate in-place ──────────────────────
-        #
-        # new_body has after_lines arranged from the same top-left anchor as
-        # body_group.  Transform(old_mob, new_mob) morphs each survivor's
-        # content and position simultaneously — so the consumer line slides up
-        # and its %old_name reference visibly becomes %new_name.
-        #
+        # ── Step D: Build final layout, animate in-place ──────────────────────
         new_body, new_n2m = _build_ir_group(after_lines)
         new_body.align_to(body_group, UP + LEFT)
 
@@ -347,24 +414,10 @@ class TransposeEliminationScene(Scene):
             if old_m is not None and new_m is not None:
                 anims.append(Transform(old_m, new_m))
 
-        self.play(
-            *anims,
-            Transform(
-                status_mob,
-                _status(
-                    f"replace_uses(%{old_name}, operand of %{consumer_name})",
-                    STATUS_OK,
-                ),
-            ),
-            run_time=1.1,
-        )
+        self.play(*anims, run_time=0.8)
         self.wait(0.5)
 
-        # ── Step 3: Return surviving mobs as new body state ───────────────────
-        #
-        # Transform mutates the src mob in-place; src is on screen.
-        # Build result_body from those (now-transformed) old mobs.
-        #
+        # ── Return surviving mobs ─────────────────────────────────────────────
         for name in dead_order:
             if name in name_to_mob:
                 self.remove(name_to_mob[name])
