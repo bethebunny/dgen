@@ -226,8 +226,8 @@ def test_constant_fold_resolves_stage0_boundary():
         passes=[ConstantFold(), LowerToLLVMPass()],
         exit=LLVMCodegen(),
     )
-    exe = compiler.compile(Module(functions=[inner_func]))
-    assert exe.run({"tag": "builtin.Index"}, 21) == 42
+    exe = compiler.compile(Module(ops=[inner_func]))
+    assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
 
 
 def test_constant_fold_is_noop_without_boundaries():
