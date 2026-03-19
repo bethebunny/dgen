@@ -199,7 +199,7 @@ def test_type_value_jit_identity():
         body=Block(result=arg, args=[arg]),
         result=idx.type,
     )
-    exe = compile_module(Module(functions=[func]))
+    exe = compile_module(Module(ops=[func]))
     result = exe.run(mem)
     assert result.to_json() == mem.to_json()
 
@@ -213,7 +213,7 @@ def test_type_constant_jit_return():
         body=Block(result=const, args=[]),
         result=idx.type,
     )
-    exe = compile_module(Module(functions=[func]))
+    exe = compile_module(Module(ops=[func]))
     result = exe.run()
     assert result.to_json() == {"tag": "builtin.Index"}
 
@@ -338,7 +338,7 @@ def test_compile_function_with_ssa_typed_block_arg():
     x_arg = inner_func.body.args[0]
     assert isinstance(x_arg.type, ConstantOp)
     # compile() must resolve this via type_constant (not crash on __layout__)
-    exe = compile_module(Module(functions=[inner_func]))
+    exe = compile_module(Module(ops=[inner_func]))
     exe.run(42)
 
 
@@ -378,7 +378,7 @@ def test_compile_input_types_resolved_from_ssa():
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
     assert isinstance(inner_func, FunctionOp)
-    exe = compile_module(Module(functions=[inner_func]))
+    exe = compile_module(Module(ops=[inner_func]))
     # input_types must be concrete Types for Memory.from_value to work
     assert all(isinstance(t, builtin.Index) for t in exe.input_types)
 
@@ -497,7 +497,7 @@ def test_staging_with_ssa_result_type():
     compiler: Compiler[Executable] = Compiler(
         passes=[LowerToLLVMPass()], exit=LLVMCodegen()
     )
-    exe = compiler.compile(Module(functions=[inner_func]))
+    exe = compiler.compile(Module(ops=[inner_func]))
     assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
 
 

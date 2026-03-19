@@ -55,8 +55,8 @@ def test_diff_empty_when_function_order_differs():
     """)
     fa = parse_module(a).functions[0]
     fb = parse_module(b).functions[0]
-    module_ab = Module(functions=[fa, fb])
-    module_ba = Module(functions=[fb, fa])
+    module_ab = Module(ops=[fa, fb])
+    module_ba = Module(ops=[fb, fa])
     assert diff_modules(module_ab, module_ba) == ""
 
 
@@ -121,7 +121,7 @@ def test_diff_format_missing_function():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    actual_module = Module(functions=[])
+    actual_module = Module(ops=[])
     result = diff_modules(actual_module, parse_module(expected))
     assert result.startswith("--- expected\n+++ actual")
     lines = result.splitlines()
@@ -138,7 +138,7 @@ def test_diff_format_extra_function():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    expected_module = Module(functions=[])
+    expected_module = Module(ops=[])
     result = diff_modules(parse_module(actual), expected_module)
     assert result.startswith("--- expected\n+++ actual")
     lines = result.splitlines()

@@ -33,10 +33,10 @@ def parse_module(text: str) -> Module:
     parser = ASMParser(text)
     while parser.try_read(_import_line) is not None:
         pass
-    functions: list[builtin.FunctionOp] = []
+    ops: list[Op] = []
     while not parser.done:
-        functions.append(parser.read(op_statement))
-    return Module(functions=functions)
+        ops.append(parser.read(op_statement))
+    return Module(ops=ops)
 
 
 class ASMParser:

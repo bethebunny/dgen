@@ -37,8 +37,11 @@ class ToyToAffine(Pass):
         self.live_allocs: list[dgen.Value] = []
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        functions = [self._lower_function(f) for f in module.functions]
-        return Module(functions=functions)
+        ops = [
+            self._lower_function(op) if isinstance(op, FunctionOp) else op
+            for op in module.ops
+        ]
+        return Module(ops=ops)
 
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.live_allocs = []
