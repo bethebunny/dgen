@@ -167,6 +167,6 @@ def test_full_module(ir_snapshot):
         body=dgen.Block(result=print_op, args=[]),
     )
 
-    module = Module(functions=[mt_func, main_func])
+    module = Module(ops=[mt_func, main_func])
 
     assert module == ir_snapshot

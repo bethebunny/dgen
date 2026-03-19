@@ -132,7 +132,7 @@ def _identity_exe(ty):
         body=Block(result=arg, args=[arg]),
         result=ty,
     )
-    return compile_module(Module(functions=[func]))
+    return compile_module(Module(ops=[func]))
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +311,7 @@ def test_list_constant_jit_return():
         body=Block(result=const, args=[]),
         result=list_type,
     )
-    exe = compile_module(Module(functions=[func]))
+    exe = compile_module(Module(ops=[func]))
     result = exe.run()
     assert result.to_json() == [3, 5, 7]
 
@@ -499,7 +499,7 @@ def test_deepcopy_module_with_list_constant():
         body=Block(result=const, args=[]),
         result=list_type,
     )
-    module = Module(functions=[func])
+    module = Module(ops=[func])
     copied = deepcopy(module)
 
     # The copied module's constant should still be readable

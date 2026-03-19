@@ -37,8 +37,11 @@ class BuiltinToLLVMLowering(Pass):
         self.value_map: dict[dgen.Value, dgen.Value] = {}
 
     def run(self, m: Module, compiler: Compiler[object]) -> Module:
-        functions = [self._lower_function(f) for f in m.functions]
-        return Module(functions=functions)
+        ops = [
+            self._lower_function(op) if isinstance(op, FunctionOp) else op
+            for op in m.ops
+        ]
+        return Module(ops=ops)
 
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.if_counter = 0

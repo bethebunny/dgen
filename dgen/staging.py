@@ -107,7 +107,7 @@ def _jit_evaluate(
         body=dgen.Block(result=target, args=list(block_args)),
         result=target.type,
     )
-    module = Module(functions=[func])
+    module = Module(ops=[func])
     lowered = lower(module)
     exe = codegen.compile(lowered, externs=externs)
     memories = _make_memories(block_args, args)
@@ -463,7 +463,7 @@ def _build_callback_thunk(
         )
 
         # Compile the fully-resolved function through the full pipeline
-        func_module = Module(functions=[s2_func])
+        func_module = Module(ops=[s2_func])
         result = compiler.compile(func_module)
         assert isinstance(result, Executable)
         callback_host_refs.extend(result.host_refs)  # Keep memory alive
@@ -496,7 +496,7 @@ def _build_callback_thunk(
         body=dgen.Block(result=call_op, args=thunk_args),
         result=result_type,
     )
-    thunk_module = Module(functions=[thunk_func])
+    thunk_module = Module(ops=[thunk_func])
 
     exe = codegen.compile(thunk_module, externs=[extern_decl])
     exe.host_refs.append(callback_func)  # prevent GC

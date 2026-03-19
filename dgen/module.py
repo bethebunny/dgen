@@ -19,6 +19,7 @@ from dgen.dialects.builtin import (
     builtin,
 )
 
+
 from dgen.type import Fields, Memory, type_constant
 
 # ===----------------------------------------------------------------------=== #
@@ -105,39 +106,45 @@ def _walk_all_ops(op: Op, _visited: set[int] | None = None) -> Iterable[Op]:
             yield from _walk_all_ops(child, _visited)
 
 
-def _collect_dialects(func: FunctionOp, dialects: set[Dialect]) -> None:
-    """Collect all non-builtin dialects referenced by ops and types in a function."""
+def _collect_dialects(op: Op, dialects: set[Dialect]) -> None:
+    """Collect all non-builtin dialects referenced by ops and types."""
 
-    def _check_type(t: Value) -> None:
+    def _check_type(t: object) -> None:
         if isinstance(t, Type) and t.dialect.name != "builtin":
             dialects.add(t.dialect)
 
-    for op in _walk_all_ops(func):
-        if op.dialect.name != "builtin":
-            dialects.add(op.dialect)
-        _check_type(op.type)
-    for arg in func.body.args:
-        _check_type(arg.type)
-    _check_type(func.result)
+    for child_op in _walk_all_ops(op):
+        if child_op.dialect.name != "builtin":
+            dialects.add(child_op.dialect)
+        _check_type(child_op.type)
+        for _, param in child_op.parameters:
+            _check_type(param)
+        for _, block in child_op.blocks:
+            for arg in block.args:
+                _check_type(arg.type)
 
 
 @dataclass
 class Module:
-    functions: list[FunctionOp]
+    ops: list[Op]
+
+    @property
+    def functions(self) -> list[FunctionOp]:
+        return [op for op in self.ops if isinstance(op, FunctionOp)]
 
     @property
     def asm(self) -> Iterable[str]:
         dialects: set[Dialect] = set()
-        for func in self.functions:
-            _collect_dialects(func, dialects)
+        for op in self.ops:
+            _collect_dialects(op, dialects)
 
         for d in sorted(dialects, key=lambda d: d.name):
             yield f"import {d.name}"
         if dialects:
             yield ""
 
-        for function in self.functions:
-            yield from function.asm
+        for op in self.ops:
+            yield from op.asm
             yield ""
 
 

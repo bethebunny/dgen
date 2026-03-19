@@ -55,8 +55,11 @@ class AffineToLLVMLowering(Pass):
         self._seen: set[dgen.Value] = set()  # ops already processed
 
     def run(self, m: Module, compiler: Compiler[object]) -> Module:
-        functions = [self._lower_function(f) for f in m.functions]
-        return Module(functions=functions)
+        ops = [
+            self._lower_function(op) if isinstance(op, FunctionOp) else op
+            for op in m.ops
+        ]
+        return Module(ops=ops)
 
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.loop_counter = 0

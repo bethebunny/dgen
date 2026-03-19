@@ -35,7 +35,7 @@ class Lowering:
 
     def lower_module(self, tm: ToyModule) -> Module:
         functions = [self.lower_function(f) for f in tm.functions]
-        return Module(functions=functions)
+        return Module(ops=functions)
 
     def lower_function(self, f: Function) -> builtin.FunctionOp:
         self.scope = {}
