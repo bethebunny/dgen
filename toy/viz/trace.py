@@ -1,6 +1,6 @@
 """Record events during an optimization pass for visualization.
 
-Run ToyOptimize through TracingToyOptimize to capture each "examine op"
+Run any Pass through a TracingPass subclass to capture each "examine op"
 and "replace_uses" event, along with the block's ASM state at that moment.
 """
 
@@ -9,18 +9,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
+from dgen.asm.formatting import SlotTracker, op_asm
 from dgen.block import Block
 from dgen.compiler import Compiler
 from dgen.module import Module
-from dgen.passes.pass_ import Rewriter
+from dgen.passes.pass_ import Pass, Rewriter
 from toy.passes.optimize import ToyOptimize
 
 
 def _block_asm_lines(block: Block) -> list[str]:
-    """Return the current ASM text for each op reachable in the block."""
+    """Return ASM text for each reachable op in the block.
+
+    Uses a single shared SlotTracker so new ops created by replace_uses
+    get proper sequential names rather than %?.
+    """
+    ops = list(block.ops)
+    tracker = SlotTracker()
+    tracker.register(ops)
     lines: list[str] = []
-    for op in block.ops:
-        for line in op.asm:
+    for op_ in ops:
+        for line in op_asm(op_, tracker):
             lines.append(line)
     return lines
 
@@ -56,22 +64,35 @@ class _TracingRewriter(Rewriter):
 
     def replace_uses(self, old: dgen.Value, new: dgen.Value) -> bool:
         result = super().replace_uses(old, new)
-        old_name = old.name if old.name is not None else "?"
-        new_name = new.name if new.name is not None else "?"
+        # Compute names from the post-replacement block state so new ops
+        # (e.g. from simplify_reshape) get proper sequential names.
+        after_lines = _block_asm_lines(self._block)
+        tracker = SlotTracker()
+        tracker.register(list(self._block.ops))
+        old_name = old.name if old.name is not None else tracker.track_name(old)
+        new_name = new.name if new.name is not None else tracker.track_name(new)
         self._events.append(
             MatchEvent(
                 old_id=id(old),
                 old_name=old_name,
                 new_id=id(new),
                 new_name=new_name,
-                asm_lines_after=_block_asm_lines(self._block),
+                asm_lines_after=after_lines,
             )
         )
         return result
 
 
-class TracingToyOptimize(ToyOptimize):
-    """ToyOptimize subclass that records per-op events for visualization."""
+class TracingPass(Pass):
+    """Mixin that records ExamineEvent/MatchEvent for any Pass subclass.
+
+    Usage::
+
+        class TracingToyOptimize(TracingPass, ToyOptimize): pass
+
+    The MRO ensures TracingPass._run_block (and run) shadow the base Pass
+    implementations while _handlers is inherited from the concrete pass.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -106,3 +127,7 @@ class TracingToyOptimize(ToyOptimize):
             self.initial_asm_lines = _block_asm_lines(func.body)
             self._run_block(func.body)
         return module
+
+
+class TracingToyOptimize(TracingPass, ToyOptimize):
+    """ToyOptimize with event recording for visualization."""

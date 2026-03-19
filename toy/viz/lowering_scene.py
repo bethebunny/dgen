@@ -1,7 +1,8 @@
-"""Manim scene: visualize ToyOptimize transpose elimination.
+"""Manim scenes: visualize ToyOptimize passes.
 
 Render with:
     manim -ql toy/viz/lowering_scene.py TransposeEliminationScene
+    manim -ql toy/viz/lowering_scene.py ReshapeAndTransposeScene
 
 Flags:
   -q  low quality (faster)
@@ -105,17 +106,6 @@ def _hl_markup(line: str) -> str:
     return "".join(parts)
 
 
-# ── IR display helpers ────────────────────────────────────────────────────────
-
-
-def _op_name_from_line(line: str) -> str | None:
-    """'%2 : ...' → '2', else None."""
-    s = line.strip()
-    if s.startswith("%") and " : " in s:
-        return s[1 : s.index(" : ")]
-    return None
-
-
 def _hl_markup_highlight_operand(line: str, operand: str, color: str) -> str:
     """Like _hl_markup but overrides the color of %operand on the RHS."""
     eq_idx = line.find("=")
@@ -140,6 +130,17 @@ def _hl_markup_highlight_operand(line: str, operand: str, color: str) -> str:
             else:
                 parts.append(escaped)
     return lhs_markup + "".join(parts)
+
+
+# ── IR display helpers ────────────────────────────────────────────────────────
+
+
+def _op_name_from_line(line: str) -> str | None:
+    """'%2 : ...' → '2', else None."""
+    s = line.strip()
+    if s.startswith("%") and " : " in s:
+        return s[1 : s.index(" : ")]
+    return None
 
 
 def _ir_mob(line: str) -> MarkupText:
@@ -181,33 +182,31 @@ def _parse_uses(lines: list[str]) -> dict[str, list[str]]:
     return result
 
 
-# ── Scene ─────────────────────────────────────────────────────────────────────
+# ── Scene base class ──────────────────────────────────────────────────────────
 
 
-class TransposeEliminationScene(Scene):
-    """Animate ToyOptimize eliminating a transpose(transpose(x)) pair."""
+class _ToyOptimizeScene(Scene):
+    """Base scene for ToyOptimize visualization.
+
+    Subclasses set ``title_text`` and ``ir_text``; the animation logic is
+    shared.
+    """
+
+    title_text: str = "ToyOptimize"
+    ir_text: str = ""
 
     def construct(self) -> None:
         self.camera.background_color = BG  # type: ignore[attr-defined]
 
         # ── 1. Build trace ────────────────────────────────────────────────────
-        ir_text = strip_prefix("""
-            | import toy
-            |
-            | %main : Nil = function<Nil>() ():
-            |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-            |     %1 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
-            |     %2 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.transpose(%1)
-            |     %3 : Nil = toy.print(%2)
-        """)
-        module = asm.parse(ir_text)
+        module = asm.parse(self.ir_text)
         tracer = TracingToyOptimize()
         tracer.run(module, Compiler([], IdentityPass()))
         events: list[Event] = tracer.events
 
         # ── 2. Title ──────────────────────────────────────────────────────────
         title = Text(
-            "ToyOptimize: Transpose Elimination",
+            self.title_text,
             font_size=TITLE_FS,
             color=TITLE_COLOR,
         ).to_edge(UP, buff=0.35)
@@ -270,10 +269,7 @@ class TransposeEliminationScene(Scene):
             nonlocal body_group, name_to_mob
             new_body, new_n2m = _build_ir_group(lines)
             new_body.align_to(body_group, UP + LEFT)
-            self.play(
-                Transform(body_group, new_body),
-                run_time=0.5,
-            )
+            self.play(Transform(body_group, new_body), run_time=0.5)
             body_group = new_body
             name_to_mob = new_n2m
 
@@ -298,16 +294,17 @@ class TransposeEliminationScene(Scene):
                     before_lines=current_lines,
                     after_lines=event.asm_lines_after,
                     old_name=event.old_name,
+                    new_name=event.new_name,
                     status_mob=status_mob,
                 )
                 current_lines = event.asm_lines_after[:]
 
         # ── 5. Final ──────────────────────────────────────────────────────────
         clear_rect()
-        set_status("Done — 2 ops eliminated.", STATUS_OK)
+        set_status("Done.", STATUS_OK)
         self.wait(2.5)
 
-    # ── In-place replacement animation ───────────────────────────────────────
+    # ── In-place replacement animation ────────────────────────────────────────
 
     def _inline_replace(
         self,
@@ -316,6 +313,7 @@ class TransposeEliminationScene(Scene):
         before_lines: list[str],
         after_lines: list[str],
         old_name: str,
+        new_name: str,
         status_mob: Text,
     ) -> tuple[VGroup, dict[str, MarkupText]]:
         """
@@ -324,11 +322,11 @@ class TransposeEliminationScene(Scene):
           A. Draw boxes around all %old_name occurrences (def line + operand tokens).
           B. Draw a differently-colored box around the %new_name definition.
           C. Morph consumer text (%old → %new) and operand box color (orange → cyan).
-          D. Fade all SSA boxes; red boxes on dead ops; slide survivors up.
+          D. Fade all SSA boxes; red boxes on dead ops; slide survivors up;
+             FadeIn any brand-new ops that weren't in the previous body.
         """
         # ── Parse ─────────────────────────────────────────────────────────────
         before_uses = _parse_uses(before_lines)
-        after_uses = _parse_uses(after_lines)
         before_order = [n for n in (_op_name_from_line(ln) for ln in before_lines) if n]
         after_order = [n for n in (_op_name_from_line(ln) for ln in after_lines) if n]
         after_name_set = set(after_order)
@@ -342,13 +340,6 @@ class TransposeEliminationScene(Scene):
             for n, deps in before_uses.items()
             if old_name in deps and n in after_name_set
         ]
-
-        # new_name: what replaced old_name in the first consumer
-        first_consumer = consumer_names[0]
-        after_refs = after_uses.get(first_consumer, [])
-        before_refs = before_uses.get(first_consumer, [])
-        new_name_candidates = [r for r in after_refs if r not in before_refs]
-        new_name = new_name_candidates[0] if new_name_candidates else after_refs[0]
 
         ORANGE = "#f9e2af"
         CYAN = "#89dceb"
@@ -369,7 +360,6 @@ class TransposeEliminationScene(Scene):
             clean = mob.text
             eq_idx = clean.find("=")
             search_from = eq_idx + 1 if eq_idx != -1 else 0
-            # token also has spaces stripped when searching
             clean_token = token.replace(" ", "")
             idx = clean.find(clean_token, search_from)
             if idx == -1:
@@ -421,7 +411,7 @@ class TransposeEliminationScene(Scene):
         self.play(*morph_anims, run_time=0.6)
         self.wait(0.5)
 
-        # ── Step D: Fade SSA boxes → red dead boxes + slide survivors up ──────
+        # ── Step D: Fade SSA boxes → red dead boxes + slide/fadein ───────────
         dead_mobs = [name_to_mob[n] for n in dead_order if n in name_to_mob]
         dead_rects = [
             SurroundingRectangle(
@@ -451,15 +441,65 @@ class TransposeEliminationScene(Scene):
             old_m = name_to_mob.get(name)
             new_m = new_n2m.get(name)
             if old_m is not None and new_m is not None:
+                # Existing op: morph content + slide to new position
                 slide_anims.append(Transform(old_m, new_m))
+            elif old_m is None and new_m is not None:
+                # Brand-new op introduced by this replacement: fade it in
+                self.add(new_m)
+                slide_anims.append(FadeIn(new_m))
         self.play(*slide_anims, run_time=0.8)
         self.wait(0.5)
 
-        # ── Return surviving mobs ─────────────────────────────────────────────
+        # ── Return surviving + new mobs as updated body state ─────────────────
         for name in dead_order:
             if name in name_to_mob:
                 self.remove(name_to_mob[name])
 
-        result_body = VGroup(*[name_to_mob[n] for n in after_order if n in name_to_mob])
-        result_n2m = {n: name_to_mob[n] for n in after_order if n in name_to_mob}
+        result_n2m: dict[str, MarkupText] = {}
+        for name in after_order:
+            if name in name_to_mob:
+                result_n2m[name] = name_to_mob[name]  # transformed in-place
+            elif name in new_n2m:
+                result_n2m[name] = new_n2m[name]  # newly added
+
+        result_body = VGroup(*result_n2m.values())
         return result_body, result_n2m
+
+
+# ── Concrete scenes ───────────────────────────────────────────────────────────
+
+
+class TransposeEliminationScene(_ToyOptimizeScene):
+    """Animate ToyOptimize eliminating a transpose(transpose(x)) pair."""
+
+    title_text = "ToyOptimize: Transpose Elimination"
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main : Nil = function<Nil>() ():
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
+        |     %2 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.transpose(%1)
+        |     %3 : Nil = toy.print(%2)
+    """)
+
+
+class ReshapeAndTransposeScene(_ToyOptimizeScene):
+    """Animate ToyOptimize eliminating reshape(reshape(x)) then transpose(transpose(x)).
+
+    The two patterns are chained: the simplified reshape feeds the double-transpose,
+    so the second elimination reuses the same new op as the replacement.
+    """
+
+    title_text = "ToyOptimize: Reshape + Transpose Elimination"
+    ir_text = strip_prefix("""
+        | import toy
+        |
+        | %main : Nil = function<Nil>() ():
+        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<affine.Shape<1>([6]), F64> = toy.reshape(%0)
+        |     %2 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%1)
+        |     %3 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%2)
+        |     %4 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.transpose(%3)
+        |     %5 : Nil = toy.print(%4)
+    """)
