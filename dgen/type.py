@@ -142,15 +142,6 @@ class Constant(Value[T]):
     def __constant__(self) -> Memory[T]:
         return self.value
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Constant):
-            return NotImplemented
-        if self.type != other.type:
-            return False
-        return self.value == other.value
-
-    def __hash__(self) -> int:
-        return hash((type(self), self.type, self.value))
 
 
 Field = tuple[str, type[Type]]
