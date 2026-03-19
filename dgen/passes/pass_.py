@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import dgen
-from dgen.module import Module, _walk_all_ops
+from dgen.module import Module
 
 if TYPE_CHECKING:
     from dgen.compiler import Compiler
@@ -102,10 +102,6 @@ class Pass(metaclass=_PassMeta):
 
     _handlers: dict[type[dgen.Op], list[_HandlerFn]]
 
-    op_domain: set[type]
-    op_range: set[type]
-    type_domain: set[type]
-    type_range: set[type]
     allow_unregistered_ops: bool = True
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
@@ -133,17 +129,14 @@ class Pass(metaclass=_PassMeta):
                     self._run_block(child_block)
 
     def verify_preconditions(self, module: Module) -> None:
-        """Check that all ops/types are in the declared domain."""
-        for func in module.functions:
-            for op in _walk_all_ops(func):
-                assert type(op) in self.op_domain, (
-                    f"Op {type(op).__name__} not in domain of {type(self).__name__}"
-                )
+        """Check IR invariants that must hold before this pass runs."""
+        from dgen.verify import verify_all_ready, verify_closed_blocks
+
+        verify_all_ready(module)
+        verify_closed_blocks(module)
 
     def verify_postconditions(self, module: Module) -> None:
-        """Check that all ops/types are in the declared range."""
-        for func in module.functions:
-            for op in _walk_all_ops(func):
-                assert type(op) in self.op_range, (
-                    f"Op {type(op).__name__} not in range of {type(self).__name__}"
-                )
+        """Check IR invariants that must hold after this pass runs."""
+        from dgen.verify import verify_closed_blocks
+
+        verify_closed_blocks(module)

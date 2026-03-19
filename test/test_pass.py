@@ -22,11 +22,6 @@ from dgen.testing import strip_prefix
 
 def test_lowering_for_registers_handler():
     class MyPass(Pass):
-        op_domain: set[type] = set()
-        op_range: set[type] = set()
-        type_domain: set[type] = set()
-        type_range: set[type] = set()
-
         @lowering_for(ConstantOp)
         def handle_constant(self, op: ConstantOp, rewriter: Rewriter) -> bool:
             return False
@@ -37,11 +32,6 @@ def test_lowering_for_registers_handler():
 
 def test_multiple_handlers_per_op_type():
     class MyPass(Pass):
-        op_domain: set[type] = set()
-        op_range: set[type] = set()
-        type_domain: set[type] = set()
-        type_range: set[type] = set()
-
         @lowering_for(ConstantOp)
         def handler_a(self, op: ConstantOp, rewriter: Rewriter) -> bool:
             return False
@@ -167,28 +157,33 @@ def test_pass_multiple_handlers_first_wins():
 # ---------------------------------------------------------------------------
 
 
-def test_compiler_run_verification_catches_range_violation():
-    """Post-condition check detects ops outside the declared range."""
+def test_compiler_run_verification_catches_closed_block_violation():
+    """Post-condition check detects a closed-block violation introduced by a pass."""
     ir_text = strip_prefix("""
-        | import toy
-        |
         | %main : Nil = function<Nil>() ():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
-        |     %2 : Nil = toy.print(%1)
+        |     %0 : Nil = {}
     """)
 
-    class StrictPass(Pass):
-        op_domain = {*toy.toy.ops.values(), ConstantOp}
-        op_range = {ConstantOp}  # TransposeOp NOT in range
-        type_domain: set[type] = set()
-        type_range: set[type] = set()
+    from dgen.block import BlockArgument
+    from dgen.dialects.builtin import Nil
+
+    class CorruptPass(Pass):
+        """Introduces a closed-block violation by replacing the block result
+        with a BlockArgument not in the block's args list."""
+
         allow_unregistered_ops = True
 
+        def run(self, module: Module, compiler: Compiler) -> Module:
+            for func in module.functions:
+                # Replace result with a foreign BlockArgument — a clear
+                # closed-block violation since it is not in block.args.
+                func.body.result = BlockArgument(type=Nil())
+            return module
+
     m = parse_module(ir_text)
-    compiler: Compiler = Compiler(passes=[StrictPass()], exit=LLVMCodegen())
+    compiler_inst: Compiler = Compiler(passes=[CorruptPass()], exit=IdentityPass())
     with pytest.raises(AssertionError):
-        compiler.run(m, verify=True)
+        compiler_inst.run(m, verify=True)
 
 
 # ---------------------------------------------------------------------------

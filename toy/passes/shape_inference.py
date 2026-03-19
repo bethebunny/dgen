@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module, PackOp
+from dgen.module import ConstantOp, Module, PackOp, _walk_all_ops
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.verify import verify_closed_blocks
 from toy.dialects import shape_constant, toy
 
 from typing import TYPE_CHECKING
@@ -19,6 +20,21 @@ class ShapeInference(Pass):
 
     def __init__(self) -> None:
         self._func_map: dict[str, builtin.FunctionOp] = {}
+
+    def verify_preconditions(self, module: Module) -> None:
+        # Skip verify_all_ready: ShapeInference specifically handles
+        # InferredShapeTensor types, which are not yet fully resolved.
+        verify_closed_blocks(module)
+
+    def verify_postconditions(self, module: Module) -> None:
+        super().verify_postconditions(module)
+        for func in module.functions:
+            for op in _walk_all_ops(func):
+                if isinstance(op, tuple(toy.toy.ops.values())):
+                    assert not isinstance(op.type, toy.InferredShapeTensor), (
+                        f"{type(op).__name__} still typed as InferredShapeTensor "
+                        "after ShapeInference"
+                    )
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
         self._func_map = {f.name: f for f in module.functions if f.name is not None}

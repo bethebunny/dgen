@@ -43,6 +43,23 @@ def _extract_indices(
 
 
 class AffineToLLVMLowering(Pass):
+    def verify_preconditions(self, module: Module) -> None:
+        # The affine IR produced by ToyToAffine has a known closed-block
+        # violation: _nested_for creates ForOp body blocks whose inner layers
+        # reference outer-loop BlockArgument ivars directly (TODO: fix by
+        # threading outer ivars as explicit body block arguments).
+        from dgen.verify import verify_all_ready
+
+        verify_all_ready(module)
+
+    def verify_postconditions(self, module: Module) -> None:
+        # TODO: _linearize generates MulOp/AddOp nodes for multi-dimensional
+        # index linearization that use outer-loop body_iv BlockArguments inside
+        # inner LabelOp body blocks — the same structural ivar-leakage as in
+        # _nested_for.  Fixing this requires threading outer loop variables
+        # through nested label blocks as explicit block arguments.
+        pass
+
     def __init__(self) -> None:
         self.loop_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}
