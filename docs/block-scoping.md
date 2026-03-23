@@ -31,17 +31,19 @@ A naive IR representation of recursive functions and loops produces cycles in th
 Consider a simple loop:
 
 ```
-%loop = block(%i : i64) {
-    %cond = gt(%i, 0)
-    cond_br %cond, %body, %exit
-}
-%body = block {
-    %i_next = sub(%i, 1)
-    br %loop(%i_next)     // back-edge: %i_next feeds back to %i
-}
+// Hypothetical (creates use-def cycle):
+%loop : llvm.Label = llvm.label() (%i: Index):
+    %zero : Index = 0
+    %cond : llvm.Int<1> = llvm.icmp<"sgt">(%i, %zero)
+    %_ : Nil = llvm.cond_br(%cond, %body, %exit, [], [])
+
+%body : llvm.Label = llvm.label() ():
+    %one : Index = 1
+    %i_next : Index = subtract_index(%i, %one)
+    %_ : Nil = llvm.br(%loop, [%i_next])    // back-edge: %i_next feeds back to %i
 ```
 
-The use-def edges form a cycle: `%i` → `%i_next` → `br` → `%i`. This complicates analysis,
+The use-def edges form a cycle: `%i` → `%i_next` → `llvm.br` → `%loop` → `%i`. This complicates analysis,
 scheduling, and hash-consing, all of which prefer or require a DAG structure.
 
 ### 1.3 Problem: Scope and Capture
@@ -83,21 +85,16 @@ call produces a fresh return value. Therefore:
 
 ```
 // %self is defined once at the block boundary; the recursive call
-// produces a fresh %result. No use-def cycle.
-func.recursive @factorial(%self : fn(i64) -> i64, %n : i64) -> i64 {
-    %one  = const 1
-    %cond = le(%n, %one)
-    cond_br %cond, %base, %rec
-
-    %base = block { ret %one }
-
-    %rec = block {
-        %n1  = sub(%n, %one)
-        %r   = call %self(%n1)    // uses %self (fixed input), produces fresh %r
-        %res = mul(%n, %r)
-        ret %res
-    }
-}
+// produces a fresh %r. No use-def cycle.
+%factorial : Nil = func.recursive<Index>() (%self: Function<Index>, %n: Index):
+    %one : Index = 1
+    %cond : llvm.Int<1> = llvm.icmp<"sle">(%n, %one)
+    %result : Index = if(%cond) ():
+        %base : Index = 1
+    else ():
+        %n1 : Index = subtract_index(%n, %one)
+        %r : Index = call(%self, [%n1])    // uses %self (fixed input), produces fresh %r
+        %res : Index = llvm.mul(%n, %r)
 ```
 
 The type of `%self` is simply the function's declared signature, resolved at definition time. This
@@ -110,26 +107,20 @@ Mutual recursion does not require a separate `func.letrec` primitive. One functi
 inside the other, capturing the outer function's `%self` as an explicit argument:
 
 ```
-func.recursive @even(%self : fn(i64) -> bool, %n : i64) -> bool {
+%even : Nil = func.recursive<Index>() (%self: Function<Index>, %n: Index):
     // odd is defined inside even; it captures %self as %even_ref
-    func @odd(%even_ref : fn(i64) -> bool, %n : i64) -> bool {
-        %one  = const 1
-        %n1   = sub(%n, %one)
-        %res  = call %even_ref(%n1)
-        ret %res
-    }
-    %zero = const 0
-    %cond = eq(%n, %zero)
-    cond_br %cond, %base_true, %rec
-
-    %base_true = block { %t = const true; ret %t }
-    %rec       = block {
-        %one = const 1
-        %n1  = sub(%n, %one)
-        %res = call %odd(%self, %n1)    // pass %self so odd can call back
-        ret %res
-    }
-}
+    %odd : Nil = function<Index>() (%even_ref: Function<Index>, %n: Index):
+        %one : Index = 1
+        %n1 : Index = subtract_index(%n, %one)
+        %res : Index = call(%even_ref, [%n1])
+    %zero : Index = 0
+    %cond : llvm.Int<1> = llvm.icmp<"eq">(%n, %zero)
+    %result : Index = if(%cond) ():
+        %t : Index = 1
+    else ():
+        %one : Index = 1
+        %n1 : Index = subtract_index(%n, %one)
+        %res : Index = call(%odd, [%self, %n1])    // pass %self so odd can call back
 ```
 
 `odd` is not self-recursive, so it does not need `func.recursive`. The mutual recursion cycle is
@@ -144,28 +135,25 @@ the symmetric case if warranted.
 ### 2.2 Label `%self`: Eliminating Use-Def Cycles in Loops
 
 The loop back-edge problem is symmetric to the recursion problem, and the solution is symmetric.
-Every block receives `%self : Label<(...)>` as its first argument, typed with its own argument
-types. A loop is expressed as a block that calls `%self` with updated arguments:
+Every block receives `%self : llvm.Label` as its first argument. A loop is expressed as a block
+that calls `%self` with updated arguments:
 
 ```
 // No back-edge in the use-def graph. %self is a fixed input.
 // %i_next is an argument to the call, not fed back into a definition.
-%loop = block(%self : Label<(i64)>, %i : i64) {
-    %zero = const 0
-    %cond = gt(%i, %zero)
-    cond_br %cond, %body, %exit
-
-    %body = block {
-        %one    = const 1
-        %i_next = sub(%i, %one)
-        br %self(%i_next)    // recursive call through %self, not a back-edge
-    }
-}
+%loop : llvm.Label = llvm.label() (%self: llvm.Label, %i: Index):
+    %zero : Index = 0
+    %cond : llvm.Int<1> = llvm.icmp<"sgt">(%i, %zero)
+    %body : llvm.Label = llvm.label() ():
+        %one : Index = 1
+        %i_next : Index = subtract_index(%i, %one)
+        %_ : Nil = llvm.br(%self, [%i_next])    // recursive call through %self, not a back-edge
+    %_ : Nil = llvm.cond_br(%cond, %body, %exit, [], [])
 ```
 
 Comparing this to the back-edge version from Section 1.2: the use-def cycle
-`%i → %i_next → br → %i` is eliminated. `%self` is fixed at the block boundary, and `%i_next` is
-an argument at the call site, not a definition of `%i`.
+`%i → %i_next → llvm.br → %i` is eliminated. `%self` is fixed at the block boundary, and
+`%i_next` is an argument at the call site, not a definition of `%i`.
 
 #### Sibling Blocks and Mutual Block Recursion
 
@@ -173,18 +161,16 @@ When two sibling blocks mutually recurse (as in a loop split across blocks), the
 requires the label to be threaded explicitly. The pattern is identical to the `even`/`odd` nesting:
 
 ```
-%loop = block(%self : Label<(i64)>, %i : i64) {
-    %zero = const 0
-    %cond = gt(%i, %zero)
+%loop : llvm.Label = llvm.label() (%self: llvm.Label, %i: Index):
+    %zero : Index = 0
+    %cond : llvm.Int<1> = llvm.icmp<"sgt">(%i, %zero)
     // pass %self to %body so it can call back
-    cond_br %cond, %body(%self, %i), %exit
-}
+    %_ : Nil = llvm.cond_br(%cond, %body, %exit, [%self, %i], [])
 
-%body = block(%loop_label : Label<(i64)>, %i : i64) {
-    %one    = const 1
-    %i_next = sub(%i, %one)
-    br %loop_label(%i_next)
-}
+%body : llvm.Label = llvm.label() (%loop_label: llvm.Label, %i: Index):
+    %one : Index = 1
+    %i_next : Index = subtract_index(%i, %one)
+    %_ : Nil = llvm.br(%loop_label, [%i_next])
 ```
 
 `%loop` passes `%self` to `%body` as an explicit argument `%loop_label`. `%body` calls back through
@@ -192,10 +178,10 @@ requires the label to be threaded explicitly. The pattern is identical to the `e
 
 #### Blocks and Functions: A Unified View
 
-With `Label<%self>` on every block, the distinction between a `func.recursive` and a looping block
-largely collapses: both are callable things that receive `%self` and can recurse through it. The
-remaining distinction is that a `func` has a return type, while a block is a continuation — it does
-not return; control transfers via `br`. This is explored further in Section 3.
+With `%self : llvm.Label` on every block, the distinction between a `func.recursive` and a looping
+block largely collapses: both are callable things that receive `%self` and can recurse through it.
+The remaining distinction is that a `func` has a return type, while a block is a continuation — it
+does not return; control transfers via `llvm.br`. This is explored further in Section 3.
 
 ### 2.3 Explicit Capture
 
@@ -221,7 +207,7 @@ violation. Therefore, ambient nodes may be referenced from any block without dec
 
 The canonical ambient nodes are:
 
-- Constants and integer/float literals (`const 0u8`, `const 3.14`).
+- Constants and integer/float literals (`%c : Index = 0`, `%f : F64 = 3.14`).
 - Global references (immutable global values known at compile time).
 - Function labels referenced as first-class values (when not recursive).
 - Type metadata and other purely static values.
@@ -267,10 +253,10 @@ Within the legal window, placement heuristics optimize for performance:
 #### Loop Detection
 
 Loop detection is required only for the hoisting heuristic, not for soundness. With the
-`%self : Label` design, loops are structurally manifest: a block is a loop if and only if its body
-contains a `br %self(...)`. Loop nesting depth is read directly from block nesting. No dominator
-analysis is needed to identify loop structure; it is visible in the use-def graph via `%self`
-values.
+`%self : llvm.Label` design, loops are structurally manifest: a block is a loop if and only if its
+body contains a `llvm.br(%self, ...)`. Loop nesting depth is read directly from block nesting. No
+dominator analysis is needed to identify loop structure; it is visible in the use-def graph via
+`%self` values.
 
 #### Division of Labor with LLVM
 
@@ -284,6 +270,164 @@ recommended strategy for dgen's scheduler is therefore:
 - Revisit dgen-side scheduling when dgen's higher-level semantic knowledge (purity by construction,
   specialization decisions) can demonstrably improve on what LLVM can infer from the lowered form.
 
+### 2.6 Tension with `builtin.call` and the Callee Parameter
+
+The `func.recursive` and `%self` designs require calling a value passed as a block argument. This
+creates tension with the current `builtin.call` design, where the callee is a compile-time
+parameter:
+
+```
+op call<callee: Function>(args: List) -> Type    // callee in <> = compile-time parameter
+```
+
+ASM: `%result : T = call<%fn_ref>([%arg1, %arg2])`
+
+The callee must be a `FunctionOp` value resolved at compile time. This works for static calls
+between module-level functions. It does not work for:
+
+1. **Recursive calls**: `%self` is a block argument, not a module-level `FunctionOp`.
+2. **Higher-order functions**: a function value passed as a block argument cannot appear in the
+   parameter position.
+
+For example, calling a function argument:
+
+```
+%apply : Nil = function<Index>() (%f: Function<Index>, %n: Index):
+    // Cannot write call<%f>([%n]) — %f is a block argument, not a compile-time FunctionOp.
+    %result : Index = call(%f, [%n])    // callee must be an operand here
+```
+
+**Option A: Move callee to operand.** Change `call` to `call(callee, args)` with callee as a
+runtime `Value`. This handles all cases uniformly. For static calls to module-level functions, a
+`func_ref` ambient op wraps the reference:
+
+```
+%fn_ref : Function<Index> = func_ref<%my_function>()    // ambient — no block-arg dependencies
+%result : Index = call(%fn_ref, [%arg])
+```
+
+`walk_ops` reaches `%fn_ref` and stops there — it is an ambient op. It never descends into
+`%my_function`'s body. The `FunctionOp` guard in `walk_ops` (see Section 2.8) becomes unnecessary.
+
+**Option B: Keep callee as parameter; add a separate call form.** Calls through block-argument
+function values use a `call_dynamic` or `call_self` op. The static `call` op retains compile-time
+callee semantics. The downside is two call forms with similar but not identical behavior.
+
+**Option C: Accept the `walk_ops` guard.** Keep the current design. `walk_ops` retains its
+`FunctionOp` special case. The cost is ongoing fragility and a non-structural exception.
+
+Option A is the most uniform and eliminates the structural special case in `walk_ops`. The
+`func_ref` ambient op cleanly wraps module-level references, and the `%self` recursive call is
+expressed as a plain operand edge to a block argument.
+
+### 2.7 Implicit Capture in the Current IR
+
+The current IR has two ops that produce blocks with implicit capture: `builtin.if` and
+`affine.for`. Both allow their body blocks to reference values from the enclosing scope without
+threading them through block arguments.
+
+**`builtin.if`**: The `then_body` and `else_body` blocks take no arguments. Any outer-scope value
+used inside a branch is implicitly captured:
+
+```
+// Current (implicit capture):
+%alloc : llvm.Ptr = llvm.alloca<6>()
+%result : F64 = if(%cond) ():
+    %loaded : F64 = llvm.load(%alloc)    // %alloc captured implicitly from outer scope
+else ():
+    %c : F64 = 0.0
+```
+
+Under explicit capture, outer values must be declared as block arguments:
+
+```
+// Explicit capture:
+%alloc : llvm.Ptr = llvm.alloca<6>()
+%result : F64 = if(%cond) (%alloc: llvm.Ptr):
+    %loaded : F64 = llvm.load(%alloc)
+else (%alloc: llvm.Ptr):
+    %c : F64 = 0.0
+```
+
+**`affine.for`**: The body block receives the loop induction variable as a block argument, but not
+the external memory references its body uses:
+
+```
+// Current (implicit capture):
+%src : llvm.Ptr = llvm.alloca<6>()
+%5 : Nil = affine.for<0, 4>() (%i: Index):
+    %val : F64 = affine.load(%src, [%i])    // %src captured implicitly
+```
+
+Under explicit capture, external references appear as additional block arguments preceding the
+induction variable:
+
+```
+// Explicit capture:
+%src : llvm.Ptr = llvm.alloca<6>()
+%5 : Nil = affine.for<0, 4>() (%src: llvm.Ptr, %i: Index):
+    %val : F64 = affine.load(%src, [%i])
+```
+
+The lowering passes that generate `builtin.if` and `affine.for` nodes (`builtin_to_llvm.py`,
+`toy_to_affine.py`) must be updated to thread all referenced outer values through the block
+argument lists.
+
+**Verifier.** A `Block.verify_closed()` check can be run after each lowering pass to enforce the
+closed-block invariant. It walks each block's op set and flags any `Value` reference that is:
+- not an op reachable from `block.result` via the use-def graph, and
+- not a block argument of the block, and
+- not an ambient node (i.e., it transitively depends on some block's arguments).
+
+Running this verifier as a post-pass assertion makes capture regressions visible immediately rather
+than silently producing unsound IR.
+
+### 2.8 `walk_ops`: Consequences for Graph Traversal
+
+`walk_ops(root)` traverses the use-def graph from `root` and returns ops in topological order. It
+is the canonical op iterator for a block's contents. Its current implementation has two special
+cases that exist because the IR uses implicit capture.
+
+**The `FunctionOp` guard.** When visiting an op's parameters, `walk_ops` skips parameters that are
+`FunctionOp` instances:
+
+```python
+for _, param in value.parameters:
+    from dgen.dialects.builtin import FunctionOp   # circular-import workaround
+    if not isinstance(param, FunctionOp):
+        visit(param)
+```
+
+This prevents descending into a module-level function's body when it appears as a `call` callee.
+Without the guard, `walk_ops` would include every op in the callee's body as part of the current
+block's op list — mixing module-level and block-local ops.
+
+**Block argument type traversal.** `walk_ops` visits the types of block arguments of each nested
+block:
+
+```python
+for _, block in value.blocks:
+    for arg in block.args:
+        visit(arg.type)
+```
+
+This is needed when a block argument's type is itself an SSA value defined in an outer block
+(a dependent type under implicit capture). Without it, those type dependencies would be invisible
+to the walk.
+
+**Under explicit capture**, both cases simplify:
+
+- If callee moves to an operand (Option A in Section 2.6), `FunctionOp` never appears as a
+  parameter. The guard and its circular import disappear; `walk_ops` follows all operands and
+  parameters uniformly.
+- If all blocks are closed, block argument types are either ambient (no block-arg dependencies) or
+  already explicit block arguments. The type traversal remains correct but no longer needs special
+  cross-scope handling.
+
+The end state is a simple recursive DAG walk: visit operands, visit parameter values, visit the
+result type, emit the op. No `isinstance` guards, no special cases — the structure is guaranteed by
+the capture discipline rather than enforced by ad hoc checks.
+
 ---
 
 ## 3. Relationship to CPS
@@ -291,14 +435,14 @@ recommended strategy for dgen's scheduler is therefore:
 The design described above is closely related to Continuation-Passing Style (CPS). The
 correspondences are direct:
 
-| dgen IR concept                   | CPS equivalent                              |
-|-----------------------------------|---------------------------------------------|
-| `%self : Label<(i64)>`            | Continuation argument `cont(i64)`           |
-| `br %self(%i_next)`               | Tail call to a continuation                 |
-| Block with explicit capture       | Closed lambda abstraction                   |
-| `func` with return type `R`       | Function taking explicit return continuation|
-| `br` to another label             | Tail call to another continuation           |
-| Block argument list               | Lambda parameter list                       |
+| dgen IR concept                        | CPS equivalent                              |
+|----------------------------------------|---------------------------------------------|
+| `%self : llvm.Label`                   | Continuation argument                       |
+| `llvm.br(%self, [%i_next])`            | Tail call to a continuation                 |
+| Block with explicit capture            | Closed lambda abstraction                   |
+| `function<R>` with return type `R`     | Function taking explicit return continuation|
+| `llvm.br` to another label            | Tail call to another continuation           |
+| Block argument list                    | Lambda parameter list                       |
 
 ### 3.1 Is CPS Always Flat?
 
@@ -307,14 +451,14 @@ tail call and continuations are just jumps. It does not imply that the *lexical*
 CPS-based IRs (MLton, SML/NJ's FLINT, Thorin/MimIR) have lexical nesting for scope and capture;
 the flatness property means that dynamically, control never returns — it always transfers forward.
 
-dgen's IR is flat in the CPS sense (`br` is a jump, not a stack-pushing call) but lexically nested
-(blocks can be nested inside ops). This combination is valid and useful: dynamic flatness gives
-efficient implementation, and lexical nesting makes scope manifest.
+dgen's IR is flat in the CPS sense (`llvm.br` is a jump, not a stack-pushing call) but lexically
+nested (blocks can be nested inside ops). This combination is valid and useful: dynamic flatness
+gives efficient implementation, and lexical nesting makes scope manifest.
 
 ### 3.2 The `func` / `block` Distinction
 
 In fully continuation-passing style (as in Thorin/MimIR), even the return from a function is
-modeled as calling a return continuation argument `%return : Label<(R)>`. This collapses the
+modeled as calling a return continuation argument `%return : llvm.Label`. This collapses the
 `func`/`block` distinction entirely: everything is a continuation. The only distinction between a
 "function" and a "basic block" is calling convention and ABI.
 
