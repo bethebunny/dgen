@@ -80,9 +80,7 @@ class Rewriter:
         self, block: dgen.Block, old: dgen.Value, new: dgen.Value
     ) -> None:
         for op in block.ops:
-            for name, operand in op.operands:
-                if operand is old:
-                    setattr(op, name, new)
+            op.replace_operand(old, new)
             for name, param in op.parameters:
                 if param is old:
                     setattr(op, name, new)
