@@ -298,7 +298,11 @@ class AffineToLLVMLowering(Pass):
         )
         header_label = llvm.LabelOp(
             name=f"loop_header{lid}",
-            body=dgen.Block(result=cond_br, args=[header_iv] + outer_header_args),
+            body=dgen.Block(
+                result=cond_br,
+                parameters=[BlockArgument(name="self", type=llvm.Label())],
+                args=[header_iv] + outer_header_args,
+            ),
         )
 
         # Body: map affine loop var and outer ivars to body-local block args.
