@@ -118,7 +118,7 @@ class TestParseErrors:
         ir = strip_prefix("""
             | import toy
             |
-            | %f : Nil = function<toy.Tensor<[2, 3], F64>>() ():
+            | %f : Nil = function<toy.Tensor<[2, 3], F64>>() body():
         """)
         with pytest.raises(RuntimeError, match=r"bare literal.*Shape.*Shape<\.\.\.>"):
             parse_module(ir)
@@ -131,7 +131,7 @@ class TestParseErrors:
         ir = strip_prefix("""
             | import toy
             |
-            | %f : Nil = function<Nil>() ():
+            | %f : Nil = function<Nil>() body():
             |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         """)
         with pytest.raises(Exception):

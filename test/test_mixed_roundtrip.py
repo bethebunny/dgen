@@ -10,7 +10,7 @@ def test_llvm_via_imports():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
         |     %1 : F64 = 1.0
         |     %store : Nil = llvm.store(%1, %0)
@@ -24,17 +24,17 @@ def test_llvm_full_loop():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %loop_header : llvm.Label = llvm.label() (%i0: Index):
+        |     %loop_header : llvm.Label = llvm.label() body(%i0: Index):
         |         %hi : Index = 3
         |         %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
-        |         %loop_body : llvm.Label = llvm.label() (%j: Index):
+        |         %loop_body : llvm.Label = llvm.label() body(%j: Index):
         |             %one : Index = 1
         |             %next : Nil = llvm.add(%j, %one)
         |             %_ : Nil = llvm.br(%loop_header, [%next])
-        |         %loop_exit : llvm.Label = llvm.label() ():
+        |         %loop_exit : llvm.Label = llvm.label() body():
         |             %_ : Nil = ()
         |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [%i0], [])
         |     %br : Nil = llvm.br(%loop_header, [%init])

@@ -57,7 +57,7 @@ def test_walk_ops_does_not_descend_into_blocks():
 def test_chain_asm_round_trip():
     """chain op parses and formats correctly."""
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : Index = 0
         |     %1 : Index = 1
         |     %2 : Index = chain(%1, %0)

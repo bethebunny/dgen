@@ -345,7 +345,7 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
     """Parser handles [literal, %ref, literal] by creating ConstantOps."""
     ir_input = strip_prefix("""
         |
-        | %main : Nil = function<Nil>() (%x: Index):
+        | %main : Nil = function<Nil>() body(%x: Index):
         |     %store : Nil = affine.store(%x, %x, [3, %x, 5])
     """)
     parsed = parse_module(ir_input)
@@ -376,7 +376,7 @@ def test_string_as_op_param():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
@@ -405,7 +405,7 @@ def test_string_param_staging():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main : Nil = function<Index>() (%pred : String, %x : Index, %y : Index):
+        | %main : Nil = function<Index>() body(%pred : String, %x : Index, %y : Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)
@@ -432,7 +432,7 @@ def test_compile_once_run_twice():
     ir = strip_prefix("""
         | import llvm
         |
-        | %main : Nil = function<Index>() (%pred : String, %x : Index, %y : Index):
+        | %main : Nil = function<Index>() body(%pred : String, %x : Index, %y : Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)

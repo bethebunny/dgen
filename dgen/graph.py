@@ -58,8 +58,10 @@ def walk_ops(root: dgen.Value) -> list[dgen.Op]:
                 visit(param)
         # Visit type (may be an SSA value or a Type with SSA-valued params)
         visit(value.type)
-        # Visit block arg types (captured variables from outer scope)
+        # Visit block parameter and arg types (leaves in the use-def graph)
         for _, block in value.blocks:
+            for param in block.parameters:
+                visit(param.type)
             for arg in block.args:
                 visit(arg.type)
 

@@ -32,7 +32,7 @@ def _is_cross_block_permitted(value: dgen.Value) -> bool:
 
 def _check_in_scope(
     value: object,
-    valid: set[int],
+    valid: set[dgen.Value],
     op: dgen.Op,
     field_name: str,
 ) -> None:
@@ -50,29 +50,28 @@ def _check_in_scope(
         return
     if _is_cross_block_permitted(value):
         return
-    assert id(value) in valid, (
+    assert value in valid, (
         f"{type(op).__name__}.{field_name} references out-of-scope "
         f"{type(value).__name__}"
     )
 
 
-def _verify_block(block: Block, visited: set[int] | None = None) -> None:
+def _verify_block(block: Block, visited: set[Block] | None = None) -> None:
     if visited is None:
         visited = set()
-    bid = id(block)
-    if bid in visited:
+    if block in visited:
         return
-    visited.add(bid)
+    visited.add(block)
 
-    valid: set[int] = {id(arg) for arg in block.args}
+    valid: set[dgen.Value] = set(block.parameters) | set(block.args)
     for op in block.ops:
-        valid.add(id(op))
+        valid.add(op)
 
     # The block result itself must be in scope if it is block-scoped.
     if isinstance(
         block.result, (dgen.Op, BlockArgument)
     ) and not _is_cross_block_permitted(block.result):
-        assert id(block.result) in valid, (
+        assert block.result in valid, (
             f"block.result references out-of-scope {type(block.result).__name__}"
         )
 

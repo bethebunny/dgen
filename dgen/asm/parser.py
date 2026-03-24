@@ -252,13 +252,12 @@ def op_expression(
     operands = parser.read_list(value_expression)
     parser.read(")")
     blocks: list[Block] = []
-    for index, block_name in enumerate(op_cls.__blocks__):
-        if index:
-            saved = parser.pos
-            parser._skip_all()
-            if parser.parse_token(_IDENT) != block_name.removesuffix("_body"):
-                parser.pos = saved
-                break
+    for block_name in op_cls.__blocks__:
+        saved = parser.pos
+        parser._skip_all()
+        if parser.parse_token(_IDENT) != block_name:
+            parser.pos = saved
+            break
         blocks.append(_read_block_body(parser))
     return op_cls, parameters, operands, blocks
 
@@ -372,11 +371,18 @@ def _pack_list(
 
 
 def _read_block_body(parser: ASMParser) -> Block:
+    # Optional block parameters: <%name: Type, ...>
+    block_params: list[BlockArgument] = []
+    if parser.try_read("<") is not None:
+        block_params = parser.read_list(_block_argument)
+        parser.read(">")
     args = block_arguments(parser)
     parser.read(":")
     block_indent = newline(parser)
     if block_indent == 0:
-        return Block(result=dgen.Value(type=builtin.Nil()), args=args)
+        return Block(
+            result=dgen.Value(type=builtin.Nil()), args=args, parameters=block_params
+        )
     ops: list[Op] = []
     while parser.pos < len(parser.text):
         indent = newline(parser)
@@ -387,7 +393,7 @@ def _read_block_body(parser: ASMParser) -> Block:
         ops.extend(parser.pending_ops)
         parser.pending_ops.clear()
         ops.append(op)
-    block = Block(result=ops[-1], args=args)
+    block = Block(result=ops[-1], args=args, parameters=block_params)
     live = set(walk_ops(block.result))
     dead = [op for op in ops if op not in live]
     if dead:

@@ -1,6 +1,6 @@
 import toy
 
-%main : Nil = function<Nil>() ():
+%main : Nil = function<Nil>() body():
     %0 : toy.Tensor<affine.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]
     %1 : toy.Tensor<affine.Shape<2>([2, 2]), F64> = [5.0, 6.0, 7.0, 8.0]
     %2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)

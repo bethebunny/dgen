@@ -217,7 +217,7 @@ def test_natural_in_asm():
     ir = strip_prefix("""
         | import peano
         |
-        | %main : Nil = function<Index>() ():
+        | %main : Nil = function<Index>() body():
         |     %z : peano.Natural = peano.zero()
     """)
     module = parse_module(ir)
@@ -247,7 +247,7 @@ def test_peano_constant():
     ir = strip_prefix("""
         | import peano
         |
-        | %main : Nil = function<Index>() ():
+        | %main : Nil = function<Index>() body():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %s2 : Type = peano.successor<%s1>()
@@ -269,7 +269,7 @@ def test_peano_constant():
 def test_equal_and_subtract_roundtrip():
     """equal_index and subtract_index ops round-trip through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%n: Index):
+        | %main : Nil = function<Index>() body(%n: Index):
         |     %eq : Index = equal_index(%n, 0)
         |     %sub : Index = subtract_index(%n, 1)
         |     %result : Index = add_index(%eq, %sub)
@@ -284,7 +284,7 @@ def test_equal_and_subtract_roundtrip():
 def test_subtract_jit():
     """subtract_index executes correctly via JIT."""
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%n: Index):
+        | %main : Nil = function<Index>() body(%n: Index):
         |     %sub : Index = subtract_index(%n, 1)
     """)
     module = parse_module(ir)
@@ -295,11 +295,11 @@ def test_subtract_jit():
 def test_if_else_parse_roundtrip():
     """if/else op with two blocks parses and round-trips."""
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%n: Index):
+        | %main : Nil = function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = if(%cond) ():
+        |     %result : Index = if(%cond) then_body():
         |         %ten : Index = 10
-        |     else ():
+        |     else_body():
         |         %twenty : Index = 20
     """)
     module = parse_module(ir)
@@ -316,11 +316,11 @@ def test_if_else_parse_roundtrip():
 def test_if_else_jit():
     """if/else executes correctly via JIT."""
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%n: Index):
+        | %main : Nil = function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = if(%cond) ():
+        |     %result : Index = if(%cond) then_body():
         |         %one : Index = 1
-        |     else ():
+        |     else_body():
         |         %val : Index = subtract_index(%n, 1)
     """)
     module = parse_module(ir)
@@ -333,10 +333,10 @@ def test_if_else_jit():
 def test_call_op_roundtrip():
     """call op parses and round-trips."""
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%x: Index):
+        | %main : Nil = function<Index>() body(%x: Index):
         |     %result : Index = call<%add_one>([%x])
         |
-        | %add_one : Nil = function<Index>() (%n: Index):
+        | %add_one : Nil = function<Index>() body(%n: Index):
         |     %r : Index = add_index(%n, 1)
     """)
     module = parse_module(ir)
@@ -348,10 +348,10 @@ def test_call_op_roundtrip():
 def test_call_jit():
     """call op executes a helper function via JIT."""
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%x: Index):
+        | %main : Nil = function<Index>() body(%x: Index):
         |     %result : Index = call<%add_one>([%x])
         |
-        | %add_one : Nil = function<Index>() (%n: Index):
+        | %add_one : Nil = function<Index>() body(%n: Index):
         |     %r : Index = add_index(%n, 1)
     """)
     module = parse_module(ir)
@@ -365,13 +365,13 @@ def test_multi_function_staged():
     ir = strip_prefix("""
         | import peano
         |
-        | %main : Nil = function<Index>() ():
+        | %main : Nil = function<Index>() body():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %n : Index = peano.value<%s1>()
         |     %result : Index = call<%add_one>([%n])
         |
-        | %add_one : Nil = function<Index>() (%x: Index):
+        | %add_one : Nil = function<Index>() body(%x: Index):
         |     %r : Index = add_index(%x, 1)
     """)
     module = parse_module(ir)
@@ -383,7 +383,7 @@ def test_multi_function_staged():
 def test_equal_jit():
     """equal_index returns 1 when equal, 0 otherwise."""
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%n: Index):
+        | %main : Nil = function<Index>() body(%n: Index):
         |     %eq : Index = equal_index(%n, 0)
     """)
     module = parse_module(ir)
@@ -404,16 +404,16 @@ def test_recursive_peano():
     ir = strip_prefix("""
         | import peano
         |
-        | %main : Nil = function<Index>() (%x: Index):
+        | %main : Nil = function<Index>() body(%x: Index):
         |     %n : peano.Natural = call<%natural>([%x])
         |     %result : Index = peano.value<%n>()
         |
-        | %natural : Nil = function<peano.Natural>() (%n: Index):
+        | %natural : Nil = function<peano.Natural>() body(%n: Index):
         |     %base_case : Index = equal_index(%n, 0)
-        |     %value : peano.Natural = if(%base_case) ():
+        |     %value : peano.Natural = if(%base_case) then_body():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
-        |     else ():
+        |     else_body():
         |         %n_minus_one : Index = subtract_index(%n, 1)
         |         %predecessor : peano.Natural = call<%natural>([%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()

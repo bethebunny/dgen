@@ -9,7 +9,7 @@ def test_roundtrip_alloca():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
     """)
     module = parse_module(ir)
@@ -20,7 +20,7 @@ def test_roundtrip_gep_load_store():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
         |     %1 : Index = 0
         |     %2 : Nil = llvm.gep(%0, %1)
@@ -37,7 +37,7 @@ def test_roundtrip_fadd_fmul():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %0 : F64 = 1.0
         |     %1 : F64 = 2.0
         |     %2 : Nil = llvm.fadd(%0, %1)
@@ -52,7 +52,7 @@ def test_roundtrip_add_mul_int():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %0 : Index = 3
         |     %1 : Index = 4
         |     %2 : Nil = llvm.add(%0, %1)
@@ -67,13 +67,13 @@ def test_roundtrip_icmp_condbr():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %0 : Index = 0
         |     %1 : Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
-        |     %loop_body : llvm.Label = llvm.label() ():
+        |     %loop_body : llvm.Label = llvm.label() body():
         |         %_ : Nil = ()
-        |     %loop_exit : llvm.Label = llvm.label() ():
+        |     %loop_exit : llvm.Label = llvm.label() body():
         |         %_ : Nil = ()
         |     %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [], [])
     """)
@@ -85,8 +85,8 @@ def test_roundtrip_label_br():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
-        |     %loop_header : llvm.Label = llvm.label() ():
+        | %f : Nil = function<Nil>() body():
+        |     %loop_header : llvm.Label = llvm.label() body():
         |     %_ : Nil = llvm.br(%loop_header, [])
     """)
     module = parse_module(ir)
@@ -97,7 +97,7 @@ def test_roundtrip_call_with_result():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() (%a: Index, %b: Index):
+        | %f : Nil = function<Nil>() body(%a: Index, %b: Index):
         |     %0 : Nil = llvm.call<"foo">([%a, %b])
     """)
     module = parse_module(ir)
@@ -108,7 +108,7 @@ def test_roundtrip_call_void():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() (%ptr: Index, %size: Index):
+        | %f : Nil = function<Nil>() body(%ptr: Index, %size: Index):
         |     %0 : Nil = llvm.call<"print_memref">([%ptr, %size])
     """)
     module = parse_module(ir)
@@ -117,7 +117,7 @@ def test_roundtrip_call_void():
 
 def test_roundtrip_return_value():
     ir = strip_prefix("""
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %0 : F64 = 42.0
     """)
     module = parse_module(ir)
@@ -129,17 +129,17 @@ def test_roundtrip_loop_pattern():
     ir = strip_prefix("""
         | import llvm
         |
-        | %f : Nil = function<Nil>() ():
+        | %f : Nil = function<Nil>() body():
         |     %alloc : Nil = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %loop_header : llvm.Label = llvm.label() (%i: Index, %p: llvm.Ptr):
+        |     %loop_header : llvm.Label = llvm.label() body(%i: Index, %p: llvm.Ptr):
         |         %hi : Index = 3
         |         %cmp : Nil = llvm.icmp<"slt">(%i, %hi)
-        |         %loop_body : llvm.Label = llvm.label() (%j: Index, %q: llvm.Ptr):
+        |         %loop_body : llvm.Label = llvm.label() body(%j: Index, %q: llvm.Ptr):
         |             %one : Index = 1
         |             %next : Nil = llvm.add(%j, %one)
         |             %_ : Nil = llvm.br(%loop_header, [%next, %q])
-        |         %loop_exit : llvm.Label = llvm.label() ():
+        |         %loop_exit : llvm.Label = llvm.label() body():
         |             %_ : Nil = ()
         |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [%i, %p], [])
         |     %_ : Nil = llvm.br(%loop_header, [%init, %alloc])

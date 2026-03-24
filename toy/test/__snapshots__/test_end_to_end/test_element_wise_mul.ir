@@ -1,16 +1,16 @@
 import llvm
 import toy
 
-%main : Nil = function<Nil>() ():
+%main : Nil = function<Nil>() body():
     %0 : llvm.Ptr = llvm.alloca<4>()
-    %loop_header0 : llvm.Label = llvm.label() (%i0: Index):
+    %loop_header0 : llvm.Label = llvm.label() body(%i0: Index):
         %1 : Index = 2
         %2 : llvm.Int<1> = llvm.icmp<"slt">(%i0, %1)
-        %loop_body0 : llvm.Label = llvm.label() (%j0: Index):
-            %loop_header1 : llvm.Label = llvm.label() (%i1: Index, %3: Index):
+        %loop_body0 : llvm.Label = llvm.label() body(%j0: Index):
+            %loop_header1 : llvm.Label = llvm.label() body(%i1: Index, %3: Index):
                 %4 : Index = 2
                 %5 : llvm.Int<1> = llvm.icmp<"slt">(%i1, %4)
-                %loop_body1 : llvm.Label = llvm.label() (%j1: Index, %6: Index):
+                %loop_body1 : llvm.Label = llvm.label() body(%j1: Index, %6: Index):
                     %7 : toy.Tensor<affine.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]
                     %8 : llvm.Ptr = llvm.load(%7)
                     %9 : Index = 2
@@ -35,14 +35,14 @@ import toy
                     %28 : llvm.Int<64> = llvm.add(%j1, %27)
                     %29 : Nil = llvm.br(%loop_header1, [%28, %6])
                     %30 : Nil = chain(%26, %29)
-                %loop_exit1 : llvm.Label = llvm.label() (%31: Index):
+                %loop_exit1 : llvm.Label = llvm.label() body(%31: Index):
                     %32 : Index = 1
                     %33 : llvm.Int<64> = llvm.add(%31, %32)
                     %34 : Nil = llvm.br(%loop_header0, [%33])
                 %35 : Nil = llvm.cond_br(%5, %loop_body1, %loop_exit1, [%i1, %3], [%3])
             %36 : Index = 0
             %37 : Nil = llvm.br(%loop_header1, [%36, %j0])
-        %loop_exit0 : llvm.Label = llvm.label() ():
+        %loop_exit0 : llvm.Label = llvm.label() body():
             %38 : Index = 4
             %39 : Nil = llvm.call<"print_memref">([%0, %38])
         %40 : Nil = llvm.cond_br(%2, %loop_body0, %loop_exit0, [%i0], [])

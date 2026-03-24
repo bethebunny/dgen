@@ -44,7 +44,7 @@ def test_format_dict_literal():
 def test_typetype_constant_asm_roundtrip():
     """TypeType constant with dict literal round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
     """)
     module = parse_module(ir)
@@ -54,7 +54,7 @@ def test_typetype_constant_asm_roundtrip():
 def test_ssa_ref_as_op_type():
     """SSA ref in type position: %x's type is the SSA value %t."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
         |     %x : %t = 42
     """)
@@ -70,7 +70,7 @@ def test_ssa_ref_as_op_type():
 def test_ssa_ref_as_op_type_roundtrip():
     """SSA ref in type position round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
         |     %x : %t = 42
     """)
@@ -105,7 +105,7 @@ def test_parameterized_typetype_constant_roundtrip():
 
     # ASM round-trip with the parameterized TypeType
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
     """)
     module = parse_module(ir)
@@ -115,7 +115,7 @@ def test_parameterized_typetype_constant_roundtrip():
 def test_array_with_ssa_dimension():
     """Array<Index, %n> — SSA value as type parameter, round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %n : Index = 4
         |     %arr : Array<Index, %n> = [1, 2, 3, 4]
     """)
@@ -133,7 +133,7 @@ def test_array_with_ssa_dimension():
 def test_array_with_ssa_element_type():
     """Array<%t, 4> — SSA type value as element_type param, round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
     """)
@@ -151,7 +151,7 @@ def test_array_with_ssa_element_type():
 def test_array_with_ssa_element_type_layout():
     """Array<%t, 4> — type_constant resolves the element type for layout computation."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
     """)
@@ -170,7 +170,7 @@ def test_array_with_ssa_element_type_layout():
 def test_pointer_with_ssa_pointee():
     """Pointer<%t> — SSA type value as pointee param, round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
         |     %p : Pointer<%t> = 0
     """)
@@ -221,7 +221,7 @@ def test_type_constant_jit_return():
 def test_list_with_ssa_element_type():
     """List<%t> — SSA type value as element_type param, round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
         |     %xs : List<%t> = [1, 2, 3]
     """)
@@ -240,7 +240,7 @@ def test_list_with_ssa_element_type():
 def test_fat_pointer_with_ssa_pointee():
     """Span<%t> — SSA type value as pointee param, round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.F64"}
         |     %p : Span<%t> = [0.0, 0.0]
     """)
@@ -259,9 +259,9 @@ def test_fat_pointer_with_ssa_pointee():
 def test_function_with_ssa_result_type():
     """function<%t> — SSA type value as result param, round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : Nil = function<%t>() (%x: Index):
+        |     %f : Nil = function<%t>() body(%x: Index):
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -276,7 +276,7 @@ def test_function_with_ssa_result_type():
 def test_block_argument_constant_raises_type_error():
     """BlockArgument.__constant__ raises TypeError — it's not a constant."""
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%t: Type, %x: Index):
+        | %main : Nil = function<Index>() body(%t: Type, %x: Index):
         |     %y : %t = add_index(%x, %x)
     """)
     module = parse_module(ir)
@@ -296,7 +296,7 @@ def test_block_argument_constant_raises_type_error():
 def test_type_constant_resolves_ssa_constant():
     """type_constant resolves a ConstantOp TypeType value to a concrete Type."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
         |     %x : %t = 42
     """)
@@ -309,9 +309,9 @@ def test_type_constant_resolves_ssa_constant():
 def test_compile_with_ssa_function_result():
     """compile() resolves FunctionOp.result when it's a ConstantOp type ref."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : Nil = function<%t>() (%x: Index):
+        |     %f : Nil = function<%t>() body(%x: Index):
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
@@ -327,9 +327,9 @@ def test_compile_function_with_ssa_typed_block_arg():
     codegen must resolve it via type_constant before accessing __layout__.
     """
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : Nil = function<Nil>() (%x: %t):
+        |     %f : Nil = function<Nil>() body(%x: %t):
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
@@ -351,7 +351,7 @@ def test_compile_constant_with_ssa_type():
     codegen must resolve %x's type via type_constant to get __layout__.
     """
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
         |     %x : %t = 42
     """)
@@ -371,9 +371,9 @@ def test_compile_input_types_resolved_from_ssa():
     so they must be concrete Types, not ConstantOps.
     """
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : Nil = function<%t>() (%x: %t):
+        |     %f : Nil = function<%t>() body(%x: %t):
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
@@ -405,7 +405,7 @@ def test_staging_resolves_block_arg_type():
             return lower_to_llvm(m)
 
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%t: Type, %x: Index):
+        | %main : Nil = function<Index>() body(%t: Type, %x: Index):
         |     %y : %t = add_index(%x, %x)
     """)
     module = parse_module(ir)
@@ -450,7 +450,7 @@ def test_parse_typetype_block_arg_constant_materializes():
     tag in the value dict is sufficient for the TypeValue layout to serialize.
     """
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() (%arr_ty: Type):
+        | %main : Nil = function<Nil>() body(%arr_ty: Type):
         |     %tt : Type = {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
     """)
     module = parse_module(ir)
@@ -471,16 +471,16 @@ def test_staging_with_ssa_result_type():
 
     main() -> Nil:
         %t : Type = {"tag": "builtin.Index"}
-        %f : Nil = function<%t>() (%rt: Type, %x: Index):
+        %f : Nil = function<%t>() body(%rt: Type, %x: Index):
             %y : %rt = add_index(%x, %x)
 
     The inner function %f has result = %t (ConstantOp), and its block arg
     %rt is a TypeType<Index>. The staging system must resolve both %t and %rt.
     """
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : Nil = function<%t>() (%rt: Type, %x: Index):
+        |     %f : Nil = function<%t>() body(%rt: Type, %x: Index):
         |         %y : %rt = add_index(%x, %x)
     """)
     module = parse_module(ir)
@@ -532,7 +532,7 @@ def test_staging_resolves_type_value():
             return m
 
     ir = strip_prefix("""
-        | %main : Nil = function<Index>() (%t: Type, %x: Index):
+        | %main : Nil = function<Index>() body(%t: Type, %x: Index):
         |     %y : %t = add_index(%x, %x)
     """)
     module = parse_module(ir)

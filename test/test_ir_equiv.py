@@ -90,7 +90,7 @@ def test_graph_equivalent_same_ir():
     ir = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -102,14 +102,14 @@ def test_graph_equivalent_different_names():
     a = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %x : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %y : Nil = toy.print(%x)
     """)
@@ -120,14 +120,14 @@ def test_graph_not_equivalent_different_values():
     a = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -138,14 +138,14 @@ def test_structural_diff_returns_string():
     a = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
