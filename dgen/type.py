@@ -251,7 +251,7 @@ class Memory(Generic[T]):
             return NotImplemented
         return (
             self.type.__constant__.to_json() == other.type.__constant__.to_json()
-            and self.buffer == other.buffer
+            and self.to_json() == other.to_json()
         )
 
     def __hash__(self) -> int:
