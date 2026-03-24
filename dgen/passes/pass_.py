@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import dgen
 from dgen.module import Module
+from dgen.verify import verify_all_ready, verify_closed_blocks, verify_dag
 
 if TYPE_CHECKING:
     from dgen.compiler import Compiler
@@ -135,13 +136,11 @@ class Pass(metaclass=_PassMeta):
 
     def verify_preconditions(self, module: Module) -> None:
         """Check IR invariants that must hold before this pass runs."""
-        from dgen.verify import verify_all_ready, verify_closed_blocks
-
         verify_all_ready(module)
+        verify_dag(module)
         verify_closed_blocks(module)
 
     def verify_postconditions(self, module: Module) -> None:
         """Check IR invariants that must hold after this pass runs."""
-        from dgen.verify import verify_closed_blocks
-
+        verify_dag(module)
         verify_closed_blocks(module)
