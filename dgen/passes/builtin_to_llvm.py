@@ -76,7 +76,9 @@ class BuiltinToLLVMLowering(Pass):
         # Lower body ops (skip nested labels — already handled above).
         body_ops = [op for op in label_op.body.ops if not isinstance(op, llvm.LabelOp)]
         result = self._lower_ops(body_ops, label_op.body.result)
-        label_op.body = dgen.Block(result=result, args=label_op.body.args)
+        label_op.body = dgen.Block(
+            result=result, args=label_op.body.args, parameters=label_op.body.parameters
+        )
 
     def _map(self, old: dgen.Value) -> dgen.Value:
         return self.value_map.get(old, old)

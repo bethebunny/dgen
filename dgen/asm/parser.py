@@ -45,6 +45,7 @@ class ASMParser:
         self.pos: int = 0
         self.name_table: dict[str, Value] = {}
         self.pending_ops: list[Op] = []
+        self.imported_dialects: set[str] = {"builtin"}
 
     @property
     def done(self) -> bool:
@@ -114,28 +115,30 @@ class ASMParser:
 # -- Lookup ----------------------------------------------------------------
 
 
-def _lookup_op(name: str) -> type[Op]:
+def _lookup_op(name: str, imported: set[str] | None = None) -> type[Op]:
     """Look up an op by name, splitting on '.' for qualified names."""
-    dialect, local = _resolve_name(name)
+    dialect, local = _resolve_name(name, imported)
     op_cls = dialect.ops.get(local)
     if op_cls is None:
         raise ParseError(f"Unknown op: {name}")
     return op_cls
 
 
-def _lookup_type(name: str) -> type[Type]:
+def _lookup_type(name: str, imported: set[str] | None = None) -> type[Type]:
     """Look up a type by name, splitting on '.' for qualified names."""
-    dialect, local = _resolve_name(name)
+    dialect, local = _resolve_name(name, imported)
     type_cls = dialect.types.get(local)
     if type_cls is None:
         raise ParseError(f"Unknown type: {name}")
     return type_cls
 
 
-def _resolve_name(name: str) -> tuple[Dialect, str]:
+def _resolve_name(name: str, imported: set[str] | None = None) -> tuple[Dialect, str]:
     """Split 'dialect.name' into (Dialect, local_name). Unqualified → builtin."""
     if "." in name:
         dialect_name, local = name.split(".", 1)
+        if imported is not None and dialect_name not in imported:
+            raise ParseError(f"Dialect '{dialect_name}' not imported")
         try:
             return Dialect.get(dialect_name), local
         except KeyError:

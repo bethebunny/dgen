@@ -272,15 +272,24 @@ class TypeValue(Layout):
             ):
                 # List of types (e.g. Tuple's types: List param with TypeType element)
                 fields.append((param_name, Span(TypeValue())))
+            elif param_type.__params__:
+                # Parameterized value type (e.g. Shape<rank>): serialize as
+                # a nested TypeValue since the value carries its own params.
+                fields.append((param_name, TypeValue()))
             else:
-                # Value-kinded param: use the param type's layout
+                # Simple value-kinded param: use the param type's layout
                 fields.append((param_name, param_type().__layout__))
         return Record(fields)
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
     ) -> None:
-        assert isinstance(value, dict)
+        # The parser may store Type objects instead of JSON dicts for TypeType
+        # fields; convert them here.
+        if not isinstance(value, dict):
+            from dgen.type import Type
+            assert isinstance(value, Type), f"Expected dict or Type, got {type(value)}"
+            value = value.__constant__.to_json()
         tag = value["tag"]
         assert isinstance(tag, str)
         pointee_layout = self._resolve_layout(tag)

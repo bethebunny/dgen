@@ -153,16 +153,6 @@ def test_structural_diff_returns_string():
     assert "-" in diff and "+" in diff
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "TypeValue._resolve_layout constructs param types without arguments to get "
-        "their layout (e.g. Shape().__layout__), but Shape.__layout__ reads "
-        "self.rank — so Shape() raises TypeError: missing required arg 'rank'. "
-        "Fix: _resolve_layout needs a way to get the layout of a param type "
-        "without constructing an instance, e.g. a classmethod or a sentinel instance."
-    ),
-)
 def test_type_constant_with_dynamic_layout_param():
     """Type.__constant__ fails for types whose layout depends on a param type with a dynamic layout.
 

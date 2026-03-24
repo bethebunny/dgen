@@ -103,11 +103,9 @@ class AffineToLLVMLowering(Pass):
                 if op in self._seen:
                     continue
                 self._seen.add(op)
-                entry_br, exit_label, exit_outer_args, exit_remap = self._lower_for(op)
-                # Remap outer affine ivars → exit block args while computing the
-                # exit continuation, so ops in exit_label.body stay closed.
-                # return_builder is called lazily inside the recursive call with
-                # the remapped value_map, producing closed ops for exit_label.body.
+                entry_br, exit_label, exit_outer_args, exit_remap, _ = (
+                    self._lower_for(op)
+                )
                 saved = {
                     k: self.value_map[k] for k in exit_remap if k in self.value_map
                 }
@@ -243,6 +241,7 @@ class AffineToLLVMLowering(Pass):
         llvm.LabelOp,
         list[BlockArgument],
         dict[dgen.Value, dgen.Value],
+        llvm.CondBrOp,
     ]:
         """Lower one ForOp to LLVM header/body/exit labels.
 
@@ -258,21 +257,42 @@ class AffineToLLVMLowering(Pass):
         body_iv = BlockArgument(name=f"j{lid}", type=builtin.Index())
 
         # op.body.args[1:] are outer affine ivars threaded in by _nested_for.
-        # Get the current LLVM values they map to (outer body BlockArguments).
+        # op.init_args contains the actual values passed to these args from
+        # the enclosing scope. Use _map on init_args (not body args) to get
+        # the current LLVM values — body args are block-local and may not
+        # be in value_map yet.
         outer_affine_ivs = list(op.body.args[1:])
-        outer_llvm_ivs: list[dgen.Value] = [self.value_map[a] for a in outer_affine_ivs]
+        assert isinstance(op.init_args, PackOp)
+        outer_llvm_ivs: list[dgen.Value] = [
+            self._map(v) for v in op.init_args.values
+        ]
 
-        # Fresh block args for each outer ivar/param in header / body / exit scopes.
-        # Use a.type so non-Index outer params (e.g. tensor function args) get the right type.
+        # Collect enclosing loops' %self values — these must also be threaded
+        # through header/body/exit so nested back-branches can reach outer headers.
+        enclosing_self_keys: list[affine.ForOp] = [
+            k for k in self.value_map if isinstance(k, affine.ForOp) and k is not op
+        ]
+        enclosing_self_vals: list[dgen.Value] = [
+            self.value_map[k] for k in enclosing_self_keys
+        ]
+
+        # Fresh block args for each outer ivar + enclosing %self in each scope.
+        all_outer_types = [a.type for a in outer_affine_ivs] + [
+            llvm.Label() for _ in enclosing_self_keys
+        ]
+        all_outer_names = [a.name for a in outer_affine_ivs] + [
+            "self" for _ in enclosing_self_keys
+        ]
         outer_header_args = [
-            BlockArgument(name=a.name, type=a.type) for a in outer_affine_ivs
+            BlockArgument(name=n, type=t) for n, t in zip(all_outer_names, all_outer_types)
         ]
         outer_body_args = [
-            BlockArgument(name=a.name, type=a.type) for a in outer_affine_ivs
+            BlockArgument(name=n, type=t) for n, t in zip(all_outer_names, all_outer_types)
         ]
         outer_exit_args = [
-            BlockArgument(name=a.name, type=a.type) for a in outer_affine_ivs
+            BlockArgument(name=n, type=t) for n, t in zip(all_outer_names, all_outer_types)
         ]
+        outer_llvm_ivs = outer_llvm_ivs + enclosing_self_vals
 
         # Map lo/hi (already processed as ConstantOps in the outer block)
         lo_op = self._map(op.lo)
@@ -284,74 +304,106 @@ class AffineToLLVMLowering(Pass):
             hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.Index())
             self.value_map[op.hi] = hi_op
 
-        # Header: compare loop var against hi, branch true→body or false→exit
+        # Header: compare loop var against hi, branch true→body or false→exit.
+        # The header has %self as a block parameter (bound to its own label).
+        # %self is threaded through to the body block so the back-branch can
+        # reference it as a BlockArgument (leaf), breaking the use-def cycle.
+        header_self_param = BlockArgument(name="self", type=llvm.Label())
+        body_self_arg = BlockArgument(name="self", type=llvm.Label())
+
         cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=header_iv, rhs=hi_op)
         exit_label = llvm.LabelOp(name=f"loop_exit{lid}", body=placeholder_block())
         body_label = llvm.LabelOp(
             name=f"loop_body{lid}",
             body=dgen.Block(
-                result=dgen.Value(type=Nil()), args=[body_iv] + outer_body_args
+                result=dgen.Value(type=Nil()),
+                args=[body_iv] + outer_body_args + [body_self_arg],
             ),
         )
         cond_br = llvm.CondBrOp(
             cond=cmp_op,
             true_target=body_label,
             false_target=exit_label,
-            true_args=_make_pack([header_iv] + outer_header_args),
-            false_args=_make_pack(outer_header_args)
-            if outer_header_args
-            else _EMPTY_PACK,
+            true_args=_make_pack(
+                [header_iv] + outer_header_args + [header_self_param]
+            ),
+            # false_args will be updated by _lower_ops after exit args are finalized
+            false_args=_make_pack(outer_header_args + [header_self_param]),
         )
         header_label = llvm.LabelOp(
             name=f"loop_header{lid}",
             body=dgen.Block(
                 result=cond_br,
-                parameters=[BlockArgument(name="self", type=llvm.Label())],
+                parameters=[header_self_param],
                 args=[header_iv] + outer_header_args,
             ),
         )
 
-        # Body: map affine loop var and outer ivars to body-local block args.
+        # Body: map affine loop var, outer ivars, and enclosing %self to
+        # body-local block args. Track body_self_arg in value_map (keyed by
+        # this ForOp) so nested loops' exit blocks can remap it.
         self.value_map[op.body.args[0]] = body_iv
-        for affine_iv, body_arg in zip(outer_affine_ivs, outer_body_args):
+        self.value_map[op] = body_self_arg
+        n_affine = len(outer_affine_ivs)
+        for affine_iv, body_arg in zip(outer_affine_ivs, outer_body_args[:n_affine]):
             self.value_map[affine_iv] = body_arg
             if affine_iv in self.alloc_shapes:
                 self.alloc_shapes[body_arg] = self.alloc_shapes[affine_iv]
+        for enc_key, body_arg in zip(enclosing_self_keys, outer_body_args[n_affine:]):
+            self.value_map[enc_key] = body_arg
 
         def _make_back_br() -> dgen.Value:
             """Build the back-branch lazily with the current value_map.
 
-            Called at the end of _lower_ops for this loop's body (or inside an
-            exit block of a nested loop with exit_remap applied), so
-            value_map[op.body.args[0]] always resolves to the in-scope arg.
+            Uses value_map[op] to get the in-scope %self arg, which may be
+            the body_self_arg directly or an exit-remapped copy for nested loops.
             """
             one_local = ConstantOp(value=1, type=builtin.Index())
             next_iv_local = llvm.AddOp(
                 lhs=self.value_map[op.body.args[0]], rhs=one_local
             )
             outer_scope_vals = [self.value_map[a] for a in outer_affine_ivs]
+            enc_self_vals = [self.value_map[k] for k in enclosing_self_keys]
             return llvm.BrOp(
-                target=header_label,
-                args=_make_pack([next_iv_local] + outer_scope_vals),
+                target=self.value_map[op],
+                args=_make_pack([next_iv_local] + outer_scope_vals + enc_self_vals),
             )
 
         body_result = self._lower_ops(op.body.ops, _make_back_br)
         body_label.body = dgen.Block(
-            result=body_result, args=[body_iv] + outer_body_args
+            result=body_result,
+            args=[body_iv] + outer_body_args + [body_self_arg],
         )
 
-        # Restore outer iv mappings to the pre-body LLVM values.
-        for affine_iv, llvm_iv in zip(outer_affine_ivs, outer_llvm_ivs):
+        # Restore outer iv and enclosing %self mappings to pre-body values.
+        # Remove this loop's %self from value_map so it doesn't leak into
+        # subsequent loop nests at the same level.
+        for affine_iv, llvm_iv in zip(outer_affine_ivs, outer_llvm_ivs[:n_affine]):
             self.value_map[affine_iv] = llvm_iv
+        for enc_key, enc_val in zip(enclosing_self_keys, enclosing_self_vals):
+            self.value_map[enc_key] = enc_val
+        del self.value_map[op]
 
         entry_br = llvm.BrOp(
             target=header_label,
             args=_make_pack([lo_op] + outer_llvm_ivs),
         )
-        exit_remap: dict[dgen.Value, dgen.Value] = dict(
-            zip(outer_affine_ivs, outer_exit_args)
+        # Exit remap: outer affine ivars + enclosing %self → exit-scoped args,
+        # plus this loop's own %self → exit-scoped copy.
+        exit_self_arg = BlockArgument(name="self", type=llvm.Label())
+        exit_remap: dict[dgen.Value, dgen.Value] = {}
+        for affine_iv, exit_arg in zip(outer_affine_ivs, outer_exit_args[:n_affine]):
+            exit_remap[affine_iv] = exit_arg
+        for enc_key, exit_arg in zip(enclosing_self_keys, outer_exit_args[n_affine:]):
+            exit_remap[enc_key] = exit_arg
+        exit_remap[op] = exit_self_arg
+        return (
+            entry_br,
+            exit_label,
+            outer_exit_args + [exit_self_arg],
+            exit_remap,
+            cond_br,
         )
-        return entry_br, exit_label, outer_exit_args, exit_remap
 
     def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> None:
         input_ptr = self._deref(self._map(op.input))

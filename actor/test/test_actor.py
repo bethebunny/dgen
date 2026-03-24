@@ -19,7 +19,28 @@ actor_compiler: Compiler[Executable] = Compiler(
 )
 
 
-@pytest.mark.xfail(reason="JIT malloc return pointer read-back needs investigation")
+def _run_actor_pipeline(module: object) -> list[float]:
+    """Compile and run an actor pipeline, returning output as a float list.
+
+    MemRef is an opaque pointer (Pointer<Void>) — we pass the raw data
+    address to the JIT and read the result pointer directly.
+    """
+    import ctypes
+
+    exe = actor_compiler.compile(module)  # type: ignore[arg-type]
+    f64x4 = builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4))
+    input_data = Memory.from_value(f64x4, [1.0, 2.0, 3.0, 4.0])
+
+    # JIT expects raw pointer, returns raw pointer
+    from dgen.codegen import _jit_engine
+    engine = _jit_engine(exe)
+    func_ptr = engine.get_function_address(exe.main_name)
+    cfunc = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_int64)(func_ptr)
+    result_ptr = cfunc(input_data.address)
+
+    return Memory.from_raw(f64x4, result_ptr).to_json()  # type: ignore[return-value]
+
+
 def test_fused_pipeline() -> None:
     """Two actors with equal rates. input * 2 + 1 per element."""
     module = asm.parse(strip_prefix("""
@@ -47,19 +68,13 @@ def test_fused_pipeline() -> None:
         |             %23 : affine.MemRef<affine.Shape<1>([4]), F64> = chain(%16, %17)
         |             %24 : Nil = actor.produce(%23)
     """))
-    exe = actor_compiler.compile(module)
-    memref = exe.input_types[0]
-    f64x4 = builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4))
-    input_data = Memory.from_value(f64x4, [1.0, 2.0, 3.0, 4.0])
-    input_mem = Memory.from_value(memref, input_data.address)
-    result = exe.run(input_mem)
-    ptr = result.unpack()[0]
-    assert Memory.from_raw(f64x4, ptr).to_json() == [3.0, 5.0, 7.0, 9.0]
+    assert _run_actor_pipeline(module) == [3.0, 5.0, 7.0, 9.0]
 
 
-@pytest.mark.xfail(reason="JIT malloc return pointer read-back needs investigation")
 def test_unfused_pipeline() -> None:
     """Two actors with different rates. input * 2, then first 2 elements + 1."""
+    import ctypes
+
     module = asm.parse(strip_prefix("""
         | import actor
         | import affine
@@ -86,14 +101,16 @@ def test_unfused_pipeline() -> None:
         |             %24 : Nil = actor.produce(%23)
     """))
     exe = actor_compiler.compile(module)
-    memref = exe.input_types[0]
     f64x4 = builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4))
     f64x2 = builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(2))
     input_data = Memory.from_value(f64x4, [1.0, 2.0, 3.0, 4.0])
-    input_mem = Memory.from_value(memref, input_data.address)
-    result = exe.run(input_mem)
-    ptr = result.unpack()[0]
-    assert Memory.from_raw(f64x2, ptr).to_json() == [3.0, 5.0]
+
+    from dgen.codegen import _jit_engine
+    engine = _jit_engine(exe)
+    func_ptr = engine.get_function_address(exe.main_name)
+    cfunc = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_int64)(func_ptr)
+    result_ptr = cfunc(input_data.address)
+    assert Memory.from_raw(f64x2, result_ptr).to_json() == [3.0, 5.0]
 
 
 def test_lowering_ir(ir_snapshot: object) -> None:
