@@ -133,8 +133,8 @@ With the closed-block and DAG invariants enforced, `walk_ops` on any well-formed
 simple, exception-free specification:
 
 > Given value V, `walk_ops(V)` visits ops by following **operands**, **parameter values**, the
-> **result type** (if it is an SSA value), and **block argument types**. No special cases. No
-> `isinstance` guards. The traversal terminates because the use-def graph is a DAG.
+> **result type**, and **block argument types**. No special cases. No `isinstance` guards. The
+> traversal terminates because the use-def graph is a DAG.
 
 **The locality property.** `walk_ops(B.result)` produces exactly:
 - Ops whose transitive block-argument dependencies are entirely within B.args, and
@@ -166,11 +166,11 @@ inspects block structure.
 
 ```
 %src : llvm.Ptr = llvm.alloca<6>()
-%5 : Nil = affine.for<0, 4>() (%src: llvm.Ptr, %i: Index):
+%5 : Nil = affine.for<0, 4>(%src) (%i: Index, %src: llvm.Ptr):
     %val : F64 = affine.load(%src, [%i])
 ```
 
-`walk_ops` on this block's result immediately encounters `%src` and `%i` as block arguments
+`walk_ops` on this block's result immediately encounters `%i` and `%src` as block arguments
 (leaves). There is nothing to special-case: the block's complete dependency set is manifest in
 its argument list. Any tool that operates on this block—a scheduler, a verifier, an inliner—reads
 its inputs directly from the argument list without reconstructing implicit capture.
@@ -213,20 +213,21 @@ threaded. The `if` op is responsible for passing the captured values to each bra
 3.4 for the required update to `if`. The constant `%one` is an ambient node and is redeclared
 in the `else` block rather than threaded.
 
-The type of `%self` is `Function<Index>`, resolved at definition time. This is **nominal
-isorecursion**: the declared type is the fixpoint, and the self-reference is broken by the
-declaration boundary rather than by an explicit roll/unroll.
+The `if` op is responsible for forwarding captured values to each branch as block arguments; here
+`%n` and `%self` are forwarded to the `else` block. The updated `if` semantics are described in
+Section 3.4. The type of `%self` is `Function<Index>`, resolved at definition time. This is
+**nominal isorecursion**: the declared type is the fixpoint, and the self-reference is broken by
+the declaration boundary rather than by an explicit roll/unroll.
 
-Calling `%factorial` from the outside:
+Calling `%factorial` from the outside (Option A syntax — see Section 3.6):
 
 ```
-%fn_ref : Function<Index> = func_ref<%factorial>()    // ambient — wraps the static reference
 %five : Index = 5
-%result : Index = call(%fn_ref, [%five])
+%result : Index = call(%factorial, [%five])
 ```
 
-The `func_ref` op is an ambient node that wraps a module-level function into a `Function<T>`
-runtime value. See Section 3.6 for the three options for how `call` and self-reference interact.
+`%factorial` is an ambient op (no external block-argument dependencies) and appears as an operand.
+See Section 3.6 for the three options for how `call` and self-reference interact.
 
 #### Mutual Recursion via Nesting
 
@@ -235,11 +236,11 @@ inside the other, capturing the outer function's `%self` as an explicit argument
 
 ```
 %even : Function<Index> = func.recursive() (%self: Function<Index>, %n: Index):
-    // %odd is defined inside %even; it captures %self via its own argument list
-    %odd : Function<Index> = function() (%even_ref: Function<Index>, %m: Index):
+    // %odd is defined inside %even; it receives %even as an explicit argument
+    %odd : Function<Index> = function() (%even': Function<Index>, %m: Index):
         %one : Index = 1
         %m1 : Index = subtract_index(%m, %one)
-        %res : Index = call(%even_ref, [%m1])
+        %res : Index = call(%even', [%m1])
     %zero : Index = 0
     %cond : llvm.Int<1> = llvm.icmp<"eq">(%n, %zero)
     %result : Index = if(%cond) ():
@@ -247,21 +248,21 @@ inside the other, capturing the outer function's `%self` as an explicit argument
     else (%self: Function<Index>, %n: Index):
         %one : Index = 1
         %n1 : Index = subtract_index(%n, %one)
-        // %odd is ambient (no block-arg deps) — no threading needed
+        // %odd is ambient (no block-arg deps) — referenced without threading
         %res : Index = call(%odd, [%self, %n1])
 ```
 
 `%odd` is a `function` op with no external operands. Its transitive dependencies include only its
-own block arguments (`%even_ref`, `%m`), not anything from `%even`'s outer scope. Therefore `%odd`
+own block arguments (`%even'`, `%m`), not anything from `%even`'s outer scope. Therefore `%odd`
 is an **ambient node** and may be referenced from the `else` block without threading. `%self` and
 `%n`, however, are block arguments of `%even`'s body and must be declared in the `else` block's
-argument list.
+argument list; they are forwarded there by the `if` op.
 
 `%odd` is not self-recursive, so it does not need `func.recursive`. The mutual recursion cycle is
-broken by nesting: `%even` owns `%odd`, and `%odd` calls back through the captured reference
-`%even_ref`. The use-def graph is a DAG throughout.
+broken by nesting: `%odd` is lexically nested inside `%even` and calls back through the captured
+reference `%even'`. The use-def graph is a DAG throughout.
 
-The trade-off is asymmetry: one function must be nominated as the owner. For larger mutual
+The trade-off is asymmetry: one function must be the lexical container. For larger mutual
 recursion groups (A → B → C → A), all inner functions are nested under the root with captured
 references threaded explicitly. A `func.letrec` group op can be added later as syntactic sugar
 for the symmetric case if warranted.
@@ -278,27 +279,24 @@ as a block that branches to `%self` with updated arguments:
     %loop : llvm.Label = llvm.label() (%self: llvm.Label, %i: Index):
         %zero : Index = 0
         %cond : llvm.Int<1> = llvm.icmp<"sgt">(%i, %zero)
-        %exit : llvm.Label = llvm.label() ():
+        %exit : llvm.Label = llvm.label() (%self: llvm.Label):
             %done : Index = 0
         %one : Index = 1
         %i_next : Index = subtract_index(%i, %one)
-        // pass %self and %i_next as args to %self (the back-edge)
-        %_ : Nil = llvm.cond_br(%cond, %self, %exit, [%self, %i_next], [])
+        %_ : Nil = llvm.cond_br(%cond, %self, %exit, [%i_next], [])
     %ten : Index = 10
-    %_ : Nil = llvm.br(%loop, [%loop, %ten])    // initial call: pass %loop as its own %self
+    %_ : Nil = llvm.br(%loop, [%ten])
 ```
 
 Comparing this to the back-edge version from Section 1.2: the use-def cycle
 `%i → %i_next → llvm.br → %i` is eliminated. `%self` is fixed at the block boundary, and
 `%i_next` is an argument at the call site, not a redefinition of `%i`.
 
-The initial call `llvm.br(%loop, [%loop, %ten])` passes `%loop` as the first argument, binding it
-to `%self` inside the body. This is valid because `%loop` is defined in the enclosing block
-(the function body) and is an ambient node from the inner blocks' perspective—it has no
-block-argument transitive dependencies. Subsequent recursive iterations call `llvm.br(%self, ...)`
-rather than `llvm.br(%loop, ...)`, using the block argument `%self` rather than the outer-scope
-`%loop`. Under the closed-block invariant, referring to `%loop` from inside the body would be an
-implicit capture violation; `%self` is the correctly-threaded reference.
+`%self` block arguments are automatically supplied by lowering—branch ops do not pass them
+explicitly. This mirrors the nominal isorecursion for `func.recursive`: the self-reference is
+resolved at the declaration boundary, not threaded by callers. The initial call
+`llvm.br(%loop, [%ten])` passes only `%i`; `%self` is filled in as `%loop` automatically. On the
+recursive branch, `llvm.cond_br` passes only `[%i_next]`; `%self` is again filled in by lowering.
 
 #### Sibling Blocks and Mutual Block Recursion
 
@@ -311,21 +309,23 @@ discipline requires the label to be threaded explicitly. The pattern is identica
     %loop : llvm.Label = llvm.label() (%self: llvm.Label, %i: Index):
         %zero : Index = 0
         %cond : llvm.Int<1> = llvm.icmp<"sgt">(%i, %zero)
-        %exit : llvm.Label = llvm.label() ():
+        %exit : llvm.Label = llvm.label() (%self: llvm.Label):
             %done : Index = 0
-        // pass %self to %body so it can call back to the loop header
+        // pass %self to %body as %loop_ref so it can call back to the loop header
         %_ : Nil = llvm.cond_br(%cond, %body, %exit, [%self, %i], [])
-    %body : llvm.Label = llvm.label() (%loop_ref: llvm.Label, %i: Index):
+    %body : llvm.Label = llvm.label() (%self: llvm.Label, %loop_ref: llvm.Label, %i: Index):
         %one : Index = 1
         %i_next : Index = subtract_index(%i, %one)
-        %_ : Nil = llvm.br(%loop_ref, [%loop_ref, %i_next])
+        %_ : Nil = llvm.br(%loop_ref, [%i_next])
     %ten : Index = 10
-    %_ : Nil = llvm.br(%loop, [%loop, %ten])
+    %_ : Nil = llvm.br(%loop, [%ten])
 ```
 
-`%loop` passes `%self` to `%body` as an explicit argument `%loop_ref`. `%body` calls back through
-`%loop_ref`. The entire graph is a DAG. Neither `%body` nor any op inside it holds a direct
-reference to `%loop`—only to the block argument that carries `%loop`'s value.
+`%loop` passes `%self` to `%body` as an explicit block argument `%loop_ref`. `%body` calls back
+through `%loop_ref`, passing only `%i_next`; `%loop`'s `%self` is auto-supplied on that call.
+`%body` also receives its own `%self` (auto-supplied as `%body`) even if unused. The entire graph
+is a DAG. Neither `%body` nor any op inside it holds a direct reference to `%loop`—only to the
+block argument that carries `%loop`'s value.
 
 #### Blocks and Functions: A Unified View
 
@@ -458,12 +458,11 @@ a **first-class (higher-order) function** example.
 
 #### Option A: Move callee to operand
 
-Change `call` so that the callee is a runtime operand: `call(callee, args)`. For static calls to
-module-level functions, a `func_ref` ambient op wraps the reference:
+Change `call` so that the callee is a runtime operand: `call(callee, args)`. Static calls pass
+the ambient function op directly as the callee operand—no wrapper needed.
 
 ```
 op call(callee: Function<T>, args: List<T>) -> T
-op func_ref<fn: Function>() -> Function<T>    // ambient — no block-arg dependencies
 ```
 
 **Recursive function:**
@@ -480,9 +479,8 @@ op func_ref<fn: Function>() -> Function<T>    // ambient — no block-arg depend
         %res : Index = llvm.mul(%n, %r)
 
 // Calling from outside:
-%fn_ref : Function<Index> = func_ref<%factorial>()
 %five : Index = 5
-%result : Index = call(%fn_ref, [%five])
+%result : Index = call(%factorial, [%five])    // %factorial is an ambient op
 ```
 
 **First-class function:**
@@ -492,14 +490,12 @@ op func_ref<fn: Function>() -> Function<T>    // ambient — no block-arg depend
 ```
 
 `walk_ops` on `call(%self, [%n1])` follows the operand edge to `%self`, which is a
-`BlockArgument` — a leaf. `walk_ops` on `call(%fn_ref, [%five])` follows the operand edge to
-`func_ref<%factorial>()`, which is an ambient node with no block-argument dependencies — also a
-leaf. The `FunctionOp` guard in `walk_ops` disappears entirely; there is no path from inside a
-block's op graph back into another function's body.
+`BlockArgument` — a leaf. `walk_ops` on `call(%factorial, [%five])` follows the operand edge to
+`%factorial`, an ambient op. `walk_ops` visits `%factorial` itself but does not descend into its
+body (nested blocks are not traversed). The `FunctionOp` guard disappears entirely.
 
-**Trade-offs:** Requires changing the `call` op signature and adding `func_ref`. All call sites
-(static and dynamic) become uniform. The `func_ref` op provides a clean place to express "I am
-taking a reference to a module-level function as a value."
+**Trade-offs:** Requires changing the `call` op signature. All call sites (static and dynamic)
+become uniform. The cost is one op-signature change; the gain is a uniform, guard-free `walk_ops`.
 
 ---
 
@@ -548,20 +544,21 @@ violation is confined to the recursive case.
 
 #### Option C: Block parameters — a new binding form
 
-Introduce **block parameters**: a new syntactic position in a block declaration that binds a
-value at the block boundary without requiring the caller to pass it. Block parameters are
-automatically provided by the runtime/compiler when the block is invoked. The first block of an
-op is named explicitly (currently the first block name is elided, a "weird carveout" in the
-formatter):
+Introduce **block parameters**: a new syntactic position in a block declaration, distinct from
+block arguments. Block parameters appear before the argument list in a named-block form. The first
+block of an op is named explicitly (currently the first block name is elided, a "weird carveout"
+in the formatter):
 
 ```
 op_name() block_name<%param: Type>(arg1: T1, arg2: T2):
     ...
 ```
 
-`%param` is a block parameter: it is in scope throughout the block, available to sub-blocks via
-threading, but is never passed by callers. For `func.recursive` and `llvm.label`, the compiler
-automatically binds the block parameter to the op's own callable identity.
+`%param` is a block parameter: it is in scope throughout the block and may be threaded to
+sub-blocks as an ordinary block argument. The meaning of block parameters is defined by each op's
+lowering pass — the IR has no implicit semantics for them. For `func.recursive` and `llvm.label`,
+the convention is that the block parameter holds the op's own callable identity, and lowering
+passes are responsible for populating it.
 
 **Recursive function:**
 ```
@@ -604,22 +601,22 @@ automatically binds the block parameter to the op's own callable identity.
     %result : Index = call<%f>([%n])    // unchanged — non-recursive, no block param
 ```
 
-**Trade-offs:** No change to `call`. Callers are simpler (no need to pass the label/function as
-its own first argument). The IR remains a strict DAG: `%self` as a block parameter is a leaf,
-never a back-edge. However, this option requires introducing a new concept into the IR (block
-parameters), updating the formatter and parser to handle the named-block syntax, and specifying
-how the compiler auto-binds block parameters for each op type. Additionally, `%self` when
-threaded to sub-blocks becomes an ordinary block argument — the distinction between block
-parameter and block argument complicates reasoning about what is and is not automatically provided.
+**Trade-offs:** No change to `call`. The IR remains a strict DAG: `%self` as a block parameter
+is a leaf, never a back-edge. However, this option requires introducing a new concept into the IR
+(block parameters), updating the formatter and parser to handle the named-block syntax, and
+establishing a convention (enforced by lowering passes) for how each op populates its block
+parameters. When `%self` is threaded to sub-blocks it becomes an ordinary block argument, which
+is coherent but means the same value appears in two different binding positions depending on which
+block is in scope.
 
 ---
 
-**Recommendation.** Option A is the most uniform and best satisfies the DAG invariant from
-Section 2.1. The `func_ref` ambient op provides a clean mechanism for taking a reference to a
-static function, and the single `call(callee, args)` form handles all cases without exception.
-Option C is architecturally appealing but introduces new complexity. Option B is the cheapest to
-implement but violates the DAG property and does not eliminate the structural special case in
-`walk_ops`.
+**Recommendation.** Option C best preserves the current `call` semantics and aligns naturally
+with how `%self` works for labels (auto-supplied by lowering, not threaded by callers). The
+named-block syntax makes the self-reference explicit and structurally distinct from ordinary block
+arguments. Option A is clean and uniform but requires changing the `call` op signature.
+Option B is the cheapest to implement but violates the DAG property and does not eliminate the
+structural special case in `walk_ops`.
 
 ### 3.7 Scheduling Shared Pure Subgraphs
 
@@ -634,26 +631,6 @@ scheduling window:
 
 Any placement within `[earliest, latest]` is **sound**. Soundness requires only the use-def graph
 and the dominator relation; no loop analysis is needed.
-
-#### Heuristics
-
-Within the legal window, placement heuristics optimize for performance:
-
-- **Rematerialization** (for trivially cheap ops): constants and literals are emitted at each use
-  site. Their live range is zero; no register allocation pressure.
-- **Loop hoisting** (for non-trivial pure ops): an op whose uses are all inside a loop but whose
-  dependencies are all outside it should be placed at the loop's pre-header—computed once, not on
-  every iteration.
-- **Placement at LCA** (default): for ops that cannot be further hoisted, the LCA of all use
-  sites in the dominator tree is the natural placement.
-
-#### Loop Detection
-
-Loop detection is required only for the hoisting heuristic, not for soundness. With the
-`%self : llvm.Label` design, loops are structurally manifest: a block is a loop if and only if its
-body contains a `llvm.br(%self, ...)` (Option A / B) or `llvm.cond_br(..., %self, ...)`. Loop
-nesting depth is read directly from block nesting. No dominator analysis is needed to identify
-loop structure.
 
 #### Division of Labor with LLVM
 
@@ -673,17 +650,9 @@ walk:
 
 ```python
 def visit(value):
-    if isinstance(value, list):
-        for item in value: visit(item)
-        return
-    if isinstance(value, Type):
-        for _, p in value.__params__: visit(p)
-        return
-    if not isinstance(value, Value) or id(value) in visited:
+    if id(value) in visited:
         return
     visited.add(id(value))
-    if not isinstance(value, Op):
-        return
     for _, operand in value.operands: visit(operand)
     for _, param in value.parameters: visit(param)
     visit(value.type)
@@ -692,16 +661,15 @@ def visit(value):
     order.append(value)
 ```
 
-No `isinstance(param, FunctionOp)` guard. No circular import. The `FunctionOp` guard is
-unnecessary because under Option A, `FunctionOp` values never appear as `call` parameters—they
-are only referenced through `func_ref` ambient ops, which are leaves. Under Option C they are
-similarly never reached via parameter edges inside a recursive body. Under Option B the visited
-set prevents infinite loops but the DAG violation remains, as discussed in Section 3.6.
+No `isinstance` guards of any kind. Every value has operands, parameters, a type, and blocks —
+the same three loops apply uniformly. The `FunctionOp` guard disappears under Option C (block
+parameters are leaves) and under Option A (`%factorial` is an ambient op visited but not
+descended into). Under Option B the visited set prevents infinite loops but the DAG violation
+remains, as discussed in Section 3.6.
 
-The block argument type traversal (`for arg in block.args: visit(arg.type)`) remains correct
-and necessary when a block argument's type is itself an SSA value (a dependent type). Under
-explicit capture, such type dependencies are either ambient or already explicit block arguments;
-no special cross-scope handling is required.
+The block argument type traversal remains correct and necessary when a block argument's type is
+itself a value (a dependent type). Under explicit capture, such type dependencies are either
+ambient or already explicit block arguments; no special cross-scope handling is required.
 
 The end state is a simple recursive DAG walk with no `isinstance` guards and no special cases.
 The structure is guaranteed by the capture discipline rather than enforced by ad hoc checks.
