@@ -1,4 +1,4 @@
-from builtin import Index, Nil, F64, HasSingleBlock, Array, Pointer
+from builtin import Index, Nil, F64, HasSingleBlock, Array, Pointer, List
 
 type Shape<rank: Index>:
     dims: Array<Index, rank>
@@ -13,6 +13,6 @@ op store(value: F64, memref: MemRef, indices: Index) -> Nil
 op mul_f(lhs: F64, rhs: F64) -> F64
 op add_f(lhs: F64, rhs: F64) -> F64
 op print_memref(input: MemRef) -> Nil
-op for<lo: Index, hi: Index>() -> Nil:
+op for<lo: Index, hi: Index>(init_args: List) -> Nil:
     block body
     has trait HasSingleBlock
