@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from dgen.compiler import Compiler
 
 
+_EMPTY_PACK = PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
+
+
 def _index_pack(*values: dgen.Value) -> PackOp:
     return PackOp(values=list(values), type=builtin.List(element_type=Index()))
 
@@ -46,12 +49,19 @@ def _nested_for(
     innermost: dgen.Value = body_fn(ivars)
     for depth in range(len(shape) - 1, -1, -1):
         outer_ivars = ivars[:depth]
+        captured: list[dgen.Value] = outer_ivars + list(outer_block_args)
+        init_pack = (
+            PackOp(values=captured, type=builtin.List(element_type=builtin.Nil()))
+            if captured
+            else _EMPTY_PACK
+        )
         innermost = affine.ForOp(
             lo=Index().constant(0),
             hi=Index().constant(shape[depth]),
+            init_args=init_pack,
             body=dgen.Block(
                 result=innermost,
-                args=[ivars[depth]] + outer_ivars + list(outer_block_args),
+                args=[ivars[depth]] + captured,
             ),
         )
     return innermost  # type: ignore[return-value]
