@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sL \"https://mlir.llvm.org/docs/Dialects/Affine/\")",
+      "Bash(curl -sL \"https://mlir.llvm.org/docs/Tutorials/Toy/Ch-5/\")",
+      "Bash(curl -sL \"https://mlir.llvm.org/docs/Tutorials/Toy/Ch-6/\")",
+      "Bash(curl:*)"
+    ]
+  }
+}

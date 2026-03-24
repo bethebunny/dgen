@@ -19,7 +19,7 @@ def walk_ops(root: dgen.Value) -> list[dgen.Op]:
     - Does not descend into an op's nested blocks.
     - Dependencies appear before dependents.
     """
-    visited: set[int] = set()
+    visited: set[dgen.Value] = set()
     order: list[dgen.Op] = []
 
     def visit(value: object) -> None:
@@ -33,10 +33,9 @@ def walk_ops(root: dgen.Value) -> list[dgen.Op]:
                 for param_name, _ in value.__params__:
                     visit(getattr(value, param_name))
             return
-        vid = id(value)
-        if vid in visited:
+        if value in visited:
             return
-        visited.add(vid)
+        visited.add(value)
 
         # Type is a Value subclass — traverse its params to find SSA-valued refs
         if isinstance(value, dgen.Type):
@@ -50,12 +49,7 @@ def walk_ops(root: dgen.Value) -> list[dgen.Op]:
         for _, operand in value.operands:
             visit(operand)
         for _, param in value.parameters:
-            # FunctionOps are module-level declarations, not block-local ops
-            # (circular import: builtin → dgen → block → graph)
-            from dgen.dialects.builtin import FunctionOp
-
-            if not isinstance(param, FunctionOp):
-                visit(param)
+            visit(param)
         # Visit type (may be an SSA value or a Type with SSA-valued params)
         visit(value.type)
         # Visit block parameter and arg types (leaves in the use-def graph)

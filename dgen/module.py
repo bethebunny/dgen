@@ -134,6 +134,8 @@ class Module:
 
     @property
     def asm(self) -> Iterable[str]:
+        from .asm.formatting import op_asm
+
         dialects: set[Dialect] = set()
         for op in self.ops:
             _collect_dialects(op, dialects)
@@ -143,8 +145,21 @@ class Module:
         if dialects:
             yield ""
 
+        # The _formatted set is shared across all top-level ops so that each
+        # op is printed at most once.  Ambient ops (no block-argument
+        # dependencies — e.g. FunctionOps, constants) are reachable via
+        # walk_ops from every block that references them, so without sharing
+        # they would be printed once at module level AND again inside each
+        # referencing block.  Sharing _formatted makes the formatter an
+        # implicit scheduler: an ambient op is emitted wherever the formatter
+        # first encounters it (here, in module.ops order) and suppressed
+        # elsewhere.
+        #
+        # TODO: formalize scheduling as an explicit pass that assigns each op
+        # to exactly one block, rather than relying on first-encounter dedup.
+        formatted: set[int] = set()
         for op in self.ops:
-            yield from op.asm
+            yield from op_asm(op, _formatted=formatted)
             yield ""
 
 
