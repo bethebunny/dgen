@@ -297,7 +297,7 @@ def test_if_else_parse_roundtrip():
     ir = strip_prefix("""
         | %main : Nil = function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = if(%cond) then_body():
+        |     %result : Index = if(%cond, [], []) then_body():
         |         %ten : Index = 10
         |     else_body():
         |         %twenty : Index = 20
@@ -318,7 +318,7 @@ def test_if_else_jit():
     ir = strip_prefix("""
         | %main : Nil = function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = if(%cond) then_body():
+        |     %result : Index = if(%cond, [], []) then_body():
         |         %one : Index = 1
         |     else_body():
         |         %val : Index = subtract_index(%n, 1)
@@ -410,7 +410,7 @@ def test_recursive_peano():
         |
         | %natural : Nil = function<peano.Natural>() body(%n: Index):
         |     %base_case : Index = equal_index(%n, 0)
-        |     %value : peano.Natural = if(%base_case) then_body():
+        |     %value : peano.Natural = if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
         |     else_body():

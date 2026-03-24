@@ -11,6 +11,9 @@
 ## Parser / type values
 - Parser stores Type objects (e.g. `Index()`) as constant values for TypeType fields. It should store their JSON dict form (`{"tag": "builtin.Index"}`) so `TypeValue.from_json` doesn't need special-casing. Affects `value_expression` returning bare types from `_named_type` — these should go through `__constant__.to_json()` when used as constant values.
 
+## IR convenience
+- Add a `pack()` helper function (analogous to Python's `set()`) that creates a `PackOp` from a list of values, inferring the element type. Currently every call site manually constructs `PackOp(values=..., type=builtin.List(element_type=...))`.
+
 ## Experiments / scope creep
 - Update `toy.Tensor` to use `Pointer<Array<...>>` — removes the need for the runtime `llvm.load` to extract the data pointer (shape is compile-time, so no indirection is needed)
 - Tuple type

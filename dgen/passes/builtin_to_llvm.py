@@ -81,6 +81,11 @@ class BuiltinToLLVMLowering(Pass):
     def _map(self, old: dgen.Value) -> dgen.Value:
         return self.value_map.get(old, old)
 
+    def _map_pack(self, pack: PackOp) -> PackOp:
+        """Return a new PackOp with each element mapped through value_map."""
+        mapped = [self._map(v) for v in pack.values]
+        return PackOp(values=mapped, type=pack.type)
+
     def _lower_ops(self, ops: list[dgen.Op], return_val: dgen.Value) -> dgen.Value:
         """Lower a sequence of ops, returning the block result with effects chained."""
         effects: list[dgen.Op] = []
@@ -142,12 +147,14 @@ class BuiltinToLLVMLowering(Pass):
             lhs=self._map(op.cond),
             rhs=zero,
         )
+        assert isinstance(op.then_args, PackOp)
+        assert isinstance(op.else_args, PackOp)
         cond_br = llvm.CondBrOp(
             cond=cond_i1,
             true_target=then_label_op,
             false_target=else_label_op,
-            true_args=_EMPTY_PACK,
-            false_args=_EMPTY_PACK,
+            true_args=self._map_pack(op.then_args),
+            false_args=self._map_pack(op.else_args),
         )
 
         then_label_op.body = self._lower_branch(
