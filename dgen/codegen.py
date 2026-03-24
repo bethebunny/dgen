@@ -28,6 +28,11 @@ _FMT_LLVM = {"q": "i64", "d": "double"}
 _FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double}
 
 
+def _unpack_args(val: Value) -> list[Value]:
+    """Extract values from a PackOp or wrap a single value in a list."""
+    return val.values if isinstance(val, PackOp) else [val]
+
+
 def _llvm_type(layout: Layout) -> str:
     """Derive LLVM IR type string from a layout."""
     if not layout.register_passable:
@@ -196,39 +201,42 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         for param in label_op.body.parameters:
             self_to_label[param] = label_op
 
-    # Propagate %self mappings by scanning branch args: if a branch passes
-    # a known %self value at position i, the target label's body arg at
-    # position i is also a %self reference.
+    # Propagate %self mappings: if a branch passes a known %self value at
+    # position i, the target label's body.args[i] is also a %self reference.
+    # This must run before predecessor building so resolve_target works for
+    # back-branch targets (body-scoped %self args, not just block parameters).
+    def _propagate_self(target_label: llvm.LabelOp, args: list[dgen.Value]) -> bool:
+        """Propagate self_to_label entries through one branch edge. Returns True if new."""
+        found_new = False
+        for i, arg_val in enumerate(args):
+            if arg_val in self_to_label and i < len(target_label.body.args):
+                body_arg = target_label.body.args[i]
+                if body_arg not in self_to_label:
+                    self_to_label[body_arg] = self_to_label[arg_val]
+                    found_new = True
+        return found_new
+
+    def _branch_edges(
+        op: dgen.Op,
+    ) -> list[tuple[dgen.Value, list[dgen.Value]]]:
+        """Extract (target, args) pairs from a branch op."""
+        if isinstance(op, llvm.BrOp):
+            return [(op.target, _unpack_args(op.args))]
+        if isinstance(op, llvm.CondBrOp):
+            return [
+                (op.true_target, _unpack_args(op.true_args)),
+                (op.false_target, _unpack_args(op.false_args)),
+            ]
+        return []
+
     changed = True
     while changed:
         changed = False
         for op in all_ops:
-            if isinstance(op, llvm.CondBrOp):
-                for target, args_val in [
-                    (op.true_target, op.true_args),
-                    (op.false_target, op.false_args),
-                ]:
-                    args = args_val.values if isinstance(args_val, PackOp) else [args_val]
-                    target_label = self_to_label.get(target, target)
-                    if not isinstance(target_label, llvm.LabelOp):
-                        continue
-                    for i, arg_val in enumerate(args):
-                        if arg_val in self_to_label and i < len(target_label.body.args):
-                            body_arg = target_label.body.args[i]
-                            if body_arg not in self_to_label:
-                                self_to_label[body_arg] = self_to_label[arg_val]
-                                changed = True
-            elif isinstance(op, llvm.BrOp):
-                args = op.args.values if isinstance(op.args, PackOp) else [op.args]
-                target_label = self_to_label.get(op.target, op.target)
-                if not isinstance(target_label, llvm.LabelOp):
-                    continue
-                for i, arg_val in enumerate(args):
-                    if arg_val in self_to_label and i < len(target_label.body.args):
-                        body_arg = target_label.body.args[i]
-                        if body_arg not in self_to_label:
-                            self_to_label[body_arg] = self_to_label[arg_val]
-                            changed = True
+            for target, args in _branch_edges(op):
+                target_label = self_to_label.get(target, target)
+                if isinstance(target_label, llvm.LabelOp):
+                    changed |= _propagate_self(target_label, args)
 
     def resolve_target(target: dgen.Value) -> dgen.Value:
         """Resolve a branch target: if it's a %self BlockArgument, return the label."""
@@ -245,47 +253,19 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
 
     predecessors: dict[dgen.Value, list[tuple[dgen.Value, list[dgen.Value]]]] = {}
     for op in all_ops:
-        if isinstance(op, llvm.BrOp):
+        for target, args in _branch_edges(op):
             src = op_to_label[op]
-            args = op.args.values if isinstance(op.args, PackOp) else [op.args]
-            target = resolve_target(op.target)
-            predecessors.setdefault(target, []).append((src, args))
-        elif isinstance(op, llvm.CondBrOp):
-            src = op_to_label[op]
-            true_args = (
-                op.true_args.values
-                if isinstance(op.true_args, PackOp)
-                else [op.true_args]
-            )
-            false_args = (
-                op.false_args.values
-                if isinstance(op.false_args, PackOp)
-                else [op.false_args]
-            )
-            true_target = resolve_target(op.true_target)
-            false_target = resolve_target(op.false_target)
-            predecessors.setdefault(true_target, []).append((src, true_args))
-            predecessors.setdefault(false_target, []).append((src, false_args))
+            predecessors.setdefault(resolve_target(target), []).append((src, args))
 
-    # Propagate self_to_label through all Label-typed BlockArguments.
-    # Any BlockArgument with Label type that appears in a label's body args
-    # is a threaded %self reference. Walk all blocks to find them, then
-    # resolve by tracing through predecessor args.
-    # First: map every Label-typed block arg to the label it corresponds to
-    # by tracing through cond_br/br args from known %self sources.
+    # Second propagation pass: the predecessor map may reveal additional
+    # %self threading not visible from the branch ops alone (e.g. when
+    # multiple predecessors converge on one label).
     changed = True
     while changed:
         changed = False
         for label_op in label_ops:
-            preds = predecessors.get(label_op, [])
-            for i, arg in enumerate(label_op.body.args):
-                if arg in self_to_label:
-                    continue
-                for _, pred_args in preds:
-                    if i < len(pred_args) and pred_args[i] in self_to_label:
-                        self_to_label[arg] = self_to_label[pred_args[i]]
-                        changed = True
-                        break
+            for _, pred_args in predecessors.get(label_op, []):
+                changed |= _propagate_self(label_op, pred_args)
 
     for op in all_ops:
         if isinstance(op, ConstantOp):
@@ -380,7 +360,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             )
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
-            call_args = op.args.values if isinstance(op.args, PackOp) else [op.args]
+            call_args = _unpack_args(op.args)
             a = ", ".join(typed_ref(arg) for arg in call_args)
             if isinstance(op.type, builtin.Nil):
                 lines.append(f"  call void @{callee}({a})")

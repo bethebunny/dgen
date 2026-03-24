@@ -43,13 +43,8 @@ class Fingerprinter:
 
     def register_block(self, block: Block) -> None:
         """Register block argument/parameter positions and recurse into nested blocks."""
-        idx = 0
-        for param in block.parameters:
-            self._arg_positions[param] = idx
-            idx += 1
-        for arg in block.args:
-            self._arg_positions[arg] = idx
-            idx += 1
+        for idx, val in enumerate([*block.parameters, *block.args]):
+            self._arg_positions[val] = idx
         for op in block.ops:
             for _, nested in op.blocks:
                 self.register_block(nested)
