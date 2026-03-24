@@ -259,13 +259,15 @@ is an **ambient node** and may be referenced from the `else` block without threa
 argument list; they are forwarded there by the `if` op.
 
 `%odd` is not self-recursive, so it does not need `func.recursive`. The mutual recursion cycle is
-broken by nesting: `%odd` is lexically nested inside `%even` and calls back through the captured
-reference `%even'`. The use-def graph is a DAG throughout.
+broken by explicit argument passing: `%odd` is an ambient function that receives `%even` as the
+argument `%even'` and calls back through it. `%odd` has no inherent placement—the ASM above shows
+it defined inside `%even`'s block, but this is a scheduling choice; as an ambient node it could
+legally appear anywhere. The use-def graph is a DAG throughout.
 
-The trade-off is asymmetry: one function must be the lexical container. For larger mutual
-recursion groups (A → B → C → A), all inner functions are nested under the root with captured
-references threaded explicitly. A `func.letrec` group op can be added later as syntactic sugar
-for the symmetric case if warranted.
+The trade-off is asymmetry: one function must pass its reference to the other as an explicit
+argument. For larger mutual recursion groups (A → B → C → A), all ambient inner functions receive
+the root's reference threaded explicitly. A `func.letrec` group op can be added later as syntactic
+sugar for the symmetric case if warranted.
 
 ### 3.2 Label `%self`: Eliminating Use-Def Cycles in Loops
 
@@ -650,9 +652,9 @@ walk:
 
 ```python
 def visit(value):
-    if id(value) in visited:
+    if value in visited:
         return
-    visited.add(id(value))
+    visited.add(value)
     for _, operand in value.operands: visit(operand)
     for _, param in value.parameters: visit(param)
     visit(value.type)
