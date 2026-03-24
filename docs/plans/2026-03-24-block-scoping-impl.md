@@ -2,8 +2,8 @@
 
 > **Design reference:** `docs/block-scoping.md`
 
-**Goal:** Enforce the closed-block invariant, add `func.recursive`, introduce block parameters
-(Option C `%self` mechanism), migrate ops with implicit capture, and simplify `walk_ops` to a
+**Goal:** Enforce the closed-block invariant, introduce block parameters (Option C `%self`
+mechanism for `llvm.label`), migrate ops with implicit capture, and simplify `walk_ops` to a
 guard-free DAG walk.
 
 **Current state (as of 2026-03-24):**
@@ -12,7 +12,6 @@ guard-free DAG walk.
 - `verify.py` has `verify_closed_blocks()` but with hard-coded exceptions for `FunctionOp` and
   `LabelOp` — these exceptions are the structural problem to fix ✗
 - `walk_ops` has the `FunctionOp` guard + `id()`-based visited set ✗
-- No `func.recursive` op; `builtin.function` still produces `Nil` ✗
 - No block parameter concept (`body<%self: T>` syntax) ✗
 - `builtin.if` has no per-branch arg lists ✗
 - `affine.for` has no explicit operand threading ✗
@@ -28,13 +27,16 @@ guard-free DAG walk.
 | Phase | Goal | Key files |
 |-------|------|-----------|
 | 1 | Block parameters in IR, formatter, parser | `block.py`, `asm/formatting.py`, `asm/parser.py` |
-| 2 | `func.recursive` op | `builtin.dgen`, `builtin.pyi` |
-| 3 | `builtin.if` per-branch args | `builtin.dgen`, `builtin.pyi`, `builtin_to_llvm.py` |
-| 4 | `affine.for` explicit capture | `affine.dgen`, `affine.pyi`, `toy_to_affine.py` |
-| 5 | `affine_to_llvm.py` closed blocks | `affine_to_llvm.py` |
-| 6 | `walk_ops` + verifier cleanup | `graph.py`, `verify.py` |
+| 2 | `builtin.if` per-branch args | `builtin.dgen`, `builtin.pyi`, `builtin_to_llvm.py`, `toy_to_affine.py` |
+| 3 | `affine.for` explicit capture | `affine.dgen`, `affine.pyi`, `toy_to_affine.py` |
+| 4 | `affine_to_llvm.py` closed blocks with `%self` | `affine_to_llvm.py` |
+| 5 | `walk_ops` + verifier cleanup | `graph.py`, `verify.py` |
 
 Each phase ends with a passing full test suite (`pytest . -q`).
+
+**Verifier:** `verify_closed_blocks()` already exists in `dgen/verify.py` (with `FunctionOp` /
+`LabelOp` exceptions). Use it as a post-pass assertion from Phase 2 onward. The exceptions are
+removed in Phase 5 once implicit capture is fully eliminated.
 
 ---
 
@@ -50,16 +52,17 @@ op_name() block_name<%param: Type>(%arg1: T1, %arg2: T2):
     ...
 ```
 
-If a block has no params, the syntax is unchanged (params list elided). The first block name is
-always printed when params are present (overriding the current carveout that elides it).
+If a block has no parameters, the syntax is unchanged (parameter list elided). The block name
+is always printed when parameters are present, even for the first block (overriding the current
+carveout that elides it).
 
-### 1.1 IR model: `Block.params`
+### 1.1 IR model: `Block.parameters`
 
 **File:** `dgen/block.py`
 
-Add `params: list[BlockArgument]` to `Block.__init__` (default `[]`). Params are structurally
-identical to args — both are `BlockArgument` instances — but occupy a distinct list. The block's
-full scope set is `block.params + block.args`.
+Add `parameters: list[BlockArgument]` to `Block.__init__` (default `[]`). Parameters are
+structurally identical to args — both are `BlockArgument` instances — but occupy a distinct
+list. The block's full scope set is `block.parameters + block.args`.
 
 Update `Block.__init__`:
 ```python
@@ -68,44 +71,43 @@ def __init__(
     *,
     result: dgen.Value,
     args: list[BlockArgument] | None = None,
-    params: list[BlockArgument] | None = None,
+    parameters: list[BlockArgument] | None = None,
 ) -> None:
     self.result = result
     self.args = args if args is not None else []
-    self.params = params if params is not None else []
+    self.parameters = parameters if parameters is not None else []
 ```
 
-No change to `ops` property — params are leaves in `walk_ops`, not roots.
+No change to `ops` property — block parameters are leaves in `walk_ops`, not roots.
 
 **File:** `dgen/graph.py`
 
-In `walk_ops`, extend the block traversal to also visit param types:
+In `walk_ops`, extend the block traversal to also visit block parameter types:
 
 ```python
 for _, block in value.blocks:
-    for param in block.params: visit(param.type)
+    for param in block.parameters: visit(param.type)
     for arg in block.args: visit(arg.type)
 ```
 
 **File:** `dgen/verify.py`
 
-In `_verify_block`, add params to the valid set alongside args:
+In `_verify_block`, add block parameters to the valid set alongside args:
 
 ```python
-valid: set[int] = {id(arg) for arg in block.params} | {id(arg) for arg in block.args}
+valid: set[int] = (
+    {id(p) for p in block.parameters} | {id(a) for a in block.args}
+)
 ```
 
 ### 1.2 ASM formatter
 
 **File:** `dgen/asm/formatting.py`
 
-Locate the block formatting logic. When printing a block header:
-- If `block.params` is non-empty: print `block_name<%param: T, ...>(%arg: T, ...):`
-- The block name must be printed whenever params are non-empty (even for the first block).
+When printing a block header:
+- If `block.parameters` is non-empty: print `block_name<%param: T, ...>(%arg: T, ...):`
+- The block name must be printed when parameters are non-empty, even for the first block.
 - Format: `<%param1: T1, %param2: T2>` immediately after the block name, before `(`.
-
-Current carveout: the first block's name is omitted. Change: if the first block has params,
-its name is NOT omitted.
 
 ### 1.3 ASM parser
 
@@ -125,88 +127,30 @@ param_list   ::= '%' name ':' type (',' '%' name ':' type)*
 **File:** `test/test_block_params.py` (new test file)
 
 Write ASM round-trip tests covering:
-- Block with params, no args: `body<%self: Function<Index>>():`
-- Block with params and args: `body<%self: llvm.Label>(%i: Index):`
-- First block with params (name must be printed): verify formatter output
-- Parser produces correct `block.params` list
-- `walk_ops` treats params as leaves (does not descend into their values)
-- `verify_closed_blocks` accepts param references within the same block
+- Block with parameters, no args: `body<%self: llvm.Label>():`
+- Block with parameters and args: `body<%self: llvm.Label>(%i: Index):`
+- First block with parameters: name must appear in formatter output
+- Parser produces correct `block.parameters` list
+- `walk_ops` treats block parameters as leaves (does not descend into their values)
+- `verify_closed_blocks` accepts block parameter references within the same block
 
 ### 1.5 Commit
 
 ```bash
-jj commit -m "Block: add params list, formatter/parser support for block parameter syntax"
+jj commit -m "Block: add parameters list, formatter/parser support for block parameter syntax"
 ```
 
 ---
 
-## Phase 2: `func.recursive` Op
-
-Add `func.recursive` to the builtin dialect. It produces a `Function<T>` value (the function's
-own identity) and introduces `%self: Function<T>` as the first block parameter.
-
-### 2.1 Update `builtin.dgen`
-
-**File:** `dgen/dialects/builtin.dgen`
-
-Add after the existing `function` op:
-```
-op recursive<result: Type>() -> Function<result>:
-    block body
-    has trait HasSingleBlock
-```
-
-The `result` parameter specifies the function's return type; the produced value is
-`Function<result>`. The body block conventionally uses `%self: Function<result>` as its first
-block parameter (populated by the lowering pass at call time).
-
-### 2.2 Regenerate stubs
-
-```bash
-python -m dgen.gen dgen/dialects/builtin.dgen > dgen/dialects/builtin.pyi
-```
-
-### 2.3 Tests
-
-**File:** `test/test_recursive.py` (new)
-
-Write tests covering:
-- Constructing a `func.recursive` op with a body block having a `%self` param
-- ASM round-trip of the factorial example from `docs/block-scoping.md`
-- The op's type is `Function<Index>`, not `Nil`
-- `walk_ops` on the body's result: `%self` is a leaf (block param), no cycle
-
-Example ASM to round-trip (from `docs/block-scoping.md` Section 3.1):
-```
-%factorial : Function<Index> = recursive<Index>() body<%self: Function<Index>>(%n: Index):
-    %one : Index = 1
-    %cond : llvm.Int<1> = llvm.icmp<"sle">(%n, %one)
-    %result : Index = if(%cond)(%one: Index)(%n: Index, %self: Function<Index>):
-        %base : Index = 1
-    else(%n: Index, %self: Function<Index>):
-        %one : Index = 1
-        %n1 : Index = subtract_index(%n, %one)
-        %r : Index = call<%self>([%n1])
-        %res : Index = llvm.mul(%n, %r)
-```
-
-Note: this test depends on Phase 3 (`builtin.if` with per-branch args). Write the `walk_ops`
-and type tests first; defer the full factorial round-trip to after Phase 3.
-
-### 2.4 Commit
-
-```bash
-jj commit -m "builtin: add func.recursive op producing Function<T>"
-```
-
----
-
-## Phase 3: `builtin.if` Per-Branch Args
+## Phase 2: `builtin.if` Per-Branch Args
 
 Currently `if`'s then/else blocks take no arguments, enabling implicit capture. Under the
 closed-block invariant, outer values used in branches must be threaded explicitly.
 
-### 3.1 Update `builtin.dgen`
+After this phase, run `verify_closed_blocks(module)` as a post-pass assertion in
+`builtin_to_llvm.py` and `toy_to_affine.py` to confirm the invariant holds.
+
+### 2.1 Update `builtin.dgen`
 
 **File:** `dgen/dialects/builtin.dgen`
 
@@ -218,70 +162,65 @@ op if(cond: Index, then_args: List, else_args: List) -> Type:
 ```
 
 `then_args` is a `List` of values passed as block arguments to `then_body`; similarly
-`else_args` for `else_body`. The block argument types are derived from the passed values' types.
+`else_args` for `else_body`. Callers that thread no values use empty lists: `if(%cond, [], [])`.
 
-Callers that don't thread any values use empty lists: `if(%cond, [], [])`.
-
-### 3.2 Regenerate stubs
+### 2.2 Regenerate stubs
 
 ```bash
 python -m dgen.gen dgen/dialects/builtin.dgen > dgen/dialects/builtin.pyi
 ```
 
-### 3.3 Update existing call sites
+### 2.3 Update existing call sites
 
 **File:** `dgen/passes/builtin_to_llvm.py`
 
-Locate `IfOp` construction (in `_lower_if`). Thread any values from the enclosing scope that
-are used in branch bodies through `then_args`/`else_args`, and declare them as block args on
-the respective branch blocks. The lowering pass is responsible for identifying captured values.
+Locate `IfOp` construction (in `_lower_if`). Thread values from the enclosing scope that are
+used in branch bodies through `then_args`/`else_args`, and declare them as block args on the
+respective branch blocks:
 
-The pattern:
 ```python
-# Values used in then_body captured from enclosing scope:
-then_captures = [...]   # list of Value objects
+then_captures = [...]   # Value objects used in then_body from outer scope
 else_captures = [...]
 
-then_args_pack = PackOp(values=then_captures, ...)
-else_args_pack = PackOp(values=else_captures, ...)
-
-# Branch blocks get corresponding BlockArguments:
 then_body = Block(
     result=...,
     args=[BlockArgument(name=v.name, type=v.type) for v in then_captures],
 )
+# then_args PackOp carries then_captures; else_args carries else_captures
 ```
 
 **File:** `toy/passes/toy_to_affine.py`
 
-Locate `IfOp` construction. Apply same threading pattern.
+Locate `IfOp` construction. Apply the same threading pattern.
 
-### 3.4 ASM formatter/parser
+### 2.4 ASM formatter/parser
 
-Update the `if` op formatter to emit per-branch arg lists and corresponding block arg lists:
+The `if` op formatter emits per-branch arg lists adjacent to the block headers. The current
+`if` ASM prints the `then_body` block args in `(...)` after `if(cond)`. With `then_args` and
+`else_args` as op operands, the formatter must distinguish the operand list from the block arg
+list. Recommended layout:
+
 ```
-%r : T = if(%cond)(%a: TA, %b: TB) (%a: TA, %b: TB):
+%r : T = if(%cond, [%a, %b], [%a]) (%a: TA, %b: TB):
     ...
-else (%a: TA, %b: TB):
+else (%a: TA):
     ...
 ```
 
-The first parenthesized group after the `if(cond)` is `then_args`; the `then_body` block header
-follows; the `else` keyword precedes `else_body`'s block args.
+The op's operand lists (`[%a, %b]`, `[%a]`) are inlined as operand syntax; each branch block's
+arg list `(%a: TA, %b: TB)` / `(%a: TA)` follows immediately. Update the parser to match.
 
-This may require formatter/parser work to distinguish `then_args` (operands to the `if` op)
-from the block argument lists on each branch. The cleanest approach is: after `if(%cond)`, emit
-`(then_arg_list)` for the `then_body` block's args, and `else (else_arg_list)` for `else_body`.
-The op's `then_args`/`else_args` fields control what values are passed; the block headers show
-what they're bound as.
+### 2.5 Tests
 
-### 3.5 Tests
+Update all existing `if`-containing IR tests to use the new syntax with explicit arg lists.
+Add tests that:
+- Verify `verify_closed_blocks` passes for an `if` op with explicit capture
+- Verify it fails (under the current exceptions still in place) for an `if` with an
+  outer-scope reference not in `then_args`
 
-Update all existing `if`-containing IR tests to use the new syntax. Add a test that:
-- Verifies `verify_closed_blocks` passes for an `if` op with explicit capture
-- Verifies it fails for an `if` op with an outer-scope reference not in `then_args`
+Run: `pytest . -q`
 
-### 3.6 Commit
+### 2.6 Commit
 
 ```bash
 jj commit -m "builtin.if: per-branch arg threading for explicit capture"
@@ -289,12 +228,12 @@ jj commit -m "builtin.if: per-branch arg threading for explicit capture"
 
 ---
 
-## Phase 4: `affine.for` Explicit Capture
+## Phase 3: `affine.for` Explicit Capture
 
-Currently `affine.for` takes no operands; the body block can freely reference outer values.
+Currently `affine.for` takes no operands; the body block freely references outer values.
 Under the closed-block invariant, external values must be passed as additional block args.
 
-### 4.1 Update `affine.dgen`
+### 3.1 Update `affine.dgen`
 
 **File:** `toy/dialects/affine.dgen`
 
@@ -305,42 +244,38 @@ op for<lo: Index, hi: Index>(init_args: List) -> Nil:
     has trait HasSingleBlock
 ```
 
-The body block arguments are `(%i: Index, %captured_val: T, ...)` — induction variable first,
-then one arg per value in `init_args`. The loop lowering pass is responsible for constructing
-this.
+Body block arguments are `(%i: Index, %captured_val: T, ...)` — induction variable first,
+then one arg per value in `init_args`.
 
-### 4.2 Regenerate stubs
+### 3.2 Regenerate stubs
 
 ```bash
 python -m dgen.gen toy/dialects/affine.dgen > toy/dialects/affine.pyi
 ```
 
-### 4.3 Update `toy_to_affine.py`
+### 3.3 Update `toy_to_affine.py`
 
 **File:** `toy/passes/toy_to_affine.py`
 
-Locate loop body construction. Identify all values from the enclosing scope used in the body.
-Pass them in `init_args` and declare them as block args on the body block (after `%i`).
+Identify all values from the enclosing scope used in the loop body. Pass them in `init_args`
+and declare them as block args on the body block (after `%i`):
 
-In the design, `affine.for<0, 4>(%src) (%i: Index, %src: llvm.Ptr):` means:
-- `%src` is passed in `init_args`
-- Body block args: `%i` (induction variable, first), `%src` (from init_args)
+```
+affine.for<0, 4>([%src]) (%i: Index, %src: llvm.Ptr):
+    affine.load(%src, [%i])
+```
 
-### 4.4 Update `affine_to_llvm.py`
+After the pass, assert `verify_closed_blocks(module)`.
 
-**File:** `toy/passes/affine_to_llvm.py`
-
-The lowering of `affine.for` to `llvm.label` blocks must thread `init_args` as block args
-on the header label (alongside the loop variable).
-
-### 4.5 Snapshots
+### 3.4 Update snapshot tests
 
 ```bash
 pytest toy/test/test_toy_to_affine.py --snapshot-update -q
-pytest toy/test/test_affine_to_llvm.py --snapshot-update -q
 ```
 
-### 4.6 Commit
+Review: `init_args` present, body block args include captured values.
+
+### 3.5 Commit
 
 ```bash
 jj commit -m "affine.for: explicit capture via init_args operand list"
@@ -348,59 +283,62 @@ jj commit -m "affine.for: explicit capture via init_args operand list"
 
 ---
 
-## Phase 5: `affine_to_llvm.py` Closed Blocks
+## Phase 4: `affine_to_llvm.py` Closed Blocks with `%self`
 
-With `affine.for` explicit capture in place, rewrite `affine_to_llvm.py` so that every
-generated `llvm.label` body is closed: all outer-scope values are block args, no implicit
-references.
+Rewrite `affine_to_llvm.py` so every generated `llvm.label` body is closed. This is where the
+`%self` block parameter is first used in production: the loop header block receives `%self:
+llvm.Label` as its block parameter, and the back-edge branch passes user-visible args only.
 
 **File:** `toy/passes/affine_to_llvm.py`
 
-### 5.1 Rewrite `_lower_for`
+### 4.1 Rewrite `_lower_for`
 
 The loop lowering creates header, body, exit labels. Each label body references only its own
-block args and local ops. The header label takes `(%i: Index, %captured_val: T, ...)` as block
-args (matching `affine.for`'s block arg order). The body label similarly receives any values it
-needs.
+block args, block parameters, and local ops — no implicit outer-scope references.
 
-The loop back-edge (`llvm.br` to header) passes `[%i_next, %captured_val, ...]` explicitly.
-Entry branch passes initial values `[%lo, %captured_val, ...]`.
-
-Use the `%self` block parameter convention for the loop header:
+The header label uses `%self` as its block parameter for the back-edge:
 ```
 %header : llvm.Label = llvm.label() body<%self: llvm.Label>(%i: Index, %src: llvm.Ptr):
     ...
-    %_ : Nil = llvm.br(%self, [%i_next, %src])   // back-edge via %self
+    %_ : Nil = llvm.br(%self, [%i_next, %src])   // back-edge via %self; %self auto-supplied
 ```
 
-Lowering populates `%self` automatically — callers pass only user-visible args.
+Entry branch passes only user-visible args (no `%self`):
+```
+%_ : Nil = llvm.br(%header, [%lo, %src])
+```
 
-### 5.2 Call `verify_closed_blocks` after the pass
+Lowering populates `%self` when emitting branches to a label that has a `%self` block
+parameter. Concretely: when the lowering sees `llvm.br(%header, args)`, it prepends `%header`
+to the actual argument list for the `%self` slot. `%self` never appears explicitly in
+branch-site arg lists in the IR — it is resolved by the lowering pass.
 
-In the pass entry point, call `verify_closed_blocks(module)` after lowering to assert
-correctness. This catches any missed captures immediately rather than silently.
+### 4.2 Assert verifier
 
-### 5.3 Update snapshots
+After the pass completes, call `verify_closed_blocks(module)`. This will catch any remaining
+implicit captures immediately.
+
+### 4.3 Update snapshots
 
 ```bash
 pytest toy/test/test_affine_to_llvm.py --snapshot-update -q
 pytest toy/test/test_end_to_end.py -q   # JIT output must be unchanged
 ```
 
-### 5.4 Commit
+### 4.4 Commit
 
 ```bash
-jj commit -m "affine_to_llvm: closed label blocks with explicit capture and %self"
+jj commit -m "affine_to_llvm: closed label blocks with explicit capture and %self block param"
 ```
 
 ---
 
-## Phase 6: `walk_ops` and Verifier Cleanup
+## Phase 5: `walk_ops` and Verifier Cleanup
 
 With the closed-block invariant enforced throughout the pipeline, the structural special cases
 in `walk_ops` and `verify.py` can be removed.
 
-### 6.1 Remove `FunctionOp` guard from `walk_ops`
+### 5.1 Remove `FunctionOp` guard from `walk_ops`
 
 **File:** `dgen/graph.py`
 
@@ -418,42 +356,30 @@ for _, param in value.parameters:
     visit(param)
 ```
 
-Also change the `visited` set from `set[int]` (using `id(value)`) to `set` (using `value`
-directly, relying on `eq=False` dataclass identity):
+Also switch the `visited` set from `set[int]` (using `id(value)`) to `set[dgen.Value]` (using
+value identity directly, relying on `eq=False` dataclass semantics):
+
 ```python
 visited: set[dgen.Value] = set()
-...
-if value in visited:
-    return
-visited.add(value)
 ```
 
-The `visit` function signature changes from `object` to `dgen.Value | list[dgen.Value]` (or
-handle list dispatch at call sites).
+Remove the `vid = id(value)` / `if vid in visited` / `visited.add(vid)` pattern throughout.
 
-### 6.2 Remove hard-coded exceptions from verifier
+### 5.2 Remove hard-coded exceptions from `verify.py`
 
 **File:** `dgen/verify.py`
 
-Remove `_is_cross_block_permitted` and its two callers. `FunctionOp` and `LabelOp` are ambient
-ops — they have no block-argument dependencies and are always valid to reference from any block.
-The verifier should detect ambience structurally rather than by type check.
+The `_is_cross_block_permitted` exception exists because the `walk_ops` guard suppresses
+`FunctionOp` visits, so `FunctionOp` is NOT in `block.ops` → NOT in `valid`. Once Step 5.1 is
+done, `FunctionOp` IS visited by `walk_ops` (it's an ambient op reachable via parameter edges),
+so it IS in `valid`. The exception is then unnecessary.
 
-Update `_check_in_scope`: an op is permitted from any block if it is ambient (no transitive
-block-argument dependencies). The simplest correct rule: an op is in-scope if it is in the
-valid set (local ops + block args + block params). Ambient ops are already in the valid set
-because they're reachable from `block.ops` (they're discovered by `walk_ops`).
+Similarly, `LabelOp` is an ambient op (its body has no external block-arg dependencies) and
+will be in `valid` via `walk_ops`. Remove `_is_cross_block_permitted` and its call sites.
 
-Wait — are ambient ops actually in `block.ops`? Yes: `block.ops = walk_ops(block.result)`, and
-`walk_ops` follows parameter edges into ambient ops. So `FunctionOp` (when referenced as a
-`call` parameter) IS returned in the caller block's `walk_ops` result, hence it IS in `valid`.
-The `_is_cross_block_permitted` exception is only needed because the current guard in `walk_ops`
-SKIPS visiting `FunctionOp` — so it's NOT in `valid`. Once the guard is removed (Step 6.1),
-the exception in the verifier is also unnecessary.
+Remove only AFTER Step 5.1 passes the full test suite.
 
-Remove `_is_cross_block_permitted` only AFTER Step 6.1, and verify tests pass.
-
-### 6.3 Full test suite
+### 5.3 Full test suite
 
 ```bash
 pytest . -q
@@ -462,9 +388,9 @@ ruff check --fix
 ty check
 ```
 
-All 110+ tests must pass. JIT output must be unchanged.
+All tests must pass. JIT output must be unchanged.
 
-### 6.4 Commit
+### 5.4 Commit
 
 ```bash
 jj commit -m "walk_ops: remove FunctionOp guard, use value identity in visited set"
@@ -477,42 +403,26 @@ jj commit -m "verify: remove FunctionOp/LabelOp cross-block exceptions"
 
 ### Block parameters vs block args
 
-Block parameters (`block.params`) are structurally identical to block args (`block.args`) in
-the IR — both are `BlockArgument` instances in scope. They differ in binding protocol:
-- **Block args**: passed by callers at every branch/call site.
-- **Block params**: bound once by the op's lowering pass (e.g., `%self` is the op's own
-  identity); callers never pass them.
+Block parameters (`block.parameters`) are structurally identical to block args (`block.args`)
+— both are `BlockArgument` instances in scope in the same block. They differ in binding:
+- **Block args**: passed by callers at every call/branch site.
+- **Block parameters**: bound once by the op's lowering pass; callers never pass them.
 
-This distinction matters for codegen and lowering, not for the use-def graph. In the use-def
-graph, both are leaves.
+In the use-def graph, both are leaves. The distinction matters only to lowering and codegen.
 
-### `%self` auto-supply convention
+### `%self` auto-supply in lowering
 
-For `llvm.label` bodies, `%self` (if present as a block param) is auto-supplied by lowering:
-when emitting `llvm.br(%loop, [%i_next])`, the lowering pass inserts `%loop` as the `%self`
-argument to the target block. Callers don't name it. This mirrors how `func.recursive` lowering
-populates `%self` for recursive calls.
-
-### `call` op remains unchanged
-
-Under Option C, `call<callee: Function>(args: List)` is unchanged. Recursive calls use
-`call<%self>([...])` where `%self` is a block arg (threaded from the block param). External
-calls use `call<%factorial>([...])` where `%factorial` is an ambient op. The `FunctionOp` guard
-in `walk_ops` is removed because ambient ops are now correctly included in the caller block's
-op set (they were being suppressed before).
+When a lowering pass emits `llvm.br(%header, user_args)` and `%header`'s body block has a
+`%self: llvm.Label` block parameter, the pass inserts `%header` into the actual argument list
+for the `%self` slot before emitting the branch. Callers in the IR never name `%self`
+explicitly — it is resolved structurally by the lowering pass.
 
 ### Ordering constraint
 
-Phase 6 depends on ALL prior phases. Removing the `walk_ops` guard while implicit capture still
-exists would cause `walk_ops` to incorrectly surface ops across block boundaries. Run
-`verify_closed_blocks` as a post-pass assertion throughout Phases 3–5 to catch regressions
-early.
-
-### `func.recursive` codegen
-
-Codegen for `func.recursive` is out of scope for this plan. The op is introduced at the IR
-level with round-trip support. Actual JIT compilation of recursive functions (including the
-`%self` thunk mechanism) is a follow-on task that requires extending `dgen/codegen.py`.
+Phase 5 depends on ALL prior phases. Removing the `walk_ops` guard while implicit capture still
+exists would cause `walk_ops` to surface ops across block boundaries incorrectly. Using
+`verify_closed_blocks` as a post-pass assertion from Phase 2 onward catches regressions early,
+before they become silent correctness bugs in Phase 5.
 
 ---
 
@@ -520,18 +430,17 @@ level with round-trip support. Actual JIT compilation of recursive functions (in
 
 | File | Change |
 |------|--------|
-| `dgen/block.py` | Add `params: list[BlockArgument]` to `Block` |
-| `dgen/graph.py` | Add `block.params` traversal; remove `FunctionOp` guard; use `value` in visited set |
-| `dgen/verify.py` | Add params to valid set; remove `_is_cross_block_permitted` exceptions |
-| `dgen/asm/formatting.py` | Emit `block_name<%param: T>` syntax for blocks with params |
+| `dgen/block.py` | Add `parameters: list[BlockArgument]` to `Block` |
+| `dgen/graph.py` | Add `block.parameters` traversal; remove `FunctionOp` guard; use `value` in visited set |
+| `dgen/verify.py` | Add block parameters to valid set; remove `_is_cross_block_permitted` exceptions |
+| `dgen/asm/formatting.py` | Emit `block_name<%param: T>` syntax for blocks with parameters |
 | `dgen/asm/parser.py` | Parse `<%param: T, ...>` in block headers |
-| `dgen/dialects/builtin.dgen` | Add `recursive` op |
+| `dgen/dialects/builtin.dgen` | Add `then_args: List, else_args: List` to `if` op |
 | `dgen/dialects/builtin.pyi` | Regenerate |
 | `toy/dialects/affine.dgen` | Add `init_args: List` to `for` op |
 | `toy/dialects/affine.pyi` | Regenerate |
 | `dgen/passes/builtin_to_llvm.py` | Thread captures through `if` branch arg lists |
 | `toy/passes/toy_to_affine.py` | Thread captures through `if` and `for` |
-| `toy/passes/affine_to_llvm.py` | Produce closed label blocks with `%self` block param |
-| `test/test_block_params.py` | New: block param round-trip and walk_ops tests |
-| `test/test_recursive.py` | New: `func.recursive` construction and type tests |
+| `toy/passes/affine_to_llvm.py` | Produce closed label blocks with `%self` block parameter |
+| `test/test_block_params.py` | New: block parameter round-trip and `walk_ops` tests |
 | `toy/test/__snapshots__/` | Update affected snapshots |
