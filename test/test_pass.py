@@ -11,6 +11,7 @@ from dgen.dialects.builtin import FunctionOp, Nil
 from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.staging import ConstantFold
+from dgen.verify import ClosedBlockError
 from toy.dialects import toy
 from toy.passes.affine_to_llvm import AffineToLLVMLowering
 from dgen.testing import strip_prefix
@@ -180,7 +181,7 @@ def test_compiler_run_verification_catches_closed_block_violation():
 
     m = parse_module(ir_text)
     compiler_inst: Compiler = Compiler(passes=[CorruptPass()], exit=IdentityPass())
-    with pytest.raises(AssertionError):
+    with pytest.raises(ClosedBlockError):
         compiler_inst.run(m)
 
 

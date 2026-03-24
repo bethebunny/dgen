@@ -78,11 +78,11 @@ def test_verify_block_param_in_scope():
     ir = strip_prefix("""
         | import llvm
         |
-        | %exit : llvm.Label = llvm.label() body<%self: llvm.Label>():
-        |     %zero : Index = 0
+        | %f : Nil = function<Nil>() body():
+        |     %exit : llvm.Label = llvm.label() body<%self: llvm.Label>():
+        |         %zero : Index = 0
     """)
-    module = parse_module(ir)
-    from dgen.verify import _verify_block
+    from dgen.verify import verify_closed_blocks
 
-    (label,) = module.ops
-    _verify_block(label.body)  # Should not raise
+    module = parse_module(ir)
+    verify_closed_blocks(module)  # Should not raise
