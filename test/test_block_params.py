@@ -1,0 +1,88 @@
+"""Tests for Block.parameters: the block-parameter binding form.
+
+Block parameters are bound once by an op's lowering pass (e.g. ``%self``
+for loop-header labels) and are never passed by callers.  They are leaves
+in the use-def graph, identical to block args in that regard, but occupy a
+distinct list and are emitted with ``block_name<%param: T>`` syntax.
+"""
+
+from dgen import asm
+from dgen.asm.parser import parse_module
+from dgen.dialects import llvm
+from dgen.testing import assert_ir_equivalent, strip_prefix
+
+
+def test_roundtrip_label_with_self_param():
+    ir = strip_prefix("""
+        | import llvm
+        |
+        | %loop : llvm.Label = llvm.label() body<%self: llvm.Label>(%i: Index):
+        |     %zero : Index = 0
+    """)
+    module = parse_module(ir)
+    (label,) = module.ops
+    assert isinstance(label, llvm.LabelOp)
+    assert len(label.body.parameters) == 1
+    assert label.body.parameters[0].name == "self"
+    assert isinstance(label.body.parameters[0].type, llvm.Label)
+    assert len(label.body.args) == 1
+    assert label.body.args[0].name == "i"
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+
+
+def test_roundtrip_label_no_params():
+    """Labels without block parameters must still parse/format correctly."""
+    ir = strip_prefix("""
+        | import llvm
+        |
+        | %loop : llvm.Label = llvm.label() body(%i: Index):
+        |     %zero : Index = 0
+    """)
+    module = parse_module(ir)
+    (label,) = module.ops
+    assert isinstance(label, llvm.LabelOp)
+    assert label.body.parameters == []
+    assert len(label.body.args) == 1
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+
+
+def test_roundtrip_label_self_param_and_args():
+    """Full round-trip: parse → format → parse, result structurally equal."""
+    ir = strip_prefix("""
+        | import llvm
+        |
+        | %loop : llvm.Label = llvm.label() body<%self: llvm.Label>(%i: Index):
+        |     %zero : Index = 0
+    """)
+    module = parse_module(ir)
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+
+
+def test_roundtrip_label_params_no_args():
+    ir = strip_prefix("""
+        | import llvm
+        |
+        | %exit : llvm.Label = llvm.label() body<%self: llvm.Label>():
+        |     %zero : Index = 0
+    """)
+    module = parse_module(ir)
+    (label,) = module.ops
+    assert isinstance(label, llvm.LabelOp)
+    assert len(label.body.parameters) == 1
+    assert label.body.args == []
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+
+
+def test_verify_block_param_in_scope():
+    """An op that references a block parameter must pass verify_closed_blocks."""
+    ir = strip_prefix("""
+        | import llvm
+        |
+        | %exit : llvm.Label = llvm.label() body<%self: llvm.Label>():
+        |     %zero : Index = 0
+    """)
+    module = parse_module(ir)
+    from dgen.verify import _verify_block
+
+    (label,) = module.ops
+    _verify_block(label.body)  # Should not raise

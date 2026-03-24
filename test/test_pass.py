@@ -56,7 +56,7 @@ def test_rewriter_eager_replace(ir_snapshot):
     ir_text = strip_prefix("""
         | import llvm
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %2 : Index = llvm.add(%0, %0)
@@ -84,7 +84,7 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
     ir_text = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
         |     %2 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.transpose(%1)
@@ -112,7 +112,7 @@ def test_pass_unregistered_ops_error():
     ir_text = strip_prefix("""
         | import toy
         |
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -144,7 +144,7 @@ def test_pass_multiple_handlers_first_wins():
             return True
 
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)
@@ -161,7 +161,7 @@ def test_pass_multiple_handlers_first_wins():
 def test_compiler_run_verification_catches_closed_block_violation():
     """Post-condition check detects a closed-block violation introduced by a pass."""
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : Nil = {}
     """)
 
@@ -197,9 +197,9 @@ def test_constant_fold_resolves_stage0_boundary():
     so that subsequent passes see a concrete type.
     """
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : Nil = function<%t>() (%rt: Type, %x: Index):
+        |     %f : Nil = function<%t>() body(%rt: Type, %x: Index):
         |         %y : %rt = add_index(%x, %x)
     """)
     module = parse_module(ir)
@@ -226,7 +226,7 @@ def test_constant_fold_resolves_stage0_boundary():
 def test_constant_fold_is_noop_without_boundaries():
     """ConstantFold does nothing when there are no stage-0 boundaries."""
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)
@@ -249,7 +249,7 @@ def test_pass_run_receives_continuation_compiler():
             return module
 
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() ():
+        | %main : Nil = function<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)

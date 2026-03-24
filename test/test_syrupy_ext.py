@@ -11,7 +11,7 @@ from dgen.testing import strip_prefix
 IR = strip_prefix("""
     | import toy
     |
-    | %main : Nil = function<Nil>() ():
+    | %main : Nil = function<Nil>() body():
     |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     |     %1 : Nil = toy.print(%0)
 """)
@@ -19,7 +19,7 @@ IR = strip_prefix("""
 IR_RENAMED = strip_prefix("""
     | import toy
     |
-    | %main : Nil = function<Nil>() ():
+    | %main : Nil = function<Nil>() body():
     |     %tensor : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     |     %result : Nil = toy.print(%tensor)
 """)
@@ -27,7 +27,7 @@ IR_RENAMED = strip_prefix("""
 IR_DIFFERENT = strip_prefix("""
     | import toy
     |
-    | %main : Nil = function<Nil>() ():
+    | %main : Nil = function<Nil>() body():
     |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
     |     %1 : Nil = toy.print(%0)
 """)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
+from dgen.block import BlockArgument
 from dgen.dialects.builtin import Nil
 from dgen.module import PackOp
 
@@ -55,6 +56,8 @@ class SlotTracker:
                 continue
             self.track_name(op)
             for _, block in op.blocks:
+                for param in block.parameters:
+                    self.track_name(param)
                 for arg in block.args:
                     self.track_name(arg)
                 self.register(block.ops)
@@ -146,6 +149,11 @@ def type_asm(type_obj: Type, tracker: SlotTracker | None = None) -> str:
 # ===----------------------------------------------------------------------=== #
 
 
+def _format_block_arg(arg: BlockArgument, tracker: SlotTracker) -> str:
+    return f"%{tracker.track_name(arg)}: {format_expr(arg.type, tracker)}"
+
+
+
 def op_asm(
     op: Op,
     tracker: SlotTracker | None = None,
@@ -196,13 +204,17 @@ def op_asm(
         parts.append(op_str)
     blocks = list(op.blocks)
     if blocks:
-        # First block args on the op line
-        _, first_block = blocks[0]
-        block_args = ", ".join(
-            f"%{tracker.track_name(a)}: {type_asm(a.type, tracker) if isinstance(a.type, Type) else format_expr(a.type, tracker)}"
-            for a in first_block.args
+        first_block_name, first_block = blocks[0]
+        args_str = ", ".join(
+            _format_block_arg(a, tracker) for a in first_block.args
         )
-        parts.append(f" ({block_args}):")
+        if first_block.parameters:
+            params_str = ", ".join(
+                _format_block_arg(p, tracker) for p in first_block.parameters
+            )
+            parts.append(f" {first_block_name}<{params_str}>({args_str}):")
+        else:
+            parts.append(f" {first_block_name}({args_str}):")
     else:
         parts.append("")
 
@@ -211,13 +223,14 @@ def op_asm(
 
     for block_idx, (block_name, block) in enumerate(blocks):
         if block_idx > 0:
-            # Emit keyword line for subsequent blocks
-            keyword = block_name.removesuffix("_body")
-            block_args = ", ".join(
-                f"%{tracker.track_name(a)}: {type_asm(a.type, tracker) if isinstance(a.type, Type) else format_expr(a.type, tracker)}"
-                for a in block.args
-            )
-            yield f"{keyword} ({block_args}):"
+            args_str = ", ".join(_format_block_arg(a, tracker) for a in block.args)
+            if block.parameters:
+                params_str = ", ".join(
+                    _format_block_arg(p, tracker) for p in block.parameters
+                )
+                yield f"{block_name}<{params_str}>({args_str}):"
+            else:
+                yield f"{block_name}({args_str}):"
         for child_op in block.ops:
             if _is_sugar_op(child_op):
                 continue

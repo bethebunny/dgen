@@ -1,7 +1,7 @@
 import llvm
 import toy
 
-%main : Nil = function<Nil>() ():
+%main : Nil = function<Nil>() body():
     %0 : toy.Tensor<affine.Shape<3>([2, 2, 2]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
     %1 : llvm.Ptr = llvm.load(%0)
     %2 : Index = 8
