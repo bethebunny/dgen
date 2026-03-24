@@ -3,9 +3,8 @@
 Two top-level functions:
 
   verify_closed_blocks(module)  — every value referenced by an op must be
-      defined in the same block (either an op in block.ops or a BlockArgument
-      in block.args).  Hard-coded exceptions: FunctionOp (call targets) and
-      LabelOp (branch targets) are permitted to cross block boundaries.
+      defined in the same block (either an op in block.ops, a BlockArgument
+      in block.args, or a block parameter in block.parameters).
 
   verify_all_ready(module)  — every op must satisfy op.ready, meaning all
       compile-time parameters and the op's type are fully resolved (no
@@ -16,18 +15,12 @@ from __future__ import annotations
 
 import dgen
 from dgen.block import Block, BlockArgument
-from dgen.dialects.builtin import FunctionOp
-from dgen.dialects.llvm import LabelOp
 from dgen.module import Module, _walk_all_ops
 
 
 # ---------------------------------------------------------------------------
 # verify_closed_blocks
 # ---------------------------------------------------------------------------
-
-
-def _is_cross_block_permitted(value: dgen.Value) -> bool:
-    return isinstance(value, (FunctionOp, LabelOp))
 
 
 def _check_in_scope(
@@ -48,8 +41,6 @@ def _check_in_scope(
         return
     if not isinstance(value, (dgen.Op, BlockArgument)):
         return
-    if _is_cross_block_permitted(value):
-        return
     assert value in valid, (
         f"{type(op).__name__}.{field_name} references out-of-scope "
         f"{type(value).__name__}"
@@ -68,9 +59,7 @@ def _verify_block(block: Block, visited: set[Block] | None = None) -> None:
         valid.add(op)
 
     # The block result itself must be in scope if it is block-scoped.
-    if isinstance(
-        block.result, (dgen.Op, BlockArgument)
-    ) and not _is_cross_block_permitted(block.result):
+    if isinstance(block.result, (dgen.Op, BlockArgument)):
         assert block.result in valid, (
             f"block.result references out-of-scope {type(block.result).__name__}"
         )

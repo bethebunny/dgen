@@ -26,6 +26,9 @@
 - Parser / lowering support for forward references and cyclic references
 
 ## Parser / formatting improvements
+- Empty function bodies should format as `%_: Nil = ()` for clarity; truly empty bodies (no ops, just the block header line) aren't supported by the parser/formatter roundtrip
+- Formalize the formatter as an explicit scheduling pass. Ambient ops (no block-argument dependencies) are reachable from every block that references them via `walk_ops`. The formatter must assign each op to exactly one textual location. Currently this is handled by a shared `_formatted` dedup set (first-encounter-wins), which is an implicit scheduling policy. Design an explicit scheduler that decides op placement before emission.
+- Formalize scheduling in codegen (`dgen/codegen.py`) — same ambient-op placement problem applies when emitting LLVM IR
 - Massively simplify / clean the asm parser and formatter code
 - Remove anything that's thinking about "origin"s and generic python types or annotations
 - Add parser failure tests
