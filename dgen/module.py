@@ -6,7 +6,7 @@ file to keep it purely generated.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import cached_property
 from typing import ClassVar
@@ -68,7 +68,15 @@ class PackOp(Op):
 
     values: list[Value]
     type: Type
-    __operands__: ClassVar[Fields] = (("values", Type),)
+    __operands__: ClassVar[Fields] = ()
+
+    @property
+    def operands(self) -> Iterator[tuple[str, Value]]:
+        for i, v in enumerate(self.values):
+            yield f"values[{i}]", v
+
+    def replace_operand(self, old: Value, new: Value) -> None:
+        self.values = [new if v is old else v for v in self.values]
 
 
 # ===----------------------------------------------------------------------=== #

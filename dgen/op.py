@@ -24,6 +24,13 @@ class Op(Value):
         for name, _ in self.__operands__:
             yield name, getattr(self, name)
 
+    def replace_operand(self, old: Value, new: Value) -> None:
+        """Replace all occurrences of old with new in operand fields."""
+        for name, _ in self.__operands__:
+            val = getattr(self, name)
+            if val is old:
+                setattr(self, name, new)
+
     @property
     def blocks(self) -> Iterator[tuple[str, Block]]:
         """All Block-typed fields."""
