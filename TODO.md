@@ -8,6 +8,13 @@
 - Consider removing the generic `builtin.ChainOp` in favor of a monadic effects design (explicit effect tokens threaded through the use-def graph). ChainOp causes dangling chain ops after passes that remove their operands, and the monadic design makes ordering dependencies explicit and composable.
 - `Rewriter.replace_uses` only walks the immediate block — it misses uses inside nested blocks (sub-regions of ops). Fix it to recurse, and add tests for nested-block replacement (the actor `_inline_actor` workaround is a concrete example of this gap)
 
+## Verifier UX
+- Verifier errors should print the ASM and point to the offending op/value, not just raise a bare AssertionError with the op type name
+
+## Block / scope invariants
+- Implement `func.recursive` op for recursive functions (see `docs/block-scoping.md` §3.1). Currently recursive functions like `%natural` calling itself via `call<%natural>` violate the DAG property — `walk_ops` follows the callee parameter edge back into the function, creating a cycle. `func.recursive` breaks the cycle by providing `%self` as a block argument.
+- Add a DAG property verifier that detects use-def cycles (currently only closed-block is verified)
+
 ## Actor framework
 - Add an affine loop fusion optimization pass — currently `ActorToAffine` emits separate loops per actor; a general affine-level fusion pass would subsume the fused-pipeline special case
 
