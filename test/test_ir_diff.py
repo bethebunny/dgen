@@ -9,9 +9,10 @@ from dgen.testing import strip_prefix
 
 def test_diff_empty_when_identical():
     ir = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -21,16 +22,18 @@ def test_diff_empty_when_identical():
 def test_diff_empty_when_ssa_names_differ():
     """Same computation with different SSA names → no diff."""
     a = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %tensor : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %result : Nil = toy.print(%tensor)
     """)
@@ -40,16 +43,18 @@ def test_diff_empty_when_ssa_names_differ():
 def test_diff_empty_when_function_order_differs():
     """Same functions listed in different module order → no diff."""
     a = strip_prefix("""
+        | import function
         | import toy
         |
-        | %func_a : Nil = function<Nil>() body():
+        | %func_a : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
+        | import function
         | import toy
         |
-        | %func_b : Nil = function<Nil>() body():
+        | %func_b : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -63,17 +68,19 @@ def test_diff_empty_when_function_order_differs():
 def test_diff_empty_when_op_order_differs():
     """Independent ops in a different block order → no diff (same graph)."""
     a = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : toy.Tensor<memory.Shape<2>([2, 3]), F64> = function<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body():
+        | %main : toy.Tensor<memory.Shape<2>([2, 3]), F64> = function.define<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body():
         |     %a : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %b : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %c : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.mul(%a, %b)
     """)
     b = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : toy.Tensor<memory.Shape<2>([2, 3]), F64> = function<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body():
+        | %main : toy.Tensor<memory.Shape<2>([2, 3]), F64> = function.define<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body():
         |     %x : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %y : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %z : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.mul(%y, %x)
@@ -84,16 +91,18 @@ def test_diff_empty_when_op_order_differs():
 def test_diff_format_semantic_change():
     """A changed constant produces a proper unified-diff output."""
     expected = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     actual = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -115,9 +124,10 @@ def test_diff_format_semantic_change():
 def test_diff_format_missing_function():
     """A function present only in expected shows as all-deleted lines."""
     expected = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -132,9 +142,10 @@ def test_diff_format_missing_function():
 def test_diff_format_extra_function():
     """A function present only in actual shows as all-added lines."""
     actual = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from dgen import Constant, Type
 from dgen.dialects.builtin import Index
-from dgen.dialects.builtin import Function
+from dgen.dialects.function import Function
 
 from toy.dialects.memory import Shape
 

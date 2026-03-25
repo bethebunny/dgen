@@ -18,9 +18,10 @@ def optimize(m: Module) -> Module:
 def test_transpose_elimination(ir_snapshot):
     """transpose(transpose(x)) -> x"""
     ir_text = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.transpose(%0)
         |     %2 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.transpose(%1)
@@ -34,9 +35,10 @@ def test_transpose_elimination(ir_snapshot):
 def test_reshape_of_matching_constant(ir_snapshot):
     """Reshape to same shape as constant -> remove reshape."""
     ir_text = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.reshape(%0)
         |     %2 : Nil = toy.print(%1)
@@ -49,9 +51,10 @@ def test_reshape_of_matching_constant(ir_snapshot):
 def test_constant_folding_reshape(ir_snapshot):
     """Reshape of constant with different shape -> fold into new constant."""
     ir_text = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<1>([6]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.reshape(%0)
         |     %2 : Nil = toy.print(%1)
@@ -63,9 +66,10 @@ def test_constant_folding_reshape(ir_snapshot):
 def test_dce(ir_snapshot):
     """Dead code elimination removes unused ops."""
     ir_text = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %2 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.transpose(%1)
@@ -80,9 +84,10 @@ def test_dce(ir_snapshot):
 def test_full_pipeline(ir_snapshot):
     """Full optimization on multiply_transpose-like example."""
     ir_text = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.reshape(%0)
         |     %2 : toy.Tensor<memory.Shape<1>([6]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

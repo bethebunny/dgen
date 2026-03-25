@@ -13,11 +13,11 @@ from typing import ClassVar
 
 from dgen import Constant, Dialect, Op, Type, TypeType, Value
 from dgen.dialects.builtin import (
-    FunctionOp,
     HasSingleBlock,
     String,
     builtin,
 )
+from dgen.dialects.function import DefineOp
 
 
 from dgen.type import Fields, Memory, type_constant
@@ -137,8 +137,8 @@ class Module:
     ops: list[Op]
 
     @property
-    def functions(self) -> list[FunctionOp]:
-        return [op for op in self.ops if isinstance(op, FunctionOp)]
+    def functions(self) -> list[DefineOp]:
+        return [op for op in self.ops if isinstance(op, DefineOp)]
 
     @property
     def asm(self) -> Iterable[str]:

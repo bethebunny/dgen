@@ -22,7 +22,7 @@ import click
 from dgen import asm
 from dgen.asm.formatting import SlotTracker, op_asm
 from dgen.asm.parser import parse_module
-from dgen.dialects.builtin import FunctionOp
+from dgen.dialects.function import DefineOp
 from dgen.ir_equiv import Fingerprinter
 from dgen.module import Module
 
@@ -68,7 +68,7 @@ def diff_modules(actual: Module, expected: Module, context: int = 3) -> str:
 
 
 def _diff_function(
-    actual_func: FunctionOp, expected_func: FunctionOp, context: int
+    actual_func: DefineOp, expected_func: DefineOp, context: int
 ) -> Iterator[str]:
     """Yield unified-diff lines comparing two function bodies."""
     fp_a = Fingerprinter()

@@ -1,0 +1,9 @@
+from builtin import Nil, Span, HasSingleBlock
+
+type Function<result: Type>:
+    data: Nil
+
+op define<result: Type>() -> Nil:
+    block body
+    has trait HasSingleBlock
+op call<callee: Function>(arguments: Span) -> Type

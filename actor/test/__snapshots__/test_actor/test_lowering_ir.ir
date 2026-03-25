@@ -1,8 +1,9 @@
 import affine
 import control_flow
+import function
 import memory
 
-%main : Nil = function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
+%main : Nil = function.define<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
     %16 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
     %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
     %6 : Nil = control_flow.for<0, 4>([%0, %5]) body(%7: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):

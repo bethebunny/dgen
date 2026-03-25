@@ -1,8 +1,9 @@
+import function
 import goto
 import llvm
 import toy
 
-%main : Nil = function<Nil>() body():
+%main : Nil = function.define<Nil>() body():
     %0 : Index = 48
     %1 : llvm.Ptr = llvm.call<"malloc">([%0])
     %2 : Index = 0

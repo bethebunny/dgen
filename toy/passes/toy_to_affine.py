@@ -6,8 +6,9 @@ from collections.abc import Callable, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin
-from dgen.dialects.builtin import FunctionOp, Index
+from dgen.dialects import builtin, function
+from dgen.dialects.builtin import Index
+from dgen.dialects.function import DefineOp
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.dialects import control_flow
@@ -79,14 +80,14 @@ class ToyToAffine(Pass):
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
         return Module(
             ops=[
-                self._lower_function(op) if isinstance(op, FunctionOp) else op
+                self._lower_function(op) if isinstance(op, DefineOp) else op
                 for op in module.ops
             ]
         )
 
-    def _lower_function(self, f: FunctionOp) -> FunctionOp:
+    def _lower_function(self, f: DefineOp) -> DefineOp:
         self._run_block(f.body)
-        return FunctionOp(name=f.name, body=f.body, result=f.result)
+        return DefineOp(name=f.name, body=f.body, result=f.result)
 
     def _shape(self, val: dgen.Value) -> list[int]:
         assert isinstance(val.type, (toy.Tensor, memory.MemRef))
