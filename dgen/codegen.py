@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import _ctypes
 import ctypes
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -196,26 +196,28 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     # Resolve branch targets: block parameters are directly bound to their
     # label (%self mechanism). Since targets are parameters, the codegen reads
     # the parameter value directly — no dataflow propagation needed.
-    label_of: dict[dgen.Value, llvm.LabelOp] = {}
-    for label_op in label_ops:
-        for param in label_op.body.parameters:
-            label_of[param] = label_op
+    label_of: dict[dgen.Value, llvm.LabelOp] = {
+        param: label_op for label_op in label_ops for param in label_op.body.parameters
+    }
 
-    def resolve_target(target: dgen.Value) -> dgen.Value:
-        """Resolve a branch target to its LabelOp."""
-        return label_of.get(target, target)
+    def resolve_target(target: dgen.Value) -> llvm.LabelOp:
+        """Resolve a branch target to its LabelOp.
+
+        Targets are either LabelOps directly (forward edges) or block
+        parameters that are bound to a LabelOp (%self back-edges).
+        """
+        if isinstance(target, llvm.LabelOp):
+            return target
+        return label_of[target]
 
     def _branch_edges(
         op: dgen.Op,
-    ) -> list[tuple[dgen.Value, list[dgen.Value]]]:
+    ) -> Iterator[tuple[dgen.Value, list[dgen.Value]]]:
         if isinstance(op, llvm.BrOp):
-            return [(op.target, _unpack_args(op.args))]
-        if isinstance(op, llvm.CondBrOp):
-            return [
-                (op.true_target, _unpack_args(op.true_args)),
-                (op.false_target, _unpack_args(op.false_args)),
-            ]
-        return []
+            yield op.target, _unpack_args(op.args)
+        elif isinstance(op, llvm.CondBrOp):
+            yield op.true_target, _unpack_args(op.true_args)
+            yield op.false_target, _unpack_args(op.false_args)
 
     # Build predecessor map: label → [(source_label, passed_arg_values)]
     entry_sentinel = dgen.Value(name="entry", type=llvm.Label())
