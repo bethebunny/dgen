@@ -13,7 +13,7 @@ import llvmlite.binding as llvmlite
 import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
-from dgen.dialects import builtin, llvm
+from dgen.dialects import builtin, goto, llvm
 from dgen.module import ConstantOp, Module, PackOp, string_value
 from dgen.layout import Layout
 from dgen.compiler import Compiler, IdentityPass
@@ -106,14 +106,14 @@ def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
     return _llvm_type(resolved.__layout__)
 
 
-def _collect_labels(ops: list[dgen.Op]) -> list[llvm.LabelOp]:
+def _collect_labels(ops: list[dgen.Op]) -> list[goto.LabelOp]:
     """Recursively collect all LabelOps (labels may be nested)."""
     seen: set[int] = set()
-    labels: list[llvm.LabelOp] = []
+    labels: list[goto.LabelOp] = []
 
     def _walk(op_list: list[dgen.Op]) -> None:
         for op in op_list:
-            if isinstance(op, llvm.LabelOp) and id(op) not in seen:
+            if isinstance(op, goto.LabelOp) and id(op) not in seen:
                 seen.add(id(op))
                 labels.append(op)
                 _walk(op.body.ops)
@@ -131,14 +131,14 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     claimed: set[int] = set()
     entry_ops: list[dgen.Op] = []
     for op in f.body.ops:
-        if not isinstance(op, llvm.LabelOp) and id(op) not in claimed:
+        if not isinstance(op, goto.LabelOp) and id(op) not in claimed:
             claimed.add(id(op))
             entry_ops.append(op)
     label_body_ops: dict[int, list[dgen.Op]] = {}
     for label_op in label_ops:
         deduped: list[dgen.Op] = []
         for op in label_op.body.ops:
-            if not isinstance(op, llvm.LabelOp) and id(op) not in claimed:
+            if not isinstance(op, goto.LabelOp) and id(op) not in claimed:
                 claimed.add(id(op))
                 deduped.append(op)
         label_body_ops[id(label_op)] = deduped
@@ -196,31 +196,31 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     # Resolve branch targets: block parameters are directly bound to their
     # label (%self mechanism). Since targets are parameters, the codegen reads
     # the parameter value directly — no dataflow propagation needed.
-    label_of: dict[dgen.Value, llvm.LabelOp] = {
+    label_of: dict[dgen.Value, goto.LabelOp] = {
         param: label_op for label_op in label_ops for param in label_op.body.parameters
     }
 
-    def resolve_target(target: dgen.Value) -> llvm.LabelOp:
+    def resolve_target(target: dgen.Value) -> goto.LabelOp:
         """Resolve a branch target to its LabelOp.
 
         Targets are either LabelOps directly (forward edges) or block
         parameters that are bound to a LabelOp (%self back-edges).
         """
-        if isinstance(target, llvm.LabelOp):
+        if isinstance(target, goto.LabelOp):
             return target
         return label_of[target]
 
     def _branch_edges(
         op: dgen.Op,
     ) -> Iterator[tuple[dgen.Value, list[dgen.Value]]]:
-        if isinstance(op, llvm.BrOp):
-            yield op.target, _unpack_args(op.args)
-        elif isinstance(op, llvm.CondBrOp):
-            yield op.true_target, _unpack_args(op.true_args)
-            yield op.false_target, _unpack_args(op.false_args)
+        if isinstance(op, goto.BranchOp):
+            yield op.target, _unpack_args(op.arguments)
+        elif isinstance(op, goto.ConditionalBranchOp):
+            yield op.true_target, _unpack_args(op.true_arguments)
+            yield op.false_target, _unpack_args(op.false_arguments)
 
     # Build predecessor map: label → [(source_label, passed_arg_values)]
-    entry_sentinel = dgen.Value(name="entry", type=llvm.Label())
+    entry_sentinel = dgen.Value(name="entry", type=goto.Label())
     op_to_label: dict[dgen.Op, dgen.Value] = {}
     for op in entry_ops:
         op_to_label[op] = entry_sentinel
@@ -276,7 +276,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
 
     def emit_op(op: dgen.Op, lines: list[str]) -> None:
         """Emit a single op as LLVM IR."""
-        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, llvm.LabelOp)):
+        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, goto.LabelOp)):
             return
 
         name = tracker.track_name(op)
@@ -319,11 +319,11 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             lines.append(
                 f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
-        elif isinstance(op, llvm.BrOp):
+        elif isinstance(op, goto.BranchOp):
             lines.append(f"  br label %{tracker.track_name(resolve_target(op.target))}")
-        elif isinstance(op, llvm.CondBrOp):
+        elif isinstance(op, goto.ConditionalBranchOp):
             lines.append(
-                f"  br i1 %{tracker.track_name(op.cond)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
+                f"  br i1 %{tracker.track_name(op.condition)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
             )
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
@@ -338,9 +338,9 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     def _needs_ret(ops: list[dgen.Op]) -> bool:
         """Return True if this block needs a ret terminator (doesn't end with br)."""
         for op in reversed(ops):
-            if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, llvm.LabelOp)):
+            if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, goto.LabelOp)):
                 continue
-            return not isinstance(op, (llvm.BrOp, llvm.CondBrOp))
+            return not isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp))
         return True
 
     def emit_ret(lines: list[str], block_result: dgen.Value) -> None:

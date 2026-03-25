@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Array, F64, HasSingleBlock, Index, List, Nil, Pointer
+from dgen.dialects.builtin import F64, HasSingleBlock, Index, Nil
 
 affine = Dialect("affine")
 

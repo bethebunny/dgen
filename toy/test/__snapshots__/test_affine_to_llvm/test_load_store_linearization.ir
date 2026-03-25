@@ -1,3 +1,4 @@
+import goto
 import llvm
 import toy
 
@@ -5,15 +6,15 @@ import toy
     %0 : Index = 48
     %1 : llvm.Ptr = llvm.call<"malloc">([%0])
     %2 : Index = 0
-    %loop_header0 : llvm.Label = llvm.label() body<%self: llvm.Label>(%i0: Index):
+    %loop_header0 : goto.Label = goto.label() body<%self: goto.Label>(%i0: Index):
         %3 : Index = 2
         %4 : llvm.Int<1> = llvm.icmp<"slt">(%i0, %3)
-        %loop_body0 : llvm.Label = llvm.label() body(%j0: Index) captures(%self):
+        %loop_body0 : goto.Label = goto.label() body(%j0: Index) captures(%self):
             %5 : Index = 0
-            %loop_header1 : llvm.Label = llvm.label() body<%6: llvm.Label>(%i1: Index) captures(%self, %j0):
+            %loop_header1 : goto.Label = goto.label() body<%6: goto.Label>(%i1: Index) captures(%self, %j0):
                 %7 : Index = 3
                 %8 : llvm.Int<1> = llvm.icmp<"slt">(%i1, %7)
-                %loop_body1 : llvm.Label = llvm.label() body(%j1: Index) captures(%self, %6, %j0):
+                %loop_body1 : goto.Label = goto.label() body(%j1: Index) captures(%self, %6, %j0):
                     %9 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
                     %10 : llvm.Ptr = llvm.load(%9)
                     %11 : Index = 3
@@ -28,17 +29,17 @@ import toy
                     %20 : Nil = llvm.store(%15, %19)
                     %21 : Index = 1
                     %22 : llvm.Int<64> = llvm.add(%j1, %21)
-                    %23 : Nil = llvm.br<%6>([%22])
+                    %23 : Nil = goto.branch<%6>([%22])
                     %24 : Nil = chain(%20, %23)
-                %loop_exit1 : llvm.Label = llvm.label() body() captures(%self, %6, %j0):
+                %loop_exit1 : goto.Label = goto.label() body() captures(%self, %6, %j0):
                     %25 : Index = 1
                     %26 : llvm.Int<64> = llvm.add(%j0, %25)
-                    %27 : Nil = llvm.br<%self>([%26])
-                %28 : Nil = llvm.cond_br<%loop_body1, %loop_exit1>(%8, [%i1], [])
-            %29 : Nil = llvm.br<%loop_header1>([%5])
-        %loop_exit0 : llvm.Label = llvm.label() body() captures(%self):
+                    %27 : Nil = goto.branch<%self>([%26])
+                %28 : Nil = goto.conditional_branch<%loop_body1, %loop_exit1>(%8, [%i1], [])
+            %29 : Nil = goto.branch<%loop_header1>([%5])
+        %loop_exit0 : goto.Label = goto.label() body() captures(%self):
             %30 : Index = 6
             %31 : Nil = llvm.call<"print_memref">([%1, %30])
-        %32 : Nil = llvm.cond_br<%loop_body0, %loop_exit0>(%4, [%i0], [])
-    %33 : Nil = llvm.br<%loop_header0>([%2])
+        %32 : Nil = goto.conditional_branch<%loop_body0, %loop_exit0>(%4, [%i0], [])
+    %33 : Nil = goto.branch<%loop_header0>([%2])
     %34 : Nil = chain(%1, %33)

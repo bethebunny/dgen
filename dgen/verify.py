@@ -5,7 +5,6 @@ from __future__ import annotations
 import dgen
 from dgen import asm
 from dgen.block import Block, BlockArgument
-from dgen.graph import walk_ops
 from dgen.module import Module, _walk_all_ops
 
 

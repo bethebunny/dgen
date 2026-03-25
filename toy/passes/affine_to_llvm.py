@@ -7,7 +7,7 @@ from math import prod
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, llvm
+from dgen.dialects import builtin, goto, llvm
 from dgen.dialects.builtin import ChainOp, FunctionOp, Nil, String
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
@@ -229,7 +229,7 @@ class AffineToLLVMLowering(Pass):
         assert result is not None
         return result
 
-    def _lower_for(self, op: affine.ForOp) -> tuple[llvm.BrOp, llvm.LabelOp]:
+    def _lower_for(self, op: affine.ForOp) -> tuple[goto.BranchOp, goto.LabelOp]:
         """Lower one ForOp to LLVM header/body/exit labels.
 
         The header gets a %self block parameter. Body and exit blocks capture
@@ -244,7 +244,7 @@ class AffineToLLVMLowering(Pass):
 
         header_iv = BlockArgument(name=f"i{lid}", type=builtin.Index())
         body_iv = BlockArgument(name=f"j{lid}", type=builtin.Index())
-        header_self = BlockArgument(name="self", type=llvm.Label())
+        header_self = BlockArgument(name="self", type=goto.Label())
 
         # Map lo/hi
         lo_op = self._map(op.lo)
@@ -258,19 +258,19 @@ class AffineToLLVMLowering(Pass):
 
         # Header: compare iv against hi, branch true→body or false→exit.
         cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=header_iv, rhs=hi_op)
-        exit_label = llvm.LabelOp(name=f"loop_exit{lid}", body=placeholder_block())
-        body_label = llvm.LabelOp(
+        exit_label = goto.LabelOp(name=f"loop_exit{lid}", body=placeholder_block())
+        body_label = goto.LabelOp(
             name=f"loop_body{lid}",
             body=dgen.Block(result=dgen.Value(type=Nil()), args=[body_iv]),
         )
-        cond_br = llvm.CondBrOp(
-            cond=cmp_op,
+        cond_br = goto.ConditionalBranchOp(
+            condition=cmp_op,
             true_target=body_label,
             false_target=exit_label,
-            true_args=_make_pack([header_iv]),
-            false_args=_EMPTY_PACK,
+            true_arguments=_make_pack([header_iv]),
+            false_arguments=_EMPTY_PACK,
         )
-        header_label = llvm.LabelOp(
+        header_label = goto.LabelOp(
             name=f"loop_header{lid}",
             body=dgen.Block(
                 result=cond_br,
@@ -299,7 +299,7 @@ class AffineToLLVMLowering(Pass):
         def _make_back_br() -> dgen.Value:
             one = ConstantOp(value=1, type=builtin.Index())
             next_iv = llvm.AddOp(lhs=self.value_map[op.body.args[0]], rhs=one)
-            return llvm.BrOp(target=self._map(op), args=_make_pack([next_iv]))
+            return goto.BranchOp(target=self._map(op), arguments=_make_pack([next_iv]))
 
         body_result = self._lower_ops(op.body.ops, _make_back_br)
         body_label.body = dgen.Block(
@@ -322,9 +322,9 @@ class AffineToLLVMLowering(Pass):
             captures=header_captures,
         )
 
-        entry_br = llvm.BrOp(
+        entry_br = goto.BranchOp(
             target=header_label,
-            args=_make_pack([lo_op]),
+            arguments=_make_pack([lo_op]),
         )
         return entry_br, exit_label
 
