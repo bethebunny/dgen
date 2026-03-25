@@ -51,11 +51,11 @@ def test_generate_builtin_list_type():
     assert "types: list[Value[dgen.TypeType]]" in code
 
 
-def test_generate_index_op_with_default():
-    mod = importlib.import_module("dgen.dialects.index")
-    code = generate_pyi(mod, "index")
+def test_generate_algebra_op():
+    mod = importlib.import_module("dgen.dialects.algebra")
+    code = generate_pyi(mod, "algebra")
     assert "class AddOp(Op):" in code
-    assert "type: Type = Index()" in code
+    assert "type: Type" in code
 
 
 def test_generate_builtin_op_with_optional_operand():

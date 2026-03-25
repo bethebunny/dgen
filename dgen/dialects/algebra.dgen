@@ -1,0 +1,23 @@
+from builtin import Nil
+
+trait AddMagma
+trait MulMagma
+trait TotalOrder
+
+op add(left, right) -> Type
+op negate(input) -> Type
+op subtract(left, right) -> Type
+op multiply(left, right) -> Type
+op reciprocal(input) -> Type
+op divide(left, right) -> Type
+op meet(left, right) -> Type
+op join(left, right) -> Type
+op complement(input) -> Type
+op symmetric_difference(left, right) -> Type
+op equal(left, right) -> Type
+op not_equal(left, right) -> Type
+op less_than(left, right) -> Type
+op less_equal(left, right) -> Type
+op greater_than(left, right) -> Type
+op greater_equal(left, right) -> Type
+op cast(input) -> Type

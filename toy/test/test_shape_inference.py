@@ -148,6 +148,7 @@ def test_tile_with_computed_count():
     evaluation. The InferredShapeTensor remains unresolved.
     """
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import toy
         | import index
@@ -156,7 +157,7 @@ def test_tile_with_computed_count():
         |     %0 : toy.Tensor<memory.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
         |     %1 : index.Index = 2
         |     %2 : index.Index = 2
-        |     %3 : index.Index = index.add(%1, %2)
+        |     %3 : index.Index = algebra.add(%1, %2)
         |     %4 : toy.InferredShapeTensor<F64> = toy.tile<%3>(%0)
         |     %5 : Nil = toy.print(%4)
     """)

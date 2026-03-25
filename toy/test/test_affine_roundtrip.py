@@ -50,14 +50,15 @@ def test_roundtrip_store_load():
 def test_roundtrip_arith():
     ir = strip_prefix("""
         |
+        | import algebra
         | import function
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : F64 = 2.5
         |     %1 : F64 = 3.0
-        |     %2 : F64 = affine.mul_f(%0, %1)
-        |     %3 : F64 = affine.add_f(%0, %1)
+        |     %2 : F64 = algebra.multiply(%0, %1)
+        |     %3 : F64 = algebra.add(%0, %1)
         |     %4 : F64 = chain(%2, %3)
     """)
     module = parse_module(ir)

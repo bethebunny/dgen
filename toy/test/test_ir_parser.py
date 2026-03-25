@@ -167,6 +167,7 @@ def test_roundtrip_tile_with_index_constant():
 def test_roundtrip_tile_with_computed_count():
     """Tile where count is computed — shape inference CANNOT resolve without evaluation."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import toy
         | import index
@@ -174,7 +175,7 @@ def test_roundtrip_tile_with_computed_count():
         | %f : function.Function<toy.InferredShapeTensor<F64>> = function.function<toy.InferredShapeTensor<F64>>() body(%a: toy.Tensor<memory.Shape<1>([3]), F64>):
         |     %0 : index.Index = 2
         |     %1 : index.Index = 2
-        |     %2 : index.Index = index.add(%0, %1)
+        |     %2 : index.Index = algebra.add(%0, %1)
         |     %3 : toy.InferredShapeTensor<F64> = toy.tile<%2>(%a)
     """)
     module = parse_module(ir)
@@ -183,11 +184,12 @@ def test_roundtrip_tile_with_computed_count():
 
 def test_roundtrip_add_index():
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index, %y: index.Index):
-        |     %0 : index.Index = index.add(%x, %y)
+        |     %0 : index.Index = algebra.add(%x, %y)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

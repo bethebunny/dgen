@@ -6,13 +6,13 @@ from collections.abc import Callable, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, index
+from dgen.dialects import algebra, builtin
 from dgen.dialects.index import Index
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.dialects import control_flow
-from toy.dialects import affine, memory, shape_constant, toy
+from toy.dialects import memory, shape_constant, toy
 
 from typing import TYPE_CHECKING
 
@@ -39,7 +39,7 @@ def _nested_for(
     shape: Sequence[int],
     body_fn: Callable[[Sequence[dgen.Value]], dgen.Value],
     outer_block_args: Sequence[BlockArgument] = (),
-) -> affine.ForOp:
+) -> control_flow.ForOp:
     """Build nested ForOps for each dimension, innermost first.
 
     Outer-loop ivars are threaded as explicit extra block arguments on inner
@@ -118,11 +118,11 @@ class ToyToAffine(Pass):
 
     @lowering_for(toy.MulOp)
     def lower_mul(self, op: toy.MulOp, rewriter: Rewriter) -> bool:
-        return self._lower_binop(op, op.lhs, op.rhs, affine.MulFOp, rewriter)
+        return self._lower_binop(op, op.lhs, op.rhs, algebra.MultiplyOp, rewriter)
 
     @lowering_for(toy.AddOp)
     def lower_add(self, op: toy.AddOp, rewriter: Rewriter) -> bool:
-        return self._lower_binop(op, op.lhs, op.rhs, affine.AddFOp, rewriter)
+        return self._lower_binop(op, op.lhs, op.rhs, algebra.AddOp, rewriter)
 
     def _lower_binop(
         self,
@@ -137,9 +137,11 @@ class ToyToAffine(Pass):
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = _index_pack(*ivars)
+            lhs_elem = memory.LoadOp(memref=lhs, indices=idx)
             res = cls(
-                lhs=memory.LoadOp(memref=lhs, indices=idx),
-                rhs=memory.LoadOp(memref=rhs, indices=idx),
+                left=lhs_elem,
+                right=memory.LoadOp(memref=rhs, indices=idx),
+                type=lhs_elem.type,
             )
             return memory.StoreOp(value=res, memref=alloc, indices=idx)
 
@@ -204,7 +206,7 @@ class ToyToAffine(Pass):
 
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             shifted = list(ivars)
-            shifted[axis] = index.AddOp(left=ivars[axis], right=offset)
+            shifted[axis] = algebra.AddOp(left=ivars[axis], right=offset, type=Index())
             return memory.StoreOp(
                 value=memory.LoadOp(memref=op.rhs, indices=_index_pack(*ivars)),
                 memref=alloc,

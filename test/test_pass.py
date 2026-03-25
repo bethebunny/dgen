@@ -212,13 +212,14 @@ def test_constant_fold_resolves_stage0_boundary():
     so that subsequent passes see a concrete type.
     """
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: index.Index):
-        |         %y : %rt = index.add(%x, %x)
+        |         %y : %rt = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]

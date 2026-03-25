@@ -7,13 +7,13 @@ from math import prod
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.dialects import builtin, control_flow, goto, index, llvm
-from dgen.dialects.builtin import ChainOp, Nil, String
+from dgen.dialects import algebra, builtin, control_flow, goto, index, llvm
+from dgen.dialects.builtin import ChainOp, F64, Nil, String
 from dgen.dialects.function import Function, FunctionOp
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
-from toy.dialects import affine, memory, toy
+from toy.dialects import memory, toy
 
 from typing import TYPE_CHECKING
 
@@ -169,16 +169,22 @@ class AffineToLLVMLowering(Pass):
                 self.value_map[op] = ConstantOp(value=op.value, type=op.type)
             return None
 
-        if isinstance(op, affine.MulFOp):
-            self.value_map[op] = llvm.FmulOp(
-                lhs=self._map(op.lhs), rhs=self._map(op.rhs)
-            )
+        if isinstance(op, algebra.MultiplyOp):
+            left = self._map(op.left)
+            right = self._map(op.right)
+            if isinstance(op.type, F64):
+                self.value_map[op] = llvm.FmulOp(lhs=left, rhs=right)
+            else:
+                self.value_map[op] = llvm.MulOp(lhs=left, rhs=right)
             return None
 
-        if isinstance(op, affine.AddFOp):
-            self.value_map[op] = llvm.FaddOp(
-                lhs=self._map(op.lhs), rhs=self._map(op.rhs)
-            )
+        if isinstance(op, algebra.AddOp):
+            left = self._map(op.left)
+            right = self._map(op.right)
+            if isinstance(op.type, F64):
+                self.value_map[op] = llvm.FaddOp(lhs=left, rhs=right)
+            else:
+                self.value_map[op] = llvm.AddOp(lhs=left, rhs=right)
             return None
 
         if isinstance(op, memory.PrintMemrefOp):
@@ -189,12 +195,6 @@ class AffineToLLVMLowering(Pass):
             self.value_map[op] = new_lhs
             if new_lhs in self.alloc_shapes:
                 self.alloc_shapes[op] = self.alloc_shapes[new_lhs]
-            return None
-
-        if isinstance(op, index.AddOp):
-            self.value_map[op] = llvm.AddOp(
-                lhs=self._map(op.left), rhs=self._map(op.right)
-            )
             return None
 
         if isinstance(op, toy.NonzeroCountOp):

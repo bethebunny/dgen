@@ -1,4 +1,1 @@
 from builtin import F64
-
-op mul_f(lhs: F64, rhs: F64) -> F64
-op add_f(lhs: F64, rhs: F64) -> F64

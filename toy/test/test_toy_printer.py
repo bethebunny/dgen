@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import dgen
 from dgen import asm
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, function, index
+from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
@@ -111,8 +111,8 @@ def test_tile_op():
 def test_add_index_op():
     x = dgen.Value(name="x", type=index.Index())
     y = dgen.Value(name="y", type=index.Index())
-    op = index.AddOp(name="0", left=x, right=y)
-    assert asm.format(op) == "%0 : index.Index = index.add(%x, %y)"
+    op = algebra.AddOp(name="0", left=x, right=y, type=index.Index())
+    assert asm.format(op) == "%0 : index.Index = algebra.add(%x, %y)"
 
 
 def test_full_module(ir_snapshot):

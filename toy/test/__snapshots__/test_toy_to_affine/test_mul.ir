@@ -1,5 +1,4 @@
-import affine
-import index
+import algebra
 import control_flow
 import function
 import memory
@@ -15,7 +14,7 @@ import toy
         %7 : Nil = control_flow.for<0, 2>([%6]) body(%8: index.Index, %6: index.Index):
             %9 : F64 = memory.load(%1, [%6, %8])
             %10 : F64 = memory.load(%3, [%6, %8])
-            %11 : F64 = affine.mul_f(%9, %10)
+            %11 : F64 = algebra.multiply(%9, %10)
             %12 : Nil = memory.store(%11, %0, [%6, %8])
     %13 : memory.MemRef<memory.Shape<2>([2, 2]), F64> = chain(%4, %5)
     %14 : Nil = memory.print_memref(%13)

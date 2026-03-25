@@ -6,7 +6,7 @@ from collections.abc import Generator, Iterator
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, function, index
+from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function as FunctionType
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
@@ -220,7 +220,7 @@ class Lowering:
                 raise RuntimeError("add_index takes exactly 2 arguments")
             lhs = yield from self._lower_index_expr(call.args[0])
             rhs = yield from self._lower_index_expr(call.args[1])
-            op = index.AddOp(left=lhs, right=rhs)
+            op = algebra.AddOp(left=lhs, right=rhs, type=index.Index())
             yield op
             return op
 
