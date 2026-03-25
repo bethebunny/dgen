@@ -1,6 +1,7 @@
 import algebra
 import control_flow
 import function
+import index
 import memory
 import toy
 
@@ -15,7 +16,7 @@ import toy
             %9 : Nil = control_flow.for<0, 2>([%6, %8]) body(%10: index.Index, %6: index.Index, %8: index.Index):
                 %11 : F64 = memory.load(%1, [%6, %8, %10])
                 %12 : F64 = memory.load(%3, [%6, %8, %10])
-                %13 : F64 = algebra.multiply(%11, %12)
+                %13 : F64 = algebra.add(%11, %12)
                 %14 : Nil = memory.store(%13, %0, [%6, %8, %10])
     %15 : memory.MemRef<memory.Shape<3>([2, 2, 2]), F64> = chain(%4, %5)
     %16 : Nil = memory.print_memref(%15)

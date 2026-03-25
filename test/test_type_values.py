@@ -20,13 +20,13 @@ from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass
 from dgen.type import Memory, TypeType, type_constant
 from dgen.testing import strip_prefix
-from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.structured_to_llvm import StructuredToLLVM
 
 _compiler = Compiler([], IdentityPass())
 
 
 def lower_to_llvm(m: Module) -> Module:
-    return AffineToLLVMLowering().run(m, _compiler)
+    return StructuredToLLVM().run(m, _compiler)
 
 
 def test_parse_dict_literal():

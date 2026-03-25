@@ -14,7 +14,7 @@ from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.staging import ConstantFold
 from dgen.verify import ClosedBlockError
 from toy.dialects import toy
-from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.structured_to_llvm import StructuredToLLVM
 from dgen.testing import strip_prefix
 
 
@@ -232,7 +232,7 @@ def test_constant_fold_resolves_stage0_boundary():
         allow_unregistered_ops = True
 
         def run(self, m: Module, compiler: Compiler) -> Module:
-            return AffineToLLVMLowering().run(m, compiler)
+            return StructuredToLLVM().run(m, compiler)
 
     compiler: Compiler[Executable] = Compiler(
         passes=[ConstantFold(), LowerToLLVMPass()],

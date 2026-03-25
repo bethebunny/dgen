@@ -11,10 +11,10 @@ from dgen.compiler import Compiler
 from dgen.dialects import builtin
 from dgen.testing import strip_prefix
 from dgen.type import Memory
-from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.structured_to_llvm import StructuredToLLVM
 
 actor_compiler: Compiler[Executable] = Compiler(
-    passes=[ActorToAffine(), AffineToLLVMLowering()],
+    passes=[ActorToAffine(), StructuredToLLVM()],
     exit=LLVMCodegen(),
 )
 

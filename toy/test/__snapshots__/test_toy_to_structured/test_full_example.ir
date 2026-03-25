@@ -1,6 +1,7 @@
 import algebra
 import control_flow
 import function
+import index
 import memory
 import toy
 

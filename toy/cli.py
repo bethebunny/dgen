@@ -14,14 +14,14 @@ from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.structured_to_llvm import StructuredToLLVM
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
-from toy.passes.toy_to_affine import ToyToAffine
+from toy.passes.toy_to_structured import ToyToStructured
 
 
 toy_compiler: Compiler[Executable] = Compiler(
-    passes=[ToyOptimize(), ShapeInference(), ToyToAffine(), AffineToLLVMLowering()],
+    passes=[ToyOptimize(), ShapeInference(), ToyToStructured(), StructuredToLLVM()],
     exit=LLVMCodegen(),
 )
 

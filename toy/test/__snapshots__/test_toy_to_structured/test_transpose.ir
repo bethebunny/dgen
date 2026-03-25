@@ -1,6 +1,6 @@
 import control_flow
-import index
 import function
+import index
 import memory
 import toy
 

@@ -1,6 +1,7 @@
 import function
 import index
 import goto
+import index
 import llvm
 import toy
 

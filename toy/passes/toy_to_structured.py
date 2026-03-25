@@ -1,4 +1,4 @@
-"""Toy IR to Affine IR lowering."""
+"""Toy IR to structured IR lowering (memory + control_flow + algebra)."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def _get_block_args(*values: dgen.Value) -> list[BlockArgument]:
     return [v for v in values if isinstance(v, BlockArgument)]
 
 
-class ToyToAffine(Pass):
+class ToyToStructured(Pass):
     allow_unregistered_ops = True
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
@@ -87,9 +87,7 @@ class ToyToAffine(Pass):
 
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self._run_block(f.body)
-        return FunctionOp(
-            name=f.name, body=f.body, result=f.result, type=Function(result=f.result)
-        )
+        return FunctionOp(name=f.name, body=f.body, result=f.result, type=Function(result=f.result))
 
     def _shape(self, val: dgen.Value) -> list[int]:
         assert isinstance(val.type, (toy.Tensor, memory.MemRef))
