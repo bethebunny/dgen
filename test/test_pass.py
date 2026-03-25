@@ -7,7 +7,8 @@ from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
-from dgen.dialects.builtin import FunctionOp, Nil
+from dgen.dialects.builtin import Nil
+from dgen.dialects.function import DefineOp
 from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.staging import ConstantFold
@@ -55,9 +56,10 @@ def test_multiple_handlers_per_op_type():
 def test_rewriter_eager_replace(ir_snapshot):
     """replace_uses eagerly updates all referencing ops."""
     ir_text = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %2 : Index = llvm.add(%0, %0)
@@ -83,9 +85,10 @@ def test_rewriter_eager_replace(ir_snapshot):
 def test_pass_run_eliminates_double_transpose(ir_snapshot):
     """A pass that eliminates transpose(transpose(x)) -> x."""
     ir_text = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.transpose(%0)
         |     %2 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.transpose(%1)
@@ -111,9 +114,10 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
 def test_pass_unregistered_ops_error():
     """allow_unregistered_ops=False raises on unhandled ops."""
     ir_text = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -145,7 +149,9 @@ def test_pass_multiple_handlers_first_wins():
             return True
 
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() body():
+        | import function
+        |
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)
@@ -162,7 +168,9 @@ def test_pass_multiple_handlers_first_wins():
 def test_compiler_run_verification_catches_closed_block_violation():
     """Post-condition check detects a closed-block violation introduced by a pass."""
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() body():
+        | import function
+        |
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : Nil = {}
     """)
 
@@ -198,14 +206,16 @@ def test_constant_fold_resolves_stage0_boundary():
     so that subsequent passes see a concrete type.
     """
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() body():
+        | import function
+        |
+        | %main : Nil = function.define<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : Nil = function<%t>() body(%rt: Type, %x: Index):
+        |     %f : Nil = function.define<%t>() body(%rt: Type, %x: Index):
         |         %y : %rt = add_index(%x, %x)
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
-    assert isinstance(inner_func, FunctionOp)
+    assert isinstance(inner_func, DefineOp)
 
     # Before constant folding: result is a ConstantOp SSA ref, not a Type
     assert isinstance(inner_func.result, ConstantOp)
@@ -227,7 +237,9 @@ def test_constant_fold_resolves_stage0_boundary():
 def test_constant_fold_is_noop_without_boundaries():
     """ConstantFold does nothing when there are no stage-0 boundaries."""
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() body():
+        | import function
+        |
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)
@@ -250,7 +262,9 @@ def test_pass_run_receives_continuation_compiler():
             return module
 
     ir_text = strip_prefix("""
-        | %main : Nil = function<Nil>() body():
+        | import function
+        |
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)

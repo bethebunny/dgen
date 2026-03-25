@@ -33,15 +33,8 @@ type List<element_type: Type>:
 type Tuple<types: List<Type>>:
     layout Record
 
-type Function<result: Type>:
-    layout Void
-
 op list_get<index: Index>(list: List)
 op add_index(lhs: Index, rhs: Index) -> Index
 op equal_index(lhs: Index, rhs: Index) -> Index
 op subtract_index(lhs: Index, rhs: Index) -> Index
-op function<result: Type>() -> Nil:
-    block body
-    has trait HasSingleBlock
 op chain(lhs, rhs) -> Type
-op call<callee: Function>(args: List) -> Type

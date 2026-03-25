@@ -1,5 +1,6 @@
+import function
 import toy
 
-%main : Nil = function<Nil>() body():
+%main : Nil = function.define<Nil>() body():
     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     %1 : Nil = toy.print(%0)

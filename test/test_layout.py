@@ -354,8 +354,9 @@ def test_parse_type_with_pointer_array_param():
         __layout__ = layout.Void()
 
     ir = strip_prefix("""
+        | import function
         | import _test_pa
         |
-        | %f : Nil = function<_test_pa.Wrapper<Pointer<Array<F64, 3>>([10, 20, 30])>>() body():
+        | %f : Nil = function.define<_test_pa.Wrapper<Pointer<Array<F64, 3>>([10, 20, 30])>>() body():
     """)
     parse_module(ir)

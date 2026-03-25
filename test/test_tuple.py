@@ -47,7 +47,9 @@ def test_empty_tuple_asm_format():
 def test_tuple_constant_roundtrip():
     """Tuple type in IR round-trips through ASM."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() body():
+        | import function
+        |
+        | %main : Nil = function.define<Nil>() body():
         |     %x : Tuple<[Index, String]> = [42, "hello"]
     """)
     module = parse_module(ir)
@@ -94,7 +96,9 @@ def test_tuple_three_types():
 def test_tuple_type_values():
     """Tuple of type values: %types : Tuple<[Type, Type]> = [Index, String]."""
     ir = strip_prefix("""
-        | %main : Nil = function<Nil>() body():
+        | import function
+        |
+        | %main : Nil = function.define<Nil>() body():
         |     %types : Tuple<[Type, Type]> = [Index, String]
     """)
     module = parse_module(ir)

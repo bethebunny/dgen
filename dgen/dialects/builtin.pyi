@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
-from dgen import Block, Dialect, Op, Type, Value
+from dgen import Dialect, Op, Type, Value
 
 builtin = Dialect("builtin")
 
@@ -50,10 +50,6 @@ class List(Type):
 class Tuple(Type):
     types: list[Value[dgen.TypeType]]
 
-@dataclass(frozen=True, eq=False)
-class Function(Type):
-    result: Value[dgen.TypeType]
-
 @dataclass(eq=False, kw_only=True)
 class ListGetOp(Op):
     index: Value[Index]
@@ -79,19 +75,7 @@ class SubtractIndexOp(Op):
     type: Type = Index()
 
 @dataclass(eq=False, kw_only=True)
-class FunctionOp(HasSingleBlock, Op):
-    result: Value[dgen.TypeType]
-    type: Type = Nil()
-    body: Block
-
-@dataclass(eq=False, kw_only=True)
 class ChainOp(Op):
     lhs: Value
     rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class CallOp(Op):
-    callee: Value[Function]
-    args: Value
     type: Type

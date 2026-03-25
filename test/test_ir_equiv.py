@@ -88,9 +88,10 @@ def test_fingerprint_memoized():
 
 def test_graph_equivalent_same_ir():
     ir = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -100,16 +101,18 @@ def test_graph_equivalent_same_ir():
 def test_graph_equivalent_different_names():
     """Same computation, different SSA names -> equivalent."""
     a = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %x : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %y : Nil = toy.print(%x)
     """)
@@ -118,16 +121,18 @@ def test_graph_equivalent_different_names():
 
 def test_graph_not_equivalent_different_values():
     a = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -136,16 +141,18 @@ def test_graph_not_equivalent_different_values():
 
 def test_structural_diff_returns_string():
     a = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
+        | import function
         | import toy
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)

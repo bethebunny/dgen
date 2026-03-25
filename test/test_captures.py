@@ -17,9 +17,10 @@ from dgen.verify import ClosedBlockError, verify_closed_blocks
 
 def test_roundtrip_captures():
     ir = strip_prefix("""
+        | import function
         | import goto
         |
-        | %f : Nil = function<Nil>() body(%x: Index):
+        | %f : Nil = function.define<Nil>() body(%x: Index):
         |     %loop : goto.Label = goto.label() body<%self: goto.Label>(%i: Index) captures(%x):
         |         %zero : Index = 0
     """)
@@ -35,6 +36,7 @@ def test_roundtrip_captures():
 def test_roundtrip_empty_captures():
     """Blocks without captures should not emit 'captures()' in ASM."""
     ir = strip_prefix("""
+        | import function
         | import goto
         |
         | %loop : goto.Label = goto.label() body(%i: Index):
@@ -53,10 +55,11 @@ def test_roundtrip_empty_captures():
 def test_verify_captured_block_arg_in_scope():
     """A block that captures an outer BlockArgument passes verification."""
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%x: Index):
+        | %f : Nil = function.define<Nil>() body(%x: Index):
         |     %inner : goto.Label = goto.label() body() captures(%x):
         |         %0 : Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
@@ -67,9 +70,10 @@ def test_verify_captured_block_arg_in_scope():
 def test_verify_captured_block_parameter():
     """A nested block can capture a block parameter from an enclosing block."""
     ir = strip_prefix("""
+        | import function
         | import goto
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %header : goto.Label = goto.label() body<%self: goto.Label>():
         |         %body : goto.Label = goto.label() body() captures(%self):
         |             %0 : Nil = goto.branch<%self>([])
@@ -80,10 +84,11 @@ def test_verify_captured_block_parameter():
 def test_verify_ambient_op_without_capture_passes():
     """Ambient ops (no block-arg deps) don't need capturing."""
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%x: Index):
+        | %f : Nil = function.define<Nil>() body(%x: Index):
         |     %inner : goto.Label = goto.label() body():
         |         %0 : Index = 42
         |         %1 : Index = 0
@@ -100,10 +105,11 @@ def test_verify_ambient_op_without_capture_passes():
 def test_verify_missing_capture_of_block_arg():
     """A block that uses an outer BlockArgument without capturing it fails."""
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%x: Index):
+        | %f : Nil = function.define<Nil>() body(%x: Index):
         |     %inner : goto.Label = goto.label() body():
         |         %0 : Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
@@ -115,9 +121,10 @@ def test_verify_missing_capture_of_block_arg():
 def test_verify_missing_capture_of_block_parameter():
     """A block that uses an enclosing block parameter without capturing it fails."""
     ir = strip_prefix("""
+        | import function
         | import goto
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %header : goto.Label = goto.label() body<%self: goto.Label>():
         |         %body : goto.Label = goto.label() body():
         |             %0 : Nil = goto.branch<%self>([])
@@ -134,10 +141,11 @@ def test_verify_missing_capture_of_block_parameter():
 def test_verify_chained_captures():
     """Both middle and inner blocks capture an outer value — passes."""
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%x: Index):
+        | %f : Nil = function.define<Nil>() body(%x: Index):
         |     %mid : goto.Label = goto.label() body() captures(%x):
         |         %inner : goto.Label = goto.label() body() captures(%x):
         |             %0 : Index = 0
@@ -149,10 +157,11 @@ def test_verify_chained_captures():
 def test_verify_unchained_capture_fails():
     """Inner block captures a value the middle block doesn't — fails."""
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%x: Index):
+        | %f : Nil = function.define<Nil>() body(%x: Index):
         |     %mid : goto.Label = goto.label() body():
         |         %inner : goto.Label = goto.label() body() captures(%x):
         |             %0 : Index = 0
@@ -170,10 +179,11 @@ def test_verify_unchained_capture_fails():
 def test_replace_uses_updates_captures():
     """replace_uses swaps values in the captures list and inner ops."""
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%old: Index, %new: Index):
+        | %f : Nil = function.define<Nil>() body(%old: Index, %new: Index):
         |     %inner : goto.Label = goto.label() body() captures(%old):
         |         %0 : Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%old, %0)
@@ -196,10 +206,11 @@ def test_replace_uses_updates_captures():
 def test_replace_uses_updates_chained_captures():
     """replace_uses propagates through chained captures and stays well-formed."""
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%old: Index, %new: Index):
+        | %f : Nil = function.define<Nil>() body(%old: Index, %new: Index):
         |     %mid : goto.Label = goto.label() body() captures(%old):
         |         %inner : goto.Label = goto.label() body() captures(%old):
         |             %0 : Index = 0

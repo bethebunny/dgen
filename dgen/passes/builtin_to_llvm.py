@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import dgen
 from dgen.block import BlockArgument, Block
-from dgen.dialects import builtin, control_flow, goto, llvm
-from dgen.dialects.builtin import FunctionOp, Nil, String
+from dgen.dialects import builtin, control_flow, function, goto, llvm
+from dgen.dialects.builtin import Nil, String
+from dgen.dialects.function import DefineOp
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
@@ -38,12 +39,11 @@ class BuiltinToLLVMLowering(Pass):
 
     def run(self, m: Module, compiler: Compiler[object]) -> Module:
         ops = [
-            self._lower_function(op) if isinstance(op, FunctionOp) else op
-            for op in m.ops
+            self._lower_function(op) if isinstance(op, DefineOp) else op for op in m.ops
         ]
         return Module(ops=ops)
 
-    def _lower_function(self, f: FunctionOp) -> FunctionOp:
+    def _lower_function(self, f: DefineOp) -> DefineOp:
         self.if_counter = 0
         self.value_map = {}
 
@@ -56,7 +56,7 @@ class BuiltinToLLVMLowering(Pass):
         # Lower entry ops (skip LabelOps — already lowered above).
         non_label_ops = [op for op in f.body.ops if not isinstance(op, goto.LabelOp)]
         result = self._lower_ops(non_label_ops, f.body.result)
-        return FunctionOp(
+        return DefineOp(
             name=f.name,
             body=dgen.Block(result=result, args=f.body.args),
             result=f.result,
@@ -127,7 +127,7 @@ class BuiltinToLLVMLowering(Pass):
             zext_op = llvm.ZextOp(input=icmp_op)
             self.value_map[op] = zext_op
             return None
-        if isinstance(op, builtin.CallOp):
+        if isinstance(op, function.CallOp):
             return self._lower_call(op)
         # Pass through: ConstantOp, PackOp, ChainOp, and all LLVM ops.
         return None
@@ -205,14 +205,14 @@ class BuiltinToLLVMLowering(Pass):
             br = goto.BranchOp(target=merge_label_op, arguments=_EMPTY_PACK)
         return Block(result=_chain_before(effects, br), args=args)
 
-    def _lower_call(self, op: builtin.CallOp) -> llvm.CallOp | None:
+    def _lower_call(self, op: function.CallOp) -> llvm.CallOp | None:
         callee_name = op.callee.name
         assert callee_name is not None
-        if isinstance(op.args, PackOp):
-            mapped_args = [self._map(v) for v in op.args.values]
+        if isinstance(op.arguments, PackOp):
+            mapped_args = [self._map(v) for v in op.arguments.values]
         else:
-            mapped_args = [self._map(op.args)]
-        pack = PackOp(values=mapped_args, type=op.args.type)
+            mapped_args = [self._map(op.arguments)]
+        pack = PackOp(values=mapped_args, type=op.arguments.type)
         llvm_call = llvm.CallOp(
             callee=String().constant(callee_name),
             args=pack,

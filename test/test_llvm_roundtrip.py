@@ -7,9 +7,10 @@ from dgen.testing import assert_ir_equivalent, strip_prefix
 
 def test_roundtrip_alloca():
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
     """)
     module = parse_module(ir)
@@ -18,9 +19,10 @@ def test_roundtrip_alloca():
 
 def test_roundtrip_gep_load_store():
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
         |     %1 : Index = 0
         |     %2 : Nil = llvm.gep(%0, %1)
@@ -35,9 +37,10 @@ def test_roundtrip_gep_load_store():
 
 def test_roundtrip_fadd_fmul():
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %0 : F64 = 1.0
         |     %1 : F64 = 2.0
         |     %2 : Nil = llvm.fadd(%0, %1)
@@ -50,9 +53,10 @@ def test_roundtrip_fadd_fmul():
 
 def test_roundtrip_add_mul_int():
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %0 : Index = 3
         |     %1 : Index = 4
         |     %2 : Nil = llvm.add(%0, %1)
@@ -65,10 +69,11 @@ def test_roundtrip_add_mul_int():
 
 def test_roundtrip_icmp_condbr():
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %0 : Index = 0
         |     %1 : Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
@@ -84,9 +89,10 @@ def test_roundtrip_icmp_condbr():
 
 def test_roundtrip_label_br():
     ir = strip_prefix("""
+        | import function
         | import goto
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %loop_header : goto.Label = goto.label() body():
         |     %_ : Nil = goto.branch<%loop_header>([])
     """)
@@ -96,9 +102,10 @@ def test_roundtrip_label_br():
 
 def test_roundtrip_call_with_result():
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%a: Index, %b: Index):
+        | %f : Nil = function.define<Nil>() body(%a: Index, %b: Index):
         |     %0 : Nil = llvm.call<"foo">([%a, %b])
     """)
     module = parse_module(ir)
@@ -107,9 +114,10 @@ def test_roundtrip_call_with_result():
 
 def test_roundtrip_call_void():
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %f : Nil = function<Nil>() body(%ptr: Index, %size: Index):
+        | %f : Nil = function.define<Nil>() body(%ptr: Index, %size: Index):
         |     %0 : Nil = llvm.call<"print_memref">([%ptr, %size])
     """)
     module = parse_module(ir)
@@ -118,7 +126,9 @@ def test_roundtrip_call_void():
 
 def test_roundtrip_return_value():
     ir = strip_prefix("""
-        | %f : Nil = function<Nil>() body():
+        | import function
+        |
+        | %f : Nil = function.define<Nil>() body():
         |     %0 : F64 = 42.0
     """)
     module = parse_module(ir)
@@ -128,10 +138,11 @@ def test_roundtrip_return_value():
 def test_roundtrip_loop_pattern():
     """Full loop pattern: branch with args, label with block args, conditional_branch with args."""
     ir = strip_prefix("""
+        | import function
         | import goto
         | import llvm
         |
-        | %f : Nil = function<Nil>() body():
+        | %f : Nil = function.define<Nil>() body():
         |     %alloc : Nil = llvm.alloca<3>()
         |     %init : Index = 0
         |     %loop_header : goto.Label = goto.label() body(%i: Index, %p: llvm.Ptr):

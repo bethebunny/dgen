@@ -18,8 +18,9 @@ from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
 from dgen.compiler import Compiler
-from dgen.dialects import builtin, llvm
-from dgen.dialects.builtin import FunctionOp, String
+from dgen.dialects import builtin, function, llvm
+from dgen.dialects.builtin import String
+from dgen.dialects.function import DefineOp
 from dgen.module import ConstantOp, Module, string_value
 from dgen.type import Memory
 from toy.dialects import shape_constant
@@ -127,7 +128,7 @@ def _parse_type(text: str) -> object:
 def _identity_exe(ty):
     """Build and compile: main(x: ty) -> ty { return x }"""
     arg = BlockArgument(name="v0", type=ty)
-    func = FunctionOp(
+    func = DefineOp(
         name="main",
         body=Block(result=arg, args=[arg]),
         result=ty,
@@ -306,7 +307,7 @@ def test_list_constant_jit_return():
     """JIT function returns a list constant: main() -> List<index>."""
     list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
-    func = FunctionOp(
+    func = DefineOp(
         name="main",
         body=Block(result=const, args=[]),
         result=list_type,
@@ -344,8 +345,9 @@ def test_list_of_strings_memory_roundtrip():
 def test_packop_mixed_constants_and_refs(ir_snapshot):
     """Parser handles [literal, %ref, literal] by creating ConstantOps."""
     ir_input = strip_prefix("""
+        | import function
         |
-        | %main : Nil = function<Nil>() body(%x: Index):
+        | %main : Nil = function.define<Nil>() body(%x: Index):
         |     %store : Nil = memory.store(%x, %x, [3, %x, 5])
     """)
     parsed = parse_module(ir_input)
@@ -374,9 +376,10 @@ def test_string_constant_different_lengths():
 def test_string_as_op_param():
     """String constants work as __params__ on ops — ASM round-trip."""
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %main : Nil = function<Nil>() body():
+        | %main : Nil = function.define<Nil>() body():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
@@ -403,9 +406,10 @@ def test_string_param_staging():
     The String value directly controls the generated comparison.
     """
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %main : Nil = function<Index>() body(%pred : String, %x : Index, %y : Index):
+        | %main : Nil = function.define<Index>() body(%pred : String, %x : Index, %y : Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)
@@ -430,9 +434,10 @@ def test_compile_once_run_twice():
     This enables compile-once, run-many with different runtime inputs.
     """
     ir = strip_prefix("""
+        | import function
         | import llvm
         |
-        | %main : Nil = function<Index>() body(%pred : String, %x : Index, %y : Index):
+        | %main : Nil = function.define<Index>() body(%pred : String, %x : Index, %y : Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)
@@ -494,7 +499,7 @@ def test_deepcopy_module_with_list_constant():
     """
     list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
-    func = FunctionOp(
+    func = DefineOp(
         name="main",
         body=Block(result=const, args=[]),
         result=list_type,

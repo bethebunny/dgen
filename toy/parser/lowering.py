@@ -6,7 +6,7 @@ from collections.abc import Generator, Iterator
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin
+from dgen.dialects import builtin, function
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
 from toy.parser.ast import (
@@ -37,7 +37,7 @@ class Lowering:
         functions = [self.lower_function(f) for f in tm.functions]
         return Module(ops=functions)
 
-    def lower_function(self, f: Function) -> builtin.FunctionOp:
+    def lower_function(self, f: Function) -> function.DefineOp:
         self.scope = {}
         self.last_effect = None
         self.has_value_return = False
@@ -66,7 +66,7 @@ class Lowering:
             block_result = ops[-1]
         else:
             block_result = dgen.Value(type=builtin.Nil())
-        return builtin.FunctionOp(
+        return function.DefineOp(
             name=f.proto.name,
             result=result,
             body=dgen.Block(result=block_result, args=args),
@@ -230,9 +230,9 @@ class Lowering:
         element_type = toy.InferredShapeTensor()
         pack = PackOp(values=args, type=builtin.List(element_type=element_type))
         yield pack
-        op = builtin.CallOp(
+        op = function.CallOp(
             callee=callee_ref,
-            args=pack,
+            arguments=pack,
             type=toy.InferredShapeTensor(),
         )
         yield op
