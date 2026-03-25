@@ -22,22 +22,23 @@ def test_llvm_via_imports():
 def test_llvm_full_loop():
     """Full LLVM loop pattern parsed with import headers — block args, no phi."""
     ir = strip_prefix("""
+        | import goto
         | import llvm
         |
         | %f : Nil = function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %loop_header : llvm.Label = llvm.label() body(%i0: Index):
+        |     %loop_header : goto.Label = goto.label() body(%i0: Index):
         |         %hi : Index = 3
         |         %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
-        |         %loop_body : llvm.Label = llvm.label() body(%j: Index):
+        |         %loop_body : goto.Label = goto.label() body(%j: Index):
         |             %one : Index = 1
         |             %next : Nil = llvm.add(%j, %one)
-        |             %_ : Nil = llvm.br<%loop_header>([%next])
-        |         %loop_exit : llvm.Label = llvm.label() body():
+        |             %_ : Nil = goto.branch<%loop_header>([%next])
+        |         %loop_exit : goto.Label = goto.label() body():
         |             %_ : Nil = ()
-        |         %_ : Nil = llvm.cond_br<%loop_body, %loop_exit>(%cmp, [%i0], [])
-        |     %br : Nil = llvm.br<%loop_header>([%init])
+        |         %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [%i0], [])
+        |     %br : Nil = goto.branch<%loop_header>([%init])
         |     %c0 : Nil = chain(%0, %ret)
         |     %_ : Nil = chain(%br, %c0)
     """)

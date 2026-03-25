@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import dgen
-from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import F64, Index, List, Nil, Pointer, String
+from dgen import Dialect, Op, Type, Value
+from dgen.dialects.builtin import Index, Nil, String
 
 llvm = Dialect("llvm")
 
@@ -22,9 +21,6 @@ class Float(Type): ...
 
 @dataclass(frozen=True, eq=False)
 class Void(Type): ...
-
-@dataclass(frozen=True, eq=False)
-class Label(Type): ...
 
 @dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
@@ -84,26 +80,6 @@ class IcmpOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(1))
-
-@dataclass(eq=False, kw_only=True)
-class LabelOp(Op):
-    type: Type = Label()
-    body: Block
-
-@dataclass(eq=False, kw_only=True)
-class BrOp(Op):
-    target: Value[Label]
-    args: Value
-    type: Type = Nil()
-
-@dataclass(eq=False, kw_only=True)
-class CondBrOp(Op):
-    true_target: Value[Label]
-    false_target: Value[Label]
-    cond: Value
-    true_args: Value
-    false_args: Value
-    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class FcmpOp(Op):

@@ -402,10 +402,12 @@ def test_verify_dag_detects_cycle():
     We construct a cycle by parsing valid IR and then mutating it: the
     function body result references the function itself via a ChainOp.
     """
-    module = parse_module(strip_prefix("""
+    module = parse_module(
+        strip_prefix("""
         | %f : Nil = function<Nil>() body():
         |     %0 : Nil = {}
-    """))
+    """)
+    )
     func = module.ops[0]
     assert isinstance(func, FunctionOp)
     # Create cycle: func.body.result → ChainOp → func
@@ -415,7 +417,9 @@ def test_verify_dag_detects_cycle():
         verify_dag(module)
 
 
-@pytest.mark.xfail(reason="Staging loses block args for recursive functions; needs investigation")
+@pytest.mark.xfail(
+    reason="Staging loses block args for recursive functions; needs investigation"
+)
 def test_recursive_peano():
     """Recursive natural(n) builds Successor^(n+1)(Zero) from a runtime Index.
 

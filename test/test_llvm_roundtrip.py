@@ -65,17 +65,18 @@ def test_roundtrip_add_mul_int():
 
 def test_roundtrip_icmp_condbr():
     ir = strip_prefix("""
+        | import goto
         | import llvm
         |
         | %f : Nil = function<Nil>() body():
         |     %0 : Index = 0
         |     %1 : Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
-        |     %loop_body : llvm.Label = llvm.label() body():
+        |     %loop_body : goto.Label = goto.label() body():
         |         %_ : Nil = ()
-        |     %loop_exit : llvm.Label = llvm.label() body():
+        |     %loop_exit : goto.Label = goto.label() body():
         |         %_ : Nil = ()
-        |     %_ : Nil = llvm.cond_br<%loop_body, %loop_exit>(%cmp, [], [])
+        |     %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [], [])
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -83,11 +84,11 @@ def test_roundtrip_icmp_condbr():
 
 def test_roundtrip_label_br():
     ir = strip_prefix("""
-        | import llvm
+        | import goto
         |
         | %f : Nil = function<Nil>() body():
-        |     %loop_header : llvm.Label = llvm.label() body():
-        |     %_ : Nil = llvm.br<%loop_header>([])
+        |     %loop_header : goto.Label = goto.label() body():
+        |     %_ : Nil = goto.branch<%loop_header>([])
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -125,24 +126,25 @@ def test_roundtrip_return_value():
 
 
 def test_roundtrip_loop_pattern():
-    """Full loop pattern: br with args, label with block args, cond_br with args."""
+    """Full loop pattern: branch with args, label with block args, conditional_branch with args."""
     ir = strip_prefix("""
+        | import goto
         | import llvm
         |
         | %f : Nil = function<Nil>() body():
         |     %alloc : Nil = llvm.alloca<3>()
         |     %init : Index = 0
-        |     %loop_header : llvm.Label = llvm.label() body(%i: Index, %p: llvm.Ptr):
+        |     %loop_header : goto.Label = goto.label() body(%i: Index, %p: llvm.Ptr):
         |         %hi : Index = 3
         |         %cmp : Nil = llvm.icmp<"slt">(%i, %hi)
-        |         %loop_body : llvm.Label = llvm.label() body(%j: Index, %q: llvm.Ptr):
+        |         %loop_body : goto.Label = goto.label() body(%j: Index, %q: llvm.Ptr):
         |             %one : Index = 1
         |             %next : Nil = llvm.add(%j, %one)
-        |             %_ : Nil = llvm.br<%loop_header>([%next, %q])
-        |         %loop_exit : llvm.Label = llvm.label() body():
+        |             %_ : Nil = goto.branch<%loop_header>([%next, %q])
+        |         %loop_exit : goto.Label = goto.label() body():
         |             %_ : Nil = ()
-        |         %_ : Nil = llvm.cond_br<%loop_body, %loop_exit>(%cmp, [%i, %p], [])
-        |     %_ : Nil = llvm.br<%loop_header>([%init, %alloc])
+        |         %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [%i, %p], [])
+        |     %_ : Nil = goto.branch<%loop_header>([%init, %alloc])
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dgen
 from dgen.block import BlockArgument, Block
-from dgen.dialects import builtin, llvm
+from dgen.dialects import builtin, goto, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
@@ -50,11 +50,11 @@ class BuiltinToLLVMLowering(Pass):
         # First pass: recursively lower builtin ops inside pre-built label bodies.
         visited: set[int] = set()
         for op in f.body.ops:
-            if isinstance(op, llvm.LabelOp):
+            if isinstance(op, goto.LabelOp):
                 self._lower_label_bodies(op, visited)
 
         # Lower entry ops (skip LabelOps — already lowered above).
-        non_label_ops = [op for op in f.body.ops if not isinstance(op, llvm.LabelOp)]
+        non_label_ops = [op for op in f.body.ops if not isinstance(op, goto.LabelOp)]
         result = self._lower_ops(non_label_ops, f.body.result)
         return FunctionOp(
             name=f.name,
@@ -62,7 +62,7 @@ class BuiltinToLLVMLowering(Pass):
             result=f.result,
         )
 
-    def _lower_label_bodies(self, label_op: llvm.LabelOp, visited: set[int]) -> None:
+    def _lower_label_bodies(self, label_op: goto.LabelOp, visited: set[int]) -> None:
         """Recursively lower builtin ops inside pre-built label body blocks."""
         if id(label_op) in visited:
             return
@@ -70,11 +70,11 @@ class BuiltinToLLVMLowering(Pass):
 
         # Recurse into nested labels first.
         for op in label_op.body.ops:
-            if isinstance(op, llvm.LabelOp):
+            if isinstance(op, goto.LabelOp):
                 self._lower_label_bodies(op, visited)
 
         # Lower body ops (skip nested labels — already handled above).
-        body_ops = [op for op in label_op.body.ops if not isinstance(op, llvm.LabelOp)]
+        body_ops = [op for op in label_op.body.ops if not isinstance(op, goto.LabelOp)]
         result = self._lower_ops(body_ops, label_op.body.result)
         label_op.body = dgen.Block(
             result=result,
@@ -132,15 +132,17 @@ class BuiltinToLLVMLowering(Pass):
         # Pass through: ConstantOp, PackOp, ChainOp, and all LLVM ops.
         return None
 
-    def _lower_if(self, op: builtin.IfOp) -> tuple[llvm.CondBrOp, llvm.LabelOp]:
+    def _lower_if(
+        self, op: builtin.IfOp
+    ) -> tuple[goto.ConditionalBranchOp, goto.LabelOp]:
         if_id = self.if_counter
         self.if_counter += 1
 
-        then_label_op = llvm.LabelOp(name=f"then_{if_id}", body=placeholder_block())
-        else_label_op = llvm.LabelOp(name=f"else_{if_id}", body=placeholder_block())
+        then_label_op = goto.LabelOp(name=f"then_{if_id}", body=placeholder_block())
+        else_label_op = goto.LabelOp(name=f"else_{if_id}", body=placeholder_block())
 
         merge_result_arg = BlockArgument(name=f"merge_val{if_id}", type=op.type)
-        merge_label_op = llvm.LabelOp(
+        merge_label_op = goto.LabelOp(
             name=f"merge_{if_id}",
             body=dgen.Block(result=merge_result_arg, args=[merge_result_arg]),
         )
@@ -154,12 +156,12 @@ class BuiltinToLLVMLowering(Pass):
         )
         assert isinstance(op.then_args, PackOp)
         assert isinstance(op.else_args, PackOp)
-        cond_br = llvm.CondBrOp(
-            cond=cond_i1,
+        cond_br = goto.ConditionalBranchOp(
+            condition=cond_i1,
             true_target=then_label_op,
             false_target=else_label_op,
-            true_args=self._map_pack(op.then_args),
-            false_args=self._map_pack(op.else_args),
+            true_arguments=self._map_pack(op.then_args),
+            false_arguments=self._map_pack(op.else_args),
         )
 
         then_label_op.body = self._lower_branch(
@@ -176,7 +178,7 @@ class BuiltinToLLVMLowering(Pass):
         self,
         ops: list[dgen.Op],
         return_val: dgen.Value,
-        merge_label_op: llvm.LabelOp,
+        merge_label_op: goto.LabelOp,
         args: list[BlockArgument],
     ) -> Block:
         """Lower branch ops into a Block ending with BrOp to merge_label_op."""
@@ -198,9 +200,9 @@ class BuiltinToLLVMLowering(Pass):
                 values=[branch_result],
                 type=builtin.List(element_type=branch_result.type),
             )
-            br = llvm.BrOp(target=merge_label_op, args=result_pack)
+            br = goto.BranchOp(target=merge_label_op, arguments=result_pack)
         else:
-            br = llvm.BrOp(target=merge_label_op, args=_EMPTY_PACK)
+            br = goto.BranchOp(target=merge_label_op, arguments=_EMPTY_PACK)
         return Block(result=_chain_before(effects, br), args=args)
 
     def _lower_call(self, op: builtin.CallOp) -> llvm.CallOp | None:
