@@ -9,7 +9,7 @@ from collections.abc import Callable
 from math import prod
 
 import dgen
-from dgen.block import BlockArgument
+from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import algebra, builtin, control_flow, goto, index, llvm
 from dgen.dialects.builtin import ChainOp, F64, Nil, String
 from dgen.dialects.function import Function, FunctionOp
@@ -249,7 +249,7 @@ class StructuredToLLVM(Pass):
 
         header_iv = BlockArgument(name=f"i{lid}", type=index.Index())
         body_iv = BlockArgument(name=f"j{lid}", type=index.Index())
-        header_self = BlockArgument(name="self", type=goto.Label())
+        header_self = BlockParameter(name="self", type=goto.Label())
 
         # Map lower_bound/upper_bound
         lo_op = self._map(op.lower_bound)

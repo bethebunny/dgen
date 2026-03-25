@@ -18,6 +18,7 @@ from dgen.module import ConstantOp, Module, PackOp, string_value
 from dgen.layout import Layout
 from dgen.compiler import Compiler, IdentityPass
 from dgen.passes.builtin_to_llvm import BuiltinToLLVMLowering
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.type import Constant, Memory, Value
 
 # ---------------------------------------------------------------------------
@@ -448,7 +449,9 @@ class Executable:
 
 def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
     """Emit LLVM IR and bundle with execution metadata."""
-    module = BuiltinToLLVMLowering().run(module, Compiler([], IdentityPass()))
+    _dummy = Compiler([], IdentityPass())
+    module = BuiltinToLLVMLowering().run(module, _dummy)
+    module = AlgebraToLLVM().run(module, _dummy)
     ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]
     assert main.name is not None

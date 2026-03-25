@@ -5,6 +5,7 @@ import llvmlite.binding as llvm_binding
 from dgen.module import Module
 from dgen.codegen import emit_llvm_ir
 from dgen.compiler import Compiler
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.builtin_to_llvm import BuiltinToLLVMLowering
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
@@ -40,6 +41,7 @@ def test_transpose_phi_emission():
             ToyToStructured(),
             StructuredToLLVM(),
             BuiltinToLLVMLowering(),
+            AlgebraToLLVM(),
         ],
         exit=LowerLLVMToLLVMIR(),
     )
