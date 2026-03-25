@@ -27,8 +27,8 @@ op mul(lhs: Int<64>, rhs: Int<64>) -> Int<64>
 op icmp<pred: String>(lhs: Int<64>, rhs: Int<64>) -> Int<1>
 op label() -> Label:
     block body
-op br(target, args: List) -> Nil
-op cond_br(cond: Int<1>, true_target, false_target, true_args: List, false_args: List) -> Nil
+op br<target: Label>(args: List) -> Nil
+op cond_br<true_target: Label, false_target: Label>(cond: Int<1>, true_args: List, false_args: List) -> Nil
 op fcmp<pred: String>(lhs: Float, rhs: Float) -> Int<1>
 op zext(input: Int<1>) -> Int<64>
 op call<callee: String>(args: List) -> Nil
