@@ -85,12 +85,15 @@ def _verify_block(
             # Captures must chain: every capture of a child block must be
             # in scope in the parent. Otherwise replace_uses on the parent
             # can't maintain the child's captures.
-            for cap in child_block.captures:
-                if isinstance(cap, (dgen.Op, BlockArgument)) and cap not in valid:
+            for capture in child_block.captures:
+                if (
+                    isinstance(capture, (dgen.Op, BlockArgument))
+                    and capture not in valid
+                ):
                     raise ClosedBlockError(
                         f"child block captures out-of-scope "
-                        f"{type(cap).__name__} %{cap.name}\n\n"
-                        + _annotated_module(module, cap)
+                        f"{type(capture).__name__} %{capture.name}\n\n"
+                        + _annotated_module(module, capture)
                     )
             _verify_block(child_block, module, visited)
 

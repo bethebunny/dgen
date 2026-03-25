@@ -116,16 +116,28 @@ one of the following:
 
 1. It is an **ambient node**: it has no transitive dependencies on any block's arguments
    (constants, global references, function definitions with no external operands, etc.).
-2. Its transitive block-argument dependencies are entirely within B.args.
+2. Its transitive block-argument dependencies are entirely within `B.parameters ∪ B.args ∪
+   B.captures`.
 
-Equivalently: if op V is reachable from B.result and V transitively depends on the arguments of
-some block B′, then B′ must be B itself. Cross-scope references—ops that depend on arguments of
-a *different* block—must be threaded explicitly through the argument lists on the path between
-blocks.
+A block has three kinds of declared inputs:
+
+- **`parameters`**: compile-time values bound once by the op that owns the block (e.g. `%self`
+  for loop-header labels). Callers never pass them. Syntax: `block_name<%param: Type>`.
+- **`args`**: runtime values passed by callers at every branch site, generating phi nodes in
+  the lowered CFG. Syntax: `block_name(%arg: Type)`.
+- **`captures`**: outer-scope values referenced directly. They are leaves in `walk_ops` (the
+  walk stops at capture boundaries) and do not generate phi nodes. Syntax:
+  `block_name(...) captures(%val)`.
+
+Captures must **chain**: if a child block captures a value, every block between the value's
+definition and the child must also capture it. This ensures `replace_uses` on any block
+correctly propagates through its nested blocks' captures.
+
+Cross-scope references that are not ambient must appear in one of these three lists.
 
 **DAG property.** The use-def graph is always a directed acyclic graph. Back-edges from
 recursion and loops are broken at block-argument boundaries: a recursive call passes `%self` (a
-block argument, a leaf in the graph) as the callee, not a direct edge back to the defining op.
+block parameter, a leaf in the graph) as the callee, not a direct edge back to the defining op.
 
 ### 2.2 walk_ops: The Clean Invariant
 
@@ -133,16 +145,17 @@ With the closed-block and DAG invariants enforced, `walk_ops` on any well-formed
 simple, exception-free specification:
 
 > Given value V, `walk_ops(V)` visits ops by following **operands**, **parameter values**, the
-> **result type**, and **block argument types**. No special cases. No `isinstance` guards. The
-> traversal terminates because the use-def graph is a DAG.
+> **result type**, and **block argument types**. Captured values are treated as leaves (the walk
+> stops at capture boundaries). No special cases. No `isinstance` guards. The traversal
+> terminates because the use-def graph is a DAG.
 
 **The locality property.** `walk_ops(B.result)` produces exactly:
-- Ops whose transitive block-argument dependencies are entirely within B.args, and
+- Ops whose transitive dependencies are entirely within `B.parameters ∪ B.args ∪ B.captures`, and
 - Ambient ops (no block-argument dependencies) reachable via the use-def graph.
 
 It will never surface ops whose scope belongs to a different block. This is what makes block-level
 analysis, inlining, and scheduling sound in isolation: a block's complete dependency set is
-readable directly from its argument list.
+readable directly from its parameters, arguments, and captures.
 
 ### 2.3 Motivating Example: Before and After
 
@@ -162,18 +175,18 @@ the loop body functionally depends on it. The `llvm.alloca` op belongs to the ou
 the loop body references it without declaration. This dependency is invisible to any tool that
 inspects block structure.
 
-**Under the closed-block invariant:**
+**Under the closed-block invariant (with captures):**
 
 ```
 %src : llvm.Ptr = llvm.alloca<6>()
-%5 : Nil = affine.for<0, 4>(%src) (%i: Index, %src: llvm.Ptr):
+%5 : Nil = affine.for<0, 4>() (%i: Index) captures(%src):
     %val : F64 = affine.load(%src, [%i])
 ```
 
-`walk_ops` on this block's result immediately encounters `%i` and `%src` as block arguments
-(leaves). There is nothing to special-case: the block's complete dependency set is manifest in
-its argument list. Any tool that operates on this block—a scheduler, a verifier, an inliner—reads
-its inputs directly from the argument list without reconstructing implicit capture.
+`walk_ops` on this block's result treats `%src` as a leaf (it's in the captures stop set) and
+returns only the block-local ops. The block's complete dependency set is manifest in its argument
+and capture lists. Any tool that operates on this block—a scheduler, a verifier, an inliner—reads
+its inputs directly by inspection.
 
 ---
 
@@ -272,62 +285,49 @@ sugar for the symmetric case if warranted.
 ### 3.2 Label `%self`: Eliminating Use-Def Cycles in Loops
 
 The loop back-edge problem is symmetric to the recursion problem, and the solution is symmetric.
-Every `llvm.label` block receives `%self : llvm.Label` as its first argument. A loop is expressed
-as a block that branches to `%self` with updated arguments:
+Every `llvm.label` header block receives `%self : llvm.Label` as a **block parameter**—a
+compile-time value bound to the label itself. The body captures `%self` and uses it as the
+back-branch target:
 
 ```
 // %main function containing a count-down loop
-%main : Function<Nil> = function() ():
-    %loop : llvm.Label = llvm.label() (%self: llvm.Label, %i: Index):
+%main : Function<Nil> = function() body():
+    %loop : llvm.Label = llvm.label() body<%self: llvm.Label>(%i: Index):
         %zero : Index = 0
         %cond : llvm.Int<1> = llvm.icmp<"sgt">(%i, %zero)
-        %exit : llvm.Label = llvm.label() (%self: llvm.Label):
+        %body : llvm.Label = llvm.label() body(%j: Index) captures(%self):
+            %one : Index = 1
+            %i_next : Index = subtract_index(%j, %one)
+            %_ : Nil = llvm.br<%self>([%i_next])
+        %exit : llvm.Label = llvm.label() body():
             %done : Index = 0
-        %one : Index = 1
-        %i_next : Index = subtract_index(%i, %one)
-        %_ : Nil = llvm.cond_br(%cond, %self, %exit, [%i_next], [])
+        %_ : Nil = llvm.cond_br<%body, %exit>(%cond, [%i], [])
     %ten : Index = 10
-    %_ : Nil = llvm.br(%loop, [%ten])
+    %_ : Nil = llvm.br<%loop>([%ten])
 ```
 
-Comparing this to the back-edge version from Section 1.2: the use-def cycle
-`%i → %i_next → llvm.br → %i` is eliminated. `%self` is fixed at the block boundary, and
-`%i_next` is an argument at the call site, not a redefinition of `%i`.
+Comparing this to the back-edge version from Section 1.2: the use-def cycle is eliminated.
+`%self` is a block parameter (a leaf in the DAG), and the back-branch `llvm.br<%self>` targets
+it as a compile-time parameter, not a use-def edge. `%i_next` is passed as a branch argument
+(the only value that varies per iteration); `%self` is captured (constant across iterations).
 
-`%self` block arguments are automatically supplied by lowering—branch ops do not pass them
-explicitly. This mirrors the nominal isorecursion for `func.recursive`: the self-reference is
-resolved at the declaration boundary, not threaded by callers. The initial call
-`llvm.br(%loop, [%ten])` passes only `%i`; `%self` is filled in as `%loop` automatically. On the
-recursive branch, `llvm.cond_br` passes only `[%i_next]`; `%self` is again filled in by lowering.
+Branch targets are parameters (`<>` syntax), not operands—they are compile-time label references.
+The codegen reads the parameter value directly to determine which label a branch targets.
 
-#### Sibling Blocks and Mutual Block Recursion
+#### Nested Loops
 
-When two sibling blocks mutually recurse (as in a loop split across blocks), the capture
-discipline requires the label to be threaded explicitly. The pattern is identical to the
-`even`/`odd` nesting:
+For nested loops, inner blocks capture enclosing headers' `%self` values through the capture
+chain. No explicit threading through block arguments is needed:
 
 ```
-%main : Function<Nil> = function() ():
-    %loop : llvm.Label = llvm.label() (%self: llvm.Label, %i: Index):
-        %zero : Index = 0
-        %cond : llvm.Int<1> = llvm.icmp<"sgt">(%i, %zero)
-        %exit : llvm.Label = llvm.label() (%self: llvm.Label):
-            %done : Index = 0
-        // pass %self to %body as %loop_ref so it can call back to the loop header
-        %_ : Nil = llvm.cond_br(%cond, %body, %exit, [%self, %i], [])
-    %body : llvm.Label = llvm.label() (%self: llvm.Label, %loop_ref: llvm.Label, %i: Index):
-        %one : Index = 1
-        %i_next : Index = subtract_index(%i, %one)
-        %_ : Nil = llvm.br(%loop_ref, [%i_next])
-    %ten : Index = 10
-    %_ : Nil = llvm.br(%loop, [%ten])
+%outer : llvm.Label = llvm.label() body<%self: llvm.Label>(%i: Index):
+    %inner : llvm.Label = llvm.label() body<%inner_self: llvm.Label>(%j: Index) captures(%self):
+        // %self captured from outer header; %inner_self is this header's own parameter
+        ...
+        %_ : Nil = llvm.br<%inner_self>([%next_j])
+    %exit : llvm.Label = llvm.label() body() captures(%self):
+        %_ : Nil = llvm.br<%self>([%next_i])    // outer back-branch uses captured %self
 ```
-
-`%loop` passes `%self` to `%body` as an explicit block argument `%loop_ref`. `%body` calls back
-through `%loop_ref`, passing only `%i_next`; `%loop`'s `%self` is auto-supplied on that call.
-`%body` also receives its own `%self` (auto-supplied as `%body`) even if unused. The entire graph
-is a DAG. Neither `%body` nor any op inside it holds a direct reference to `%loop`—only to the
-block argument that carries `%loop`'s value.
 
 #### Blocks and Functions: A Unified View
 
@@ -339,73 +339,100 @@ return value. This is explored further in Section 4.
 
 ### 3.3 Explicit Capture
 
-The explicit capture discipline is: **a block's free variables must be declared as its
-arguments**. More precisely: if op V is reachable from block B.result, and V transitively depends
-on the arguments of some block B′ other than B itself, then V must be threaded through the block
-argument lists on all paths between B′ and B.
+#### The problem with MLIR's implicit capture
 
-This makes each block a **closed term**: its meaning is determined entirely by its arguments.
-Benefits:
+In MLIR, an op inside a region may reference any SSA value that dominates it from an enclosing
+region. This is convenient but has costs:
 
-- Block-level analysis, inlining, and partial evaluation are sound in isolation.
-- The full data dependencies of each block are manifest in its argument list.
-- No implicit environment or dynamic scope to track.
-- Aligns with scheduling requirements: the scheduler can determine a block's inputs by inspection.
+- **Inlining requires capture analysis.** MLIR's `InlinerInterface` must discover which values
+  are captured from enclosing scopes, remap them, and handle type conversions — hundreds of lines
+  of code. Any pass that moves ops across region boundaries must do similar analysis.
+- **Dominance analysis is required.** MLIR needs a dominance tree to verify that uses are valid
+  across region boundaries. This is a global analysis that must be recomputed after structural
+  changes.
+- **Dependencies are non-local.** A region's complete dependency set cannot be read from its
+  signature — you must walk all ops inside it and check which values come from outside.
+- **Fusion and outlining require free-variable analysis.** To fuse two operations or extract a
+  subgraph into a separate function, you must first compute the set of free variables — an
+  analysis that closed blocks make unnecessary.
 
-### 3.4 Migrating Existing Ops with Implicit Capture
+#### Explicit capture: the design
 
-The current IR has two ops that produce blocks with implicit capture: `builtin.if` and
-`affine.for`. Both allow their body blocks to reference values from the enclosing scope without
-threading them through block arguments.
+The explicit capture discipline is: **a block's free variables must be declared in its interface**.
+A block has three input lists:
 
-**`builtin.if`**: The `then_body` and `else_body` blocks currently take no arguments. Any
-outer-scope value used inside a branch is implicitly captured. Under explicit capture, the `if` op
-must be updated to accept per-branch argument lists (analogous to `llvm.cond_br`'s `true_args` and
-`false_args`), and outer values must be declared as block arguments:
-
-```
-// Current (implicit capture):
-%alloc : llvm.Ptr = llvm.alloca<6>()
-%result : F64 = if(%cond) ():
-    %loaded : F64 = llvm.load(%alloc)    // %alloc captured implicitly
-else ():
-    %c : F64 = 0.0
-
-// Explicit capture:
-%alloc : llvm.Ptr = llvm.alloca<6>()
-%result : F64 = if(%cond) (%alloc: llvm.Ptr):
-    %loaded : F64 = llvm.load(%alloc)
-else (%alloc: llvm.Ptr):
-    %c : F64 = 0.0
-```
-
-**`affine.for`**: The body block receives the loop induction variable as a block argument, but not
-the external memory references its body uses:
+- **`parameters`**: compile-time values bound by the owning op (e.g. `%self`).
+- **`args`**: runtime values that vary per entry (loop induction variables). Passed by branches,
+  generate phi nodes.
+- **`captures`**: outer-scope values referenced directly. Listed on the block, not passed by
+  branches, no phi nodes.
 
 ```
-// Current (implicit capture):
-%src : llvm.Ptr = llvm.alloca<6>()
-%5 : Nil = affine.for<0, 4>() (%i: Index):
-    %val : F64 = affine.load(%src, [%i])    // %src captured implicitly
-
-// Explicit capture:
-%src : llvm.Ptr = llvm.alloca<6>()
-%5 : Nil = affine.for<0, 4>() (%src: llvm.Ptr, %i: Index):
-    %val : F64 = affine.load(%src, [%i])
+%loop : llvm.Label = llvm.label() body<%self: Label>(%iv: Index) captures(%alloc):
+    %val = affine.load(%alloc, [%iv])    // %alloc is a capture — no phi, no threading
+    ...
+    llvm.br<%self>([%next_iv])           // only %iv is passed; %alloc and %self are not
 ```
 
-The lowering passes that generate `builtin.if` and `affine.for` nodes (`builtin_to_llvm.py`,
-`toy_to_affine.py`) must be updated to thread all referenced outer values through the block
-argument lists.
+This makes each block a **closed term**: its meaning is determined entirely by its declared
+inputs. Benefits:
 
-**Verifier.** A `Block.verify_closed()` check can be run after each lowering pass to enforce the
-closed-block invariant. It walks each block's op set and flags any `Value` reference that is:
-- not an op reachable from `block.result` via the use-def graph, and
-- not a block argument of the block, and
-- not an ambient node (i.e., it has no block-argument transitive dependencies).
+- **Inlining is mechanical.** `inline_block(block, args)` substitutes args; captures are
+  already valid in the caller's scope. No capture analysis needed.
+- **Fusion and outlining read the interface.** The complete dependency set is
+  `parameters ∪ args ∪ captures`, readable by inspection.
+- **No dominance analysis.** Validity is structural — if a value is in the interface, it's in
+  scope. The verifier is a local check per block.
+- **Independent analysis.** Any pass working on block B needs only its declared inputs. It never
+  needs to reconstruct implicit dependencies from the ops inside.
 
-Running this verifier as a post-pass assertion makes capture regressions visible immediately
-rather than silently producing unsound IR.
+#### Rejected alternative: threading through block arguments only
+
+An earlier design threaded all outer-scope references through block arguments — every value
+crossing a block boundary became an additional block arg, passed through branches and generating
+phi nodes. This is the purest form of "defunctionalization": no closures, every input is an
+explicit argument.
+
+This approach was rejected because it creates severe complexity in practice:
+
+- **O(n * d) block arguments.** For n outer values and d nesting levels, each block at each
+  level carries copies of all outer values. A 3-deep nested loop with 5 outer values has 15
+  extra block args across the three header/body/exit blocks, each generating phi nodes.
+- **Lowering complexity.** The lowering pass must maintain parallel lists of block args at every
+  scope level (`outer_header_args`, `outer_body_args`, `outer_exit_args`), an `exit_remap` dict
+  to substitute values when exiting a loop, and an `_enclosing_loops` stack to track which outer
+  `%self` values to thread into nested loops. The resulting code is fragile and hard to read.
+- **Codegen complexity.** The code generator must trace `%self` block args back through
+  predecessor branches to discover which label they refer to, requiring a fixed-point propagation
+  loop — all to recover information that was known at IR construction time.
+- **Every op reinvents threading.** Each op with blocks must define its own convention for how
+  outer values reach inner blocks: `ForOp` has `init_args`, `CondBrOp` has `true_args`/
+  `false_args`, `PipelineOp` threads through its body arg. There is no shared mechanism.
+
+The captures design eliminates all of this. Outer-scope values are listed once on each block
+that references them. `walk_ops` stops at capture boundaries, maintaining the locality property.
+`replace_uses` maintains captures with a single list substitution per block. The lowering lists
+captures at construction time (typically derived from the input IR's own block args), and no
+further tracking or remapping is needed.
+
+#### Capture chaining
+
+Captures must **chain**: if block B contains a nested block B' that captures value V, then V
+must also be in B's scope (in `B.parameters ∪ B.args ∪ B.captures ∪ B.ops`). The verifier
+enforces this. The chaining invariant ensures that `replace_uses` on B can propagate the
+substitution through B' — without it, a replacement of V in B would leave B' holding a stale
+reference.
+
+#### Verifier
+
+`verify_closed_blocks` runs as a pre/post-condition of every pass. For each block, it checks:
+
+1. Every operand and parameter value of every op in the block is in the block's valid set
+   (`parameters ∪ args ∪ captures ∪ ops`).
+2. Every capture of every child block is in the parent block's valid set (chaining).
+3. The block's result is in the valid set.
+
+Ambient ops (no block-argument dependencies) are always in scope and do not need capturing.
 
 ### 3.5 Ambient Nodes
 

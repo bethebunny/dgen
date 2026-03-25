@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 import dgen
@@ -25,6 +25,7 @@ class BlockArgument(Value):
         raise TypeError(f"BlockArgument %{self.name} is not a constant")
 
 
+@dataclass(eq=False)
 class Block:
     """A block of ops with arguments, parameters, and captures.
 
@@ -39,26 +40,13 @@ class Block:
     """
 
     result: dgen.Value
-    args: list[BlockArgument]
-    parameters: list[BlockArgument]
-    captures: list[dgen.Value]
-
-    def __init__(
-        self,
-        *,
-        result: dgen.Value,
-        args: list[BlockArgument] | None = None,
-        parameters: list[BlockArgument] | None = None,
-        captures: list[dgen.Value] | None = None,
-    ) -> None:
-        self.result = result
-        self.args = args if args is not None else []
-        self.parameters = parameters if parameters is not None else []
-        self.captures = captures if captures is not None else []
+    args: list[BlockArgument] = field(default_factory=list)
+    parameters: list[BlockArgument] = field(default_factory=list)
+    captures: list[dgen.Value] = field(default_factory=list)
 
     @property
     def ops(self) -> list[dgen.Op]:
-        return walk_ops(self.result, stop=set(self.captures) if self.captures else None)
+        return walk_ops(self.result, stop=set(self.captures))
 
     @property
     def asm(self) -> Iterable[str]:
