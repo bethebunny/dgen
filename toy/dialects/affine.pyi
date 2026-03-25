@@ -66,4 +66,3 @@ class ForOp(HasSingleBlock, Op):
     init_args: Value
     type: Type = Nil()
     body: Block
-

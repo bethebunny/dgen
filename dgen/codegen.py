@@ -185,10 +185,37 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for arg in f.body.args:
         types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
-    # Register label body block arg types
+    # Register label body block arg types.
     for label_op in label_ops:
         for arg in label_op.body.args:
             types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
+
+    def _unpack_args(val: Value) -> list[Value]:
+        return val.values if isinstance(val, PackOp) else [val]
+
+    # Resolve branch targets: block parameters are directly bound to their
+    # label (%self mechanism). Since targets are parameters, the codegen reads
+    # the parameter value directly — no dataflow propagation needed.
+    label_of: dict[dgen.Value, llvm.LabelOp] = {}
+    for label_op in label_ops:
+        for param in label_op.body.parameters:
+            label_of[param] = label_op
+
+    def resolve_target(target: dgen.Value) -> dgen.Value:
+        """Resolve a branch target to its LabelOp."""
+        return label_of.get(target, target)
+
+    def _branch_edges(
+        op: dgen.Op,
+    ) -> list[tuple[dgen.Value, list[dgen.Value]]]:
+        if isinstance(op, llvm.BrOp):
+            return [(op.target, _unpack_args(op.args))]
+        if isinstance(op, llvm.CondBrOp):
+            return [
+                (op.true_target, _unpack_args(op.true_args)),
+                (op.false_target, _unpack_args(op.false_args)),
+            ]
+        return []
 
     # Build predecessor map: label → [(source_label, passed_arg_values)]
     entry_sentinel = dgen.Value(name="entry", type=llvm.Label())
@@ -201,24 +228,9 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
 
     predecessors: dict[dgen.Value, list[tuple[dgen.Value, list[dgen.Value]]]] = {}
     for op in all_ops:
-        if isinstance(op, llvm.BrOp):
+        for target, args in _branch_edges(op):
             src = op_to_label[op]
-            args = op.args.values if isinstance(op.args, PackOp) else [op.args]
-            predecessors.setdefault(op.target, []).append((src, args))
-        elif isinstance(op, llvm.CondBrOp):
-            src = op_to_label[op]
-            true_args = (
-                op.true_args.values
-                if isinstance(op.true_args, PackOp)
-                else [op.true_args]
-            )
-            false_args = (
-                op.false_args.values
-                if isinstance(op.false_args, PackOp)
-                else [op.false_args]
-            )
-            predecessors.setdefault(op.true_target, []).append((src, true_args))
-            predecessors.setdefault(op.false_target, []).append((src, false_args))
+            predecessors.setdefault(resolve_target(target), []).append((src, args))
 
     for op in all_ops:
         if isinstance(op, ConstantOp):
@@ -306,14 +318,14 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
                 f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, llvm.BrOp):
-            lines.append(f"  br label %{tracker.track_name(op.target)}")
+            lines.append(f"  br label %{tracker.track_name(resolve_target(op.target))}")
         elif isinstance(op, llvm.CondBrOp):
             lines.append(
-                f"  br i1 %{tracker.track_name(op.cond)}, label %{tracker.track_name(op.true_target)}, label %{tracker.track_name(op.false_target)}"
+                f"  br i1 %{tracker.track_name(op.cond)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
             )
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
-            call_args = op.args.values if isinstance(op.args, PackOp) else [op.args]
+            call_args = _unpack_args(op.args)
             a = ", ".join(typed_ref(arg) for arg in call_args)
             if isinstance(op.type, builtin.Nil):
                 lines.append(f"  call void @{callee}({a})")
