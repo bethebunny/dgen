@@ -26,19 +26,22 @@ class BlockArgument(Value):
 
 
 class Block:
-    """A block of ops with arguments and parameters.
+    """A block of ops with arguments, parameters, and captures.
 
     Ops are derived by walking the use-def graph from the result value.
 
-    ``args`` are passed by callers at every call/branch site.
     ``parameters`` are bound once by the op's lowering pass (e.g. ``%self``
     for loop-header labels); callers never pass them explicitly.
-    Both are leaves in the use-def graph.
+    ``args`` are passed by callers at every call/branch site (phi nodes).
+    ``captures`` are outer-scope values referenced directly; they are leaves
+    in walk_ops (the walk stops at capture boundaries) and do not generate
+    phi nodes.
     """
 
     result: dgen.Value
     args: list[BlockArgument]
     parameters: list[BlockArgument]
+    captures: list[dgen.Value]
 
     def __init__(
         self,
@@ -46,14 +49,16 @@ class Block:
         result: dgen.Value,
         args: list[BlockArgument] | None = None,
         parameters: list[BlockArgument] | None = None,
+        captures: list[dgen.Value] | None = None,
     ) -> None:
         self.result = result
         self.args = args if args is not None else []
         self.parameters = parameters if parameters is not None else []
+        self.captures = captures if captures is not None else []
 
     @property
     def ops(self) -> list[dgen.Op]:
-        return walk_ops(self.result)
+        return walk_ops(self.result, stop=set(self.captures) if self.captures else None)
 
     @property
     def asm(self) -> Iterable[str]:

@@ -53,7 +53,9 @@ def _verify_block(
         return
     visited.add(block)
 
-    valid: set[dgen.Value] = set(block.parameters) | set(block.args)
+    valid: set[dgen.Value] = (
+        set(block.parameters) | set(block.args) | set(block.captures)
+    )
     for op in block.ops:
         valid.add(op)
 
@@ -113,8 +115,7 @@ def verify_dag(module: Module) -> None:
         if value in path:
             raise CycleError(
                 f"Use-def cycle detected at %{value.name} "
-                f"({type(value).__name__})\n\n"
-                + _annotated_module(module, value)
+                f"({type(value).__name__})\n\n" + _annotated_module(module, value)
             )
         path.add(value)
         for _, operand in value.operands:
