@@ -15,9 +15,9 @@ class Function(Type):
     result: Value[dgen.TypeType]
 
 @dataclass(eq=False, kw_only=True)
-class DefineOp(HasSingleBlock, Op):
+class FunctionOp(HasSingleBlock, Op):
     result: Value[dgen.TypeType]
-    type: Type = Nil()
+    type: Type
     body: Block
 
 @dataclass(eq=False, kw_only=True)

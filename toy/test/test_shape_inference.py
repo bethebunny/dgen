@@ -96,7 +96,7 @@ def test_concat(ir_snapshot):
         | import function
         | import toy
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([3, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.InferredShapeTensor<F64> = toy.concat<0>(%0, %1)
@@ -112,7 +112,7 @@ def test_concat_axis1(ir_snapshot):
         | import function
         | import toy
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([2, 5]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
         |     %2 : toy.InferredShapeTensor<F64> = toy.concat<1>(%0, %1)
@@ -128,7 +128,7 @@ def test_tile_with_constant_count(ir_snapshot):
         | import function
         | import toy
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
         |     %1 : Index = 4
         |     %2 : toy.InferredShapeTensor<F64> = toy.tile<%1>(%0)
@@ -148,7 +148,7 @@ def test_tile_with_computed_count():
         | import function
         | import toy
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
         |     %1 : Index = 2
         |     %2 : Index = 2

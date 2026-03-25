@@ -4,7 +4,7 @@ import function
 import memory
 import toy
 
-%main : Nil = function.define<Nil>() body():
+%main : function.Function<()> = function.function<Nil>() body():
     %0 : memory.MemRef<memory.Shape<2>([2, 2]), F64> = memory.alloc(memory.Shape<2>([2, 2]))
     %1 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]
     %2 : memory.MemRef<memory.Shape<2>([2, 2]), F64> = chain(%0, %1)

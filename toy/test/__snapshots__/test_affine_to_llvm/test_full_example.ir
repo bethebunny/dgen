@@ -3,7 +3,7 @@ import goto
 import llvm
 import toy
 
-%main : Nil = function.define<Nil>() body():
+%main : function.Function<()> = function.function<Nil>() body():
     %0 : Index = 48
     %1 : llvm.Ptr = llvm.call<"malloc">([%0])
     %2 : Index = 48

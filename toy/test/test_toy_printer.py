@@ -6,6 +6,7 @@ import dgen
 from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, function
+from dgen.dialects.function import Function
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
 
@@ -123,10 +124,11 @@ def test_full_module(ir_snapshot):
     t1 = toy.TransposeOp(input=mt_arg_b, type=inferred())
     m0 = toy.MulOp(lhs=t0, rhs=t1, type=inferred())
 
-    mt_func = function.DefineOp(
+    mt_func = function.FunctionOp(
         name="multiply_transpose",
         result=inferred(),
         body=dgen.Block(result=m0, args=[mt_arg_a, mt_arg_b]),
+        type=Function(result=inferred()),
     )
 
     # Build main function
@@ -161,10 +163,11 @@ def test_full_module(ir_snapshot):
     )
     print_op = toy.PrintOp(input=call5)
 
-    main_func = function.DefineOp(
+    main_func = function.FunctionOp(
         name="main",
         result=builtin.Nil(),
         body=dgen.Block(result=print_op, args=[]),
+        type=Function(result=builtin.Nil()),
     )
 
     module = Module(ops=[mt_func, main_func])

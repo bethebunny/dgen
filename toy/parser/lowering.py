@@ -7,6 +7,7 @@ from collections.abc import Generator, Iterator
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, function
+from dgen.dialects.function import Function as FunctionType
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
 from toy.parser.ast import (
@@ -37,7 +38,7 @@ class Lowering:
         functions = [self.lower_function(f) for f in tm.functions]
         return Module(ops=functions)
 
-    def lower_function(self, f: Function) -> function.DefineOp:
+    def lower_function(self, f: Function) -> function.FunctionOp:
         self.scope = {}
         self.last_effect = None
         self.has_value_return = False
@@ -66,10 +67,11 @@ class Lowering:
             block_result = ops[-1]
         else:
             block_result = dgen.Value(type=builtin.Nil())
-        return function.DefineOp(
+        return function.FunctionOp(
             name=f.proto.name,
             result=result,
             body=dgen.Block(result=block_result, args=args),
+            type=FunctionType(result=result),
         )
 
     def _lower_statement(self, stmt: Statement) -> Iterator[dgen.Op]:

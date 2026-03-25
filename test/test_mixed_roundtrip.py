@@ -11,7 +11,7 @@ def test_llvm_via_imports():
         | import function
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
         |     %1 : F64 = 1.0
         |     %store : Nil = llvm.store(%1, %0)
@@ -27,7 +27,7 @@ def test_llvm_full_loop():
         | import goto
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
         |     %init : Index = 0
         |     %loop_header : goto.Label = goto.label() body(%i0: Index):

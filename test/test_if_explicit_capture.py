@@ -16,7 +16,7 @@ def test_if_no_capture_roundtrip():
     ir = strip_prefix("""
         | import control_flow
         | import function
-        | %main : Nil = function.define<Index>() body(%n: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
         |     %result : Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : Index = 10
@@ -25,7 +25,7 @@ def test_if_no_capture_roundtrip():
     """)
     module = parse_module(ir)
     fn = module.ops[0]
-    assert isinstance(fn, function.DefineOp)
+    assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.ops[-1]
     assert isinstance(if_op, control_flow.IfOp)
     assert if_op.then_body.args == []
@@ -38,7 +38,7 @@ def test_if_with_capture_roundtrip():
     ir = strip_prefix("""
         | import control_flow
         | import function
-        | %main : Nil = function.define<F64>() body(%cond: Index, %x: F64):
+        | %main : function.Function<F64> = function.function<F64>() body(%cond: Index, %x: F64):
         |     %result : F64 = control_flow.if(%cond, [%x], [%x]) then_body(%x: F64):
         |         %a : F64 = 1.0
         |     else_body(%x: F64):
@@ -46,7 +46,7 @@ def test_if_with_capture_roundtrip():
     """)
     module = parse_module(ir)
     fn = module.ops[0]
-    assert isinstance(fn, function.DefineOp)
+    assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.ops[-1]
     assert isinstance(if_op, control_flow.IfOp)
     assert len(if_op.then_body.args) == 1
@@ -61,7 +61,7 @@ def test_if_python_api_no_capture():
     ir = strip_prefix("""
         | import control_flow
         | import function
-        | %main : Nil = function.define<Index>() body(%cond: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%cond: Index):
         |     %result : Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : Index = 10
         |     else_body():
@@ -69,7 +69,7 @@ def test_if_python_api_no_capture():
     """)
     module = parse_module(ir)
     fn = module.ops[0]
-    assert isinstance(fn, function.DefineOp)
+    assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.ops[-1]
     assert isinstance(if_op, control_flow.IfOp)
     assert if_op.then_body.args == []

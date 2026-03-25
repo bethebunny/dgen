@@ -122,7 +122,7 @@ def _collect_labels(ops: list[dgen.Op]) -> list[goto.LabelOp]:
     return labels
 
 
-def _emit_func(f: function.DefineOp, host_buffers: list) -> list[str]:
+def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
     # Linearize: build a flat list of (label_or_none, block_args, body_ops)
     # sections in LLVM emission order. This determines SSA numbering.
     # Collect labels and deduplicate ops across blocks: each op belongs to

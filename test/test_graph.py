@@ -5,6 +5,7 @@ from dgen import asm
 from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, function, llvm
+from dgen.dialects.function import Function
 from dgen.testing import assert_ir_equivalent
 from dgen.graph import walk_ops
 from dgen.module import ConstantOp
@@ -44,10 +45,11 @@ def test_walk_ops_skips_block_args():
 def test_walk_ops_does_not_descend_into_blocks():
     """Ops nested inside another op's block are not included."""
     inner = ConstantOp(value=42, type=builtin.Index())
-    func = function.DefineOp(
+    func = function.FunctionOp(
         name="f",
         body=dgen.Block(result=inner, args=[]),
         result=builtin.Nil(),
+        type=Function(result=builtin.Nil()),
     )
     ops = walk_ops(func)
     assert func in ops
@@ -59,7 +61,7 @@ def test_chain_asm_round_trip():
     ir_text = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : Index = 0
         |     %1 : Index = 1
         |     %2 : Index = chain(%1, %0)
