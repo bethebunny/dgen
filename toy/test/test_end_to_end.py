@@ -1,9 +1,12 @@
-"""End-to-end tests: Toy source -> parse -> lower -> optimize -> affine -> LLVM IR."""
+"""End-to-end tests: Toy source -> parse -> lower -> optimize -> structured -> LLVM IR."""
 
+from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
+from toy.passes.control_flow_to_goto import ControlFlowToGoto
+from toy.passes.memory_to_llvm import MemoryToLLVM
 from toy.passes.structured_to_llvm import StructuredToLLVM
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
@@ -157,3 +160,64 @@ def test_multiply_transpose_inlined(ir_snapshot):
         | }
     """)
     assert compile(source) == ir_snapshot
+
+
+# ===----------------------------------------------------------------------=== #
+# Decomposed pipeline: ControlFlowToGoto + MemoryToLLVM + AlgebraToLLVM
+# ===----------------------------------------------------------------------=== #
+
+_decomposed = Compiler(
+    passes=[
+        ToyOptimize(),
+        ShapeInference(),
+        ToyToStructured(),
+        ControlFlowToGoto(),
+        MemoryToLLVM(),
+    ],
+    exit=LLVMCodegen(),
+)
+
+
+def _jit_decomposed(source: str) -> object:
+    """Compile through the decomposed pipeline and JIT-execute."""
+    ir = lower(parse_toy(strip_prefix(source)))
+    exe = _decomposed.compile(ir)
+    return exe.run().to_json()
+
+
+def test_decomposed_element_wise_mul():
+    """Decomposed pipeline: element-wise multiply produces correct JIT output."""
+    _jit_decomposed("""
+        | def main() {
+        |   var a = [[1, 2], [3, 4]];
+        |   var b = [[5, 6], [7, 8]];
+        |   var c = a * b;
+        |   print(c);
+        |   return;
+        | }
+    """)
+
+
+def test_decomposed_transpose():
+    """Decomposed pipeline: transpose produces correct JIT output."""
+    _jit_decomposed("""
+        | def main() {
+        |   var a = [[1, 2, 3], [4, 5, 6]];
+        |   var b = transpose(a);
+        |   print(b);
+        |   return;
+        | }
+    """)
+
+
+def test_decomposed_3d_mul():
+    """Decomposed pipeline: 3D element-wise multiply."""
+    _jit_decomposed("""
+        | def main() {
+        |   var a = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+        |   var b = [[[2, 3], [4, 5]], [[6, 7], [8, 9]]];
+        |   var c = a * b;
+        |   print(c);
+        |   return;
+        | }
+    """)
