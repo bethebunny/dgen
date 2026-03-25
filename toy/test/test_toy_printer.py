@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import dgen
 from dgen import asm
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, function
+from dgen.dialects import builtin, function, index
 from dgen.dialects.function import Function
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
@@ -93,7 +93,7 @@ def test_concat_op():
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.ConcatOp(
         name="2",
-        axis=builtin.Index().constant(0),
+        axis=index.Index().constant(0),
         lhs=v0,
         rhs=v1,
         type=inferred(),
@@ -103,16 +103,16 @@ def test_concat_op():
 
 def test_tile_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
-    n = dgen.Value(name="n", type=builtin.Index())
+    n = dgen.Value(name="n", type=index.Index())
     op = toy.TileOp(name="1", input=v0, count=n, type=inferred())
     assert asm.format(op) == "%1 : toy.InferredShapeTensor<F64> = toy.tile<%n>(%0)"
 
 
 def test_add_index_op():
-    x = dgen.Value(name="x", type=builtin.Index())
-    y = dgen.Value(name="y", type=builtin.Index())
-    op = builtin.AddIndexOp(name="0", lhs=x, rhs=y)
-    assert asm.format(op) == "%0 : Index = add_index(%x, %y)"
+    x = dgen.Value(name="x", type=index.Index())
+    y = dgen.Value(name="y", type=index.Index())
+    op = index.AddOp(name="0", left=x, right=y)
+    assert asm.format(op) == "%0 : index.Index = index.add(%x, %y)"
 
 
 def test_full_module(ir_snapshot):

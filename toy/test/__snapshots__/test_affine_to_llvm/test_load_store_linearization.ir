@@ -1,45 +1,46 @@
 import function
+import index
 import goto
 import llvm
 import toy
 
 %main : function.Function<()> = function.function<Nil>() body():
-    %0 : Index = 48
+    %0 : index.Index = 48
     %1 : llvm.Ptr = llvm.call<"malloc">([%0])
-    %2 : Index = 0
-    %loop_header0 : goto.Label = goto.label() body<%self: goto.Label>(%i0: Index):
-        %3 : Index = 2
+    %2 : index.Index = 0
+    %loop_header0 : goto.Label = goto.label() body<%self: goto.Label>(%i0: index.Index):
+        %3 : index.Index = 2
         %4 : llvm.Int<1> = llvm.icmp<"slt">(%i0, %3)
-        %loop_body0 : goto.Label = goto.label() body(%j0: Index) captures(%self):
-            %5 : Index = 0
-            %loop_header1 : goto.Label = goto.label() body<%6: goto.Label>(%i1: Index) captures(%self, %j0):
-                %7 : Index = 3
+        %loop_body0 : goto.Label = goto.label() body(%j0: index.Index) captures(%self):
+            %5 : index.Index = 0
+            %loop_header1 : goto.Label = goto.label() body<%6: goto.Label>(%i1: index.Index) captures(%self, %j0):
+                %7 : index.Index = 3
                 %8 : llvm.Int<1> = llvm.icmp<"slt">(%i1, %7)
-                %loop_body1 : goto.Label = goto.label() body(%j1: Index) captures(%self, %6, %j0):
+                %loop_body1 : goto.Label = goto.label() body(%j1: index.Index) captures(%self, %6, %j0):
                     %9 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
                     %10 : llvm.Ptr = llvm.load(%9)
-                    %11 : Index = 3
+                    %11 : index.Index = 3
                     %12 : llvm.Int<64> = llvm.mul(%j0, %11)
                     %13 : llvm.Int<64> = llvm.add(%12, %j1)
                     %14 : llvm.Ptr = llvm.gep(%10, %13)
                     %15 : llvm.Float = llvm.load(%14)
-                    %16 : Index = 2
+                    %16 : index.Index = 2
                     %17 : llvm.Int<64> = llvm.mul(%j1, %16)
                     %18 : llvm.Int<64> = llvm.add(%17, %j0)
                     %19 : llvm.Ptr = llvm.gep(%1, %18)
                     %20 : Nil = llvm.store(%15, %19)
-                    %21 : Index = 1
+                    %21 : index.Index = 1
                     %22 : llvm.Int<64> = llvm.add(%j1, %21)
                     %23 : Nil = goto.branch<%6>([%22])
                     %24 : Nil = chain(%20, %23)
                 %loop_exit1 : goto.Label = goto.label() body() captures(%self, %6, %j0):
-                    %25 : Index = 1
+                    %25 : index.Index = 1
                     %26 : llvm.Int<64> = llvm.add(%j0, %25)
                     %27 : Nil = goto.branch<%self>([%26])
                 %28 : Nil = goto.conditional_branch<%loop_body1, %loop_exit1>(%8, [%i1], [])
             %29 : Nil = goto.branch<%loop_header1>([%5])
         %loop_exit0 : goto.Label = goto.label() body() captures(%self):
-            %30 : Index = 6
+            %30 : index.Index = 6
             %31 : Nil = llvm.call<"print_memref">([%1, %30])
         %32 : Nil = goto.conditional_branch<%loop_body0, %loop_exit0>(%4, [%i0], [])
     %33 : Nil = goto.branch<%loop_header0>([%2])

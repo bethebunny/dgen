@@ -33,7 +33,7 @@ def test_generate_builtin_simple_type():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
     assert "@dataclass(frozen=True, eq=False)" in code
-    assert "class Index(Type):" in code
+    assert "class F64(Type):" in code
 
 
 def test_generate_builtin_parametric_type():
@@ -51,10 +51,10 @@ def test_generate_builtin_list_type():
     assert "types: list[Value[dgen.TypeType]]" in code
 
 
-def test_generate_builtin_op_with_default():
-    mod = importlib.import_module("dgen.dialects.builtin")
-    code = generate_pyi(mod, "builtin")
-    assert "class AddIndexOp(Op):" in code
+def test_generate_index_op_with_default():
+    mod = importlib.import_module("dgen.dialects.index")
+    code = generate_pyi(mod, "index")
+    assert "class AddOp(Op):" in code
     assert "type: Type = Index()" in code
 
 
@@ -214,8 +214,8 @@ def test_import_hook_import_map_auto_resolved():
     """DgenLoader stores the resolved import_map after loading."""
     spec = sys.modules["dgen.dialects.builtin"].__spec__
     assert isinstance(spec.loader, DgenLoader)
-    # builtin.dgen has no cross-file imports so import_map should be empty
-    assert spec.loader.import_map == {}
+    # builtin.dgen imports index dialect
+    assert spec.loader.import_map == {"index": "dgen.dialects.index"}
 
 
 def test_import_hook_toy_import_map_has_memory():

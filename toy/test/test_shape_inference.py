@@ -95,6 +95,7 @@ def test_concat(ir_snapshot):
     ir = strip_prefix("""
         | import function
         | import toy
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -111,6 +112,7 @@ def test_concat_axis1(ir_snapshot):
     ir = strip_prefix("""
         | import function
         | import toy
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -127,10 +129,11 @@ def test_tile_with_constant_count(ir_snapshot):
     ir = strip_prefix("""
         | import function
         | import toy
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
-        |     %1 : Index = 4
+        |     %1 : index.Index = 4
         |     %2 : toy.InferredShapeTensor<F64> = toy.tile<%1>(%0)
         |     %3 : Nil = toy.print(%2)
     """)
@@ -139,7 +142,7 @@ def test_tile_with_constant_count(ir_snapshot):
 
 
 def test_tile_with_computed_count():
-    """Tile where count is add_index(2, 2) — shape inference CANNOT resolve this.
+    """Tile where count is index.add(2, 2) — shape inference CANNOT resolve this.
 
     This is the staging boundary: the shape depends on a value that requires
     evaluation. The InferredShapeTensor remains unresolved.
@@ -147,12 +150,13 @@ def test_tile_with_computed_count():
     ir = strip_prefix("""
         | import function
         | import toy
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
-        |     %1 : Index = 2
-        |     %2 : Index = 2
-        |     %3 : Index = add_index(%1, %2)
+        |     %1 : index.Index = 2
+        |     %2 : index.Index = 2
+        |     %3 : index.Index = index.add(%1, %2)
         |     %4 : toy.InferredShapeTensor<F64> = toy.tile<%3>(%0)
         |     %5 : Nil = toy.print(%4)
     """)

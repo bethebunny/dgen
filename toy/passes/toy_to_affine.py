@@ -6,8 +6,8 @@ from collections.abc import Callable, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, function
-from dgen.dialects.builtin import Index
+from dgen.dialects import builtin, index
+from dgen.dialects.index import Index
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
@@ -204,7 +204,7 @@ class ToyToAffine(Pass):
 
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             shifted = list(ivars)
-            shifted[axis] = builtin.AddIndexOp(lhs=ivars[axis], rhs=offset)
+            shifted[axis] = index.AddOp(left=ivars[axis], right=offset)
             return memory.StoreOp(
                 value=memory.LoadOp(memref=op.rhs, indices=_index_pack(*ivars)),
                 memref=alloc,

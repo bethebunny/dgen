@@ -6,7 +6,7 @@ from collections.abc import Generator, Iterator
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, function
+from dgen.dialects import builtin, function, index
 from dgen.dialects.function import Function as FunctionType
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
@@ -151,7 +151,7 @@ class Lowering:
     ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression that should produce an index value."""
         if isinstance(expr, NumberLiteral):
-            op = ConstantOp(value=int(expr.value), type=builtin.Index())
+            op = ConstantOp(value=int(expr.value), type=index.Index())
             yield op
             return op
         return (yield from self.lower_expr(expr))
@@ -195,7 +195,7 @@ class Lowering:
             rhs = yield from self.lower_expr(call.args[1])
             if not isinstance(call.args[2], NumberLiteral):
                 raise RuntimeError("concat axis must be a literal")
-            axis = builtin.Index().constant(int(call.args[2].value))
+            axis = index.Index().constant(int(call.args[2].value))
             op = toy.ConcatOp(
                 axis=axis, lhs=lhs, rhs=rhs, type=toy.InferredShapeTensor()
             )
@@ -209,7 +209,7 @@ class Lowering:
             input_val = yield from self.lower_expr(call.args[0])
             if not isinstance(call.args[1], NumberLiteral):
                 raise RuntimeError("dim_size axis must be a literal")
-            axis = builtin.Index().constant(int(call.args[1].value))
+            axis = index.Index().constant(int(call.args[1].value))
             op = toy.DimSizeOp(axis=axis, input=input_val)
             yield op
             return op
@@ -220,7 +220,7 @@ class Lowering:
                 raise RuntimeError("add_index takes exactly 2 arguments")
             lhs = yield from self._lower_index_expr(call.args[0])
             rhs = yield from self._lower_index_expr(call.args[1])
-            op = builtin.AddIndexOp(lhs=lhs, rhs=rhs)
+            op = index.AddOp(left=lhs, right=rhs)
             yield op
             return op
 

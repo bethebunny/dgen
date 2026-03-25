@@ -18,7 +18,7 @@ from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
 from dgen.compiler import Compiler
-from dgen.dialects import builtin, function, llvm
+from dgen.dialects import builtin, llvm
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, string_value
@@ -348,8 +348,9 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
     """Parser handles [literal, %ref, literal] by creating ConstantOps."""
     ir_input = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body(%x: Index):
+        | %main : function.Function<()> = function.function<Nil>() body(%x: index.Index):
         |     %store : Nil = memory.store(%x, %x, [3, %x, 5])
     """)
     parsed = parse_module(ir_input)
@@ -379,11 +380,13 @@ def test_string_as_op_param():
     """String constants work as __params__ on ops — ASM round-trip."""
     ir = strip_prefix("""
         | import function
+        | import index
         | import llvm
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : Index = 1
-        |     %1 : Index = 2
+        |     %0 : index.Index = 1
+        |     %1 : index.Index = 2
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
     """)
     parsed = parse_module(ir)
@@ -409,9 +412,11 @@ def test_string_param_staging():
     """
     ir = strip_prefix("""
         | import function
+        | import index
         | import llvm
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%pred : String, %x : Index, %y : Index):
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)
@@ -437,9 +442,11 @@ def test_compile_once_run_twice():
     """
     ir = strip_prefix("""
         | import function
+        | import index
         | import llvm
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%pred : String, %x : Index, %y : Index):
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)

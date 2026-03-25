@@ -7,7 +7,7 @@ from math import prod
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.dialects import builtin, control_flow, function, goto, llvm
+from dgen.dialects import builtin, control_flow, goto, index, llvm
 from dgen.dialects.builtin import ChainOp, Nil, String
 from dgen.dialects.function import Function, FunctionOp
 from dgen.graph import placeholder_block
@@ -137,9 +137,9 @@ class AffineToLLVMLowering(Pass):
             total = prod(shape)
             # Heap-allocate: malloc(total * 8) for 8-byte doubles.
             # Stack alloca would be invalid if the pointer escapes the function.
-            byte_count = ConstantOp(value=total * 8, type=builtin.Index())
+            byte_count = ConstantOp(value=total * 8, type=index.Index())
             malloc_args = PackOp(
-                values=[byte_count], type=builtin.List(element_type=builtin.Index())
+                values=[byte_count], type=builtin.List(element_type=index.Index())
             )
             malloc_op = llvm.CallOp(
                 callee=String().constant("malloc"), args=malloc_args, type=_PTR_TYPE
@@ -191,9 +191,9 @@ class AffineToLLVMLowering(Pass):
                 self.alloc_shapes[op] = self.alloc_shapes[new_lhs]
             return None
 
-        if isinstance(op, builtin.AddIndexOp):
+        if isinstance(op, index.AddOp):
             self.value_map[op] = llvm.AddOp(
-                lhs=self._map(op.lhs), rhs=self._map(op.rhs)
+                lhs=self._map(op.left), rhs=self._map(op.right)
             )
             return None
 
@@ -223,7 +223,7 @@ class AffineToLLVMLowering(Pass):
         for i, idx in enumerate(indices):
             stride = prod(shape[i + 1 :])
             term: dgen.Value = (
-                llvm.MulOp(lhs=idx, rhs=ConstantOp(value=stride, type=builtin.Index()))
+                llvm.MulOp(lhs=idx, rhs=ConstantOp(value=stride, type=index.Index()))
                 if stride != 1
                 else idx
             )
@@ -244,21 +244,21 @@ class AffineToLLVMLowering(Pass):
         lid = self.loop_counter
         self.loop_counter += 1
 
-        header_iv = BlockArgument(name=f"i{lid}", type=builtin.Index())
-        body_iv = BlockArgument(name=f"j{lid}", type=builtin.Index())
+        header_iv = BlockArgument(name=f"i{lid}", type=index.Index())
+        body_iv = BlockArgument(name=f"j{lid}", type=index.Index())
         header_self = BlockParameter(name="self", type=goto.Label())
 
         # Map lower_bound/upper_bound
         lo_op = self._map(op.lower_bound)
         if lo_op is op.lower_bound:
             lo_op = ConstantOp(
-                value=op.lower_bound.__constant__.to_json(), type=builtin.Index()
+                value=op.lower_bound.__constant__.to_json(), type=index.Index()
             )
             self.value_map[op.lower_bound] = lo_op
         hi_op = self._map(op.upper_bound)
         if hi_op is op.upper_bound:
             hi_op = ConstantOp(
-                value=op.upper_bound.__constant__.to_json(), type=builtin.Index()
+                value=op.upper_bound.__constant__.to_json(), type=index.Index()
             )
             self.value_map[op.upper_bound] = hi_op
 
@@ -303,7 +303,7 @@ class AffineToLLVMLowering(Pass):
         self.value_map[op.body.args[0]] = body_iv
 
         def _make_back_br() -> dgen.Value:
-            one = ConstantOp(value=1, type=builtin.Index())
+            one = ConstantOp(value=1, type=index.Index())
             next_iv = llvm.AddOp(lhs=self.value_map[op.body.args[0]], rhs=one)
             return goto.BranchOp(target=self._map(op), arguments=_make_pack([next_iv]))
 
@@ -339,9 +339,9 @@ class AffineToLLVMLowering(Pass):
         assert isinstance(op.input.type, toy.Tensor)
         total = prod(op.input.type.shape.__constant__.to_json())
         zero_f = ConstantOp(value=0.0, type=builtin.F64())
-        acc: dgen.Value = ConstantOp(value=0, type=builtin.Index())
+        acc: dgen.Value = ConstantOp(value=0, type=index.Index())
         for i in range(total):
-            idx = ConstantOp(value=i, type=builtin.Index())
+            idx = ConstantOp(value=i, type=index.Index())
             gep = llvm.GepOp(base=input_ptr, index=idx)
             elem = llvm.LoadOp(ptr=gep)
             cmp = llvm.FcmpOp(pred=String().constant("one"), lhs=elem, rhs=zero_f)
@@ -352,7 +352,7 @@ class AffineToLLVMLowering(Pass):
         input_val = self._deref(self._map(op.input))
         size = prod(self.alloc_shapes[input_val])
         pack = PackOp(
-            values=[input_val, ConstantOp(value=size, type=builtin.Index())],
+            values=[input_val, ConstantOp(value=size, type=index.Index())],
             type=builtin.List(element_type=input_val.type),
         )
         call_op = llvm.CallOp(callee=String().constant("print_memref"), args=pack)

@@ -22,7 +22,8 @@ from dgen import codegen
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin, function
-from dgen.dialects.builtin import ChainOp, Index, Nil
+from dgen.dialects.builtin import ChainOp, Nil
+from dgen.dialects.index import Index
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler
 from dgen.dialects.function import FunctionOp
@@ -220,9 +221,11 @@ def test_natural_in_asm():
     """peano.Natural parses as a type annotation."""
     ir = strip_prefix("""
         | import function
+        | import index
         | import peano
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body():
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
         |     %z : peano.Natural = peano.zero()
     """)
     module = parse_module(ir)
@@ -251,14 +254,16 @@ def test_peano_constant():
     """
     ir = strip_prefix("""
         | import function
+        | import index
         | import peano
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body():
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %s2 : Type = peano.successor<%s1>()
         |     %s3 : Type = peano.successor<%s2>()
-        |     %n : Index = peano.value<%s3>()
+        |     %n : index.Index = peano.value<%s3>()
     """)
     module = parse_module(ir)
 
@@ -276,26 +281,28 @@ def test_equal_and_subtract_roundtrip():
     """equal_index and subtract_index ops round-trip through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
-        |     %eq : Index = equal_index(%n, 0)
-        |     %sub : Index = subtract_index(%n, 1)
-        |     %result : Index = add_index(%eq, %sub)
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %eq : index.Index = index.equal(%n, 0)
+        |     %sub : index.Index = index.subtract(%n, 1)
+        |     %result : index.Index = index.add(%eq, %sub)
     """)
     module = parse_module(ir)
     asm_lines = list(module.asm)
     asm_text = "\n".join(asm_lines)
-    assert "equal_index" in asm_text
-    assert "subtract_index" in asm_text
+    assert "index.equal" in asm_text
+    assert "index.subtract" in asm_text
 
 
 def test_subtract_jit():
     """subtract_index executes correctly via JIT."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
-        |     %sub : Index = subtract_index(%n, 1)
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %sub : index.Index = index.subtract(%n, 1)
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -307,12 +314,13 @@ def test_if_else_parse_roundtrip():
     ir = strip_prefix("""
         | import control_flow
         | import function
-        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
-        |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = control_flow.if(%cond, [], []) then_body():
-        |         %ten : Index = 10
+        | import index
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %cond : index.Index = index.equal(%n, 0)
+        |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
+        |         %ten : index.Index = 10
         |     else_body():
-        |         %twenty : Index = 20
+        |         %twenty : index.Index = 20
     """)
     module = parse_module(ir)
     asm_text = "\n".join(module.asm)
@@ -330,12 +338,13 @@ def test_if_else_jit():
     ir = strip_prefix("""
         | import control_flow
         | import function
-        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
-        |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = control_flow.if(%cond, [], []) then_body():
-        |         %one : Index = 1
+        | import index
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %cond : index.Index = index.equal(%n, 0)
+        |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
+        |         %one : index.Index = 1
         |     else_body():
-        |         %val : Index = subtract_index(%n, 1)
+        |         %val : index.Index = index.subtract(%n, 1)
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -348,12 +357,13 @@ def test_call_op_roundtrip():
     """call op parses and round-trips."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%x: Index):
-        |     %result : Index = function.call<%add_one>([%x])
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %result : index.Index = function.call<%add_one>([%x])
         |
-        | %add_one : function.Function<Index> = function.function<Index>() body(%n: Index):
-        |     %r : Index = add_index(%n, 1)
+        | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %r : index.Index = index.add(%n, 1)
     """)
     module = parse_module(ir)
     asm_text = "\n".join(module.asm)
@@ -365,12 +375,13 @@ def test_call_jit():
     """call op executes a helper function via JIT."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%x: Index):
-        |     %result : Index = function.call<%add_one>([%x])
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %result : index.Index = function.call<%add_one>([%x])
         |
-        | %add_one : function.Function<Index> = function.function<Index>() body(%n: Index):
-        |     %r : Index = add_index(%n, 1)
+        | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %r : index.Index = index.add(%n, 1)
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -382,16 +393,18 @@ def test_multi_function_staged():
     """Multi-function module: helper with staging, called from main."""
     ir = strip_prefix("""
         | import function
+        | import index
         | import peano
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body():
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
-        |     %n : Index = peano.value<%s1>()
-        |     %result : Index = function.call<%add_one>([%n])
+        |     %n : index.Index = peano.value<%s1>()
+        |     %result : index.Index = function.call<%add_one>([%n])
         |
-        | %add_one : function.Function<Index> = function.function<Index>() body(%x: Index):
-        |     %r : Index = add_index(%x, 1)
+        | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %r : index.Index = index.add(%x, 1)
     """)
     module = parse_module(ir)
     exe = peano_compiler.compile(module)
@@ -403,9 +416,10 @@ def test_equal_jit():
     """equal_index returns 1 when equal, 0 otherwise."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
-        |     %eq : Index = equal_index(%n, 0)
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %eq : index.Index = index.equal(%n, 0)
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -422,6 +436,7 @@ def test_verify_dag_detects_cycle():
     module = parse_module(
         strip_prefix("""
         | import function
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = {}
@@ -451,19 +466,21 @@ def test_recursive_peano():
     ir = strip_prefix("""
         | import control_flow
         | import function
+        | import index
         | import peano
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%x: Index):
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %n : peano.Natural = function.call<%natural>([%x])
-        |     %result : Index = peano.value<%n>()
+        |     %result : index.Index = peano.value<%n>()
         |
-        | %natural : function.Function<peano.Natural> = function.function<peano.Natural>() body(%n: Index):
-        |     %base_case : Index = equal_index(%n, 0)
+        | %natural : function.Function<peano.Natural> = function.function<peano.Natural>() body(%n: index.Index):
+        |     %base_case : index.Index = index.equal(%n, 0)
         |     %value : peano.Natural = control_flow.if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
         |     else_body():
-        |         %n_minus_one : Index = subtract_index(%n, 1)
+        |         %n_minus_one : index.Index = index.subtract(%n, 1)
         |         %predecessor : peano.Natural = function.call<%natural>([%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()
     """)

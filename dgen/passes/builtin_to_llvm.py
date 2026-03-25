@@ -1,6 +1,6 @@
 """Lower builtin dialect ops to LLVM dialect ops.
 
-Handles: AddIndexOp, SubtractIndexOp, EqualIndexOp, IfOp, CallOp.
+Handles: index.AddOp, index.SubtractOp, index.EqualOp, IfOp, CallOp.
 Passes through unchanged: ConstantOp, PackOp, and any LLVM dialect ops.
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dgen
 from dgen.block import BlockArgument, Block
-from dgen.dialects import builtin, control_flow, function, goto, llvm
+from dgen.dialects import builtin, control_flow, function, goto, index, llvm
 from dgen.dialects.builtin import Nil, String
 from dgen.dialects.function import Function, FunctionOp
 from dgen.graph import placeholder_block
@@ -112,19 +112,19 @@ class BuiltinToLLVMLowering(Pass):
 
     def _lower_single_op(self, op: dgen.Op) -> dgen.Op | None:
         """Lower one non-IfOp. Returns the op if it's a side effect, else None."""
-        if isinstance(op, builtin.AddIndexOp):
-            llvm_op = llvm.AddOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
+        if isinstance(op, index.AddOp):
+            llvm_op = llvm.AddOp(lhs=self._map(op.left), rhs=self._map(op.right))
             self.value_map[op] = llvm_op
             return None
-        if isinstance(op, builtin.SubtractIndexOp):
-            llvm_op = llvm.SubOp(lhs=self._map(op.lhs), rhs=self._map(op.rhs))
+        if isinstance(op, index.SubtractOp):
+            llvm_op = llvm.SubOp(lhs=self._map(op.left), rhs=self._map(op.right))
             self.value_map[op] = llvm_op
             return None
-        if isinstance(op, builtin.EqualIndexOp):
+        if isinstance(op, index.EqualOp):
             icmp_op = llvm.IcmpOp(
                 pred=String().constant("eq"),
-                lhs=self._map(op.lhs),
-                rhs=self._map(op.rhs),
+                lhs=self._map(op.left),
+                rhs=self._map(op.right),
             )
             zext_op = llvm.ZextOp(input=icmp_op)
             self.value_map[op] = zext_op

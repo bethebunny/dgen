@@ -7,7 +7,7 @@ blocks, making each branch a closed term.
 
 from dgen import asm
 from dgen.asm.parser import parse_module
-from dgen.dialects import builtin, control_flow, function
+from dgen.dialects import control_flow, function
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
@@ -15,13 +15,15 @@ def test_if_no_capture_roundtrip():
     """if with no captured values: then_arguments=[], else_arguments=[] — no block args."""
     ir = strip_prefix("""
         | import control_flow
+        | import index
         | import function
-        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
-        |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = control_flow.if(%cond, [], []) then_body():
-        |         %ten : Index = 10
+        | import index
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %cond : index.Index = index.equal(%n, 0)
+        |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
+        |         %ten : index.Index = 10
         |     else_body():
-        |         %twenty : Index = 20
+        |         %twenty : index.Index = 20
     """)
     module = parse_module(ir)
     fn = module.ops[0]
@@ -37,8 +39,10 @@ def test_if_with_capture_roundtrip():
     """if with captured value threaded through then_arguments and else_arguments."""
     ir = strip_prefix("""
         | import control_flow
+        | import index
         | import function
-        | %main : function.Function<F64> = function.function<F64>() body(%cond: Index, %x: F64):
+        | import index
+        | %main : function.Function<F64> = function.function<F64>() body(%cond: index.Index, %x: F64):
         |     %result : F64 = control_flow.if(%cond, [%x], [%x]) then_body(%x: F64):
         |         %a : F64 = 1.0
         |     else_body(%x: F64):
@@ -60,12 +64,14 @@ def test_if_python_api_no_capture():
     """Construct IfOp directly via ASM and verify structure."""
     ir = strip_prefix("""
         | import control_flow
+        | import index
         | import function
-        | %main : function.Function<Index> = function.function<Index>() body(%cond: Index):
-        |     %result : Index = control_flow.if(%cond, [], []) then_body():
-        |         %ten : Index = 10
+        | import index
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%cond: index.Index):
+        |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
+        |         %ten : index.Index = 10
         |     else_body():
-        |         %twenty : Index = 20
+        |         %twenty : index.Index = 20
     """)
     module = parse_module(ir)
     fn = module.ops[0]
