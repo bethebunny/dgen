@@ -51,14 +51,6 @@ def test_generate_builtin_list_type():
     assert "types: list[Value[dgen.TypeType]]" in code
 
 
-def test_generate_builtin_function_type_not_list():
-    """Function<Type> should NOT have list annotation (it's not a list container)."""
-    mod = importlib.import_module("dgen.dialects.builtin")
-    code = generate_pyi(mod, "builtin")
-    assert "class Function(Type):" in code
-    assert "result: Value[dgen.TypeType]" in code
-
-
 def test_generate_builtin_op_with_default():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
@@ -73,25 +65,44 @@ def test_generate_builtin_op_with_optional_operand():
     assert "lhs: Value" in code
 
 
-def test_generate_builtin_op_with_block():
-    mod = importlib.import_module("dgen.dialects.builtin")
-    code = generate_pyi(mod, "builtin")
-    assert "class FunctionOp(HasSingleBlock, Op):" in code
-    assert "body: Block" in code
-    assert "Block" in code.split("from dgen import")[1].split("\n")[0]
-
-
 def test_generate_builtin_op_kw_only_decorator():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
     assert "@dataclass(eq=False, kw_only=True)" in code
 
 
-def test_generate_builtin_call_op_function_param():
+# ---------------------------------------------------------------------------
+# Function dialect tests
+# ---------------------------------------------------------------------------
+
+
+def test_generate_function_type():
+    """Function<Type> should NOT have list annotation (it's not a list container)."""
+    mod = importlib.import_module("dgen.dialects.function")
+    code = generate_pyi(mod, "function")
+    assert "class Function(Type):" in code
+    assert "result: Value[dgen.TypeType]" in code
+
+
+def test_generate_function_define_op_with_block():
+    mod = importlib.import_module("dgen.dialects.function")
+    code = generate_pyi(mod, "function")
+    assert "class DefineOp(HasSingleBlock, Op):" in code
+    assert "body: Block" in code
+    assert "Block" in code.split("from dgen import")[1].split("\n")[0]
+
+
+def test_generate_function_call_op():
     """CallOp.callee should be Value[Function], not list[Value[...]]."""
-    mod = importlib.import_module("dgen.dialects.builtin")
-    code = generate_pyi(mod, "builtin")
+    mod = importlib.import_module("dgen.dialects.function")
+    code = generate_pyi(mod, "function")
     assert "callee: Value[Function]" in code
+
+
+def test_generate_function_valid_python():
+    mod = importlib.import_module("dgen.dialects.function")
+    code = generate_pyi(mod, "function")
+    compile(code, "<function.pyi>", "exec")
 
 
 def test_generate_builtin_valid_python():

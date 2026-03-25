@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dgen
-from dgen.dialects import builtin
+from dgen.dialects import builtin, function
 from dgen.module import ConstantOp, Module, PackOp, _walk_all_ops
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import shape_constant, toy
@@ -18,7 +18,7 @@ class ShapeInference(Pass):
     allow_unregistered_ops = True
 
     def __init__(self) -> None:
-        self._func_map: dict[str, builtin.FunctionOp] = {}
+        self._func_map: dict[str, function.DefineOp] = {}
 
     def verify_postconditions(self, module: Module) -> None:
         super().verify_postconditions(module)
@@ -87,9 +87,11 @@ class ShapeInference(Pass):
             op.type = toy.Tensor(shape=shape_constant([count] + shape))
         return True
 
-    @lowering_for(builtin.CallOp)
-    def infer_call(self, op: builtin.CallOp, rewriter: Rewriter) -> bool:
-        args = op.args.values if isinstance(op.args, PackOp) else [op.args]
+    @lowering_for(function.CallOp)
+    def infer_call(self, op: function.CallOp, rewriter: Rewriter) -> bool:
+        args = (
+            op.arguments.values if isinstance(op.arguments, PackOp) else [op.arguments]
+        )
         callee = self._func_map.get(op.callee.name)
         if callee is None:
             return True

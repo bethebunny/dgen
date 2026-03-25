@@ -9,25 +9,28 @@ from dgen.testing import strip_prefix
 
 
 IR = strip_prefix("""
+    | import function
     | import toy
     |
-    | %main : Nil = function<Nil>() body():
+    | %main : Nil = function.define<Nil>() body():
     |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     |     %1 : Nil = toy.print(%0)
 """)
 
 IR_RENAMED = strip_prefix("""
+    | import function
     | import toy
     |
-    | %main : Nil = function<Nil>() body():
+    | %main : Nil = function.define<Nil>() body():
     |     %tensor : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     |     %result : Nil = toy.print(%tensor)
 """)
 
 IR_DIFFERENT = strip_prefix("""
+    | import function
     | import toy
     |
-    | %main : Nil = function<Nil>() body():
+    | %main : Nil = function.define<Nil>() body():
     |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
     |     %1 : Nil = toy.print(%0)
 """)

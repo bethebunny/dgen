@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import dgen
 from dgen import asm
 from dgen.block import BlockArgument
-from dgen.dialects import builtin
+from dgen.dialects import builtin, function
 from dgen.module import ConstantOp, Module, PackOp
 from toy.dialects import shape_constant, toy
 
@@ -68,15 +68,15 @@ def test_call_op():
         values=[v1, v3],
         type=builtin.List(element_type=inferred()),
     )
-    op = builtin.CallOp(
+    op = function.CallOp(
         name="4",
         callee=callee,
-        args=pack,
+        arguments=pack,
         type=inferred(),
     )
     assert (
         asm.format(op)
-        == "%4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])"
+        == "%4 : toy.InferredShapeTensor<F64> = function.call<%multiply_transpose>([%1, %3])"
     )
 
 
@@ -123,7 +123,7 @@ def test_full_module(ir_snapshot):
     t1 = toy.TransposeOp(input=mt_arg_b, type=inferred())
     m0 = toy.MulOp(lhs=t0, rhs=t1, type=inferred())
 
-    mt_func = builtin.FunctionOp(
+    mt_func = function.DefineOp(
         name="multiply_transpose",
         result=inferred(),
         body=dgen.Block(result=m0, args=[mt_arg_a, mt_arg_b]),
@@ -145,23 +145,23 @@ def test_full_module(ir_snapshot):
         values=[r1, r3],
         type=builtin.List(element_type=inferred()),
     )
-    builtin.CallOp(
+    function.CallOp(
         callee=mt_ref,
-        args=pack4,
+        arguments=pack4,
         type=inferred(),
     )
     pack5 = PackOp(
         values=[r3, r1],
         type=builtin.List(element_type=inferred()),
     )
-    call5 = builtin.CallOp(
+    call5 = function.CallOp(
         callee=mt_ref,
-        args=pack5,
+        arguments=pack5,
         type=inferred(),
     )
     print_op = toy.PrintOp(input=call5)
 
-    main_func = builtin.FunctionOp(
+    main_func = function.DefineOp(
         name="main",
         result=builtin.Nil(),
         body=dgen.Block(result=print_op, args=[]),
