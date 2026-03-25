@@ -190,31 +190,10 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
     for arg in f.body.args:
         types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
-    # Register label body block arg types and build %self→label mapping.
-    # Block parameters are directly bound to their label. Then propagate:
-    # any Label-typed block arg that receives a %self value via branch args
-    # is also a %self reference. We propagate by scanning branch arg lists.
-    self_to_label: dict[dgen.Value, llvm.LabelOp] = {}
+    # Register label body block arg types.
     for label_op in label_ops:
         for arg in label_op.body.args:
             types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
-        for param in label_op.body.parameters:
-            self_to_label[param] = label_op
-
-    # Propagate %self mappings: if a branch passes a known %self value at
-    # position i, the target label's body.args[i] is also a %self reference.
-    # This must run before predecessor building so resolve_target works for
-    # back-branch targets (body-scoped %self args, not just block parameters).
-    def _propagate_self(target_label: llvm.LabelOp, args: list[dgen.Value]) -> bool:
-        """Propagate self_to_label entries through one branch edge. Returns True if new."""
-        found_new = False
-        for i, arg_val in enumerate(args):
-            if arg_val in self_to_label and i < len(target_label.body.args):
-                body_arg = target_label.body.args[i]
-                if body_arg not in self_to_label:
-                    self_to_label[body_arg] = self_to_label[arg_val]
-                    found_new = True
-        return found_new
 
     def _branch_edges(
         op: dgen.Op,
@@ -229,20 +208,20 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
             ]
         return []
 
-    changed = True
-    while changed:
-        changed = False
-        for op in all_ops:
-            for target, args in _branch_edges(op):
-                target_label = self_to_label.get(target, target)
-                if isinstance(target_label, llvm.LabelOp):
-                    changed |= _propagate_self(target_label, args)
+    # Build predecessor map in two passes. Label-typed block args (%self
+    # references) are used as branch targets for back-edges, so we need to
+    # resolve them to their actual LabelOp before keying the predecessor map.
+    #
+    # Pass 1: collect edges whose target is a LabelOp (entry and cond_br edges).
+    # Pass 2: resolve Label-typed BlockArgument targets (back-edges) by tracing
+    # through the pass-1 predecessors to find which label they refer to.
 
-    def resolve_target(target: dgen.Value) -> dgen.Value:
-        """Resolve a branch target: if it's a %self BlockArgument, return the label."""
-        return self_to_label.get(target, target)
+    # Seed: block parameters are directly bound to their enclosing label.
+    label_of: dict[dgen.Value, llvm.LabelOp] = {}
+    for label_op in label_ops:
+        for param in label_op.body.parameters:
+            label_of[param] = label_op
 
-    # Build predecessor map: label → [(source_label, passed_arg_values)]
     entry_sentinel = dgen.Value(name="entry", type=llvm.Label())
     op_to_label: dict[dgen.Op, dgen.Value] = {}
     for op in entry_ops:
@@ -251,21 +230,42 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         for body_op in label_body_ops[id(label_op)]:
             op_to_label[body_op] = label_op
 
+    # Pass 1: edges with direct LabelOp targets.
     predecessors: dict[dgen.Value, list[tuple[dgen.Value, list[dgen.Value]]]] = {}
+    deferred_edges: list[tuple[dgen.Value, dgen.Value, list[dgen.Value]]] = []
     for op in all_ops:
         for target, args in _branch_edges(op):
             src = op_to_label[op]
-            predecessors.setdefault(resolve_target(target), []).append((src, args))
+            if isinstance(target, llvm.LabelOp):
+                predecessors.setdefault(target, []).append((src, args))
+            elif isinstance(target.type, llvm.Label):
+                deferred_edges.append((src, target, args))
 
-    # Second propagation pass: the predecessor map may reveal additional
-    # %self threading not visible from the branch ops alone (e.g. when
-    # multiple predecessors converge on one label).
+    # Propagate label_of through predecessor pass-through: if a predecessor
+    # passes a known label ref at position i, then body.args[i] refers to
+    # the same label. One propagation suffices for arbitrary nesting depth
+    # because predecessors flow outer→inner.
     changed = True
     while changed:
         changed = False
         for label_op in label_ops:
-            for _, pred_args in predecessors.get(label_op, []):
-                changed |= _propagate_self(label_op, pred_args)
+            for i, arg in enumerate(label_op.body.args):
+                if not isinstance(arg.type, llvm.Label) or arg in label_of:
+                    continue
+                for _, pred_args in predecessors.get(label_op, []):
+                    if i < len(pred_args) and pred_args[i] in label_of:
+                        label_of[arg] = label_of[pred_args[i]]
+                        changed = True
+                        break
+
+    # Pass 2: add deferred back-edges with resolved targets.
+    for src, target, args in deferred_edges:
+        resolved = label_of.get(target, target)
+        predecessors.setdefault(resolved, []).append((src, args))
+
+    def resolve_target(target: dgen.Value) -> dgen.Value:
+        """Resolve a Label-typed BlockArgument to the LabelOp it refers to."""
+        return label_of.get(target, target)
 
     for op in all_ops:
         if isinstance(op, ConstantOp):
@@ -414,7 +414,7 @@ def _emit_func(f: builtin.FunctionOp, host_buffers: list) -> list[str]:
         # label identity, not runtime values that need phi nodes.
         preds = predecessors.get(label_op, [])
         for arg_idx, arg in enumerate(label_op.body.args):
-            if arg in self_to_label:
+            if isinstance(arg.type, llvm.Label):
                 continue
             arg_name = tracker.track_name(arg)
             ty = types.get(arg, "i64")
