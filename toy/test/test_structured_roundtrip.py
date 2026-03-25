@@ -5,23 +5,22 @@ from dgen.asm.parser import parse_module
 from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
 from dgen.testing import assert_ir_equivalent
-from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.structured_to_llvm import StructuredToLLVM
 from toy.test.helpers import strip_prefix
 
 _compiler = Compiler([], IdentityPass())
 
 
 def lower_to_llvm(m: Module) -> Module:
-    return AffineToLLVMLowering().run(m, _compiler)
+    return StructuredToLLVM().run(m, _compiler)
 
 
 def test_roundtrip_alloc():
     ir = strip_prefix("""
         |
         | import function
-        | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
         |     %dealloc : Nil = memory.dealloc(%0)
     """)
@@ -35,7 +34,7 @@ def test_roundtrip_store_load():
         | import function
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : memory.MemRef<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
         |     %1 : F64 = 1.0
         |     %2 : index.Index = 0
@@ -52,9 +51,8 @@ def test_roundtrip_arith():
         |
         | import algebra
         | import function
-        | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : F64 = 2.5
         |     %1 : F64 = 3.0
         |     %2 : F64 = algebra.multiply(%0, %1)
@@ -70,7 +68,7 @@ def test_roundtrip_index_constant():
         | import function
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
     module = parse_module(ir)
@@ -81,9 +79,8 @@ def test_roundtrip_print_memref():
     ir = strip_prefix("""
         |
         | import function
-        | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : memory.MemRef<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
         |     %print : Nil = memory.print_memref(%0)
     """)
@@ -94,11 +91,10 @@ def test_roundtrip_print_memref():
 def test_roundtrip_for_op():
     ir = strip_prefix("""
         | import function
-        | import index
         | import control_flow
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : memory.MemRef<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
         |     %loop : Nil = control_flow.for<0, 3>([]) body(%i0: index.Index):
         |         %1 : F64 = 1.0
@@ -114,11 +110,10 @@ def test_roundtrip_for_op():
 def test_roundtrip_nested_for():
     ir = strip_prefix("""
         | import function
-        | import index
         | import control_flow
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
         |     %loop : Nil = control_flow.for<0, 2>([]) body(%i0: index.Index):
         |         %_ : Nil = control_flow.for<0, 3>([]) body(%i1: index.Index):
@@ -134,9 +129,8 @@ def test_roundtrip_nested_for():
 def test_roundtrip_return_value():
     ir = strip_prefix("""
         | import function
-        | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : F64 = 1.0
     """)
     module = parse_module(ir)
@@ -149,7 +143,7 @@ def test_roundtrip_multi_index_load_store():
         | import function
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
         |     %1 : F64 = 5.0
         |     %2 : index.Index = 0
@@ -167,9 +161,8 @@ def test_roundtrip_ssa_in_op_arg():
     ir = strip_prefix("""
         |
         | import function
-        | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %shape : memory.Shape<2> = [2, 3]
         |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(%shape)
     """)
@@ -182,9 +175,8 @@ def test_roundtrip_ssa_in_type_param():
     ir = strip_prefix("""
         |
         | import function
-        | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %shape : memory.Shape<2> = [2, 3]
         |     %0 : memory.MemRef<%shape, F64> = memory.alloc(%shape)
     """)
@@ -199,7 +191,7 @@ def test_ssa_shape_through_lowering():
         | import function
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %shape : memory.Shape<2> = [2, 3]
         |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(%shape)
         |     %1 : F64 = 1.0

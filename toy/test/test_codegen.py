@@ -8,10 +8,10 @@ from dgen.compiler import Compiler
 from dgen.passes.builtin_to_llvm import BuiltinToLLVMLowering
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.affine_to_llvm import AffineToLLVMLowering
+from toy.passes.structured_to_llvm import StructuredToLLVM
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
-from toy.passes.toy_to_affine import ToyToAffine
+from toy.passes.toy_to_structured import ToyToStructured
 from toy.test.helpers import run_toy as _toy
 
 
@@ -37,8 +37,8 @@ def test_transpose_phi_emission():
         passes=[
             ToyOptimize(),
             ShapeInference(),
-            ToyToAffine(),
-            AffineToLLVMLowering(),
+            ToyToStructured(),
+            StructuredToLLVM(),
             BuiltinToLLVMLowering(),
         ],
         exit=LowerLLVMToLLVMIR(),

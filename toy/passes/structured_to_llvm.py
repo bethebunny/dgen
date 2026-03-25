@@ -1,4 +1,7 @@
-"""Affine IR to LLVM-like IR lowering."""
+"""Structured IR to LLVM-like IR lowering.
+
+Lowers memory, control_flow, and algebra dialect ops to goto + llvm dialect ops.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +9,7 @@ from collections.abc import Callable
 from math import prod
 
 import dgen
-from dgen.block import BlockArgument, BlockParameter
+from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, control_flow, goto, index, llvm
 from dgen.dialects.builtin import ChainOp, F64, Nil, String
 from dgen.dialects.function import Function, FunctionOp
@@ -44,7 +47,7 @@ def _extract_indices(
     return [value_map.get(v, v) for v in indices.values]
 
 
-class AffineToLLVMLowering(Pass):
+class StructuredToLLVM(Pass):
     def __init__(self) -> None:
         self.loop_counter = 0
         self.value_map: dict[dgen.Value, dgen.Value] = {}
@@ -246,7 +249,7 @@ class AffineToLLVMLowering(Pass):
 
         header_iv = BlockArgument(name=f"i{lid}", type=index.Index())
         body_iv = BlockArgument(name=f"j{lid}", type=index.Index())
-        header_self = BlockParameter(name="self", type=goto.Label())
+        header_self = BlockArgument(name="self", type=goto.Label())
 
         # Map lower_bound/upper_bound
         lo_op = self._map(op.lower_bound)
