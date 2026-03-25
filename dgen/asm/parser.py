@@ -377,11 +377,26 @@ def _read_block_body(parser: ASMParser) -> Block:
         block_params = parser.read_list(_block_argument)
         parser.read(">")
     args = block_arguments(parser)
+    # Optional captures: captures(%name, ...)
+    captures: list[dgen.Value] = []
+    if parser.try_read("captures") is not None:
+        parser.read("(")
+        capture_names: list[str] = []
+        while parser.try_read(")") is None:
+            if capture_names:
+                parser.read(",")
+            parser.read("%")
+            capture_names.append(parser.expect_token(_IDENT, "capture name"))
+        for name in capture_names:
+            captures.append(parser.resolve(name))
     parser.read(":")
     block_indent = newline(parser)
     if block_indent == 0:
         return Block(
-            result=dgen.Value(type=builtin.Nil()), args=args, parameters=block_params
+            result=dgen.Value(type=builtin.Nil()),
+            args=args,
+            parameters=block_params,
+            captures=captures,
         )
     ops: list[Op] = []
     while parser.pos < len(parser.text):
@@ -393,7 +408,7 @@ def _read_block_body(parser: ASMParser) -> Block:
         ops.extend(parser.pending_ops)
         parser.pending_ops.clear()
         ops.append(op)
-    block = Block(result=ops[-1], args=args, parameters=block_params)
+    block = Block(result=ops[-1], args=args, parameters=block_params, captures=captures)
     live = set(walk_ops(block.result))
     dead = [op for op in ops if op not in live]
     if dead:

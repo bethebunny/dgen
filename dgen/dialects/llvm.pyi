@@ -11,24 +11,20 @@ from dgen.dialects.builtin import F64, Index, List, Nil, Pointer, String
 llvm = Dialect("llvm")
 
 @dataclass(frozen=True, eq=False)
-class Ptr(Type):
-    ...
+class Ptr(Type): ...
 
 @dataclass(frozen=True, eq=False)
 class Int(Type):
     bits: Value[Index]
 
 @dataclass(frozen=True, eq=False)
-class Float(Type):
-    ...
+class Float(Type): ...
 
 @dataclass(frozen=True, eq=False)
-class Void(Type):
-    ...
+class Void(Type): ...
 
 @dataclass(frozen=True, eq=False)
-class Label(Type):
-    ...
+class Label(Type): ...
 
 @dataclass(eq=False, kw_only=True)
 class AllocaOp(Op):
@@ -126,4 +122,3 @@ class CallOp(Op):
     callee: Value[String]
     args: Value
     type: Type = Nil()
-
