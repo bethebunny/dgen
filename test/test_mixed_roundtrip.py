@@ -33,11 +33,11 @@ def test_llvm_full_loop():
         |         %loop_body : llvm.Label = llvm.label() body(%j: Index):
         |             %one : Index = 1
         |             %next : Nil = llvm.add(%j, %one)
-        |             %_ : Nil = llvm.br(%loop_header, [%next])
+        |             %_ : Nil = llvm.br<%loop_header>([%next])
         |         %loop_exit : llvm.Label = llvm.label() body():
         |             %_ : Nil = ()
-        |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [%i0], [])
-        |     %br : Nil = llvm.br(%loop_header, [%init])
+        |         %_ : Nil = llvm.cond_br<%loop_body, %loop_exit>(%cmp, [%i0], [])
+        |     %br : Nil = llvm.br<%loop_header>([%init])
         |     %c0 : Nil = chain(%0, %ret)
         |     %_ : Nil = chain(%br, %c0)
     """)
