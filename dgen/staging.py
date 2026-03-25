@@ -14,7 +14,7 @@ import dgen
 from dgen import codegen
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, _ctype, _llvm_type
-from dgen.dialects import builtin, llvm
+from dgen.dialects import builtin, control_flow, llvm
 from dgen.dialects.builtin import FunctionOp, String
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.type import Constant, Memory
@@ -263,12 +263,12 @@ def _specialize_ifs(
     new_ops: list[dgen.Op] = []
 
     for op in func.body.ops:
-        if not isinstance(op, builtin.IfOp):
+        if not isinstance(op, control_flow.IfOp):
             new_ops.append(op)
             continue
 
         # Evaluate the condition
-        cond = replacements.get(op.cond, op.cond)
+        cond = replacements.get(op.condition, op.condition)
         subgraph = _trace_dependencies(cond, func)
         cond_result = _jit_evaluate(
             subgraph,

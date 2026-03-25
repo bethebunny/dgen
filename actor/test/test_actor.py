@@ -26,13 +26,14 @@ def test_fused_pipeline() -> None:
         strip_prefix("""
         | import actor
         | import affine
+        | import control_flow
         | import memory
         |
         | %main : Nil = function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
         |     %1 : memory.MemRef<memory.Shape<1>([4]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
         |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = affine.for<0, 4>([%4, %5]) body(%7: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
         |                 %8 : F64 = memory.load(%input, [%7])
         |                 %9 : F64 = 2.0
         |                 %10 : F64 = affine.mul_f(%8, %9)
@@ -41,7 +42,7 @@ def test_fused_pipeline() -> None:
         |             %13 : Nil = actor.produce(%12)
         |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %16 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %17 : Nil = affine.for<0, 4>([%15, %16]) body(%18: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
         |                 %19 : F64 = memory.load(%input, [%18])
         |                 %20 : F64 = 1.0
         |                 %21 : F64 = affine.add_f(%19, %20)
@@ -67,13 +68,14 @@ def test_unfused_pipeline() -> None:
         strip_prefix("""
         | import actor
         | import affine
+        | import control_flow
         | import memory
         |
         | %main : Nil = function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
         |     %1 : memory.MemRef<memory.Shape<1>([2]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
         |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = affine.for<0, 4>([%4, %5]) body(%7: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
         |                 %8 : F64 = memory.load(%input, [%7])
         |                 %9 : F64 = 2.0
         |                 %10 : F64 = affine.mul_f(%8, %9)
@@ -82,7 +84,7 @@ def test_unfused_pipeline() -> None:
         |             %13 : Nil = actor.produce(%12)
         |         %14 : Nil = actor.actor<2, 2>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %16 : memory.MemRef<memory.Shape<1>([2]), F64> = memory.alloc(memory.Shape<1>([2]))
-        |             %17 : Nil = affine.for<0, 2>([%15, %16]) body(%18: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([2]), F64>):
+        |             %17 : Nil = control_flow.for<0, 2>([%15, %16]) body(%18: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([2]), F64>):
         |                 %19 : F64 = memory.load(%input, [%18])
         |                 %20 : F64 = 1.0
         |                 %21 : F64 = affine.add_f(%19, %20)
@@ -108,13 +110,14 @@ def test_lowering_ir(ir_snapshot: object) -> None:
         strip_prefix("""
         | import actor
         | import affine
+        | import control_flow
         | import memory
         |
         | %main : Nil = function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
         |     %1 : memory.MemRef<memory.Shape<1>([4]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
         |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = affine.for<0, 4>([%4, %5]) body(%7: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
         |                 %8 : F64 = memory.load(%input, [%7])
         |                 %9 : F64 = 2.0
         |                 %10 : F64 = affine.mul_f(%8, %9)
@@ -123,7 +126,7 @@ def test_lowering_ir(ir_snapshot: object) -> None:
         |             %13 : Nil = actor.produce(%12)
         |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %16 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %17 : Nil = affine.for<0, 4>([%15, %16]) body(%18: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
         |                 %19 : F64 = memory.load(%input, [%18])
         |                 %20 : F64 = 1.0
         |                 %21 : F64 = affine.add_f(%19, %20)

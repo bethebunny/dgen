@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import F64, HasSingleBlock, Index, Nil
+from dgen import Dialect, Op, Type, Value
+from dgen.dialects.builtin import F64
 
 affine = Dialect("affine")
 
@@ -20,11 +20,3 @@ class AddFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = F64()
-
-@dataclass(eq=False, kw_only=True)
-class ForOp(HasSingleBlock, Op):
-    lo: Value[Index]
-    hi: Value[Index]
-    init_args: Value
-    type: Type = Nil()
-    body: Block

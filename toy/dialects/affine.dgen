@@ -1,7 +1,4 @@
-from builtin import Index, Nil, F64, HasSingleBlock, List
+from builtin import F64
 
 op mul_f(lhs: F64, rhs: F64) -> F64
 op add_f(lhs: F64, rhs: F64) -> F64
-op for<lo: Index, hi: Index>(init_args: List) -> Nil:
-    block body
-    has trait HasSingleBlock

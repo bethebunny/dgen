@@ -77,10 +77,11 @@ def test_roundtrip_print_memref():
 
 def test_roundtrip_for_op():
     ir = strip_prefix("""
+        | import control_flow
         |
         | %f : Nil = function<Nil>() body():
         |     %0 : memory.MemRef<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
-        |     %loop : Nil = affine.for<0, 3>([]) body(%i0: Index):
+        |     %loop : Nil = control_flow.for<0, 3>([]) body(%i0: Index):
         |         %1 : F64 = 1.0
         |         %2 : Index = 0
         |         %_ : Nil = memory.store(%1, %0, [%2])
@@ -93,11 +94,12 @@ def test_roundtrip_for_op():
 
 def test_roundtrip_nested_for():
     ir = strip_prefix("""
+        | import control_flow
         |
         | %f : Nil = function<Nil>() body():
         |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
-        |     %loop : Nil = affine.for<0, 2>([]) body(%i0: Index):
-        |         %_ : Nil = affine.for<0, 3>([]) body(%i1: Index):
+        |     %loop : Nil = control_flow.for<0, 2>([]) body(%i0: Index):
+        |         %_ : Nil = control_flow.for<0, 3>([]) body(%i1: Index):
         |             %1 : F64 = 1.0
         |             %2 : Index = 0
         |             %_ : Nil = memory.store(%1, %0, [%2, %2])

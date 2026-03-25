@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dgen
 from dgen.block import BlockArgument, Block
-from dgen.dialects import builtin, goto, llvm
+from dgen.dialects import builtin, control_flow, goto, llvm
 from dgen.dialects.builtin import FunctionOp, Nil, String
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
@@ -95,7 +95,7 @@ class BuiltinToLLVMLowering(Pass):
         """Lower a sequence of ops, returning the block result with effects chained."""
         effects: list[dgen.Op] = []
         for i, op in enumerate(ops):
-            if isinstance(op, builtin.IfOp):
+            if isinstance(op, control_flow.IfOp):
                 cond_br, merge_label = self._lower_if(op)
                 exit_result = self._lower_ops(ops[i + 1 :], return_val)
                 merge_label.body = dgen.Block(
@@ -133,7 +133,7 @@ class BuiltinToLLVMLowering(Pass):
         return None
 
     def _lower_if(
-        self, op: builtin.IfOp
+        self, op: control_flow.IfOp
     ) -> tuple[goto.ConditionalBranchOp, goto.LabelOp]:
         if_id = self.if_counter
         self.if_counter += 1
@@ -151,17 +151,17 @@ class BuiltinToLLVMLowering(Pass):
         zero = ConstantOp(value=0, type=builtin.Index())
         cond_i1 = llvm.IcmpOp(
             pred=String().constant("ne"),
-            lhs=self._map(op.cond),
+            lhs=self._map(op.condition),
             rhs=zero,
         )
-        assert isinstance(op.then_args, PackOp)
-        assert isinstance(op.else_args, PackOp)
+        assert isinstance(op.then_arguments, PackOp)
+        assert isinstance(op.else_arguments, PackOp)
         cond_br = goto.ConditionalBranchOp(
             condition=cond_i1,
             true_target=then_label_op,
             false_target=else_label_op,
-            true_arguments=self._map_pack(op.then_args),
-            false_arguments=self._map_pack(op.else_args),
+            true_arguments=self._map_pack(op.then_arguments),
+            false_arguments=self._map_pack(op.else_arguments),
         )
 
         then_label_op.body = self._lower_branch(
@@ -184,7 +184,7 @@ class BuiltinToLLVMLowering(Pass):
         """Lower branch ops into a Block ending with BrOp to merge_label_op."""
         effects: list[dgen.Op] = []
         for i, op in enumerate(ops):
-            if isinstance(op, builtin.IfOp):
+            if isinstance(op, control_flow.IfOp):
                 inner_cond_br, inner_merge = self._lower_if(op)
                 inner_merge.body = self._lower_branch(
                     ops[i + 1 :], return_val, merge_label_op, inner_merge.body.args

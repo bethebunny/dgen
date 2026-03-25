@@ -10,6 +10,7 @@ from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.dialects import control_flow
 from toy.dialects import affine, memory, shape_constant, toy
 
 from typing import TYPE_CHECKING
@@ -55,10 +56,10 @@ def _nested_for(
             if captured
             else _EMPTY_PACK
         )
-        innermost = affine.ForOp(
-            lo=Index().constant(0),
-            hi=Index().constant(shape[depth]),
-            init_args=init_pack,
+        innermost = control_flow.ForOp(
+            lower_bound=Index().constant(0),
+            upper_bound=Index().constant(shape[depth]),
+            initial_arguments=init_pack,
             body=dgen.Block(
                 result=innermost,
                 args=[ivars[depth]] + captured,
