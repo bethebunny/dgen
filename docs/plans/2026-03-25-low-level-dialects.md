@@ -525,26 +525,40 @@ already handles labels and branches separately from arithmetic ops.
    dealloc, load, store, print_memref. All passes and tests updated.
 3. **`control_flow` dialect** — ForOp from `affine`, IfOp from `builtin`. Field
    names updated (lower_bound, upper_bound, condition, etc.).
+4. **`number` dialect** — Boolean, SignedInteger, UnsignedInteger, Float64
+   types. No ops — these are semantic type definitions.
+5. **`algebra` dialect** — 17 polymorphic ops (add, multiply, subtract, equal,
+   less_than, etc.) with trait placeholders (AddMagma, MulMagma, TotalOrder).
+   Replaces affine.mul_f/add_f and index.add/subtract/equal. Parser updated
+   to infer literal operand types from result type annotations for polymorphic
+   ops.
+6. **`AlgebraToLLVM` pass** (`dgen/passes/algebra_to_llvm.py`) — proper
+   Rewriter-based pass using `@lowering_for` handlers and
+   `Rewriter.replace_uses`. Type-directed dispatch: F64 → llvm.fadd/fmul,
+   Index → llvm.add/mul/sub/icmp. The codegen runs this after
+   BuiltinToLLVMLowering to catch algebra ops inside goto label bodies.
+7. **Pass and dialect renames** — `toy_to_affine` → `toy_to_structured`,
+   `affine_to_llvm` → `structured_to_llvm`, all tests and snapshots updated.
+   Empty `affine` dialect cleaned up (ops moved to memory/control_flow/algebra).
 
 ### Deferred
 
-4. **`function` dialect** — FunctionOp and CallOp appear in every IR string as
-   `function<Nil>()`. Moving them would require `function.function<Nil>()` or a
-   rename of the op. Needs design thought on naming (MLIR uses `func.func` to
-   avoid this). High churn, low immediate value.
-5. **`index` dialect** — Index type appears in 237+ snapshot lines as `: Index`.
-   Moving it changes every IR string to `index.Index`. Same churn concern.
-   The index ops (`add_index`, etc.) will be subsumed by `algebra` ops on Index.
-6. **`number` dialect** — new types (Boolean, SignedInteger, UnsignedInteger,
-   Float64). No existing code references them. Useful once `algebra` exists.
-7. **`algebra` dialect** — requires trait system design (CommutativeRing,
-   BooleanAlgebra, etc.) and a mechanism for types to register trait
-   implementations. The most complex step.
-8. **Pass decomposition** — splitting `affine_to_llvm.py` into three focused
-   passes (control_flow→goto, memory→pointers, arithmetic→llvm). Prototyped
-   successfully but the codegen's SSA slot tracker depends on op emission order,
-   which changes when passes run independently. Requires codegen improvements
-   (order-independent slot assignment) before the decomposition is production-
-   ready. The architectural direction is validated; the plumbing needs work.
-9. **Clean up** — remove empty `affine` dialect (currently retains mul_f and
-   add_f pending `algebra`), slim down `llvm` and `builtin`.
+8. **`function` dialect** — Already extracted (DefineOp, CallOp, Function type).
+   Naming collision (`function.function<Nil>()`) makes further cleanup awkward.
+   High churn, low immediate value.
+9. **`index` dialect** — Index type already in its own dialect. Index ops
+   (`add_index`, etc.) subsumed by algebra ops on Index. The type name appears
+   in 237+ snapshot lines; moving would change every IR string.
+10. **Pass decomposition** — splitting `structured_to_llvm.py` into three
+    focused passes (control_flow→goto, memory→pointers, algebra→llvm). The
+    `AlgebraToLLVM` pass is extracted and working independently through the
+    codegen. The remaining two passes (control_flow and memory) are still
+    entangled in `structured_to_llvm.py` because the monolithic pass uses a
+    value_map approach that rebuilds all ops during block restructuring. Full
+    decomposition requires either (a) converting `structured_to_llvm` to use
+    `Rewriter.replace_uses` instead of value_map, or (b) running the extracted
+    passes independently after control flow is lowered to goto labels.
+11. **Trait system** — the algebra dialect declares trait placeholders
+    (AddMagma, MulMagma, TotalOrder) but has no mechanism for types to register
+    trait implementations. The trait hierarchy (CommutativeRing, Field,
+    BooleanAlgebra, etc.) is designed but not implemented.
