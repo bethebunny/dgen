@@ -220,6 +220,7 @@ def test_successor_has_natural_trait():
 def test_natural_in_asm():
     """peano.Natural parses as a type annotation."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         | import peano
@@ -253,6 +254,7 @@ def test_peano_constant():
     4. resolve_constant on value -> 3
     """
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         | import peano
@@ -280,29 +282,31 @@ def test_peano_constant():
 def test_equal_and_subtract_roundtrip():
     """equal_index and subtract_index ops round-trip through ASM."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %eq : index.Index = index.equal(%n, 0)
-        |     %sub : index.Index = index.subtract(%n, 1)
-        |     %result : index.Index = index.add(%eq, %sub)
+        |     %eq : index.Index = algebra.equal(%n, 0)
+        |     %sub : index.Index = algebra.subtract(%n, 1)
+        |     %result : index.Index = algebra.add(%eq, %sub)
     """)
     module = parse_module(ir)
     asm_lines = list(module.asm)
     asm_text = "\n".join(asm_lines)
-    assert "index.equal" in asm_text
-    assert "index.subtract" in asm_text
+    assert "algebra.equal" in asm_text
+    assert "algebra.subtract" in asm_text
 
 
 def test_subtract_jit():
     """subtract_index executes correctly via JIT."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %sub : index.Index = index.subtract(%n, 1)
+        |     %sub : index.Index = algebra.subtract(%n, 1)
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -312,11 +316,12 @@ def test_subtract_jit():
 def test_if_else_parse_roundtrip():
     """if/else op with two blocks parses and round-trips."""
     ir = strip_prefix("""
+        | import algebra
         | import control_flow
         | import function
         | import index
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : index.Index = index.equal(%n, 0)
+        |     %cond : index.Index = algebra.equal(%n, 0)
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : index.Index = 10
         |     else_body():
@@ -336,15 +341,16 @@ def test_if_else_parse_roundtrip():
 def test_if_else_jit():
     """if/else executes correctly via JIT."""
     ir = strip_prefix("""
+        | import algebra
         | import control_flow
         | import function
         | import index
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : index.Index = index.equal(%n, 0)
+        |     %cond : index.Index = algebra.equal(%n, 0)
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %one : index.Index = 1
         |     else_body():
-        |         %val : index.Index = index.subtract(%n, 1)
+        |         %val : index.Index = algebra.subtract(%n, 1)
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -356,6 +362,7 @@ def test_if_else_jit():
 def test_call_op_roundtrip():
     """call op parses and round-trips."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
@@ -363,7 +370,7 @@ def test_call_op_roundtrip():
         |     %result : index.Index = function.call<%add_one>([%x])
         |
         | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %r : index.Index = index.add(%n, 1)
+        |     %r : index.Index = algebra.add(%n, 1)
     """)
     module = parse_module(ir)
     asm_text = "\n".join(module.asm)
@@ -374,6 +381,7 @@ def test_call_op_roundtrip():
 def test_call_jit():
     """call op executes a helper function via JIT."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
@@ -381,7 +389,7 @@ def test_call_jit():
         |     %result : index.Index = function.call<%add_one>([%x])
         |
         | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %r : index.Index = index.add(%n, 1)
+        |     %r : index.Index = algebra.add(%n, 1)
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -392,6 +400,7 @@ def test_call_jit():
 def test_multi_function_staged():
     """Multi-function module: helper with staging, called from main."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         | import peano
@@ -404,7 +413,7 @@ def test_multi_function_staged():
         |     %result : index.Index = function.call<%add_one>([%n])
         |
         | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %r : index.Index = index.add(%x, 1)
+        |     %r : index.Index = algebra.add(%x, 1)
     """)
     module = parse_module(ir)
     exe = peano_compiler.compile(module)
@@ -415,11 +424,12 @@ def test_multi_function_staged():
 def test_equal_jit():
     """equal_index returns 1 when equal, 0 otherwise."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %eq : index.Index = index.equal(%n, 0)
+        |     %eq : index.Index = algebra.equal(%n, 0)
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -464,6 +474,7 @@ def test_recursive_peano():
     So natural(n) = Successor^(n+1)(Zero), and main(x) = value(natural(x)) = x+1.
     """
     ir = strip_prefix("""
+        | import algebra
         | import control_flow
         | import function
         | import index
@@ -475,12 +486,12 @@ def test_recursive_peano():
         |     %result : index.Index = peano.value<%n>()
         |
         | %natural : function.Function<peano.Natural> = function.function<peano.Natural>() body(%n: index.Index):
-        |     %base_case : index.Index = index.equal(%n, 0)
+        |     %base_case : index.Index = algebra.equal(%n, 0)
         |     %value : peano.Natural = control_flow.if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
         |     else_body():
-        |         %n_minus_one : index.Index = index.subtract(%n, 1)
+        |         %n_minus_one : index.Index = algebra.subtract(%n, 1)
         |         %predecessor : peano.Natural = function.call<%natural>([%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()
     """)

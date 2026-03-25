@@ -2,21 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import F64
+from dgen import Dialect
 
 affine = Dialect("affine")
-
-@dataclass(eq=False, kw_only=True)
-class MulFOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type = F64()
-
-@dataclass(eq=False, kw_only=True)
-class AddFOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type = F64()

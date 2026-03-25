@@ -1,6 +1,2 @@
 type Index:
     layout Int
-
-op add(left: Index, right: Index) -> Index
-op subtract(left: Index, right: Index) -> Index
-op equal(left: Index, right: Index) -> Index

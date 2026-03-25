@@ -12,7 +12,7 @@ from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
 from dgen.compiler import Compiler, IdentityPass
 from dgen import layout
-from dgen.dialects import builtin, index, llvm
+from dgen.dialects import algebra, builtin, llvm
 from dgen.dialects.index import Index
 from dgen.dialects.function import Function, FunctionOp
 from dgen.layout import TypeValue
@@ -312,11 +312,12 @@ def test_function_with_ssa_result_type():
 def test_block_argument_constant_raises_type_error():
     """BlockArgument.__constant__ raises TypeError — it's not a constant."""
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
-        |     %y : %t = index.add(%x, %x)
+        |     %y : %t = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
     ops = module.functions[0].body.ops
@@ -459,11 +460,12 @@ def test_staging_resolves_block_arg_type():
             return lower_to_llvm(m)
 
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
-        |     %y : %t = index.add(%x, %x)
+        |     %y : %t = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
 
@@ -538,13 +540,14 @@ def test_staging_with_ssa_result_type():
     %rt is a TypeType<index.Index>. The staging system must resolve both %t and %rt.
     """
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: index.Index):
-        |         %y : %rt = index.add(%x, %x)
+        |         %y : %rt = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
@@ -573,15 +576,15 @@ def test_staging_resolves_type_value():
     The staging system resolves %t to Index, then codegen proceeds normally.
     """
 
-    class LowerAddIndex(Pass):
+    class LowerAlgebraAdd(Pass):
         allow_unregistered_ops = True
 
         def run(self, m: Module, compiler: Compiler) -> Module:
-            """Lower add_index to llvm.add."""
+            """Lower algebra.add to llvm.add."""
             m = deepcopy(m)
             for func in m.functions:
                 for i, op in enumerate(func.body.ops):
-                    if isinstance(op, index.AddOp):
+                    if isinstance(op, algebra.AddOp):
                         new_op = llvm.AddOp(
                             name=op.name, lhs=op.left, rhs=op.right, type=op.type
                         )
@@ -595,16 +598,17 @@ def test_staging_resolves_type_value():
             return m
 
     ir = strip_prefix("""
+        | import algebra
         | import function
         | import index
         |
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
-        |     %y : %t = index.add(%x, %x)
+        |     %y : %t = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
 
     compiler: Compiler[Executable] = Compiler(
-        passes=[LowerAddIndex()], exit=LLVMCodegen()
+        passes=[LowerAlgebraAdd()], exit=LLVMCodegen()
     )
     exe = compiler.compile(module)
     assert exe.run({"tag": "index.Index"}, 21).to_json() == 42

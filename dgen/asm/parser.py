@@ -277,7 +277,9 @@ def op_statement(parser: ASMParser) -> Op:
     for (param_name, param_type), value in zip(op_cls.__params__, parameters):
         kwargs[param_name] = _coerce_param(value, param_type)
     for (field_name, field_type), value in zip(op_cls.__operands__, operands):
-        kwargs[field_name] = _coerce_operand(parser, value, field_type, op_cls)
+        kwargs[field_name] = _coerce_operand(
+            parser, value, field_type, op_cls, pre_type
+        )
     for block_name, block in zip(op_cls.__blocks__, blocks):
         kwargs[block_name] = block
     op = op_cls(**kwargs)
@@ -323,7 +325,11 @@ def _coerce_param(value: object, field_type: type[Type]) -> object:
 
 
 def _coerce_operand(
-    parser: ASMParser, value: object, field_type: type[Type], op_cls: type[Op]
+    parser: ASMParser,
+    value: object,
+    field_type: type[Type],
+    op_cls: type[Op],
+    result_type: Type | Value | None = None,
 ) -> object:
     """Wrap a parsed operand: PackOp for mixed lists, Constant for raw scalars."""
     if isinstance(value, Value):
@@ -336,7 +342,12 @@ def _coerce_operand(
         return value
     if issubclass(op_cls, ConstantOp):
         return value
-    return _wrap_constant(field_type, value)
+    # For polymorphic ops (field_type is base Type), infer concrete type from
+    # the explicit result type annotation when available.
+    effective_type = field_type
+    if field_type is Type and isinstance(result_type, Type):
+        effective_type = type(result_type)
+    return _wrap_constant(effective_type, value)
 
 
 def _wrap_constant(field_type: type[Type], raw: object) -> Constant:
