@@ -299,9 +299,10 @@ def test_subtract_jit():
 def test_if_else_parse_roundtrip():
     """if/else op with two blocks parses and round-trips."""
     ir = strip_prefix("""
+        | import control_flow
         | %main : Nil = function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = if(%cond, [], []) then_body():
+        |     %result : Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : Index = 10
         |     else_body():
         |         %twenty : Index = 20
@@ -309,7 +310,7 @@ def test_if_else_parse_roundtrip():
     module = parse_module(ir)
     asm_text = "\n".join(module.asm)
     print(asm_text)
-    assert "if(" in asm_text or "if (" in asm_text
+    assert "control_flow.if(" in asm_text
     assert "else" in asm_text
     # Round-trip: parse the output again
     module2 = parse_module(asm_text)
@@ -320,9 +321,10 @@ def test_if_else_parse_roundtrip():
 def test_if_else_jit():
     """if/else executes correctly via JIT."""
     ir = strip_prefix("""
+        | import control_flow
         | %main : Nil = function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
-        |     %result : Index = if(%cond, [], []) then_body():
+        |     %result : Index = control_flow.if(%cond, [], []) then_body():
         |         %one : Index = 1
         |     else_body():
         |         %val : Index = subtract_index(%n, 1)
@@ -431,6 +433,7 @@ def test_recursive_peano():
     """
     ir = strip_prefix("""
         | import peano
+        | import control_flow
         |
         | %main : Nil = function<Index>() body(%x: Index):
         |     %n : peano.Natural = call<%natural>([%x])
@@ -438,7 +441,7 @@ def test_recursive_peano():
         |
         | %natural : Nil = function<peano.Natural>() body(%n: Index):
         |     %base_case : Index = equal_index(%n, 0)
-        |     %value : peano.Natural = if(%base_case, [], []) then_body():
+        |     %value : peano.Natural = control_flow.if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
         |     else_body():

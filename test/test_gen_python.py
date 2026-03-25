@@ -134,12 +134,11 @@ def test_generate_affine_cross_dialect_import():
     mod = importlib.import_module("toy.dialects.affine")
     code = generate_pyi(mod, "affine")
     assert "from dgen.dialects.builtin import" in code
-    assert "HasSingleBlock" in code
 
 
-def test_generate_affine_op_trait_base():
-    mod = importlib.import_module("toy.dialects.affine")
-    code = generate_pyi(mod, "affine")
+def test_generate_control_flow_op_trait_base():
+    mod = importlib.import_module("dgen.dialects.control_flow")
+    code = generate_pyi(mod, "control_flow")
     assert "class ForOp(HasSingleBlock, Op):" in code
 
 
