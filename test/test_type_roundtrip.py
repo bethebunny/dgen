@@ -23,7 +23,7 @@ from dgen.dialects.builtin import FunctionOp, String
 from dgen.module import ConstantOp, Module, string_value
 from dgen.type import Memory
 from toy.dialects import shape_constant
-from toy.dialects.affine import MemRef, Shape
+from toy.dialects.memory import MemRef, Shape
 from toy.dialects.toy import InferredShapeTensor, Tensor
 from dgen.testing import strip_prefix
 
@@ -93,24 +93,24 @@ TOY_TYPES = [
     ),
 ]
 
-AFFINE_TYPES = [
+MEMORY_TYPES = [
     pytest.param(
         Shape(rank=builtin.Index().constant(2)),
         [2, 3],
         "[2, 3]",
         (2, 3),
-        id="affine.shape",
+        id="memory.shape",
     ),
     pytest.param(
         MemRef(shape=shape_constant([2, 3])),
         (0,),
         None,
         None,
-        id="affine.memref",
+        id="memory.memref",
     ),
 ]
 
-ALL_TYPES = BUILTIN_TYPES + LLVM_TYPES + TOY_TYPES + AFFINE_TYPES
+ALL_TYPES = BUILTIN_TYPES + LLVM_TYPES + TOY_TYPES + MEMORY_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ VOID_TYPES = [
     pytest.param(builtin.Nil(), id="builtin.nil"),
     pytest.param(llvm.Void(), id="llvm.void"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
-    pytest.param(Shape(rank=builtin.Index().constant(0)), id="affine.shape_0"),
+    pytest.param(Shape(rank=builtin.Index().constant(0)), id="memory.shape_0"),
 ]
 
 
@@ -177,9 +177,9 @@ _ASM_TYPES = [
     pytest.param(Tensor(shape=shape_constant([3])), id="toy.tensor_1d"),
     pytest.param(Tensor(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
-    pytest.param(Shape(rank=builtin.Index().constant(0)), id="affine.shape_0"),
-    pytest.param(Shape(rank=builtin.Index().constant(2)), id="affine.shape_2"),
-    pytest.param(MemRef(shape=shape_constant([2, 3])), id="affine.memref"),
+    pytest.param(Shape(rank=builtin.Index().constant(0)), id="memory.shape_0"),
+    pytest.param(Shape(rank=builtin.Index().constant(2)), id="memory.shape_2"),
+    pytest.param(MemRef(shape=shape_constant([2, 3])), id="memory.memref"),
 ]
 
 
@@ -213,7 +213,7 @@ _PARSEABLE_TYPES = [
         [2, 3],
         "[2, 3]",
         (2, 3),
-        id="affine.shape",
+        id="memory.shape",
     ),
 ]
 
@@ -346,7 +346,7 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
     ir_input = strip_prefix("""
         |
         | %main : Nil = function<Nil>() body(%x: Index):
-        |     %store : Nil = affine.store(%x, %x, [3, %x, 5])
+        |     %store : Nil = memory.store(%x, %x, [3, %x, 5])
     """)
     parsed = parse_module(ir_input)
     assert parsed == ir_snapshot

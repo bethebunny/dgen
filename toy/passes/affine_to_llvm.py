@@ -12,7 +12,7 @@ from dgen.dialects.builtin import ChainOp, FunctionOp, Nil, String
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
-from toy.dialects import affine, toy
+from toy.dialects import affine, memory, toy
 
 from typing import TYPE_CHECKING
 
@@ -128,8 +128,8 @@ class AffineToLLVMLowering(Pass):
             return None
         self._seen.add(op)
 
-        if isinstance(op, affine.AllocOp):
-            assert isinstance(op.type, affine.MemRef)
+        if isinstance(op, memory.AllocOp):
+            assert isinstance(op.type, memory.MemRef)
             shape = op.type.shape.__constant__.to_json()
             assert isinstance(shape, list)
             total = prod(shape)
@@ -147,13 +147,13 @@ class AffineToLLVMLowering(Pass):
             # Return malloc as an effect so it is reachable from the function
             # body result and claimed by the entry block (LLVM dominance).
             return malloc_op
-        if isinstance(op, affine.DeallocOp):
+        if isinstance(op, memory.DeallocOp):
             return None  # heap-allocated; no free (leak for now)
-        if isinstance(op, affine.LoadOp):
+        if isinstance(op, memory.LoadOp):
             self._lower_load(op)
             return None
 
-        if isinstance(op, affine.StoreOp):
+        if isinstance(op, memory.StoreOp):
             return self._lower_store(op)
 
         if isinstance(op, ConstantOp):
@@ -179,7 +179,7 @@ class AffineToLLVMLowering(Pass):
             )
             return None
 
-        if isinstance(op, affine.PrintMemrefOp):
+        if isinstance(op, memory.PrintMemrefOp):
             return self._lower_print(op)
 
         if isinstance(op, ChainOp):
@@ -201,13 +201,13 @@ class AffineToLLVMLowering(Pass):
 
         return None
 
-    def _lower_load(self, op: affine.LoadOp) -> None:
+    def _lower_load(self, op: memory.LoadOp) -> None:
         memref = self._deref(self._map(op.memref))
         indices = _extract_indices(op.indices, self.value_map)
         gep = llvm.GepOp(base=memref, index=self._linearize(memref, indices))
         self.value_map[op] = llvm.LoadOp(ptr=gep)
 
-    def _lower_store(self, op: affine.StoreOp) -> llvm.StoreOp:
+    def _lower_store(self, op: memory.StoreOp) -> llvm.StoreOp:
         memref = self._deref(self._map(op.memref))
         indices = _extract_indices(op.indices, self.value_map)
         gep = llvm.GepOp(base=memref, index=self._linearize(memref, indices))
@@ -342,7 +342,7 @@ class AffineToLLVMLowering(Pass):
             acc = llvm.AddOp(lhs=acc, rhs=llvm.ZextOp(input=cmp))
         self.value_map[op] = acc
 
-    def _lower_print(self, op: affine.PrintMemrefOp) -> llvm.CallOp:
+    def _lower_print(self, op: memory.PrintMemrefOp) -> llvm.CallOp:
         input_val = self._deref(self._map(op.input))
         size = prod(self.alloc_shapes[input_val])
         pack = PackOp(

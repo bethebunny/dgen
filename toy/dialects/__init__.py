@@ -9,7 +9,7 @@ from dgen import Constant, Type
 from dgen.dialects.builtin import Index
 from dgen.dialects.builtin import Function
 
-from toy.dialects.affine import Shape
+from toy.dialects.memory import Shape
 
 # ===----------------------------------------------------------------------=== #
 # Shape helpers

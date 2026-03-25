@@ -26,7 +26,7 @@ def test_constant_op():
     )
     assert (
         asm.format(op)
-        == "%0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
+        == "%0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
     )
 
 
@@ -41,7 +41,7 @@ def test_reshape_op():
     op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
     assert (
         asm.format(op)
-        == "%1 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%0)"
+        == "%1 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.reshape(%0)"
     )
 
 

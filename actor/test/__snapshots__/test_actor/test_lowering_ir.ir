@@ -1,17 +1,18 @@
 import affine
+import memory
 
-%main : Nil = function<affine.MemRef<affine.Shape<1>([4]), F64>>() body(%0: affine.MemRef<affine.Shape<1>([4]), F64>):
-    %16 : affine.MemRef<affine.Shape<1>([4]), F64> = affine.alloc(affine.Shape<1>([4]))
-    %5 : affine.MemRef<affine.Shape<1>([4]), F64> = affine.alloc(affine.Shape<1>([4]))
-    %6 : Nil = affine.for<0, 4>([%0, %5]) body(%7: Index, %input: affine.MemRef<affine.Shape<1>([4]), F64>, %out: affine.MemRef<affine.Shape<1>([4]), F64>):
-        %8 : F64 = affine.load(%input, [%7])
+%main : Nil = function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
+    %16 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
+    %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
+    %6 : Nil = affine.for<0, 4>([%0, %5]) body(%7: Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        %8 : F64 = memory.load(%input, [%7])
         %9 : F64 = 2.0
         %10 : F64 = affine.mul_f(%8, %9)
-        %11 : Nil = affine.store(%10, %out, [%7])
-    %12 : affine.MemRef<affine.Shape<1>([4]), F64> = chain(%5, %6)
-    %17 : Nil = affine.for<0, 4>([%12, %16]) body(%18: Index, %19: affine.MemRef<affine.Shape<1>([4]), F64>, %20: affine.MemRef<affine.Shape<1>([4]), F64>):
-        %21 : F64 = affine.load(%19, [%18])
+        %11 : Nil = memory.store(%10, %out, [%7])
+    %12 : memory.MemRef<memory.Shape<1>([4]), F64> = chain(%5, %6)
+    %17 : Nil = affine.for<0, 4>([%12, %16]) body(%18: Index, %19: memory.MemRef<memory.Shape<1>([4]), F64>, %20: memory.MemRef<memory.Shape<1>([4]), F64>):
+        %21 : F64 = memory.load(%19, [%18])
         %22 : F64 = 1.0
         %23 : F64 = affine.add_f(%21, %22)
-        %24 : Nil = affine.store(%23, %20, [%18])
-    %25 : affine.MemRef<affine.Shape<1>([4]), F64> = chain(%16, %17)
+        %24 : Nil = memory.store(%23, %20, [%18])
+    %25 : memory.MemRef<memory.Shape<1>([4]), F64> = chain(%16, %17)

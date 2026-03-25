@@ -86,9 +86,9 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<affine.Shape<2>([3, 2]), F64> = toy.transpose(%0)
-        |     %2 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.transpose(%1)
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.transpose(%0)
+        |     %2 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.transpose(%1)
         |     %3 : Nil = toy.print(%2)
     """)
 
@@ -114,7 +114,7 @@ def test_pass_unregistered_ops_error():
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
 

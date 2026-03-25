@@ -21,8 +21,8 @@ def test_roundtrip_reshape():
     ir = strip_prefix("""
         | import toy
         |
-        | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() body(%a: toy.InferredShapeTensor<F64>):
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%a)
+        | %f : Nil = function<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body(%a: toy.InferredShapeTensor<F64>):
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.reshape(%a)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -32,8 +32,8 @@ def test_roundtrip_constant():
     ir = strip_prefix("""
         | import toy
         |
-        | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %f : Nil = function<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body():
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -44,8 +44,8 @@ def test_explicit_constant(ir_snapshot):
     ir = strip_prefix("""
         | import toy
         |
-        | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        | %f : Nil = function<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body():
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     """)
     module = parse_module(ir)
     assert module == ir_snapshot
@@ -90,7 +90,7 @@ def test_roundtrip_print():
     ir = strip_prefix("""
         | import toy
         |
-        | %f : Nil = function<Nil>() body(%a: toy.Tensor<affine.Shape<2>([2, 3]), F64>):
+        | %f : Nil = function<Nil>() body(%a: toy.Tensor<memory.Shape<2>([2, 3]), F64>):
         |     %0 : Nil = toy.print(%a)
     """)
     module = parse_module(ir)
@@ -109,8 +109,8 @@ def test_roundtrip_concat():
     ir = strip_prefix("""
         | import toy
         |
-        | %f : Nil = function<toy.Tensor<affine.Shape<2>([2, 8]), F64>>() body(%a: toy.Tensor<affine.Shape<2>([2, 3]), F64>, %b: toy.Tensor<affine.Shape<2>([2, 5]), F64>):
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 8]), F64> = toy.concat<1>(%a, %b)
+        | %f : Nil = function<toy.Tensor<memory.Shape<2>([2, 8]), F64>>() body(%a: toy.Tensor<memory.Shape<2>([2, 3]), F64>, %b: toy.Tensor<memory.Shape<2>([2, 5]), F64>):
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 8]), F64> = toy.concat<1>(%a, %b)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -120,8 +120,8 @@ def test_roundtrip_tile():
     ir = strip_prefix("""
         | import toy
         |
-        | %f : Nil = function<toy.Tensor<affine.Shape<2>([4, 3]), F64>>() body(%a: toy.Tensor<affine.Shape<1>([3]), F64>, %n: Index):
-        |     %0 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%n>(%a)
+        | %f : Nil = function<toy.Tensor<memory.Shape<2>([4, 3]), F64>>() body(%a: toy.Tensor<memory.Shape<1>([3]), F64>, %n: Index):
+        |     %0 : toy.Tensor<memory.Shape<2>([4, 3]), F64> = toy.tile<%n>(%a)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -132,9 +132,9 @@ def test_roundtrip_tile_with_index_constant():
     ir = strip_prefix("""
         | import toy
         |
-        | %f : Nil = function<toy.Tensor<affine.Shape<2>([4, 3]), F64>>() body(%a: toy.Tensor<affine.Shape<1>([3]), F64>):
+        | %f : Nil = function<toy.Tensor<memory.Shape<2>([4, 3]), F64>>() body(%a: toy.Tensor<memory.Shape<1>([3]), F64>):
         |     %0 : Index = 4
-        |     %1 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%0>(%a)
+        |     %1 : toy.Tensor<memory.Shape<2>([4, 3]), F64> = toy.tile<%0>(%a)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -145,7 +145,7 @@ def test_roundtrip_tile_with_computed_count():
     ir = strip_prefix("""
         | import toy
         |
-        | %f : Nil = function<toy.InferredShapeTensor<F64>>() body(%a: toy.Tensor<affine.Shape<1>([3]), F64>):
+        | %f : Nil = function<toy.InferredShapeTensor<F64>>() body(%a: toy.Tensor<memory.Shape<1>([3]), F64>):
         |     %0 : Index = 2
         |     %1 : Index = 2
         |     %2 : Index = add_index(%0, %1)
@@ -174,10 +174,10 @@ def test_roundtrip_full_program():
         |     %2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%0)
-        |     %2 : toy.Tensor<affine.Shape<1>([6]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.reshape(%2)
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.reshape(%0)
+        |     %2 : toy.Tensor<memory.Shape<1>([6]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.reshape(%2)
         |     %4 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%1, %3])
         |     %5 : toy.InferredShapeTensor<F64> = call<%multiply_transpose>([%3, %1])
         |     %6 : toy.InferredShapeTensor<F64> = chain(%5, %4)

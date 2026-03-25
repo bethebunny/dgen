@@ -1,7 +1,7 @@
 import toy
 
 %f : Nil = function<Nil>() body():
-    %0 : toy.Tensor<affine.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
+    %0 : toy.Tensor<memory.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
     %1 : Index = 4
-    %2 : toy.Tensor<affine.Shape<2>([4, 3]), F64> = toy.tile<%1>(%0)
+    %2 : toy.Tensor<memory.Shape<2>([4, 3]), F64> = toy.tile<%1>(%0)
     %3 : Nil = toy.print(%2)

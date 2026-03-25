@@ -1,7 +1,7 @@
 from builtin import Index, Nil, F64, String, Span
-import affine
+import memory
 
-type Tensor<shape: affine.Shape, dtype: Type = F64>:
+type Tensor<shape: memory.Shape, dtype: Type = F64>:
     data: Span<dtype>
 
 type InferredShapeTensor<dtype: Type = F64>:
