@@ -7,7 +7,7 @@ from math import prod
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, goto, llvm
+from dgen.dialects import builtin, control_flow, goto, llvm
 from dgen.dialects.builtin import ChainOp, FunctionOp, Nil, String
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
@@ -100,7 +100,7 @@ class AffineToLLVMLowering(Pass):
     ) -> dgen.Value:
         effects: list[dgen.Op] = []
         for i, op in enumerate(ops):
-            if isinstance(op, affine.ForOp):
+            if isinstance(op, control_flow.ForOp):
                 if op in self._seen:
                     continue
                 self._seen.add(op)
@@ -229,7 +229,7 @@ class AffineToLLVMLowering(Pass):
         assert result is not None
         return result
 
-    def _lower_for(self, op: affine.ForOp) -> tuple[goto.BranchOp, goto.LabelOp]:
+    def _lower_for(self, op: control_flow.ForOp) -> tuple[goto.BranchOp, goto.LabelOp]:
         """Lower one ForOp to LLVM header/body/exit labels.
 
         The header gets a %self block parameter. Body and exit blocks capture
@@ -246,15 +246,19 @@ class AffineToLLVMLowering(Pass):
         body_iv = BlockArgument(name=f"j{lid}", type=builtin.Index())
         header_self = BlockArgument(name="self", type=goto.Label())
 
-        # Map lo/hi
-        lo_op = self._map(op.lo)
-        if lo_op is op.lo:
-            lo_op = ConstantOp(value=op.lo.__constant__.to_json(), type=builtin.Index())
-            self.value_map[op.lo] = lo_op
-        hi_op = self._map(op.hi)
-        if hi_op is op.hi:
-            hi_op = ConstantOp(value=op.hi.__constant__.to_json(), type=builtin.Index())
-            self.value_map[op.hi] = hi_op
+        # Map lower_bound/upper_bound
+        lo_op = self._map(op.lower_bound)
+        if lo_op is op.lower_bound:
+            lo_op = ConstantOp(
+                value=op.lower_bound.__constant__.to_json(), type=builtin.Index()
+            )
+            self.value_map[op.lower_bound] = lo_op
+        hi_op = self._map(op.upper_bound)
+        if hi_op is op.upper_bound:
+            hi_op = ConstantOp(
+                value=op.upper_bound.__constant__.to_json(), type=builtin.Index()
+            )
+            self.value_map[op.upper_bound] = hi_op
 
         # Header: compare iv against hi, branch true→body or false→exit.
         cmp_op = llvm.IcmpOp(pred=String().constant("slt"), lhs=header_iv, rhs=hi_op)

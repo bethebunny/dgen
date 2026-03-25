@@ -85,15 +85,6 @@ class FunctionOp(HasSingleBlock, Op):
     body: Block
 
 @dataclass(eq=False, kw_only=True)
-class IfOp(Op):
-    cond: Value
-    then_args: Value
-    else_args: Value
-    type: Type
-    then_body: Block
-    else_body: Block
-
-@dataclass(eq=False, kw_only=True)
 class ChainOp(Op):
     lhs: Value
     rhs: Value
