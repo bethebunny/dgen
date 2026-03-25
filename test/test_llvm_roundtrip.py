@@ -2,6 +2,7 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.dialects import index as _index  # noqa: F401 — register index dialect
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
@@ -9,6 +10,7 @@ def test_roundtrip_alloca():
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
@@ -21,10 +23,11 @@ def test_roundtrip_gep_load_store():
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
-        |     %1 : Index = 0
+        |     %1 : index.Index = 0
         |     %2 : Nil = llvm.gep(%0, %1)
         |     %3 : F64 = 1.0
         |     %4 : Nil = llvm.store(%3, %2)
@@ -39,6 +42,7 @@ def test_roundtrip_fadd_fmul():
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : F64 = 1.0
@@ -55,10 +59,11 @@ def test_roundtrip_add_mul_int():
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : Index = 3
-        |     %1 : Index = 4
+        |     %0 : index.Index = 3
+        |     %1 : index.Index = 4
         |     %2 : Nil = llvm.add(%0, %1)
         |     %3 : Nil = llvm.mul(%0, %1)
         |     %_ : Nil = chain(%2, %3)
@@ -71,11 +76,13 @@ def test_roundtrip_icmp_condbr():
     ir = strip_prefix("""
         | import function
         | import goto
+        | import index
         | import llvm
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : Index = 0
-        |     %1 : Index = 10
+        |     %0 : index.Index = 0
+        |     %1 : index.Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
         |     %loop_body : goto.Label = goto.label() body():
         |         %_ : Nil = ()
@@ -91,6 +98,7 @@ def test_roundtrip_label_br():
     ir = strip_prefix("""
         | import function
         | import goto
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %loop_header : goto.Label = goto.label() body():
@@ -104,8 +112,9 @@ def test_roundtrip_call_with_result():
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body(%a: Index, %b: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%a: index.Index, %b: index.Index):
         |     %0 : Nil = llvm.call<"foo">([%a, %b])
     """)
     module = parse_module(ir)
@@ -116,8 +125,9 @@ def test_roundtrip_call_void():
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body(%ptr: Index, %size: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%ptr: index.Index, %size: index.Index):
         |     %0 : Nil = llvm.call<"print_memref">([%ptr, %size])
     """)
     module = parse_module(ir)
@@ -140,16 +150,18 @@ def test_roundtrip_loop_pattern():
     ir = strip_prefix("""
         | import function
         | import goto
+        | import index
         | import llvm
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %alloc : Nil = llvm.alloca<3>()
-        |     %init : Index = 0
-        |     %loop_header : goto.Label = goto.label() body(%i: Index, %p: llvm.Ptr):
-        |         %hi : Index = 3
+        |     %init : index.Index = 0
+        |     %loop_header : goto.Label = goto.label() body(%i: index.Index, %p: llvm.Ptr):
+        |         %hi : index.Index = 3
         |         %cmp : Nil = llvm.icmp<"slt">(%i, %hi)
-        |         %loop_body : goto.Label = goto.label() body(%j: Index, %q: llvm.Ptr):
-        |             %one : Index = 1
+        |         %loop_body : goto.Label = goto.label() body(%j: index.Index, %q: llvm.Ptr):
+        |             %one : index.Index = 1
         |             %next : Nil = llvm.add(%j, %one)
         |             %_ : Nil = goto.branch<%loop_header>([%next, %q])
         |         %loop_exit : goto.Label = goto.label() body():

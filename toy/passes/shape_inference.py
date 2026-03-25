@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dgen
-from dgen.dialects import builtin, function
+from dgen.dialects import function
 from dgen.module import ConstantOp, Module, PackOp, _walk_all_ops
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import shape_constant, toy

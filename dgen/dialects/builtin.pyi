@@ -6,13 +6,11 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
+from dgen.dialects.index import Index
 
 builtin = Dialect("builtin")
 
 class HasSingleBlock: ...
-
-@dataclass(frozen=True, eq=False)
-class Index(Type): ...
 
 @dataclass(frozen=True, eq=False)
 class F64(Type): ...
@@ -55,24 +53,6 @@ class ListGetOp(Op):
     index: Value[Index]
     list: Value
     type: Type
-
-@dataclass(eq=False, kw_only=True)
-class AddIndexOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type = Index()
-
-@dataclass(eq=False, kw_only=True)
-class EqualIndexOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type = Index()
-
-@dataclass(eq=False, kw_only=True)
-class SubtractIndexOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type = Index()
 
 @dataclass(eq=False, kw_only=True)
 class ChainOp(Op):

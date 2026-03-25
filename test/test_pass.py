@@ -57,13 +57,15 @@ def test_rewriter_eager_replace(ir_snapshot):
     """replace_uses eagerly updates all referencing ops."""
     ir_text = strip_prefix("""
         | import function
+        | import index
         | import llvm
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : Index = 1
-        |     %1 : Index = 2
-        |     %2 : Index = llvm.add(%0, %0)
-        |     %3 : Index = chain(%2, %1)
+        |     %0 : index.Index = 1
+        |     %1 : index.Index = 2
+        |     %2 : index.Index = llvm.add(%0, %0)
+        |     %3 : index.Index = chain(%2, %1)
     """)
     m = parse_module(ir_text)
     func = m.functions[0]
@@ -86,6 +88,7 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
     """A pass that eliminates transpose(transpose(x)) -> x."""
     ir_text = strip_prefix("""
         | import function
+        | import index
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -115,6 +118,7 @@ def test_pass_unregistered_ops_error():
     """allow_unregistered_ops=False raises on unhandled ops."""
     ir_text = strip_prefix("""
         | import function
+        | import index
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -150,9 +154,10 @@ def test_pass_multiple_handlers_first_wins():
 
     ir_text = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : Index = 42
+        |     %0 : index.Index = 42
     """)
     m = parse_module(ir_text)
     compiler = Compiler(passes=[], exit=IdentityPass())
@@ -169,6 +174,7 @@ def test_compiler_run_verification_catches_closed_block_violation():
     """Post-condition check detects a closed-block violation introduced by a pass."""
     ir_text = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = {}
@@ -207,11 +213,12 @@ def test_constant_fold_resolves_stage0_boundary():
     """
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: Index):
-        |         %y : %rt = add_index(%x, %x)
+        |     %t : Type = {"tag": "index.Index"}
+        |     %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: index.Index):
+        |         %y : %rt = index.add(%x, %x)
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
@@ -231,16 +238,17 @@ def test_constant_fold_resolves_stage0_boundary():
         exit=LLVMCodegen(),
     )
     exe = compiler.compile(Module(ops=[inner_func]))
-    assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
+    assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
 
 
 def test_constant_fold_is_noop_without_boundaries():
     """ConstantFold does nothing when there are no stage-0 boundaries."""
     ir_text = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : Index = 42
+        |     %0 : index.Index = 42
     """)
     m = parse_module(ir_text)
     before = asm.format(m)
@@ -263,9 +271,10 @@ def test_pass_run_receives_continuation_compiler():
 
     ir_text = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : Index = 42
+        |     %0 : index.Index = 42
     """)
     m = parse_module(ir_text)
     compiler = Compiler(passes=[SpyPass(), SpyPass(), SpyPass()], exit=IdentityPass())

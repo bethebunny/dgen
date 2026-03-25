@@ -12,13 +12,13 @@ from dgen.testing import strip_prefix
 
 
 def test_tuple_construction():
-    """Tuple<[Index, String]> constructs with a list of types."""
+    """Tuple<[index.Index, String]> constructs with a list of types."""
     t = Tuple(types=[Index(), String()])
     assert len(t.types) == 2
 
 
 def test_tuple_layout():
-    """Tuple<[Index, String]> has Record layout with fields "0", "1"."""
+    """Tuple<[index.Index, String]> has Record layout with fields "0", "1"."""
     t = Tuple(types=[Index(), String()])
     expected = layout.Record([("0", layout.Int()), ("1", layout.String())])
     assert t.__layout__ == expected
@@ -33,9 +33,9 @@ def test_empty_tuple_layout():
 
 
 def test_tuple_type_asm_format():
-    """Tuple<[Index, String]> formats as Tuple<[Index, String]>."""
+    """Tuple<[index.Index, String]> formats as Tuple<[index.Index, String]>."""
     t = Tuple(types=[Index(), String()])
-    assert type_asm(t) == "Tuple<[Index, String]>"
+    assert type_asm(t) == "Tuple<[index.Index, String]>"
 
 
 def test_empty_tuple_asm_format():
@@ -48,9 +48,10 @@ def test_tuple_constant_roundtrip():
     """Tuple type in IR round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %x : Tuple<[Index, String]> = [42, "hello"]
+        |     %x : Tuple<[index.Index, String]> = [42, "hello"]
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -62,7 +63,7 @@ def test_tuple_type_constant_serialization():
     data = t.__constant__.to_json()
     assert data == {
         "tag": "builtin.Tuple",
-        "types": [{"tag": "builtin.Index"}, {"tag": "builtin.String"}],
+        "types": [{"tag": "index.Index"}, {"tag": "builtin.String"}],
     }
 
 
@@ -78,7 +79,7 @@ def test_tuple_type_from_dict_roundtrip():
 
 
 def test_tuple_three_types():
-    """Tuple<[Index, F64, Index]> layout has three fields."""
+    """Tuple<[index.Index, F64, Index]> layout has three fields."""
     t = Tuple(types=[Index(), F64(), Index()])
     expected = layout.Record(
         [
@@ -97,6 +98,7 @@ def test_tuple_type_values():
     """Tuple of type values: %types : Tuple<[Type, Type]> = [Index, String]."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
         |     %types : Tuple<[Type, Type]> = [Index, String]

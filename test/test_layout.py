@@ -101,7 +101,7 @@ def test_list_constant_fatpointer():
 def test_list_type_asm_one_param():
     """List type formats as 'List<index>' — just element_type, no count."""
     list_type = builtin.List(element_type=builtin.Index())
-    assert type_asm(list_type) == "List<Index>"
+    assert type_asm(list_type) == "List<index.Index>"
 
 
 def test_int_to_json():
@@ -198,14 +198,14 @@ def test_type_layout_parametric_type_param_nested():
 def test_type_value_memory_non_parametric():
     """Pack and unpack Index() as a type value through Memory."""
     metatype = TypeType()
-    mem = Memory.from_json(metatype, {"tag": "builtin.Index"})
-    assert mem.to_json() == {"tag": "builtin.Index"}
+    mem = Memory.from_json(metatype, {"tag": "index.Index"})
+    assert mem.to_json() == {"tag": "index.Index"}
 
 
 def test_type_value_memory_parametric():
-    """Pack and unpack List<Index> as a type value through Memory."""
+    """Pack and unpack List<index.Index> as a type value through Memory."""
     metatype = TypeType()
-    data = {"tag": "builtin.List", "element_type": {"tag": "builtin.Index"}}
+    data = {"tag": "builtin.List", "element_type": {"tag": "index.Index"}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
 
@@ -283,7 +283,7 @@ def test_type_constant_parametric():
     """Parametric type's __constant__ includes param values."""
     ty = builtin.List(element_type=builtin.Index())
     data = ty.__constant__.to_json()
-    expected = {"tag": "builtin.List", "element_type": {"tag": "builtin.Index"}}
+    expected = {"tag": "builtin.List", "element_type": {"tag": "index.Index"}}
     assert data == expected
 
 

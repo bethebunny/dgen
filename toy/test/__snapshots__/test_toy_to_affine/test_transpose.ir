@@ -1,4 +1,5 @@
 import control_flow
+import index
 import function
 import memory
 import toy
@@ -7,8 +8,8 @@ import toy
     %0 : memory.MemRef<memory.Shape<2>([3, 2]), F64> = memory.alloc(memory.Shape<2>([3, 2]))
     %1 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     %2 : memory.MemRef<memory.Shape<2>([3, 2]), F64> = chain(%0, %1)
-    %3 : Nil = control_flow.for<0, 2>([]) body(%4: Index):
-        %5 : Nil = control_flow.for<0, 3>([%4]) body(%6: Index, %4: Index):
+    %3 : Nil = control_flow.for<0, 2>([]) body(%4: index.Index):
+        %5 : Nil = control_flow.for<0, 3>([%4]) body(%6: index.Index, %4: index.Index):
             %7 : F64 = memory.load(%1, [%4, %6])
             %8 : Nil = memory.store(%7, %0, [%6, %4])
     %9 : memory.MemRef<memory.Shape<2>([3, 2]), F64> = chain(%2, %3)

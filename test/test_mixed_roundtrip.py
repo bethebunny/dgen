@@ -2,6 +2,7 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
+from dgen.dialects import index as _index  # noqa: F401 — register index dialect
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
@@ -10,6 +11,7 @@ def test_llvm_via_imports():
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
@@ -25,16 +27,18 @@ def test_llvm_full_loop():
     ir = strip_prefix("""
         | import function
         | import goto
+        | import index
         | import llvm
+        | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
-        |     %init : Index = 0
-        |     %loop_header : goto.Label = goto.label() body(%i0: Index):
-        |         %hi : Index = 3
+        |     %init : index.Index = 0
+        |     %loop_header : goto.Label = goto.label() body(%i0: index.Index):
+        |         %hi : index.Index = 3
         |         %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
-        |         %loop_body : goto.Label = goto.label() body(%j: Index):
-        |             %one : Index = 1
+        |         %loop_body : goto.Label = goto.label() body(%j: index.Index):
+        |             %one : index.Index = 1
         |             %next : Nil = llvm.add(%j, %one)
         |             %_ : Nil = goto.branch<%loop_header>([%next])
         |         %loop_exit : goto.Label = goto.label() body():

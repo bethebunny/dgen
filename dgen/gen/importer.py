@@ -21,6 +21,7 @@ from dgen.gen.parser import parse
 # Hardcoded fallback: if relative discovery fails, try this mapping.
 _DEFAULT_MAP: dict[str, str] = {
     "builtin": "dgen.dialects.builtin",
+    "index": "dgen.dialects.index",
 }
 
 

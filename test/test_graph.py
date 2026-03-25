@@ -60,11 +60,12 @@ def test_chain_asm_round_trip():
     """chain op parses and formats correctly."""
     ir_text = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : Index = 0
-        |     %1 : Index = 1
-        |     %2 : Index = chain(%1, %0)
+        |     %0 : index.Index = 0
+        |     %1 : index.Index = 1
+        |     %2 : index.Index = chain(%1, %0)
     """)
     m = parse_module(ir_text)
     assert_ir_equivalent(m, asm.parse(asm.format(m)))

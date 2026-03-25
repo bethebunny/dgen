@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import HasSingleBlock, Nil, Span
+from dgen.dialects.builtin import HasSingleBlock
 
 function = Dialect("function")
 

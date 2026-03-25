@@ -12,8 +12,8 @@ from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
 from dgen.compiler import Compiler, IdentityPass
 from dgen import layout
-from dgen.dialects import builtin, function, llvm
-from dgen.dialects.builtin import Index
+from dgen.dialects import builtin, index, llvm
+from dgen.dialects.index import Index
 from dgen.dialects.function import Function, FunctionOp
 from dgen.layout import TypeValue
 from dgen.module import ConstantOp, Module
@@ -31,24 +31,25 @@ def lower_to_llvm(m: Module) -> Module:
 
 def test_parse_dict_literal():
     """value_expression handles {key: value, ...} and returns a Python dict."""
-    parser = ASMParser('{"tag": "builtin.Index"}')
+    parser = ASMParser('{"tag": "index.Index"}')
     result = value_expression(parser)
-    assert result == {"tag": "builtin.Index"}
+    assert result == {"tag": "index.Index"}
 
 
 def test_format_dict_literal():
     """format_expr handles dicts."""
-    result = format_expr({"tag": "builtin.Index"})
-    assert result == '{"tag": "builtin.Index"}'
+    result = format_expr({"tag": "index.Index"})
+    assert result == '{"tag": "index.Index"}'
 
 
 def test_typetype_constant_asm_roundtrip():
     """TypeType constant with dict literal round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -58,9 +59,10 @@ def test_ssa_ref_as_op_type():
     """SSA ref in type position: %x's type is the SSA value %t."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
     module = parse_module(ir)
@@ -76,9 +78,10 @@ def test_ssa_ref_as_op_type_roundtrip():
     """SSA ref in type position round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
     module = parse_module(ir)
@@ -90,14 +93,14 @@ def test_typetype_memory_roundtrip():
     idx = Index()
     mem = idx.__constant__
     data = mem.to_json()
-    assert data == {"tag": "builtin.Index"}
+    assert data == {"tag": "index.Index"}
     # Round-trip: dict → Memory → dict
     mem2 = Memory.from_json(idx.type, data)
     assert mem2.to_json() == data
 
 
 def test_parameterized_typetype_constant_roundtrip():
-    """TypeType for Array<Index, 4> round-trips with nested params in dict."""
+    """TypeType for Array<index.Index, 4> round-trips with nested params in dict."""
     arr_ty = builtin.Array(
         element_type=Index(),
         n=Index().constant(4),
@@ -106,29 +109,31 @@ def test_parameterized_typetype_constant_roundtrip():
     data = mem.to_json()
     assert data == {
         "tag": "builtin.Array",
-        "element_type": {"tag": "builtin.Index"},
+        "element_type": {"tag": "index.Index"},
         "n": 4,
     }
 
     # ASM round-trip with the parameterized TypeType
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
+        |     %t : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
 def test_array_with_ssa_dimension():
-    """Array<Index, %n> — SSA value as type parameter, round-trips through ASM."""
+    """Array<index.Index, %n> — SSA value as type parameter, round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %n : Index = 4
-        |     %arr : Array<Index, %n> = [1, 2, 3, 4]
+        |     %n : index.Index = 4
+        |     %arr : Array<index.Index, %n> = [1, 2, 3, 4]
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -145,9 +150,10 @@ def test_array_with_ssa_element_type():
     """Array<%t, 4> — SSA type value as element_type param, round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
     """)
     module = parse_module(ir)
@@ -165,9 +171,10 @@ def test_array_with_ssa_element_type_layout():
     """Array<%t, 4> — type_constant resolves the element type for layout computation."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
     """)
     module = parse_module(ir)
@@ -186,9 +193,10 @@ def test_pointer_with_ssa_pointee():
     """Pointer<%t> — SSA type value as pointee param, round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %p : Pointer<%t> = 0
     """)
     module = parse_module(ir)
@@ -209,7 +217,7 @@ def test_type_value_jit_identity():
     idx = Index()
     mem = idx.__constant__
 
-    # Build: main(t: TypeType<Index>) -> TypeType<Index> { return t }
+    # Build: main(t: TypeType<index.Index>) -> TypeType<index.Index> { return t }
     arg = BlockArgument(name="t", type=idx.type)
     func = FunctionOp(
         name="main",
@@ -234,16 +242,17 @@ def test_type_constant_jit_return():
     )
     exe = compile_module(Module(ops=[func]))
     result = exe.run()
-    assert result.to_json() == {"tag": "builtin.Index"}
+    assert result.to_json() == {"tag": "index.Index"}
 
 
 def test_list_with_ssa_element_type():
     """List<%t> — SSA type value as element_type param, round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %xs : List<%t> = [1, 2, 3]
     """)
     module = parse_module(ir)
@@ -262,6 +271,7 @@ def test_fat_pointer_with_ssa_pointee():
     """Span<%t> — SSA type value as pointee param, round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "builtin.F64"}
@@ -283,10 +293,11 @@ def test_function_with_ssa_result_type():
     """function<%t> — SSA type value as result param, round-trips through ASM."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : function.Function<%t> = function.function<%t>() body(%x: Index):
+        |     %t : Type = {"tag": "index.Index"}
+        |     %f : function.Function<%t> = function.function<%t>() body(%x: index.Index):
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -302,9 +313,10 @@ def test_block_argument_constant_raises_type_error():
     """BlockArgument.__constant__ raises TypeError — it's not a constant."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%t: Type, %x: Index):
-        |     %y : %t = add_index(%x, %x)
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
+        |     %y : %t = index.add(%x, %x)
     """)
     module = parse_module(ir)
     ops = module.functions[0].body.ops
@@ -324,9 +336,10 @@ def test_type_constant_resolves_ssa_constant():
     """type_constant resolves a ConstantOp TypeType value to a concrete Type."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
     module = parse_module(ir)
@@ -339,10 +352,11 @@ def test_compile_with_ssa_function_result():
     """compile() resolves FunctionOp.result when it's a ConstantOp type ref."""
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : function.Function<%t> = function.function<%t>() body(%x: Index):
+        |     %t : Type = {"tag": "index.Index"}
+        |     %f : function.Function<%t> = function.function<%t>() body(%x: index.Index):
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
@@ -359,9 +373,10 @@ def test_compile_function_with_ssa_typed_block_arg():
     """
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<()> = function.function<Nil>() body(%x: %t):
     """)
     module = parse_module(ir)
@@ -378,16 +393,17 @@ def test_compile_function_with_ssa_typed_block_arg():
 def test_compile_constant_with_ssa_type():
     """compile() handles ConstantOp whose type is an SSA ref (ConstantOp).
 
-    %t : Type = {"tag": "builtin.Index"}
+    %t : Type = {"tag": "index.Index"}
     %x : %t = 42
 
     codegen must resolve %x's type via type_constant to get __layout__.
     """
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
     module = parse_module(ir)
@@ -407,9 +423,10 @@ def test_compile_input_types_resolved_from_ssa():
     """
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
+        |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<%t> = function.function<%t>() body(%x: %t):
     """)
     module = parse_module(ir)
@@ -423,8 +440,8 @@ def test_compile_input_types_resolved_from_ssa():
 def test_staging_resolves_block_arg_type():
     """Staging resolves a BlockArgument TypeType at runtime, not compile time.
 
-    main(%t: Type, %x: Index) -> Index:
-        %y : %t = add_index(%x, %x)
+    main(%t: Type, %x: index.Index) -> index.Index:
+        %y : %t = index.add(%x, %x)
 
     %t is a function parameter — it can't be resolved at compile time
     (BlockArgument.__constant__ raises TypeError). The staging system
@@ -443,9 +460,10 @@ def test_staging_resolves_block_arg_type():
 
     ir = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%t: Type, %x: Index):
-        |     %y : %t = add_index(%x, %x)
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
+        |     %y : %t = index.add(%x, %x)
     """)
     module = parse_module(ir)
 
@@ -461,11 +479,11 @@ def test_staging_resolves_block_arg_type():
     compile_time_calls = lower_calls
 
     # Each run() triggers runtime JIT — lower is called for each invocation
-    assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
+    assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
     calls_after_first_run = lower_calls
     assert calls_after_first_run > compile_time_calls
 
-    assert exe.run({"tag": "builtin.Index"}, 100).to_json() == 200
+    assert exe.run({"tag": "index.Index"}, 100).to_json() == 200
     assert lower_calls > calls_after_first_run
 
 
@@ -490,9 +508,10 @@ def test_parse_typetype_block_arg_constant_materializes():
     """
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body(%arr_ty: Type):
-        |     %tt : Type = {"tag": "builtin.Array", "element_type": {"tag": "builtin.Index"}, "n": 4}
+        |     %tt : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
     """)
     module = parse_module(ir)
     tt_op = module.functions[0].body.ops[0]
@@ -502,7 +521,7 @@ def test_parse_typetype_block_arg_constant_materializes():
     mem = tt_op.memory
     assert mem.to_json() == {
         "tag": "builtin.Array",
-        "element_type": {"tag": "builtin.Index"},
+        "element_type": {"tag": "index.Index"},
         "n": 4,
     }
 
@@ -511,20 +530,21 @@ def test_staging_with_ssa_result_type():
     """Staging resolves func.result when it's a ConstantOp SSA ref.
 
     main() -> Nil:
-        %t : Type = {"tag": "builtin.Index"}
-        %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: Index):
-            %y : %rt = add_index(%x, %x)
+        %t : Type = {"tag": "index.Index"}
+        %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: index.Index):
+            %y : %rt = index.add(%x, %x)
 
     The inner function %f has result = %t (ConstantOp), and its block arg
-    %rt is a TypeType<Index>. The staging system must resolve both %t and %rt.
+    %rt is a TypeType<index.Index>. The staging system must resolve both %t and %rt.
     """
     ir = strip_prefix("""
         | import function
+        | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: Index):
-        |         %y : %rt = add_index(%x, %x)
+        |     %t : Type = {"tag": "index.Index"}
+        |     %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: index.Index):
+        |         %y : %rt = index.add(%x, %x)
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
@@ -541,14 +561,14 @@ def test_staging_with_ssa_result_type():
         passes=[LowerToLLVMPass()], exit=LLVMCodegen()
     )
     exe = compiler.compile(Module(ops=[inner_func]))
-    assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
+    assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
 
 
 def test_staging_resolves_type_value():
     """Staging resolves a TypeType function param used as op type.
 
-    main(%t: Type, %x: Index) -> Index:
-        %y : %t = add_index(%x, %x)
+    main(%t: Type, %x: index.Index) -> index.Index:
+        %y : %t = index.add(%x, %x)
 
     The staging system resolves %t to Index, then codegen proceeds normally.
     """
@@ -561,9 +581,9 @@ def test_staging_resolves_type_value():
             m = deepcopy(m)
             for func in m.functions:
                 for i, op in enumerate(func.body.ops):
-                    if isinstance(op, builtin.AddIndexOp):
+                    if isinstance(op, index.AddOp):
                         new_op = llvm.AddOp(
-                            name=op.name, lhs=op.lhs, rhs=op.rhs, type=op.type
+                            name=op.name, lhs=op.left, rhs=op.right, type=op.type
                         )
                         func.body.ops[i] = new_op
                         # Patch references
@@ -576,9 +596,10 @@ def test_staging_resolves_type_value():
 
     ir = strip_prefix("""
         | import function
+        | import index
         |
-        | %main : function.Function<Index> = function.function<Index>() body(%t: Type, %x: Index):
-        |     %y : %t = add_index(%x, %x)
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
+        |     %y : %t = index.add(%x, %x)
     """)
     module = parse_module(ir)
 
@@ -586,4 +607,4 @@ def test_staging_resolves_type_value():
         passes=[LowerAddIndex()], exit=LLVMCodegen()
     )
     exe = compiler.compile(module)
-    assert exe.run({"tag": "builtin.Index"}, 21).to_json() == 42
+    assert exe.run({"tag": "index.Index"}, 21).to_json() == 42

@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from dgen import Constant, Type
-from dgen.dialects.builtin import Index
+from dgen.dialects.index import Index
 from dgen.dialects.function import Function
 
 from toy.dialects.memory import Shape

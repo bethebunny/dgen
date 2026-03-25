@@ -1,7 +1,6 @@
 trait HasSingleBlock
 
-type Index:
-    layout Int
+from index import Index
 
 type F64:
     layout Float64
@@ -34,7 +33,4 @@ type Tuple<types: List<Type>>:
     layout Record
 
 op list_get<index: Index>(list: List)
-op add_index(lhs: Index, rhs: Index) -> Index
-op equal_index(lhs: Index, rhs: Index) -> Index
-op subtract_index(lhs: Index, rhs: Index) -> Index
 op chain(lhs, rhs) -> Type
