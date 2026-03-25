@@ -381,14 +381,11 @@ def _read_block_body(parser: ASMParser) -> Block:
     captures: list[dgen.Value] = []
     if parser.try_read("captures") is not None:
         parser.read("(")
-        capture_names: list[str] = []
         while parser.try_read(")") is None:
-            if capture_names:
+            if captures:
                 parser.read(",")
-            parser.read("%")
-            capture_names.append(parser.expect_token(_IDENT, "capture name"))
-        for name in capture_names:
-            captures.append(parser.resolve(name))
+            ssa = parser.expect_token(_SSA, "capture reference")
+            captures.append(parser.resolve(ssa[1:]))  # strip leading %
     parser.read(":")
     block_indent = newline(parser)
     if block_indent == 0:

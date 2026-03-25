@@ -80,6 +80,7 @@ class Rewriter:
     def _replace_in_block(
         self, block: dgen.Block, old: dgen.Value, new: dgen.Value
     ) -> None:
+        block.captures = [new if v is old else v for v in block.captures]
         for op in block.ops:
             op.replace_operand(old, new)
             for name, param in op.parameters:
