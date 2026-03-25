@@ -12,7 +12,7 @@ def test_diff_empty_when_identical():
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     assert diff_modules(parse_module(ir), parse_module(ir)) == ""
@@ -24,14 +24,14 @@ def test_diff_empty_when_ssa_names_differ():
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %tensor : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %tensor : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %result : Nil = toy.print(%tensor)
     """)
     assert diff_modules(parse_module(a), parse_module(b)) == ""
@@ -43,14 +43,14 @@ def test_diff_empty_when_function_order_differs():
         | import toy
         |
         | %func_a : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
         | import toy
         |
         | %func_b : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %1 : Nil = toy.print(%0)
     """)
     fa = parse_module(a).functions[0]
@@ -65,18 +65,18 @@ def test_diff_empty_when_op_order_differs():
     a = strip_prefix("""
         | import toy
         |
-        | %main : toy.Tensor<affine.Shape<2>([2, 3]), F64> = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() body():
-        |     %a : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %b : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
-        |     %c : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.mul(%a, %b)
+        | %main : toy.Tensor<memory.Shape<2>([2, 3]), F64> = function<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body():
+        |     %a : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %b : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        |     %c : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.mul(%a, %b)
     """)
     b = strip_prefix("""
         | import toy
         |
-        | %main : toy.Tensor<affine.Shape<2>([2, 3]), F64> = function<toy.Tensor<affine.Shape<2>([2, 3]), F64>>() body():
-        |     %x : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
-        |     %y : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %z : toy.Tensor<affine.Shape<2>([2, 3]), F64> = toy.mul(%y, %x)
+        | %main : toy.Tensor<memory.Shape<2>([2, 3]), F64> = function<toy.Tensor<memory.Shape<2>([2, 3]), F64>>() body():
+        |     %x : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        |     %y : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %z : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.mul(%y, %x)
     """)
     assert diff_modules(parse_module(a), parse_module(b)) == ""
 
@@ -87,14 +87,14 @@ def test_diff_format_semantic_change():
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     actual = strip_prefix("""
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
     result = diff_modules(parse_module(actual), parse_module(expected))
@@ -118,7 +118,7 @@ def test_diff_format_missing_function():
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     actual_module = Module(ops=[])
@@ -135,7 +135,7 @@ def test_diff_format_extra_function():
         | import toy
         |
         | %main : Nil = function<Nil>() body():
-        |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     expected_module = Module(ops=[])

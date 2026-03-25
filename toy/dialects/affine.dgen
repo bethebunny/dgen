@@ -1,18 +1,7 @@
-from builtin import Index, Nil, F64, HasSingleBlock, Array, Pointer, List
+from builtin import Index, Nil, F64, HasSingleBlock, List
 
-type Shape<rank: Index>:
-    dims: Array<Index, rank>
-
-type MemRef<shape: Shape, dtype: Type = F64>:
-    data: Pointer<Nil>
-
-op alloc(shape: Shape) -> MemRef
-op dealloc(input: MemRef) -> Nil
-op load(memref: MemRef, indices: Index) -> F64
-op store(value: F64, memref: MemRef, indices: Index) -> Nil
 op mul_f(lhs: F64, rhs: F64) -> F64
 op add_f(lhs: F64, rhs: F64) -> F64
-op print_memref(input: MemRef) -> Nil
 op for<lo: Index, hi: Index>(init_args: List) -> Nil:
     block body
     has trait HasSingleBlock

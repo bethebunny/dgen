@@ -277,9 +277,9 @@ def test_parse_namespace_import():
 
 
 def test_parse_qualified_type_ref():
-    result = parse("type Tensor<shape: affine.Shape>:\n    data: Nil\n")
+    result = parse("type Tensor<shape: memory.Shape>:\n    data: Nil\n")
     t = result.types[0]
-    assert t.params[0].type.name == "affine.Shape"
+    assert t.params[0].type.name == "memory.Shape"
 
 
 def test_parse_trait_with_static_fields():

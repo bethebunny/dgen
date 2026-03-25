@@ -6,14 +6,14 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-import toy.dialects.affine as affine
+import toy.dialects.memory as memory
 from dgen.dialects.builtin import F64, Index, Nil
 
 toy = Dialect("toy")
 
 @dataclass(frozen=True, eq=False)
 class Tensor(Type):
-    shape: Value[affine.Shape]
+    shape: Value[memory.Shape]
     dtype: Value[dgen.TypeType] = F64()
 
 @dataclass(frozen=True, eq=False)

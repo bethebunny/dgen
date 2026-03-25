@@ -10,7 +10,7 @@ from dgen.dialects import builtin
 from dgen.dialects.builtin import FunctionOp, Index
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
-from toy.dialects import affine, shape_constant, toy
+from toy.dialects import affine, memory, shape_constant, toy
 
 from typing import TYPE_CHECKING
 
@@ -88,13 +88,13 @@ class ToyToAffine(Pass):
         return FunctionOp(name=f.name, body=f.body, result=f.result)
 
     def _shape(self, val: dgen.Value) -> list[int]:
-        assert isinstance(val.type, (toy.Tensor, affine.MemRef))
+        assert isinstance(val.type, (toy.Tensor, memory.MemRef))
         result = val.type.shape.__constant__.to_json()
         assert isinstance(result, list)
         return result
 
-    def _alloc(self, shape_val: dgen.Value) -> affine.AllocOp:
-        return affine.AllocOp(shape=shape_val, type=affine.MemRef(shape=shape_val))
+    def _alloc(self, shape_val: dgen.Value) -> memory.AllocOp:
+        return memory.AllocOp(shape=shape_val, type=memory.MemRef(shape=shape_val))
 
     @lowering_for(toy.TransposeOp)
     def lower_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
@@ -103,8 +103,8 @@ class ToyToAffine(Pass):
         alloc = self._alloc(op.type.shape)
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = affine.LoadOp(memref=op.input, indices=_index_pack(*ivars))
-            return affine.StoreOp(
+            load = memory.LoadOp(memref=op.input, indices=_index_pack(*ivars))
+            return memory.StoreOp(
                 value=load, memref=alloc, indices=_index_pack(*reversed(list(ivars)))
             )
 
@@ -134,10 +134,10 @@ class ToyToAffine(Pass):
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = _index_pack(*ivars)
             res = cls(
-                lhs=affine.LoadOp(memref=lhs, indices=idx),
-                rhs=affine.LoadOp(memref=rhs, indices=idx),
+                lhs=memory.LoadOp(memref=lhs, indices=idx),
+                rhs=memory.LoadOp(memref=rhs, indices=idx),
             )
-            return affine.StoreOp(value=res, memref=alloc, indices=idx)
+            return memory.StoreOp(value=res, memref=alloc, indices=idx)
 
         loop = _nested_for(shape, body, _get_block_args(lhs, rhs))
         rewriter.replace_uses(op, _chain(alloc, lhs, rhs, loop, type=alloc.type))
@@ -150,7 +150,7 @@ class ToyToAffine(Pass):
 
     @lowering_for(toy.PrintOp)
     def lower_print(self, op: toy.PrintOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, affine.PrintMemrefOp(input=op.input))
+        rewriter.replace_uses(op, memory.PrintMemrefOp(input=op.input))
         return True
 
     @lowering_for(toy.DimSizeOp)
@@ -170,8 +170,8 @@ class ToyToAffine(Pass):
         alloc = self._alloc(shape_constant(out_shape))
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = affine.LoadOp(memref=op.input, indices=_index_pack(*ivars[1:]))
-            return affine.StoreOp(value=load, memref=alloc, indices=_index_pack(*ivars))
+            load = memory.LoadOp(memref=op.input, indices=_index_pack(*ivars[1:]))
+            return memory.StoreOp(value=load, memref=alloc, indices=_index_pack(*ivars))
 
         loop = _nested_for(out_shape, body, _get_block_args(op.input))
         rewriter.replace_uses(op, _chain(alloc, op.input, loop, type=alloc.type))
@@ -189,8 +189,8 @@ class ToyToAffine(Pass):
 
         def lhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = _index_pack(*ivars)
-            return affine.StoreOp(
-                value=affine.LoadOp(memref=op.lhs, indices=idx),
+            return memory.StoreOp(
+                value=memory.LoadOp(memref=op.lhs, indices=idx),
                 memref=alloc,
                 indices=idx,
             )
@@ -201,8 +201,8 @@ class ToyToAffine(Pass):
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             shifted = list(ivars)
             shifted[axis] = builtin.AddIndexOp(lhs=ivars[axis], rhs=offset)
-            return affine.StoreOp(
-                value=affine.LoadOp(memref=op.rhs, indices=_index_pack(*ivars)),
+            return memory.StoreOp(
+                value=memory.LoadOp(memref=op.rhs, indices=_index_pack(*ivars)),
                 memref=alloc,
                 indices=_index_pack(*shifted),
             )

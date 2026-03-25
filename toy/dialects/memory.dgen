@@ -1,0 +1,13 @@
+from builtin import Index, Nil, F64, Array, Pointer
+
+type Shape<rank: Index>:
+    dims: Array<Index, rank>
+
+type MemRef<shape: Shape, dtype: Type = F64>:
+    data: Pointer<Nil>
+
+op alloc(shape: Shape) -> MemRef
+op dealloc(input: MemRef) -> Nil
+op load(memref: MemRef, indices: Index) -> F64
+op store(value: F64, memref: MemRef, indices: Index) -> Nil
+op print_memref(input: MemRef) -> Nil

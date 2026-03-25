@@ -132,7 +132,7 @@ class TestParseErrors:
             | import toy
             |
             | %f : Nil = function<Nil>() body():
-            |     %0 : toy.Tensor<affine.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+            |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         """)
         with pytest.raises(Exception):
             parse_module(ir)

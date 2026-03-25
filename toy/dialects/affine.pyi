@@ -4,43 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import dgen
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.dialects.builtin import F64, HasSingleBlock, Index, Nil
 
 affine = Dialect("affine")
-
-@dataclass(frozen=True, eq=False)
-class Shape(Type):
-    rank: Value[Index]
-
-@dataclass(frozen=True, eq=False)
-class MemRef(Type):
-    shape: Value[Shape]
-    dtype: Value[dgen.TypeType] = F64()
-
-@dataclass(eq=False, kw_only=True)
-class AllocOp(Op):
-    shape: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class DeallocOp(Op):
-    input: Value
-    type: Type = Nil()
-
-@dataclass(eq=False, kw_only=True)
-class LoadOp(Op):
-    memref: Value
-    indices: Value
-    type: Type = F64()
-
-@dataclass(eq=False, kw_only=True)
-class StoreOp(Op):
-    value: Value
-    memref: Value
-    indices: Value
-    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class MulFOp(Op):
@@ -53,11 +20,6 @@ class AddFOp(Op):
     lhs: Value
     rhs: Value
     type: Type = F64()
-
-@dataclass(eq=False, kw_only=True)
-class PrintMemrefOp(Op):
-    input: Value
-    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class ForOp(HasSingleBlock, Op):
