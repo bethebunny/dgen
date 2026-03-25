@@ -75,7 +75,7 @@ def test_roundtrip_icmp_condbr():
         |         %_ : Nil = ()
         |     %loop_exit : llvm.Label = llvm.label() body():
         |         %_ : Nil = ()
-        |     %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [], [])
+        |     %_ : Nil = llvm.cond_br<%loop_body, %loop_exit>(%cmp, [], [])
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -87,7 +87,7 @@ def test_roundtrip_label_br():
         |
         | %f : Nil = function<Nil>() body():
         |     %loop_header : llvm.Label = llvm.label() body():
-        |     %_ : Nil = llvm.br(%loop_header, [])
+        |     %_ : Nil = llvm.br<%loop_header>([])
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -138,11 +138,11 @@ def test_roundtrip_loop_pattern():
         |         %loop_body : llvm.Label = llvm.label() body(%j: Index, %q: llvm.Ptr):
         |             %one : Index = 1
         |             %next : Nil = llvm.add(%j, %one)
-        |             %_ : Nil = llvm.br(%loop_header, [%next, %q])
+        |             %_ : Nil = llvm.br<%loop_header>([%next, %q])
         |         %loop_exit : llvm.Label = llvm.label() body():
         |             %_ : Nil = ()
-        |         %_ : Nil = llvm.cond_br(%cmp, %loop_body, %loop_exit, [%i, %p], [])
-        |     %_ : Nil = llvm.br(%loop_header, [%init, %alloc])
+        |         %_ : Nil = llvm.cond_br<%loop_body, %loop_exit>(%cmp, [%i, %p], [])
+        |     %_ : Nil = llvm.br<%loop_header>([%init, %alloc])
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
