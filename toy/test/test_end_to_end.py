@@ -1,6 +1,6 @@
 """End-to-end tests: Toy source -> parse -> lower -> optimize -> structured -> LLVM IR."""
 
-from dgen.codegen import Executable, LLVMCodegen
+from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
 from toy.parser.lowering import lower

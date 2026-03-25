@@ -24,8 +24,11 @@
 ## IR convenience
 - Add a `pack()` helper function (analogous to Python's `set()`) that creates a `PackOp` from a list of values, inferring the element type. Currently every call site manually constructs `PackOp(values=..., type=builtin.List(element_type=...))`.
 
-## Experiments / scope creep
+## Memory / buffer types
+- Move `memory.Shape` and `memory.Reference` to a `ndbuffer.NDBuffer` dialect in `dgen/dialects/`. dgen should own its N-dimensional buffer types rather than having them live in the toy-specific `memory` dialect. The `memory` dialect would import from `ndbuffer` for its ops.
 - Update `toy.Tensor` to use `Pointer<Array<...>>` — removes the need for the runtime `llvm.load` to extract the data pointer (shape is compile-time, so no indirection is needed)
+
+## Experiments / scope creep
 - Tuple type
   - `Nil` becomes an alias for `Tuple<[]>`
   - Add a `Sequence` trait so Tuple's type parameter could accept `Array<Type, ...>` or `List<Type>`

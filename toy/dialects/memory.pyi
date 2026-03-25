@@ -16,7 +16,7 @@ class Shape(Type):
     rank: Value[Index]
 
 @dataclass(frozen=True, eq=False)
-class MemRef(Type):
+class Reference(Type):
     shape: Value[Shape]
     dtype: Value[dgen.TypeType] = F64()
 
@@ -32,14 +32,14 @@ class DeallocOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
-    memref: Value
+    reference: Value
     indices: Value
     type: Type = F64()
 
 @dataclass(eq=False, kw_only=True)
 class StoreOp(Op):
     value: Value
-    memref: Value
+    reference: Value
     indices: Value
     type: Type = Nil()
 

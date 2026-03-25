@@ -134,7 +134,7 @@ class StructuredToLLVM(Pass):
         self._seen.add(op)
 
         if isinstance(op, memory.AllocOp):
-            assert isinstance(op.type, memory.MemRef)
+            assert isinstance(op.type, memory.Reference)
             shape = op.type.shape.__constant__.to_json()
             assert isinstance(shape, list)
             total = prod(shape)
@@ -207,13 +207,13 @@ class StructuredToLLVM(Pass):
         return None
 
     def _lower_load(self, op: memory.LoadOp) -> None:
-        memref = self._deref(self._map(op.memref))
+        memref = self._deref(self._map(op.reference))
         indices = _extract_indices(op.indices, self.value_map)
         gep = llvm.GepOp(base=memref, index=self._linearize(memref, indices))
         self.value_map[op] = llvm.LoadOp(ptr=gep)
 
     def _lower_store(self, op: memory.StoreOp) -> llvm.StoreOp:
-        memref = self._deref(self._map(op.memref))
+        memref = self._deref(self._map(op.reference))
         indices = _extract_indices(op.indices, self.value_map)
         gep = llvm.GepOp(base=memref, index=self._linearize(memref, indices))
         return llvm.StoreOp(value=self._map(op.value), ptr=gep)

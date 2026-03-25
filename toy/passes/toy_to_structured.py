@@ -90,13 +90,13 @@ class ToyToStructured(Pass):
         return FunctionOp(name=f.name, body=f.body, result=f.result, type=Function(result=f.result))
 
     def _shape(self, val: dgen.Value) -> list[int]:
-        assert isinstance(val.type, (toy.Tensor, memory.MemRef))
+        assert isinstance(val.type, (toy.Tensor, memory.Reference))
         result = val.type.shape.__constant__.to_json()
         assert isinstance(result, list)
         return result
 
     def _alloc(self, shape_val: dgen.Value) -> memory.AllocOp:
-        return memory.AllocOp(shape=shape_val, type=memory.MemRef(shape=shape_val))
+        return memory.AllocOp(shape=shape_val, type=memory.Reference(shape=shape_val))
 
     @lowering_for(toy.TransposeOp)
     def lower_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
@@ -105,9 +105,9 @@ class ToyToStructured(Pass):
         alloc = self._alloc(op.type.shape)
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = memory.LoadOp(memref=op.input, indices=_index_pack(*ivars))
+            load = memory.LoadOp(reference=op.input, indices=_index_pack(*ivars))
             return memory.StoreOp(
-                value=load, memref=alloc, indices=_index_pack(*reversed(list(ivars)))
+                value=load, reference=alloc, indices=_index_pack(*reversed(list(ivars)))
             )
 
         loop = _nested_for(in_shape, body, _get_block_args(op.input))
@@ -135,13 +135,13 @@ class ToyToStructured(Pass):
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = _index_pack(*ivars)
-            lhs_elem = memory.LoadOp(memref=lhs, indices=idx)
+            lhs_elem = memory.LoadOp(reference=lhs, indices=idx)
             res = cls(
                 left=lhs_elem,
-                right=memory.LoadOp(memref=rhs, indices=idx),
+                right=memory.LoadOp(reference=rhs, indices=idx),
                 type=lhs_elem.type,
             )
-            return memory.StoreOp(value=res, memref=alloc, indices=idx)
+            return memory.StoreOp(value=res, reference=alloc, indices=idx)
 
         loop = _nested_for(shape, body, _get_block_args(lhs, rhs))
         rewriter.replace_uses(op, _chain(alloc, lhs, rhs, loop, type=alloc.type))
@@ -174,8 +174,10 @@ class ToyToStructured(Pass):
         alloc = self._alloc(shape_constant(out_shape))
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = memory.LoadOp(memref=op.input, indices=_index_pack(*ivars[1:]))
-            return memory.StoreOp(value=load, memref=alloc, indices=_index_pack(*ivars))
+            load = memory.LoadOp(reference=op.input, indices=_index_pack(*ivars[1:]))
+            return memory.StoreOp(
+                value=load, reference=alloc, indices=_index_pack(*ivars)
+            )
 
         loop = _nested_for(out_shape, body, _get_block_args(op.input))
         rewriter.replace_uses(op, _chain(alloc, op.input, loop, type=alloc.type))
@@ -194,8 +196,8 @@ class ToyToStructured(Pass):
         def lhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = _index_pack(*ivars)
             return memory.StoreOp(
-                value=memory.LoadOp(memref=op.lhs, indices=idx),
-                memref=alloc,
+                value=memory.LoadOp(reference=op.lhs, indices=idx),
+                reference=alloc,
                 indices=idx,
             )
 
@@ -206,8 +208,8 @@ class ToyToStructured(Pass):
             shifted = list(ivars)
             shifted[axis] = algebra.AddOp(left=ivars[axis], right=offset, type=Index())
             return memory.StoreOp(
-                value=memory.LoadOp(memref=op.rhs, indices=_index_pack(*ivars)),
-                memref=alloc,
+                value=memory.LoadOp(reference=op.rhs, indices=_index_pack(*ivars)),
+                reference=alloc,
                 indices=_index_pack(*shifted),
             )
 

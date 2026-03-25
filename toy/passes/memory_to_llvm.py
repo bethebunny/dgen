@@ -24,8 +24,8 @@ _PTR_TYPE = llvm.Ptr()
 
 
 def _shape_of(val: dgen.Value) -> list[int]:
-    """Extract the static shape from a Tensor or MemRef typed value."""
-    assert isinstance(val.type, (toy.Tensor, memory.MemRef))
+    """Extract the static shape from a Tensor or Reference typed value."""
+    assert isinstance(val.type, (toy.Tensor, memory.Reference))
     result = val.type.shape.__constant__.to_json()
     assert isinstance(result, list)
     return result
@@ -69,7 +69,7 @@ class MemoryToLLVM(Pass):
 
     @lowering_for(memory.AllocOp)
     def lower_alloc(self, op: memory.AllocOp, rewriter: Rewriter) -> bool:
-        assert isinstance(op.type, memory.MemRef)
+        assert isinstance(op.type, memory.Reference)
         shape = _shape_of(op)
         total = prod(shape)
         byte_count = ConstantOp(value=total * 8, type=index.Index())
@@ -89,27 +89,27 @@ class MemoryToLLVM(Pass):
         rewriter.replace_uses(op, ConstantOp(value=0, type=Nil()))
         return True
 
-    def _resolve_shape(self, memref: dgen.Value) -> list[int]:
-        """Get the shape for a memref, handling both MemRef-typed and Ptr-typed values."""
-        if memref in self.alloc_shapes:
-            return self.alloc_shapes[memref]
-        return _shape_of(memref)
+    def _resolve_shape(self, ref: dgen.Value) -> list[int]:
+        """Get the shape for a ref, handling both Reference-typed and Ptr-typed values."""
+        if ref in self.alloc_shapes:
+            return self.alloc_shapes[ref]
+        return _shape_of(ref)
 
     @lowering_for(memory.LoadOp)
     def lower_load(self, op: memory.LoadOp, rewriter: Rewriter) -> bool:
-        memref = _deref(op.memref)
+        ref = _deref(op.reference)
         indices = _extract_indices(op.indices)
-        shape = self._resolve_shape(op.memref)
-        gep = llvm.GepOp(base=memref, index=_linearize(shape, indices))
+        shape = self._resolve_shape(op.reference)
+        gep = llvm.GepOp(base=ref, index=_linearize(shape, indices))
         rewriter.replace_uses(op, llvm.LoadOp(ptr=gep))
         return True
 
     @lowering_for(memory.StoreOp)
     def lower_store(self, op: memory.StoreOp, rewriter: Rewriter) -> bool:
-        memref = _deref(op.memref)
+        ref = _deref(op.reference)
         indices = _extract_indices(op.indices)
-        shape = self._resolve_shape(op.memref)
-        gep = llvm.GepOp(base=memref, index=_linearize(shape, indices))
+        shape = self._resolve_shape(op.reference)
+        gep = llvm.GepOp(base=ref, index=_linearize(shape, indices))
         rewriter.replace_uses(op, llvm.StoreOp(value=op.value, ptr=gep))
         return True
 

@@ -10,7 +10,7 @@ from dgen.ir_diff import structural_diff
 from dgen.ir_equiv import Fingerprinter, graph_equivalent
 from dgen.module import ConstantOp
 from dgen.testing import strip_prefix
-from toy.dialects.memory import MemRef, Shape
+from toy.dialects.memory import Reference, Shape
 
 
 def test_identical_ops_same_fingerprint():
@@ -173,13 +173,13 @@ def test_structural_diff_returns_string():
 def test_type_constant_with_dynamic_layout_param():
     """Type.__constant__ fails for types whose layout depends on a param type with a dynamic layout.
 
-    MemRef.__params__ = (("shape", Shape), ("dtype", TypeType)).
-    _resolve_layout("memory.MemRef") calls Shape().__layout__ to determine how to
+    Reference.__params__ = (("shape", Shape), ("dtype", TypeType)).
+    _resolve_layout("memory.Reference") calls Shape().__layout__ to determine how to
     serialize the "shape" field, but Shape.__layout__ is Array(Index.__layout__,
     self.rank.to_json()), which requires a concrete self.rank.
     """
     rank = ConstantOp(value=2, type=builtin.Index())
     shape = Shape(rank=rank)
-    memref_type = MemRef(shape=shape, dtype=builtin.F64())
-    # Triggers TypeValue._resolve_layout("memory.MemRef") -> Shape().__layout__ -> TypeError
+    memref_type = Reference(shape=shape, dtype=builtin.F64())
+    # Triggers TypeValue._resolve_layout("memory.Reference") -> Shape().__layout__ -> TypeError
     _ = memref_type.__constant__.to_json()

@@ -21,7 +21,7 @@ def test_roundtrip_alloc():
         | import function
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
+        |     %0 : memory.Reference<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
         |     %dealloc : Nil = memory.dealloc(%0)
     """)
     module = parse_module(ir)
@@ -35,7 +35,7 @@ def test_roundtrip_store_load():
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : memory.MemRef<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
+        |     %0 : memory.Reference<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
         |     %1 : F64 = 1.0
         |     %2 : index.Index = 0
         |     %store : Nil = memory.store(%1, %0, [%2])
@@ -81,7 +81,7 @@ def test_roundtrip_print_memref():
         | import function
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : memory.MemRef<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
+        |     %0 : memory.Reference<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
         |     %print : Nil = memory.print_memref(%0)
     """)
     module = parse_module(ir)
@@ -95,7 +95,7 @@ def test_roundtrip_for_op():
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : memory.MemRef<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
+        |     %0 : memory.Reference<memory.Shape<1>([3]), F64> = memory.alloc(memory.Shape<1>([3]))
         |     %loop : Nil = control_flow.for<0, 3>([]) body(%i0: index.Index):
         |         %1 : F64 = 1.0
         |         %2 : index.Index = 0
@@ -114,7 +114,7 @@ def test_roundtrip_nested_for():
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
+        |     %0 : memory.Reference<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
         |     %loop : Nil = control_flow.for<0, 2>([]) body(%i0: index.Index):
         |         %_ : Nil = control_flow.for<0, 3>([]) body(%i1: index.Index):
         |             %1 : F64 = 1.0
@@ -144,7 +144,7 @@ def test_roundtrip_multi_index_load_store():
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
+        |     %0 : memory.Reference<memory.Shape<2>([2, 3]), F64> = memory.alloc(memory.Shape<2>([2, 3]))
         |     %1 : F64 = 5.0
         |     %2 : index.Index = 0
         |     %3 : index.Index = 1
@@ -164,7 +164,7 @@ def test_roundtrip_ssa_in_op_arg():
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %shape : memory.Shape<2> = [2, 3]
-        |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(%shape)
+        |     %0 : memory.Reference<memory.Shape<2>([2, 3]), F64> = memory.alloc(%shape)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -178,7 +178,7 @@ def test_roundtrip_ssa_in_type_param():
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %shape : memory.Shape<2> = [2, 3]
-        |     %0 : memory.MemRef<%shape, F64> = memory.alloc(%shape)
+        |     %0 : memory.Reference<%shape, F64> = memory.alloc(%shape)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -193,7 +193,7 @@ def test_ssa_shape_through_lowering():
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %shape : memory.Shape<2> = [2, 3]
-        |     %0 : memory.MemRef<memory.Shape<2>([2, 3]), F64> = memory.alloc(%shape)
+        |     %0 : memory.Reference<memory.Shape<2>([2, 3]), F64> = memory.alloc(%shape)
         |     %1 : F64 = 1.0
         |     %2 : index.Index = 0
         |     %store : Nil = memory.store(%1, %0, [%2, %2])

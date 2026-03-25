@@ -24,7 +24,7 @@ from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, string_value
 from dgen.type import Memory
 from toy.dialects import shape_constant
-from toy.dialects.memory import MemRef, Shape
+from toy.dialects.memory import Reference, Shape
 from toy.dialects.toy import InferredShapeTensor, Tensor
 from dgen.testing import strip_prefix
 
@@ -103,11 +103,11 @@ MEMORY_TYPES = [
         id="memory.shape",
     ),
     pytest.param(
-        MemRef(shape=shape_constant([2, 3])),
+        Reference(shape=shape_constant([2, 3])),
         (0,),
         None,
         None,
-        id="memory.memref",
+        id="memory.reference",
     ),
 ]
 
@@ -181,7 +181,7 @@ _ASM_TYPES = [
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
     pytest.param(Shape(rank=builtin.Index().constant(0)), id="memory.shape_0"),
     pytest.param(Shape(rank=builtin.Index().constant(2)), id="memory.shape_2"),
-    pytest.param(MemRef(shape=shape_constant([2, 3])), id="memory.memref"),
+    pytest.param(Reference(shape=shape_constant([2, 3])), id="memory.reference"),
 ]
 
 

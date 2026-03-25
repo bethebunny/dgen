@@ -16,7 +16,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, control_flow, goto, index
 from dgen.dialects.builtin import ChainOp, Nil
-from dgen.dialects.function import DefineOp
+from dgen.dialects.function import Function, FunctionOp
 from toy.dialects import memory
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
@@ -55,12 +55,12 @@ class ControlFlowToGoto(Pass):
     def run(self, m: Module, compiler: Compiler[object]) -> Module:
         return Module(
             ops=[
-                self._lower_function(op) if isinstance(op, DefineOp) else op
+                self._lower_function(op) if isinstance(op, FunctionOp) else op
                 for op in m.ops
             ]
         )
 
-    def _lower_function(self, f: DefineOp) -> DefineOp:
+    def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.loop_counter = 0
         self.value_map = {}
         self._seen = set()
@@ -68,10 +68,11 @@ class ControlFlowToGoto(Pass):
         for arg in f.body.args:
             self.value_map[arg] = arg
         result = self._lower_ops(f.body.ops, lambda: self._map(f.body.result))
-        return DefineOp(
+        return FunctionOp(
             name=f.name,
             body=dgen.Block(result=result, args=f.body.args),
             result=f.result,
+            type=Function(result=f.result),
         )
 
     def _map(self, v: dgen.Value) -> dgen.Value:
@@ -129,7 +130,7 @@ class ControlFlowToGoto(Pass):
             self.value_map[op] = clone
         # Side-effecting ops must be chained so they're reachable from
         # block.result and claimed by the entry block (LLVM dominance).
-        # AllocOps are effects even though they return non-Nil (MemRef).
+        # AllocOps are effects even though they return non-Nil (Reference).
         if isinstance(op.type, Nil) or isinstance(op, memory.AllocOp):
             return clone
         return None

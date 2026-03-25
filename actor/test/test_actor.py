@@ -32,25 +32,25 @@ def test_fused_pipeline() -> None:
         | import index
         | import memory
         |
-        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), F64>> = function.function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |     %1 : memory.MemRef<memory.Shape<1>([4]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        | %main : function.Function<memory.Reference<memory.Shape<1>([4]), F64>> = function.function<memory.Reference<memory.Shape<1>([4]), F64>>() body(%0: memory.Reference<memory.Shape<1>([4]), F64>):
+        |     %1 : memory.Reference<memory.Shape<1>([4]), F64> = actor.pipeline(%0) body(%2: memory.Reference<memory.Shape<1>([4]), F64>):
+        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.Reference<memory.Shape<1>([4]), F64>):
+        |             %5 : memory.Reference<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.Reference<memory.Shape<1>([4]), F64>, %out: memory.Reference<memory.Shape<1>([4]), F64>):
         |                 %8 : F64 = memory.load(%input, [%7])
         |                 %9 : F64 = 2.0
         |                 %10 : F64 = algebra.multiply(%8, %9)
         |                 %11 : Nil = memory.store(%10, %out, [%7])
-        |             %12 : memory.MemRef<memory.Shape<1>([4]), F64> = chain(%5, %6)
+        |             %12 : memory.Reference<memory.Shape<1>([4]), F64> = chain(%5, %6)
         |             %13 : Nil = actor.produce(%12)
-        |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |             %16 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: memory.Reference<memory.Shape<1>([4]), F64>):
+        |             %16 : memory.Reference<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
+        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: index.Index, %input: memory.Reference<memory.Shape<1>([4]), F64>, %out: memory.Reference<memory.Shape<1>([4]), F64>):
         |                 %19 : F64 = memory.load(%input, [%18])
         |                 %20 : F64 = 1.0
         |                 %21 : F64 = algebra.add(%19, %20)
         |                 %22 : Nil = memory.store(%21, %out, [%18])
-        |             %23 : memory.MemRef<memory.Shape<1>([4]), F64> = chain(%16, %17)
+        |             %23 : memory.Reference<memory.Shape<1>([4]), F64> = chain(%16, %17)
         |             %24 : Nil = actor.produce(%23)
     """)
     )
@@ -77,25 +77,25 @@ def test_unfused_pipeline() -> None:
         | import index
         | import memory
         |
-        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), F64>> = function.function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |     %1 : memory.MemRef<memory.Shape<1>([2]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        | %main : function.Function<memory.Reference<memory.Shape<1>([4]), F64>> = function.function<memory.Reference<memory.Shape<1>([4]), F64>>() body(%0: memory.Reference<memory.Shape<1>([4]), F64>):
+        |     %1 : memory.Reference<memory.Shape<1>([2]), F64> = actor.pipeline(%0) body(%2: memory.Reference<memory.Shape<1>([4]), F64>):
+        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.Reference<memory.Shape<1>([4]), F64>):
+        |             %5 : memory.Reference<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.Reference<memory.Shape<1>([4]), F64>, %out: memory.Reference<memory.Shape<1>([4]), F64>):
         |                 %8 : F64 = memory.load(%input, [%7])
         |                 %9 : F64 = 2.0
         |                 %10 : F64 = algebra.multiply(%8, %9)
         |                 %11 : Nil = memory.store(%10, %out, [%7])
-        |             %12 : memory.MemRef<memory.Shape<1>([4]), F64> = chain(%5, %6)
+        |             %12 : memory.Reference<memory.Shape<1>([4]), F64> = chain(%5, %6)
         |             %13 : Nil = actor.produce(%12)
-        |         %14 : Nil = actor.actor<2, 2>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |             %16 : memory.MemRef<memory.Shape<1>([2]), F64> = memory.alloc(memory.Shape<1>([2]))
-        |             %17 : Nil = control_flow.for<0, 2>([%15, %16]) body(%18: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([2]), F64>):
+        |         %14 : Nil = actor.actor<2, 2>(%3) body(%15: memory.Reference<memory.Shape<1>([4]), F64>):
+        |             %16 : memory.Reference<memory.Shape<1>([2]), F64> = memory.alloc(memory.Shape<1>([2]))
+        |             %17 : Nil = control_flow.for<0, 2>([%15, %16]) body(%18: index.Index, %input: memory.Reference<memory.Shape<1>([4]), F64>, %out: memory.Reference<memory.Shape<1>([2]), F64>):
         |                 %19 : F64 = memory.load(%input, [%18])
         |                 %20 : F64 = 1.0
         |                 %21 : F64 = algebra.add(%19, %20)
         |                 %22 : Nil = memory.store(%21, %out, [%18])
-        |             %23 : memory.MemRef<memory.Shape<1>([2]), F64> = chain(%16, %17)
+        |             %23 : memory.Reference<memory.Shape<1>([2]), F64> = chain(%16, %17)
         |             %24 : Nil = actor.produce(%23)
     """)
     )
@@ -122,25 +122,25 @@ def test_lowering_ir(ir_snapshot: object) -> None:
         | import index
         | import memory
         |
-        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), F64>> = function.function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |     %1 : memory.MemRef<memory.Shape<1>([4]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        | %main : function.Function<memory.Reference<memory.Shape<1>([4]), F64>> = function.function<memory.Reference<memory.Shape<1>([4]), F64>>() body(%0: memory.Reference<memory.Shape<1>([4]), F64>):
+        |     %1 : memory.Reference<memory.Shape<1>([4]), F64> = actor.pipeline(%0) body(%2: memory.Reference<memory.Shape<1>([4]), F64>):
+        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.Reference<memory.Shape<1>([4]), F64>):
+        |             %5 : memory.Reference<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.Reference<memory.Shape<1>([4]), F64>, %out: memory.Reference<memory.Shape<1>([4]), F64>):
         |                 %8 : F64 = memory.load(%input, [%7])
         |                 %9 : F64 = 2.0
         |                 %10 : F64 = algebra.multiply(%8, %9)
         |                 %11 : Nil = memory.store(%10, %out, [%7])
-        |             %12 : memory.MemRef<memory.Shape<1>([4]), F64> = chain(%5, %6)
+        |             %12 : memory.Reference<memory.Shape<1>([4]), F64> = chain(%5, %6)
         |             %13 : Nil = actor.produce(%12)
-        |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), F64>):
-        |             %16 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
-        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), F64>, %out: memory.MemRef<memory.Shape<1>([4]), F64>):
+        |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: memory.Reference<memory.Shape<1>([4]), F64>):
+        |             %16 : memory.Reference<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
+        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: index.Index, %input: memory.Reference<memory.Shape<1>([4]), F64>, %out: memory.Reference<memory.Shape<1>([4]), F64>):
         |                 %19 : F64 = memory.load(%input, [%18])
         |                 %20 : F64 = 1.0
         |                 %21 : F64 = algebra.add(%19, %20)
         |                 %22 : Nil = memory.store(%21, %out, [%18])
-        |             %23 : memory.MemRef<memory.Shape<1>([4]), F64> = chain(%16, %17)
+        |             %23 : memory.Reference<memory.Shape<1>([4]), F64> = chain(%16, %17)
         |             %24 : Nil = actor.produce(%23)
     """)
     )
