@@ -1,7 +1,7 @@
 import function
 import toy
 
-%main : Nil = function.define<Nil>() body():
+%main : function.Function<()> = function.function<Nil>() body():
     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     %1 : toy.InferredShapeTensor<F64> = toy.transpose(%0)
     %2 : Nil = toy.print(%1)

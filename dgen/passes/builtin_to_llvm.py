@@ -10,7 +10,7 @@ import dgen
 from dgen.block import BlockArgument, Block
 from dgen.dialects import builtin, control_flow, function, goto, llvm
 from dgen.dialects.builtin import Nil, String
-from dgen.dialects.function import DefineOp
+from dgen.dialects.function import Function, FunctionOp
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
@@ -39,11 +39,12 @@ class BuiltinToLLVMLowering(Pass):
 
     def run(self, m: Module, compiler: Compiler[object]) -> Module:
         ops = [
-            self._lower_function(op) if isinstance(op, DefineOp) else op for op in m.ops
+            self._lower_function(op) if isinstance(op, FunctionOp) else op
+            for op in m.ops
         ]
         return Module(ops=ops)
 
-    def _lower_function(self, f: DefineOp) -> DefineOp:
+    def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.if_counter = 0
         self.value_map = {}
 
@@ -56,10 +57,11 @@ class BuiltinToLLVMLowering(Pass):
         # Lower entry ops (skip LabelOps — already lowered above).
         non_label_ops = [op for op in f.body.ops if not isinstance(op, goto.LabelOp)]
         result = self._lower_ops(non_label_ops, f.body.result)
-        return DefineOp(
+        return FunctionOp(
             name=f.name,
             body=dgen.Block(result=result, args=f.body.args),
             result=f.result,
+            type=Function(result=f.result),
         )
 
     def _lower_label_bodies(self, label_op: goto.LabelOp, visited: set[int]) -> None:

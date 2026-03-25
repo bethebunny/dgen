@@ -12,11 +12,11 @@ import llvmlite.binding as llvmlite_binding
 
 import dgen
 from dgen import codegen
-from dgen.block import BlockArgument
+from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable, _ctype, _llvm_type
 from dgen.dialects import builtin, control_flow, function, llvm
 from dgen.dialects.builtin import String
-from dgen.dialects.function import DefineOp
+from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.type import Constant, Memory
 
@@ -38,7 +38,7 @@ def _walk_inputs(op: dgen.Op) -> Iterator[dgen.Value]:
             yield val
 
 
-def _trace_dependencies(target: dgen.Value, func: DefineOp) -> list[dgen.Op]:
+def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
     """Backward-walk from target, return all needed ops in topological order."""
     needed: set[dgen.Value] = set()
     worklist = [target]
@@ -102,10 +102,11 @@ def _jit_evaluate(
 ) -> object:
     """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
     externs = _extern_declarations(subgraph)
-    func = function.DefineOp(
+    func = function.FunctionOp(
         name="main",
         body=dgen.Block(result=target, args=list(block_args)),
         result=target.type,
+        type=Function(result=target.type),
     )
     module = Module(ops=[func])
     lowered = lower(module)
@@ -116,7 +117,7 @@ def _jit_evaluate(
 
 
 def _resolve_comptime_field(
-    func: DefineOp,
+    func: FunctionOp,
     op: dgen.Op,
     field_name: str,
     value: dgen.Value,
@@ -158,7 +159,7 @@ def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
     return result
 
 
-def compute_stages(func: DefineOp) -> dict[dgen.Value, int]:
+def compute_stages(func: FunctionOp) -> dict[dgen.Value, int]:
     """Assign a stage number to every Value in a function.
 
     Stage 0 means the value can be evaluated at compile time (no runtime
@@ -182,7 +183,7 @@ def compute_stages(func: DefineOp) -> dict[dgen.Value, int]:
     def _stage(value: dgen.Value) -> int:
         if value in stages:
             return stages[value]
-        if isinstance(value, (Constant, dgen.Type, DefineOp)):
+        if isinstance(value, (Constant, dgen.Type, FunctionOp, BlockParameter)):
             stages[value] = 0
             return 0
         if isinstance(value, BlockArgument):
@@ -219,7 +220,7 @@ def compute_stages(func: DefineOp) -> dict[dgen.Value, int]:
 
 
 def _unresolved_boundaries(
-    func: DefineOp,
+    func: FunctionOp,
     stages: dict[dgen.Value, int],
 ) -> list[tuple[int, dgen.Op, str, dgen.Value]]:
     """Find ops with unresolved __params__, sorted by stage number.
@@ -230,9 +231,9 @@ def _unresolved_boundaries(
     boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
     for op in func.body.ops:
         for field_name, value in op.parameters:
-            if isinstance(value, (dgen.Op, BlockArgument)) and not isinstance(
-                value, (Constant, dgen.Type, DefineOp)
-            ):
+            if isinstance(
+                value, (dgen.Op, BlockArgument, BlockParameter)
+            ) and not isinstance(value, (Constant, dgen.Type, FunctionOp)):
                 boundaries.append((stages.get(op, 0), op, field_name, value))
         # Also check op.type — if it's an unresolved SSA ref (Value, not Type)
         if isinstance(op.type, dgen.Value) and not isinstance(
@@ -249,7 +250,7 @@ def _unresolved_boundaries(
 
 
 def _specialize_ifs(
-    func: DefineOp,
+    func: FunctionOp,
     lower: Callable[[Module], Module],
     block_args: Sequence[BlockArgument],
     args: Sequence,
@@ -303,15 +304,15 @@ def _specialize_ifs(
     func.body.result = new_ops[-1]
 
 
-def _has_nested_boundaries(func: DefineOp) -> bool:
+def _has_nested_boundaries(func: FunctionOp) -> bool:
     """True if any op in nested blocks has unresolved __params__."""
     for op in func.body.ops:
         for _, block in op.blocks:
             for nested_op in block.ops:
                 for _, value in nested_op.parameters:
-                    if isinstance(value, (dgen.Op, BlockArgument)) and not isinstance(
-                        value, (Constant, dgen.Type, DefineOp)
-                    ):
+                    if isinstance(
+                        value, (dgen.Op, BlockArgument, BlockParameter)
+                    ) and not isinstance(value, (Constant, dgen.Type, FunctionOp)):
                         return True
     return False
 
@@ -381,7 +382,7 @@ def resolve_stage0(
 
 
 def _resolve_with_runtime_args(
-    func: DefineOp,
+    func: FunctionOp,
     lower: Callable[[Module], Module],
     block_args: Sequence[BlockArgument],
     python_args: Sequence,
@@ -411,7 +412,7 @@ def _resolve_with_runtime_args(
 
 def _build_callback_thunk(
     resolved: Module,
-    func: DefineOp,
+    func: FunctionOp,
     compiler: Compiler[T],
 ) -> Executable:
     """Build a stage-1 thunk that calls a host callback for stage-2 JIT.
@@ -491,10 +492,11 @@ def _build_callback_thunk(
         args=pack,
         type=result_type,
     )
-    thunk_func = function.DefineOp(
+    thunk_func = function.FunctionOp(
         name=func.name,
         body=dgen.Block(result=call_op, args=thunk_args),
         result=result_type,
+        type=Function(result=result_type),
     )
     thunk_module = Module(ops=[thunk_func])
 
@@ -520,7 +522,7 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
     resolved = resolve_stage0(module, compiler.run)
 
     # Find all functions with unresolved boundaries (including nested blocks)
-    unresolved_funcs: list[DefineOp] = []
+    unresolved_funcs: list[FunctionOp] = []
     for func in resolved.functions:
         stages = compute_stages(func)
         if _unresolved_boundaries(func, stages) or _has_nested_boundaries(func):

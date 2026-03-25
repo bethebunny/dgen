@@ -30,7 +30,7 @@ def test_fused_pipeline() -> None:
         | import control_flow
         | import memory
         |
-        | %main : Nil = function.define<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
+        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), F64>> = function.function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
         |     %1 : memory.MemRef<memory.Shape<1>([4]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
         |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
@@ -73,7 +73,7 @@ def test_unfused_pipeline() -> None:
         | import control_flow
         | import memory
         |
-        | %main : Nil = function.define<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
+        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), F64>> = function.function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
         |     %1 : memory.MemRef<memory.Shape<1>([2]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
         |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))
@@ -116,7 +116,7 @@ def test_lowering_ir(ir_snapshot: object) -> None:
         | import control_flow
         | import memory
         |
-        | %main : Nil = function.define<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
+        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), F64>> = function.function<memory.MemRef<memory.Shape<1>([4]), F64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), F64>):
         |     %1 : memory.MemRef<memory.Shape<1>([4]), F64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), F64>):
         |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), F64>):
         |             %5 : memory.MemRef<memory.Shape<1>([4]), F64> = memory.alloc(memory.Shape<1>([4]))

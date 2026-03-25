@@ -20,7 +20,7 @@ from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
 from dgen.compiler import Compiler
 from dgen.dialects import builtin, function, llvm
 from dgen.dialects.builtin import String
-from dgen.dialects.function import DefineOp
+from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, string_value
 from dgen.type import Memory
 from toy.dialects import shape_constant
@@ -128,10 +128,11 @@ def _parse_type(text: str) -> object:
 def _identity_exe(ty):
     """Build and compile: main(x: ty) -> ty { return x }"""
     arg = BlockArgument(name="v0", type=ty)
-    func = DefineOp(
+    func = FunctionOp(
         name="main",
         body=Block(result=arg, args=[arg]),
         result=ty,
+        type=Function(result=ty),
     )
     return compile_module(Module(ops=[func]))
 
@@ -307,10 +308,11 @@ def test_list_constant_jit_return():
     """JIT function returns a list constant: main() -> List<index>."""
     list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
-    func = DefineOp(
+    func = FunctionOp(
         name="main",
         body=Block(result=const, args=[]),
         result=list_type,
+        type=Function(result=list_type),
     )
     exe = compile_module(Module(ops=[func]))
     result = exe.run()
@@ -347,7 +349,7 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
     ir_input = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Nil>() body(%x: Index):
+        | %main : function.Function<()> = function.function<Nil>() body(%x: Index):
         |     %store : Nil = memory.store(%x, %x, [3, %x, 5])
     """)
     parsed = parse_module(ir_input)
@@ -379,7 +381,7 @@ def test_string_as_op_param():
         | import function
         | import llvm
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
@@ -409,7 +411,7 @@ def test_string_param_staging():
         | import function
         | import llvm
         |
-        | %main : Nil = function.define<Index>() body(%pred : String, %x : Index, %y : Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%pred : String, %x : Index, %y : Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)
@@ -437,7 +439,7 @@ def test_compile_once_run_twice():
         | import function
         | import llvm
         |
-        | %main : Nil = function.define<Index>() body(%pred : String, %x : Index, %y : Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%pred : String, %x : Index, %y : Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)
@@ -499,10 +501,11 @@ def test_deepcopy_module_with_list_constant():
     """
     list_type = builtin.List(element_type=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
-    func = DefineOp(
+    func = FunctionOp(
         name="main",
         body=Block(result=const, args=[]),
         result=list_type,
+        type=Function(result=list_type),
     )
     module = Module(ops=[func])
     copied = deepcopy(module)

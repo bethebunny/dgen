@@ -18,7 +18,7 @@ class ShapeInference(Pass):
     allow_unregistered_ops = True
 
     def __init__(self) -> None:
-        self._func_map: dict[str, function.DefineOp] = {}
+        self._func_map: dict[str, function.FunctionOp] = {}
 
     def verify_postconditions(self, module: Module) -> None:
         super().verify_postconditions(module)

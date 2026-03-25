@@ -8,7 +8,7 @@ from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects.builtin import Nil
-from dgen.dialects.function import DefineOp
+from dgen.dialects.function import FunctionOp
 from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.staging import ConstantFold
@@ -59,7 +59,7 @@ def test_rewriter_eager_replace(ir_snapshot):
         | import function
         | import llvm
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : Index = 1
         |     %1 : Index = 2
         |     %2 : Index = llvm.add(%0, %0)
@@ -88,7 +88,7 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
         | import function
         | import toy
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.transpose(%0)
         |     %2 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.transpose(%1)
@@ -117,7 +117,7 @@ def test_pass_unregistered_ops_error():
         | import function
         | import toy
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -151,7 +151,7 @@ def test_pass_multiple_handlers_first_wins():
     ir_text = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)
@@ -170,7 +170,7 @@ def test_compiler_run_verification_catches_closed_block_violation():
     ir_text = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = {}
     """)
 
@@ -208,14 +208,14 @@ def test_constant_fold_resolves_stage0_boundary():
     ir = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Index"}
-        |     %f : Nil = function.define<%t>() body(%rt: Type, %x: Index):
+        |     %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: Index):
         |         %y : %rt = add_index(%x, %x)
     """)
     module = parse_module(ir)
     inner_func = module.functions[0].body.ops[1]
-    assert isinstance(inner_func, DefineOp)
+    assert isinstance(inner_func, FunctionOp)
 
     # Before constant folding: result is a ConstantOp SSA ref, not a Type
     assert isinstance(inner_func.result, ConstantOp)
@@ -239,7 +239,7 @@ def test_constant_fold_is_noop_without_boundaries():
     ir_text = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)
@@ -264,7 +264,7 @@ def test_pass_run_receives_continuation_compiler():
     ir_text = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Nil>() body():
+        | %main : function.Function<()> = function.function<Nil>() body():
         |     %0 : Index = 42
     """)
     m = parse_module(ir_text)

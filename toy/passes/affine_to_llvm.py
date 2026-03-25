@@ -6,10 +6,10 @@ from collections.abc import Callable
 from math import prod
 
 import dgen
-from dgen.block import BlockArgument
+from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin, control_flow, function, goto, llvm
 from dgen.dialects.builtin import ChainOp, Nil, String
-from dgen.dialects.function import DefineOp
+from dgen.dialects.function import Function, FunctionOp
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
@@ -55,12 +55,12 @@ class AffineToLLVMLowering(Pass):
     def run(self, m: Module, compiler: Compiler[object]) -> Module:
         return Module(
             ops=[
-                self._lower_function(op) if isinstance(op, DefineOp) else op
+                self._lower_function(op) if isinstance(op, FunctionOp) else op
                 for op in m.ops
             ]
         )
 
-    def _lower_function(self, f: DefineOp) -> DefineOp:
+    def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self.loop_counter = 0
         self.value_map = {}
         self.alloc_shapes = {}
@@ -74,10 +74,11 @@ class AffineToLLVMLowering(Pass):
             else:
                 self.value_map[arg] = arg
         result = self._lower_ops(f.body.ops, lambda: self._map(f.body.result))
-        return DefineOp(
+        return FunctionOp(
             name=f.name,
             body=dgen.Block(result=result, args=f.body.args),
             result=f.result,
+            type=Function(result=f.result),
         )
 
     def _map(self, v: dgen.Value) -> dgen.Value:
@@ -245,7 +246,7 @@ class AffineToLLVMLowering(Pass):
 
         header_iv = BlockArgument(name=f"i{lid}", type=builtin.Index())
         body_iv = BlockArgument(name=f"j{lid}", type=builtin.Index())
-        header_self = BlockArgument(name="self", type=goto.Label())
+        header_self = BlockParameter(name="self", type=goto.Label())
 
         # Map lower_bound/upper_bound
         lo_op = self._map(op.lower_bound)

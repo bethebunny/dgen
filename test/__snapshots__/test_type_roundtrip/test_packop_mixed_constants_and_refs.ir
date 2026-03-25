@@ -1,7 +1,7 @@
 import function
 import memory
 
-%main : Nil = function.define<Nil>() body(%x: Index):
+%main : function.Function<()> = function.function<Nil>() body(%x: Index):
     %0 : Index = 3
     %1 : Index = 5
     %store : Nil = memory.store(%x, %x, [%0, %x, %1])

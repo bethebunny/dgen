@@ -1,3 +1,3 @@
 import function
 
-%main : Nil = function.define<Nil>() body():
+%main : function.Function<()> = function.function<Nil>() body():
