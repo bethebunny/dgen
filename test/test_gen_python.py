@@ -87,7 +87,7 @@ def test_generate_function_type():
 def test_generate_function_define_op_with_block():
     mod = importlib.import_module("dgen.dialects.function")
     code = generate_pyi(mod, "function")
-    assert "class DefineOp(HasSingleBlock, Op):" in code
+    assert "class FunctionOp(HasSingleBlock, Op):" in code
     assert "body: Block" in code
     assert "Block" in code.split("from dgen import")[1].split("\n")[0]
 

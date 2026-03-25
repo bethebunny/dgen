@@ -119,7 +119,7 @@ class TestParseErrors:
             | import function
             | import toy
             |
-            | %f : Nil = function.define<toy.Tensor<[2, 3], F64>>() body():
+            | %f : function.Function<toy.Tensor<[2, 3], F64>> = function.function<toy.Tensor<[2, 3], F64>>() body():
         """)
         with pytest.raises(RuntimeError, match=r"bare literal.*Shape.*Shape<\.\.\.>"):
             parse_module(ir)
@@ -133,7 +133,7 @@ class TestParseErrors:
             | import function
             | import toy
             |
-            | %f : Nil = function.define<Nil>() body():
+            | %f : function.Function<()> = function.function<Nil>() body():
             |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         """)
         with pytest.raises(Exception):

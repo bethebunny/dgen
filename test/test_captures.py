@@ -20,7 +20,7 @@ def test_roundtrip_captures():
         | import function
         | import goto
         |
-        | %f : Nil = function.define<Nil>() body(%x: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%x: Index):
         |     %loop : goto.Label = goto.label() body<%self: goto.Label>(%i: Index) captures(%x):
         |         %zero : Index = 0
     """)
@@ -59,7 +59,7 @@ def test_verify_captured_block_arg_in_scope():
         | import goto
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body(%x: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%x: Index):
         |     %inner : goto.Label = goto.label() body() captures(%x):
         |         %0 : Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
@@ -73,7 +73,7 @@ def test_verify_captured_block_parameter():
         | import function
         | import goto
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %header : goto.Label = goto.label() body<%self: goto.Label>():
         |         %body : goto.Label = goto.label() body() captures(%self):
         |             %0 : Nil = goto.branch<%self>([])
@@ -88,7 +88,7 @@ def test_verify_ambient_op_without_capture_passes():
         | import goto
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body(%x: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%x: Index):
         |     %inner : goto.Label = goto.label() body():
         |         %0 : Index = 42
         |         %1 : Index = 0
@@ -109,7 +109,7 @@ def test_verify_missing_capture_of_block_arg():
         | import goto
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body(%x: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%x: Index):
         |     %inner : goto.Label = goto.label() body():
         |         %0 : Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
@@ -124,7 +124,7 @@ def test_verify_missing_capture_of_block_parameter():
         | import function
         | import goto
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %header : goto.Label = goto.label() body<%self: goto.Label>():
         |         %body : goto.Label = goto.label() body():
         |             %0 : Nil = goto.branch<%self>([])
@@ -145,7 +145,7 @@ def test_verify_chained_captures():
         | import goto
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body(%x: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%x: Index):
         |     %mid : goto.Label = goto.label() body() captures(%x):
         |         %inner : goto.Label = goto.label() body() captures(%x):
         |             %0 : Index = 0
@@ -161,7 +161,7 @@ def test_verify_unchained_capture_fails():
         | import goto
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body(%x: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%x: Index):
         |     %mid : goto.Label = goto.label() body():
         |         %inner : goto.Label = goto.label() body() captures(%x):
         |             %0 : Index = 0
@@ -183,7 +183,7 @@ def test_replace_uses_updates_captures():
         | import goto
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body(%old: Index, %new: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%old: Index, %new: Index):
         |     %inner : goto.Label = goto.label() body() captures(%old):
         |         %0 : Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%old, %0)
@@ -210,7 +210,7 @@ def test_replace_uses_updates_chained_captures():
         | import goto
         | import llvm
         |
-        | %f : Nil = function.define<Nil>() body(%old: Index, %new: Index):
+        | %f : function.Function<()> = function.function<Nil>() body(%old: Index, %new: Index):
         |     %mid : goto.Label = goto.label() body() captures(%old):
         |         %inner : goto.Label = goto.label() body() captures(%old):
         |             %0 : Index = 0

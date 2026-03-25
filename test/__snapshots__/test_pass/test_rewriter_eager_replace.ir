@@ -1,7 +1,7 @@
 import function
 import llvm
 
-%main : Nil = function.define<Nil>() body():
+%main : function.Function<()> = function.function<Nil>() body():
     %1 : Index = 2
     %2 : Index = llvm.add(%1, %1)
     %3 : Index = chain(%2, %1)

@@ -11,7 +11,7 @@ from typing import Any
 
 import dgen.type
 from dgen import Block, Constant, Dialect, Op, Type, Value
-from dgen.block import BlockArgument
+from dgen.block import BlockArgument, BlockParameter
 from dgen.graph import walk_ops
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module, PackOp
@@ -293,6 +293,14 @@ def _block_argument(parser: ASMParser) -> BlockArgument:
     return arg
 
 
+def _block_parameter(parser: ASMParser) -> BlockParameter:
+    name = parser.read(ssa_name)
+    parser.read(":")
+    param = BlockParameter(name=name, type=value_expression(parser))
+    parser.name_table[name] = param
+    return param
+
+
 def block_arguments(parser: ASMParser) -> list[BlockArgument]:
     parser.read("(")
     args = parser.read_list(_block_argument)
@@ -372,9 +380,9 @@ def _pack_list(
 
 def _read_block_body(parser: ASMParser) -> Block:
     # Optional block parameters: <%name: Type, ...>
-    block_params: list[BlockArgument] = []
+    block_params: list[BlockParameter] = []
     if parser.try_read("<") is not None:
-        block_params = parser.read_list(_block_argument)
+        block_params = parser.read_list(_block_parameter)
         parser.read(">")
     args = block_arguments(parser)
     # Optional captures: captures(%name, ...)

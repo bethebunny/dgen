@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dgen
 from dgen import asm
-from dgen.block import Block, BlockArgument
+from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.module import Module, _walk_all_ops
 
 
@@ -58,7 +58,10 @@ def _verify_block(
     for op in block.ops:
         valid.add(op)
 
-    if isinstance(block.result, (dgen.Op, BlockArgument)) and block.result not in valid:
+    if (
+        isinstance(block.result, (dgen.Op, BlockArgument, BlockParameter))
+        and block.result not in valid
+    ):
         raise ClosedBlockError(
             f"block.result references out-of-scope "
             f"{type(block.result).__name__} %{block.result.name}\n\n"
@@ -67,14 +70,20 @@ def _verify_block(
 
     for op in block.ops:
         for name, operand in op.operands:
-            if isinstance(operand, (dgen.Op, BlockArgument)) and operand not in valid:
+            if (
+                isinstance(operand, (dgen.Op, BlockArgument, BlockParameter))
+                and operand not in valid
+            ):
                 raise ClosedBlockError(
                     f"{type(op).__name__}.{name} references out-of-scope "
                     f"{type(operand).__name__} %{operand.name}\n\n"
                     + _annotated_module(module, op)
                 )
         for name, param in op.parameters:
-            if isinstance(param, (dgen.Op, BlockArgument)) and param not in valid:
+            if (
+                isinstance(param, (dgen.Op, BlockArgument, BlockParameter))
+                and param not in valid
+            ):
                 raise ClosedBlockError(
                     f"{type(op).__name__}.{name} references out-of-scope "
                     f"{type(param).__name__} %{param.name}\n\n"
@@ -86,7 +95,7 @@ def _verify_block(
             # can't maintain the child's captures.
             for capture in child_block.captures:
                 if (
-                    isinstance(capture, (dgen.Op, BlockArgument))
+                    isinstance(capture, (dgen.Op, BlockArgument, BlockParameter))
                     and capture not in valid
                 ):
                     raise ClosedBlockError(
@@ -149,7 +158,12 @@ def verify_dag(module: Module) -> None:
 
 
 def verify_all_ready(module: Module) -> None:
-    """Assert every op is ready (no unresolved parameter dependencies)."""
+    """Assert every op is ready (all compile-time data is known).
+
+    An op is ready when its type, all operand types, and all parameters are
+    resolved constants. This means it's safe for a pass to inspect any
+    compile-time property of the op without encountering unresolved values.
+    """
     for func in module.functions:
         for op in _walk_all_ops(func):
             if not op.ready:

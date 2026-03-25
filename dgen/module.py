@@ -17,7 +17,7 @@ from dgen.dialects.builtin import (
     String,
     builtin,
 )
-from dgen.dialects.function import DefineOp
+from dgen.dialects.function import FunctionOp
 
 
 from dgen.type import Fields, Memory, type_constant
@@ -137,8 +137,8 @@ class Module:
     ops: list[Op]
 
     @property
-    def functions(self) -> list[DefineOp]:
-        return [op for op in self.ops if isinstance(op, DefineOp)]
+    def functions(self) -> list[FunctionOp]:
+        return [op for op in self.ops if isinstance(op, FunctionOp)]
 
     @property
     def asm(self) -> Iterable[str]:

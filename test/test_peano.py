@@ -25,7 +25,7 @@ from dgen.dialects import builtin, function
 from dgen.dialects.builtin import ChainOp, Index, Nil
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler
-from dgen.dialects.function import DefineOp
+from dgen.dialects.function import FunctionOp
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.verify import CycleError, verify_dag
 from dgen.passes.pass_ import Pass
@@ -158,7 +158,7 @@ def _lower_peano_ops(
     return new_ops
 
 
-def _lower_peano_func(func: builtin.DefineOp) -> None:
+def _lower_peano_func(func: builtin.FunctionOp) -> None:
     """Lower peano ops in a single function."""
     replacements: dict[Value, Value] = {}
     new_ops = _lower_peano_ops(func.body.ops, replacements)
@@ -222,7 +222,7 @@ def test_natural_in_asm():
         | import function
         | import peano
         |
-        | %main : Nil = function.define<Index>() body():
+        | %main : function.Function<Index> = function.function<Index>() body():
         |     %z : peano.Natural = peano.zero()
     """)
     module = parse_module(ir)
@@ -253,7 +253,7 @@ def test_peano_constant():
         | import function
         | import peano
         |
-        | %main : Nil = function.define<Index>() body():
+        | %main : function.Function<Index> = function.function<Index>() body():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %s2 : Type = peano.successor<%s1>()
@@ -277,7 +277,7 @@ def test_equal_and_subtract_roundtrip():
     ir = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Index>() body(%n: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
         |     %eq : Index = equal_index(%n, 0)
         |     %sub : Index = subtract_index(%n, 1)
         |     %result : Index = add_index(%eq, %sub)
@@ -294,7 +294,7 @@ def test_subtract_jit():
     ir = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Index>() body(%n: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
         |     %sub : Index = subtract_index(%n, 1)
     """)
     module = parse_module(ir)
@@ -307,7 +307,7 @@ def test_if_else_parse_roundtrip():
     ir = strip_prefix("""
         | import control_flow
         | import function
-        | %main : Nil = function.define<Index>() body(%n: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
         |     %result : Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : Index = 10
@@ -330,7 +330,7 @@ def test_if_else_jit():
     ir = strip_prefix("""
         | import control_flow
         | import function
-        | %main : Nil = function.define<Index>() body(%n: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
         |     %cond : Index = equal_index(%n, 0)
         |     %result : Index = control_flow.if(%cond, [], []) then_body():
         |         %one : Index = 1
@@ -349,10 +349,10 @@ def test_call_op_roundtrip():
     ir = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Index>() body(%x: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%x: Index):
         |     %result : Index = function.call<%add_one>([%x])
         |
-        | %add_one : Nil = function.define<Index>() body(%n: Index):
+        | %add_one : function.Function<Index> = function.function<Index>() body(%n: Index):
         |     %r : Index = add_index(%n, 1)
     """)
     module = parse_module(ir)
@@ -366,10 +366,10 @@ def test_call_jit():
     ir = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Index>() body(%x: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%x: Index):
         |     %result : Index = function.call<%add_one>([%x])
         |
-        | %add_one : Nil = function.define<Index>() body(%n: Index):
+        | %add_one : function.Function<Index> = function.function<Index>() body(%n: Index):
         |     %r : Index = add_index(%n, 1)
     """)
     module = parse_module(ir)
@@ -384,13 +384,13 @@ def test_multi_function_staged():
         | import function
         | import peano
         |
-        | %main : Nil = function.define<Index>() body():
+        | %main : function.Function<Index> = function.function<Index>() body():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %n : Index = peano.value<%s1>()
         |     %result : Index = function.call<%add_one>([%n])
         |
-        | %add_one : Nil = function.define<Index>() body(%x: Index):
+        | %add_one : function.Function<Index> = function.function<Index>() body(%x: Index):
         |     %r : Index = add_index(%x, 1)
     """)
     module = parse_module(ir)
@@ -404,7 +404,7 @@ def test_equal_jit():
     ir = strip_prefix("""
         | import function
         |
-        | %main : Nil = function.define<Index>() body(%n: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%n: Index):
         |     %eq : Index = equal_index(%n, 0)
     """)
     module = parse_module(ir)
@@ -423,12 +423,12 @@ def test_verify_dag_detects_cycle():
         strip_prefix("""
         | import function
         |
-        | %f : Nil = function.define<Nil>() body():
+        | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = {}
     """)
     )
     func = module.ops[0]
-    assert isinstance(func, DefineOp)
+    assert isinstance(func, FunctionOp)
     # Create cycle: func.body.result → ChainOp → func
     chain = ChainOp(lhs=func.body.result, rhs=func, type=Nil())
     func.body = dgen.Block(result=chain, args=[])
@@ -453,11 +453,11 @@ def test_recursive_peano():
         | import function
         | import peano
         |
-        | %main : Nil = function.define<Index>() body(%x: Index):
+        | %main : function.Function<Index> = function.function<Index>() body(%x: Index):
         |     %n : peano.Natural = function.call<%natural>([%x])
         |     %result : Index = peano.value<%n>()
         |
-        | %natural : Nil = function.define<peano.Natural>() body(%n: Index):
+        | %natural : function.Function<peano.Natural> = function.function<peano.Natural>() body(%n: Index):
         |     %base_case : Index = equal_index(%n, 0)
         |     %value : peano.Natural = control_flow.if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()

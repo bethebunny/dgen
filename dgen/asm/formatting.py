@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from dgen.block import Block, BlockArgument
+from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialects.builtin import Nil
 from dgen.module import PackOp
 
@@ -149,7 +149,7 @@ def type_asm(type_obj: Type, tracker: SlotTracker | None = None) -> str:
 # ===----------------------------------------------------------------------=== #
 
 
-def _format_block_arg(arg: BlockArgument, tracker: SlotTracker) -> str:
+def _format_block_arg(arg: BlockArgument | BlockParameter, tracker: SlotTracker) -> str:
     return f"%{tracker.track_name(arg)}: {format_expr(arg.type, tracker)}"
 
 
