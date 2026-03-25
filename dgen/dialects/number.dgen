@@ -1,0 +1,14 @@
+from index import Index
+from builtin import Byte, F64
+
+type Boolean:
+    data: Byte
+
+type SignedInteger<bits: Index>:
+    data: Index
+
+type UnsignedInteger<bits: Index>:
+    data: Index
+
+type Float64:
+    data: F64
