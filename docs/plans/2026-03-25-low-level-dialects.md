@@ -515,36 +515,21 @@ phi nodes) — `goto` ops don't lower to `llvm` ops, they're emitted by the
 codegen alongside `llvm` ops. This matches the current behavior where the codegen
 already handles labels and branches separately from arithmetic ops.
 
-## Implementation Status
+## Implementation Order
 
-### Completed
+This is a large refactor. Incremental approach:
 
-1. **`goto` dialect** — extracted from `llvm`. Label, BranchOp,
-   ConditionalBranchOp with full-word field names. Codegen updated.
-2. **`memory` dialect** — extracted from `affine`. Shape, MemRef, alloc,
-   dealloc, load, store, print_memref. All passes and tests updated.
-3. **`control_flow` dialect** — ForOp from `affine`, IfOp from `builtin`. Field
-   names updated (lower_bound, upper_bound, condition, etc.).
+1. Define `number` dialect (Boolean, SignedInteger, UnsignedInteger, Float64). Small, no op changes.
+2. Define `goto` dialect. Move label/branch ops from `llvm`. Update codegen.
+3. Define `memory` dialect. Move Shape, Reference, alloc/load/store from `affine`.
+4. Define `index` dialect. Move Index type from `builtin`. Arithmetic comes from `algebra`.
+5. Define `control_flow` dialect. Move ForOp from `affine`, IfOp from `builtin`.
+6. Define `function` dialect. Move FunctionOp, CallOp from `builtin`. Add `recursive`.
+7. Define `algebra` dialect with trait hierarchy. Replace monomorphic arithmetic
+   ops. This is the most complex step — the trait system needs design work.
+8. Decompose `affine_to_llvm.py` into passes 2, 3, 4. This is the payoff — each
+   new pass is a fraction of the complexity.
+9. Clean up `affine` (now empty) and slim down `llvm` and `builtin`.
 
-### Deferred
-
-4. **`function` dialect** — FunctionOp and CallOp appear in every IR string as
-   `function<Nil>()`. Moving them would require `function.function<Nil>()` or a
-   rename of the op. Needs design thought on naming (MLIR uses `func.func` to
-   avoid this). High churn, low immediate value.
-5. **`index` dialect** — Index type appears in 237+ snapshot lines as `: Index`.
-   Moving it changes every IR string to `index.Index`. Same churn concern.
-   The index ops (`add_index`, etc.) will be subsumed by `algebra` ops on Index.
-6. **`number` dialect** — new types (Boolean, SignedInteger, UnsignedInteger,
-   Float64). No existing code references them. Useful once `algebra` exists.
-7. **`algebra` dialect** — requires trait system design (CommutativeRing,
-   BooleanAlgebra, etc.) and a mechanism for types to register trait
-   implementations. The most complex step.
-8. **Pass decomposition** — splitting `affine_to_llvm.py` into three focused
-   passes (control_flow→goto, memory→pointers, arithmetic→llvm). Prototyped
-   successfully but the codegen's SSA slot tracker depends on op emission order,
-   which changes when passes run independently. Requires codegen improvements
-   (order-independent slot assignment) before the decomposition is production-
-   ready. The architectural direction is validated; the plumbing needs work.
-9. **Clean up** — remove empty `affine` dialect (currently retains mul_f and
-   add_f pending `algebra`), slim down `llvm` and `builtin`.
+Steps 1–6 are mechanical moves. Step 7 is the design-heavy one. Step 8 is
+where the simplification becomes concrete.
