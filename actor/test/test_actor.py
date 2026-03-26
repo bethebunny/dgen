@@ -30,27 +30,27 @@ def test_fused_pipeline() -> None:
         | import algebra
         | import control_flow
         | import index
-        | import memory
+        | import ndbuffer
         |
-        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), number.Float64>> = function.function<memory.MemRef<memory.Shape<1>([4]), number.Float64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |     %1 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |             %5 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), number.Float64>, %out: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |                 %8 : number.Float64 = memory.load(%input, [%7])
+        | %main : function.Function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>> = function.function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>>() body(%0: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |     %1 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = actor.pipeline(%0) body(%2: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |             %5 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>, %out: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |                 %8 : number.Float64 = ndbuffer.load(%input, [%7])
         |                 %9 : number.Float64 = 2.0
         |                 %10 : number.Float64 = algebra.multiply(%8, %9)
-        |                 %11 : Nil = memory.store(%10, %out, [%7])
-        |             %12 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = chain(%5, %6)
+        |                 %11 : Nil = ndbuffer.store(%10, %out, [%7])
+        |             %12 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = chain(%5, %6)
         |             %13 : Nil = actor.produce(%12)
-        |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |             %16 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = memory.alloc(memory.Shape<1>([4]))
-        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), number.Float64>, %out: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |                 %19 : number.Float64 = memory.load(%input, [%18])
+        |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |             %16 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))
+        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: index.Index, %input: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>, %out: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |                 %19 : number.Float64 = ndbuffer.load(%input, [%18])
         |                 %20 : number.Float64 = 1.0
         |                 %21 : number.Float64 = algebra.add(%19, %20)
-        |                 %22 : Nil = memory.store(%21, %out, [%18])
-        |             %23 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = chain(%16, %17)
+        |                 %22 : Nil = ndbuffer.store(%21, %out, [%18])
+        |             %23 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = chain(%16, %17)
         |             %24 : Nil = actor.produce(%23)
     """)
     )
@@ -75,27 +75,27 @@ def test_unfused_pipeline() -> None:
         | import algebra
         | import control_flow
         | import index
-        | import memory
+        | import ndbuffer
         |
-        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), number.Float64>> = function.function<memory.MemRef<memory.Shape<1>([4]), number.Float64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |     %1 : memory.MemRef<memory.Shape<1>([2]), number.Float64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |             %5 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), number.Float64>, %out: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |                 %8 : number.Float64 = memory.load(%input, [%7])
+        | %main : function.Function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>> = function.function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>>() body(%0: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |     %1 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = actor.pipeline(%0) body(%2: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |             %5 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>, %out: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |                 %8 : number.Float64 = ndbuffer.load(%input, [%7])
         |                 %9 : number.Float64 = 2.0
         |                 %10 : number.Float64 = algebra.multiply(%8, %9)
-        |                 %11 : Nil = memory.store(%10, %out, [%7])
-        |             %12 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = chain(%5, %6)
+        |                 %11 : Nil = ndbuffer.store(%10, %out, [%7])
+        |             %12 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = chain(%5, %6)
         |             %13 : Nil = actor.produce(%12)
-        |         %14 : Nil = actor.actor<2, 2>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |             %16 : memory.MemRef<memory.Shape<1>([2]), number.Float64> = memory.alloc(memory.Shape<1>([2]))
-        |             %17 : Nil = control_flow.for<0, 2>([%15, %16]) body(%18: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), number.Float64>, %out: memory.MemRef<memory.Shape<1>([2]), number.Float64>):
-        |                 %19 : number.Float64 = memory.load(%input, [%18])
+        |         %14 : Nil = actor.actor<2, 2>(%3) body(%15: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |             %16 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([2]))
+        |             %17 : Nil = control_flow.for<0, 2>([%15, %16]) body(%18: index.Index, %input: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>, %out: ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64>):
+        |                 %19 : number.Float64 = ndbuffer.load(%input, [%18])
         |                 %20 : number.Float64 = 1.0
         |                 %21 : number.Float64 = algebra.add(%19, %20)
-        |                 %22 : Nil = memory.store(%21, %out, [%18])
-        |             %23 : memory.MemRef<memory.Shape<1>([2]), number.Float64> = chain(%16, %17)
+        |                 %22 : Nil = ndbuffer.store(%21, %out, [%18])
+        |             %23 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = chain(%16, %17)
         |             %24 : Nil = actor.produce(%23)
     """)
     )
@@ -120,27 +120,27 @@ def test_lowering_ir(ir_snapshot: object) -> None:
         | import algebra
         | import control_flow
         | import index
-        | import memory
+        | import ndbuffer
         |
-        | %main : function.Function<memory.MemRef<memory.Shape<1>([4]), number.Float64>> = function.function<memory.MemRef<memory.Shape<1>([4]), number.Float64>>() body(%0: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |     %1 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = actor.pipeline(%0) body(%2: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |             %5 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = memory.alloc(memory.Shape<1>([4]))
-        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), number.Float64>, %out: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |                 %8 : number.Float64 = memory.load(%input, [%7])
+        | %main : function.Function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>> = function.function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>>() body(%0: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |     %1 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = actor.pipeline(%0) body(%2: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |             %5 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))
+        |             %6 : Nil = control_flow.for<0, 4>([%4, %5]) body(%7: index.Index, %input: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>, %out: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |                 %8 : number.Float64 = ndbuffer.load(%input, [%7])
         |                 %9 : number.Float64 = 2.0
         |                 %10 : number.Float64 = algebra.multiply(%8, %9)
-        |                 %11 : Nil = memory.store(%10, %out, [%7])
-        |             %12 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = chain(%5, %6)
+        |                 %11 : Nil = ndbuffer.store(%10, %out, [%7])
+        |             %12 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = chain(%5, %6)
         |             %13 : Nil = actor.produce(%12)
-        |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |             %16 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = memory.alloc(memory.Shape<1>([4]))
-        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: index.Index, %input: memory.MemRef<memory.Shape<1>([4]), number.Float64>, %out: memory.MemRef<memory.Shape<1>([4]), number.Float64>):
-        |                 %19 : number.Float64 = memory.load(%input, [%18])
+        |         %14 : Nil = actor.actor<4, 4>(%3) body(%15: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |             %16 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))
+        |             %17 : Nil = control_flow.for<0, 4>([%15, %16]) body(%18: index.Index, %input: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>, %out: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        |                 %19 : number.Float64 = ndbuffer.load(%input, [%18])
         |                 %20 : number.Float64 = 1.0
         |                 %21 : number.Float64 = algebra.add(%19, %20)
-        |                 %22 : Nil = memory.store(%21, %out, [%18])
-        |             %23 : memory.MemRef<memory.Shape<1>([4]), number.Float64> = chain(%16, %17)
+        |                 %22 : Nil = ndbuffer.store(%21, %out, [%18])
+        |             %23 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = chain(%16, %17)
         |             %24 : Nil = actor.produce(%23)
     """)
     )

@@ -1,6 +1,6 @@
 """Structured IR to LLVM-like IR lowering.
 
-Lowers memory, control_flow, and algebra dialect ops to goto + llvm dialect ops.
+Lowers ndbuffer, control_flow, and algebra dialect ops to goto + llvm dialect ops.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from dgen.dialects.function import Function, FunctionOp
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass
-from toy.dialects import memory, toy
+from toy.dialects import ndbuffer, toy
 
 from typing import TYPE_CHECKING
 
@@ -136,8 +136,8 @@ class StructuredToLLVM(Pass):
             return None
         self._seen.add(op)
 
-        if isinstance(op, memory.AllocOp):
-            assert isinstance(op.type, memory.MemRef)
+        if isinstance(op, ndbuffer.AllocOp):
+            assert isinstance(op.type, ndbuffer.NDBuffer)
             shape = op.type.shape.__constant__.to_json()
             assert isinstance(shape, list)
             total = prod(shape)
@@ -155,13 +155,13 @@ class StructuredToLLVM(Pass):
             # Return malloc as an effect so it is reachable from the function
             # body result and claimed by the entry block (LLVM dominance).
             return malloc_op
-        if isinstance(op, memory.DeallocOp):
+        if isinstance(op, ndbuffer.DeallocOp):
             return None  # heap-allocated; no free (leak for now)
-        if isinstance(op, memory.LoadOp):
+        if isinstance(op, ndbuffer.LoadOp):
             self._lower_load(op)
             return None
 
-        if isinstance(op, memory.StoreOp):
+        if isinstance(op, ndbuffer.StoreOp):
             return self._lower_store(op)
 
         if isinstance(op, ConstantOp):
@@ -193,7 +193,7 @@ class StructuredToLLVM(Pass):
                 self.value_map[op] = llvm.AddOp(lhs=left, rhs=right)
             return None
 
-        if isinstance(op, memory.PrintMemrefOp):
+        if isinstance(op, ndbuffer.PrintMemrefOp):
             return self._lower_print(op)
 
         if isinstance(op, ChainOp):
@@ -209,13 +209,13 @@ class StructuredToLLVM(Pass):
 
         return None
 
-    def _lower_load(self, op: memory.LoadOp) -> None:
+    def _lower_load(self, op: ndbuffer.LoadOp) -> None:
         memref = self._deref(self._map(op.memref))
         indices = _extract_indices(op.indices, self.value_map)
         gep = llvm.GepOp(base=memref, index=self._linearize(memref, indices))
         self.value_map[op] = llvm.LoadOp(ptr=gep)
 
-    def _lower_store(self, op: memory.StoreOp) -> llvm.StoreOp:
+    def _lower_store(self, op: ndbuffer.StoreOp) -> llvm.StoreOp:
         memref = self._deref(self._map(op.memref))
         indices = _extract_indices(op.indices, self.value_map)
         gep = llvm.GepOp(base=memref, index=self._linearize(memref, indices))
@@ -358,7 +358,7 @@ class StructuredToLLVM(Pass):
             acc = llvm.AddOp(lhs=acc, rhs=llvm.ZextOp(input=cmp))
         self.value_map[op] = acc
 
-    def _lower_print(self, op: memory.PrintMemrefOp) -> llvm.CallOp:
+    def _lower_print(self, op: ndbuffer.PrintMemrefOp) -> llvm.CallOp:
         input_val = self._deref(self._map(op.input))
         size = prod(self.alloc_shapes[input_val])
         pack = PackOp(

@@ -4,7 +4,7 @@ import llvm
 import toy
 
 %main : function.Function<()> = function.function<Nil>() body():
-    %0 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    %0 : toy.Tensor<ndbuffer.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
     %1 : llvm.Ptr = llvm.load(%0)
     %2 : index.Index = 8
     %3 : Nil = llvm.call<"print_memref">([%1, %2])
