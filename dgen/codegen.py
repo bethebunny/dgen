@@ -107,42 +107,163 @@ def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
     return _llvm_type(resolved.__layout__)
 
 
-def _collect_labels(ops: list[dgen.Op]) -> list[goto.LabelOp]:
-    """Recursively collect all LabelOps (labels may be nested)."""
-    seen: set[int] = set()
-    labels: list[goto.LabelOp] = []
+def _compute_label_depths(
+    all_ops: list[dgen.Op],
+) -> dict[int, int]:
+    """Compute nesting depth for each label from the branch structure.
 
-    def _walk(op_list: list[dgen.Op]) -> None:
-        for op in op_list:
-            if isinstance(op, goto.LabelOp) and id(op) not in seen:
-                seen.add(id(op))
-                labels.append(op)
-                _walk(op.body.ops)
+    A label targeted by a branch that depends on label A gets depth = A's depth + 1.
+    Labels targeted from entry code (no label dependency) get depth 0.
+    Uses a simple fixed-point iteration since there are few labels.
+    """
+    labels = [op for op in all_ops if isinstance(op, goto.LabelOp)]
+    depths: dict[int, int] = {id(l): 0 for l in labels}
 
-    _walk(ops)
-    return labels
+    # First: figure out which label each branch op directly depends on,
+    # using only ArgOp operand tracing (no recursion through depths).
+    def _direct_label(op: dgen.Op) -> goto.LabelOp | None:
+        """Find the label this op directly depends on via ArgOp."""
+        visited: set[int] = set()
+
+        def find(v: dgen.Value) -> goto.LabelOp | None:
+            if not isinstance(v, dgen.Op) or id(v) in visited:
+                return None
+            visited.add(id(v))
+            if isinstance(v, goto.ArgOp):
+                assert isinstance(v.label, goto.LabelOp)
+                return v.label
+            if isinstance(v, goto.LabelOp):
+                return v
+            for _, operand in v.operands:
+                found = find(operand)
+                if found is not None:
+                    return found
+            return None
+
+        return find(op)
+
+    # Collect branch edges: (source_label_or_None, target_label)
+    edges: list[tuple[goto.LabelOp | None, goto.LabelOp]] = []
+    for op in all_ops:
+        if isinstance(op, goto.BranchOp) and isinstance(op.target, goto.LabelOp):
+            edges.append((_direct_label(op), op.target))
+        elif isinstance(op, goto.ConditionalBranchOp):
+            src = _direct_label(op)
+            if isinstance(op.true_target, goto.LabelOp):
+                edges.append((src, op.true_target))
+            if isinstance(op.false_target, goto.LabelOp):
+                edges.append((src, op.false_target))
+
+    # DFS-based back-edge detection: edges to in-progress nodes are back-edges.
+    adj: dict[int, list[tuple[int, int]]] = {}  # src_id → [(target_id, edge_idx)]
+    ENTRY = 0
+    for i, (src, target) in enumerate(edges):
+        src_id = id(src) if src is not None else ENTRY
+        adj.setdefault(src_id, []).append((id(target), i))
+
+    back_edges: set[int] = set()  # edge indices
+    visited: set[int] = set()
+    in_progress: set[int] = set()
+
+    def dfs(node: int) -> None:
+        if node in visited:
+            return
+        visited.add(node)
+        in_progress.add(node)
+        for target_id, edge_idx in adj.get(node, []):
+            if target_id in in_progress:
+                back_edges.add(edge_idx)
+            else:
+                dfs(target_id)
+        in_progress.discard(node)
+
+    dfs(ENTRY)
+
+    # Propagate depths along forward edges only.
+    forward_edges = [
+        (src, target)
+        for i, (src, target) in enumerate(edges)
+        if i not in back_edges
+    ]
+    for _ in range(len(labels) + 1):
+        for src, target in forward_edges:
+            src_depth = depths[id(src)] if src is not None else -1
+            new_depth = src_depth + 1
+            if new_depth > depths[id(target)]:
+                depths[id(target)] = new_depth
+
+    return depths
+
+
+def _find_deepest_label(
+    op: dgen.Op,
+    cache: dict[int, goto.LabelOp | None],
+    depths: dict[int, int],
+) -> goto.LabelOp | None:
+    """Find the deepest (innermost) label an op depends on via operands.
+
+    When an op depends on multiple labels (e.g. load using indices from two
+    different loop bodies), returns the one with the greatest depth.
+    """
+    if id(op) in cache:
+        return cache[id(op)]
+    cache[id(op)] = None  # prevent cycles
+
+    if isinstance(op, goto.LabelOp):
+        cache[id(op)] = op
+        return op
+    if isinstance(op, goto.ArgOp):
+        assert isinstance(op.label, goto.LabelOp)
+        cache[id(op)] = op.label
+        return op.label
+
+    best: goto.LabelOp | None = None
+    best_depth = -1
+    for _, operand in op.operands:
+        if isinstance(operand, dgen.Op):
+            found = _find_deepest_label(operand, cache, depths)
+            if found is not None:
+                d = depths.get(id(found), 0)
+                if d > best_depth:
+                    best = found
+                    best_depth = d
+
+    cache[id(op)] = best
+    return best
 
 
 def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
-    # Linearize: build a flat list of (label_or_none, block_args, body_ops)
-    # sections in LLVM emission order. This determines SSA numbering.
-    # Collect labels and deduplicate ops across blocks: each op belongs to
-    # the first block that claims it (entry first, then labels in order).
-    label_ops = _collect_labels(f.body.ops)
-    claimed: set[int] = set()
+    # Get all ops from the flat walk_ops graph.
+    all_ops: list[dgen.Op] = f.body.ops
+
+    # Read label nesting depths (annotated by ControlFlowToGoto pass).
+    label_ops: list[goto.LabelOp] = [
+        op for op in all_ops if isinstance(op, goto.LabelOp)
+    ]
+    depths: dict[int, int] = {
+        id(l): getattr(l, "_depth", 0) for l in label_ops
+    }
+    label_cache: dict[int, goto.LabelOp | None] = {}
+    # Sort labels by depth so they emit in nesting order.
+    label_ops.sort(key=lambda l: depths.get(id(l), 0))
     entry_ops: list[dgen.Op] = []
-    for op in f.body.ops:
-        if not isinstance(op, goto.LabelOp) and id(op) not in claimed:
-            claimed.add(id(op))
+    label_body_ops: dict[int, list[dgen.Op]] = {id(l): [] for l in label_ops}
+
+    for op in all_ops:
+        if isinstance(op, goto.LabelOp):
+            continue
+        owner = _find_deepest_label(op, label_cache, depths)
+        if owner is None:
             entry_ops.append(op)
-    label_body_ops: dict[int, list[dgen.Op]] = {}
-    for label_op in label_ops:
-        deduped: list[dgen.Op] = []
-        for op in label_op.body.ops:
-            if not isinstance(op, goto.LabelOp) and id(op) not in claimed:
-                claimed.add(id(op))
-                deduped.append(op)
-        label_body_ops[id(label_op)] = deduped
+        else:
+            label_body_ops[id(owner)].append(op)
+
+    # Collect ArgOps per label (these become phi nodes), preserving walk_ops order.
+    label_arg_ops: dict[int, list[goto.ArgOp]] = {id(l): [] for l in label_ops}
+    for op in all_ops:
+        if isinstance(op, goto.ArgOp):
+            assert isinstance(op.label, goto.LabelOp)
+            label_arg_ops[id(op.label)].append(op)
 
     # Register everything in emission order so SSA numbers are sequential.
     # LLVM requires unnamed values (%0, %1, ...) to be numbered in order.
@@ -152,14 +273,37 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
     tracker.register(entry_ops)
     for label_op in label_ops:
         tracker.track_name(label_op)
-        for arg in label_op.body.args:
-            tracker.track_name(arg)
+        for arg_op in label_arg_ops[id(label_op)]:
+            tracker.track_name(arg_op)
         tracker.register(label_body_ops[id(label_op)])
 
-    # Flat list for type/constant scanning
-    all_ops: list[dgen.Op] = list(entry_ops)
-    for label_op in label_ops:
-        all_ops.extend(label_body_ops[id(label_op)])
+    def _unpack_args(val: Value) -> list[Value]:
+        return val.values if isinstance(val, PackOp) else [val]
+
+    def _resolve_target(target: dgen.Value) -> goto.LabelOp:
+        """Resolve a branch target parameter to its LabelOp."""
+        assert isinstance(target, goto.LabelOp)
+        return target
+
+    def _branch_edges(
+        op: dgen.Op,
+    ) -> Iterator[tuple[goto.LabelOp, list[dgen.Value]]]:
+        if isinstance(op, goto.BranchOp):
+            yield _resolve_target(op.target), _unpack_args(op.arguments)
+        elif isinstance(op, goto.ConditionalBranchOp):
+            yield _resolve_target(op.true_target), _unpack_args(op.true_arguments)
+            yield _resolve_target(op.false_target), _unpack_args(op.false_arguments)
+
+    # Build predecessor map: label → [(source_label_or_sentinel, passed_arg_values)]
+    entry_sentinel = dgen.Value(name="entry", type=goto.Label())
+    predecessors: dict[int, list[tuple[dgen.Value, list[dgen.Value]]]] = {
+        id(l): [] for l in label_ops
+    }
+    for op in all_ops:
+        for target_label, args in _branch_edges(op):
+            src_label = _find_deepest_label(op, label_cache, depths)
+            src: dgen.Value = src_label if src_label is not None else entry_sentinel
+            predecessors[id(target_label)].append((src, args))
 
     # Pre-scan: build constants and types maps
     constants: dict[dgen.Value, str] = {}
@@ -186,54 +330,10 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
     for arg in f.body.args:
         types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
-    # Register label body block arg types.
+    # Register ArgOp types (they become phi nodes).
     for label_op in label_ops:
-        for arg in label_op.body.args:
-            types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
-
-    def _unpack_args(val: Value) -> list[Value]:
-        return val.values if isinstance(val, PackOp) else [val]
-
-    # Resolve branch targets: block parameters are directly bound to their
-    # label (%self mechanism). Since targets are parameters, the codegen reads
-    # the parameter value directly — no dataflow propagation needed.
-    label_of: dict[dgen.Value, goto.LabelOp] = {
-        param: label_op for label_op in label_ops for param in label_op.body.parameters
-    }
-
-    def resolve_target(target: dgen.Value) -> goto.LabelOp:
-        """Resolve a branch target to its LabelOp.
-
-        Targets are either LabelOps directly (forward edges) or block
-        parameters that are bound to a LabelOp (%self back-edges).
-        """
-        if isinstance(target, goto.LabelOp):
-            return target
-        return label_of[target]
-
-    def _branch_edges(
-        op: dgen.Op,
-    ) -> Iterator[tuple[dgen.Value, list[dgen.Value]]]:
-        if isinstance(op, goto.BranchOp):
-            yield op.target, _unpack_args(op.arguments)
-        elif isinstance(op, goto.ConditionalBranchOp):
-            yield op.true_target, _unpack_args(op.true_arguments)
-            yield op.false_target, _unpack_args(op.false_arguments)
-
-    # Build predecessor map: label → [(source_label, passed_arg_values)]
-    entry_sentinel = dgen.Value(name="entry", type=goto.Label())
-    op_to_label: dict[dgen.Op, dgen.Value] = {}
-    for op in entry_ops:
-        op_to_label[op] = entry_sentinel
-    for label_op in label_ops:
-        for body_op in label_body_ops[id(label_op)]:
-            op_to_label[body_op] = label_op
-
-    predecessors: dict[dgen.Value, list[tuple[dgen.Value, list[dgen.Value]]]] = {}
-    for op in all_ops:
-        for target, args in _branch_edges(op):
-            src = op_to_label[op]
-            predecessors.setdefault(resolve_target(target), []).append((src, args))
+        for arg_op in label_arg_ops[id(label_op)]:
+            types[arg_op] = _llvm_type(dgen.type.type_constant(arg_op.type).__layout__)
 
     for op in all_ops:
         if isinstance(op, ConstantOp):
@@ -243,6 +343,9 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
         elif isinstance(op, builtin.ChainOp):
             # Chain is transparent: alias to lhs at runtime
             types[op] = types.get(op.lhs, "i64")
+        elif isinstance(op, goto.ArgOp):
+            # ArgOps are emitted as phi nodes, not regular ops
+            continue
         else:
             if (rt := _result_type_str(op.type)) is not None:
                 types[op] = rt
@@ -277,7 +380,9 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
 
     def emit_op(op: dgen.Op, lines: list[str]) -> None:
         """Emit a single op as LLVM IR."""
-        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, goto.LabelOp)):
+        if isinstance(
+            op, (ConstantOp, PackOp, builtin.ChainOp, goto.LabelOp, goto.ArgOp)
+        ):
             return
 
         name = tracker.track_name(op)
@@ -321,10 +426,12 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
                 f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
             )
         elif isinstance(op, goto.BranchOp):
-            lines.append(f"  br label %{tracker.track_name(resolve_target(op.target))}")
+            lines.append(
+                f"  br label %{tracker.track_name(_resolve_target(op.target))}"
+            )
         elif isinstance(op, goto.ConditionalBranchOp):
             lines.append(
-                f"  br i1 %{tracker.track_name(op.condition)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
+                f"  br i1 %{tracker.track_name(op.condition)}, label %{tracker.track_name(_resolve_target(op.true_target))}, label %{tracker.track_name(_resolve_target(op.false_target))}"
             )
         elif isinstance(op, llvm.CallOp):
             callee = string_value(op.callee)
@@ -339,7 +446,9 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
     def _needs_ret(ops: list[dgen.Op]) -> bool:
         """Return True if this block needs a ret terminator (doesn't end with br)."""
         for op in reversed(ops):
-            if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, goto.LabelOp)):
+            if isinstance(
+                op, (ConstantOp, PackOp, builtin.ChainOp, goto.LabelOp, goto.ArgOp)
+            ):
                 continue
             return not isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp))
         return True
@@ -373,15 +482,16 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
     if _needs_ret(entry_ops):
         emit_ret(lines, f.body.result)
 
-    # Emit each label's body (with phi instructions for block args)
+    # Emit each label's block (with phi instructions from ArgOps)
     for label_op in label_ops:
         label_name = tracker.track_name(label_op)
         lines.append(f"{label_name}:")
-        # Emit phi instructions for block args from predecessor branches
-        preds = predecessors.get(label_op, [])
-        for arg_idx, arg in enumerate(label_op.body.args):
-            arg_name = tracker.track_name(arg)
-            ty = types.get(arg, "i64")
+        # Emit phi instructions: each ArgOp for this label becomes a phi node.
+        arg_ops = label_arg_ops[id(label_op)]
+        preds = predecessors[id(label_op)]
+        for arg_idx, arg_op in enumerate(arg_ops):
+            arg_name = tracker.track_name(arg_op)
+            ty = types.get(arg_op, "i64")
             phi_parts = []
             for pred_label, pred_args in preds:
                 if arg_idx < len(pred_args):
@@ -395,7 +505,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> list[str]:
         for body_op in body_ops:
             emit_op(body_op, lines)
         if _needs_ret(body_ops):
-            emit_ret(lines, label_op.body.result)
+            emit_ret(lines, f.body.result)
 
     lines.append("}")
     return lines

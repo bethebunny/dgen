@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
+import dgen
+from dgen import Dialect, Op, Type, Value
+from dgen.dialects.builtin import Nil, Span
+from dgen.dialects.index import Index
 
 goto = Dialect("goto")
 
@@ -15,7 +17,12 @@ class Label(Type): ...
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
     type: Type = Label()
-    body: Block
+
+@dataclass(eq=False, kw_only=True)
+class ArgOp(Op):
+    label: Value[Label]
+    index: Value[Index]  # compile-time index into the label's phi tuple
+    type: Type
 
 @dataclass(eq=False, kw_only=True)
 class BranchOp(Op):
