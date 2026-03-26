@@ -7,15 +7,13 @@ import toy
 
 %main : function.Function<()> = function.function<Nil>() body():
     %0 : memory.MemRef<memory.Shape<2>([2, 2]), F64> = memory.alloc(memory.Shape<2>([2, 2]))
-    %1 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]
-    %2 : memory.MemRef<memory.Shape<2>([2, 2]), F64> = chain(%0, %1)
-    %3 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [5.0, 6.0, 7.0, 8.0]
-    %4 : memory.MemRef<memory.Shape<2>([2, 2]), F64> = chain(%2, %3)
-    %5 : Nil = control_flow.for<0, 2>([]) body(%6: index.Index):
-        %7 : Nil = control_flow.for<0, 2>([%6]) body(%8: index.Index, %6: index.Index):
-            %9 : F64 = memory.load(%1, [%6, %8])
-            %10 : F64 = memory.load(%3, [%6, %8])
-            %11 : F64 = algebra.multiply(%9, %10)
-            %12 : Nil = memory.store(%11, %0, [%6, %8])
-    %13 : memory.MemRef<memory.Shape<2>([2, 2]), F64> = chain(%4, %5)
-    %14 : Nil = memory.print_memref(%13)
+    %1 : Nil = control_flow.for<0, 2>([]) body(%2: index.Index):
+        %3 : Nil = control_flow.for<0, 2>([%2]) body(%4: index.Index, %2: index.Index):
+            %5 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]
+            %6 : F64 = memory.load(%5, [%2, %4])
+            %7 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [5.0, 6.0, 7.0, 8.0]
+            %8 : F64 = memory.load(%7, [%2, %4])
+            %9 : F64 = algebra.multiply(%6, %8)
+            %10 : Nil = memory.store(%9, %0, [%2, %4])
+    %11 : memory.MemRef<memory.Shape<2>([2, 2]), F64> = chain(%0, %1)
+    %12 : Nil = memory.print_memref(%11)

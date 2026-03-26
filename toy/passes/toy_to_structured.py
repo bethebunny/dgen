@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin
+from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, PackOp
@@ -25,14 +26,6 @@ _EMPTY_PACK = PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
 
 def _index_pack(*values: dgen.Value) -> PackOp:
     return PackOp(values=list(values), type=builtin.List(element_type=Index()))
-
-
-def _chain(*values: dgen.Value, type: dgen.Type) -> dgen.Value:
-    """Left-associative chain ensuring all values are visited before the last."""
-    result: dgen.Value = values[0]
-    for v in values[1:]:
-        result = builtin.ChainOp(lhs=result, rhs=v, type=type)
-    return result
 
 
 def _nested_for(
@@ -87,7 +80,9 @@ class ToyToStructured(Pass):
 
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self._run_block(f.body)
-        return FunctionOp(name=f.name, body=f.body, result=f.result, type=Function(result=f.result))
+        return FunctionOp(
+            name=f.name, body=f.body, result=f.result, type=Function(result=f.result)
+        )
 
     def _shape(self, val: dgen.Value) -> list[int]:
         assert isinstance(val.type, (toy.Tensor, memory.MemRef))
@@ -111,7 +106,7 @@ class ToyToStructured(Pass):
             )
 
         loop = _nested_for(in_shape, body, _get_block_args(op.input))
-        rewriter.replace_uses(op, _chain(alloc, op.input, loop, type=alloc.type))
+        rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
         return True
 
     @lowering_for(toy.MulOp)
@@ -144,7 +139,7 @@ class ToyToStructured(Pass):
             return memory.StoreOp(value=res, memref=alloc, indices=idx)
 
         loop = _nested_for(shape, body, _get_block_args(lhs, rhs))
-        rewriter.replace_uses(op, _chain(alloc, lhs, rhs, loop, type=alloc.type))
+        rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
         return True
 
     @lowering_for(toy.ReshapeOp)
@@ -178,7 +173,7 @@ class ToyToStructured(Pass):
             return memory.StoreOp(value=load, memref=alloc, indices=_index_pack(*ivars))
 
         loop = _nested_for(out_shape, body, _get_block_args(op.input))
-        rewriter.replace_uses(op, _chain(alloc, op.input, loop, type=alloc.type))
+        rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
         return True
 
     @lowering_for(toy.ConcatOp)
@@ -212,7 +207,6 @@ class ToyToStructured(Pass):
             )
 
         rhs_loop = _nested_for(rhs_shape, rhs_body, _get_block_args(op.rhs))
-        rewriter.replace_uses(
-            op, _chain(alloc, op.lhs, lhs_loop, op.rhs, rhs_loop, type=alloc.type)
-        )
+        after_lhs = ChainOp(lhs=alloc, rhs=lhs_loop, type=alloc.type)
+        rewriter.replace_uses(op, ChainOp(lhs=after_lhs, rhs=rhs_loop, type=alloc.type))
         return True

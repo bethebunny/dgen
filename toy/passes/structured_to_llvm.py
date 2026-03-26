@@ -54,6 +54,7 @@ class StructuredToLLVM(Pass):
         self.alloc_shapes: dict[dgen.Value, list[int]] = {}
         self._seen: set[dgen.Value] = set()
         self._header_selfs: list[BlockArgument] = []
+        self._body_ivs: list[BlockArgument] = []
 
     def run(self, m: Module, compiler: Compiler[object]) -> Module:
         return Module(
@@ -110,9 +111,10 @@ class StructuredToLLVM(Pass):
                     continue
                 self._seen.add(op)
                 entry_br, exit_label = self._lower_for(op)
-                # Exit captures: outer affine ivars + enclosing header_selfs.
+                # Exit captures: header_selfs + body IVs + outer affine ivars.
                 exit_captures: list[dgen.Value] = [
                     *self._header_selfs,
+                    *self._body_ivs,
                     *(self._map(a) for a in op.body.args[1:]),
                 ]
                 exit_result = self._lower_ops(ops[i + 1 :], return_builder)
@@ -292,18 +294,20 @@ class StructuredToLLVM(Pass):
         self.value_map[op] = header_self
         self._header_selfs.append(header_self)
 
-        # Body captures: header_self + enclosing header_selfs + outer affine ivars.
+        # Body captures: all header_selfs + all enclosing body IVs + outer affine ivars.
         body_captures: list[dgen.Value] = [
             *self._header_selfs,
+            *self._body_ivs,
             *(self._map(a) for a in op.body.args[1:]),
         ]
 
-        # Map affine loop var for the body.
+        # Map affine loop var for the body; track it for nested blocks.
         outer_affine_ivs = list(op.body.args[1:])
         saved_mappings = {
             a: self.value_map[a] for a in outer_affine_ivs if a in self.value_map
         }
         self.value_map[op.body.args[0]] = body_iv
+        self._body_ivs.append(body_iv)
 
         def _make_back_br() -> dgen.Value:
             one = ConstantOp(value=1, type=index.Index())
@@ -315,13 +319,15 @@ class StructuredToLLVM(Pass):
             result=body_result, args=[body_iv], captures=body_captures
         )
 
-        # Restore outer iv mappings.
+        # Restore outer iv mappings; pop body_iv.
+        self._body_ivs.pop()
         for a, v in saved_mappings.items():
             self.value_map[a] = v
 
-        # Header captures: enclosing header_selfs (not our own) + outer affine ivars.
+        # Header captures: enclosing header_selfs (not our own) + all body IVs + outer affine ivars.
         header_captures: list[dgen.Value] = [
             *self._header_selfs[:-1],
+            *self._body_ivs,
             *(self._map(a) for a in op.body.args[1:]),
         ]
         header_label.body = dgen.Block(
