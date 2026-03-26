@@ -165,17 +165,17 @@ def test_generate_affine_valid_python():
 
 
 def test_generate_toy_module_alias_import():
-    """Module alias import (import memory) should appear in stub."""
+    """Module alias import (import ndbuffer) should appear in stub."""
     mod = importlib.import_module("toy.dialects.toy")
     code = generate_pyi(mod, "toy")
-    assert "import toy.dialects.memory as memory" in code
+    assert "import toy.dialects.ndbuffer as ndbuffer" in code
 
 
 def test_generate_toy_cross_dialect_param():
-    """Tensor.shape should reference memory.Shape via the module alias."""
+    """Tensor.shape should reference ndbuffer.Shape via the module alias."""
     mod = importlib.import_module("toy.dialects.toy")
     code = generate_pyi(mod, "toy")
-    assert "shape: Value[memory.Shape]" in code
+    assert "shape: Value[ndbuffer.Shape]" in code
 
 
 def test_generate_toy_default_param():
@@ -219,8 +219,8 @@ def test_import_hook_import_map_auto_resolved():
     assert spec.loader.import_map == {"index": "dgen.dialects.index"}
 
 
-def test_import_hook_toy_import_map_has_memory():
-    """Loader for toy.dgen resolves 'memory' → 'toy.dialects.memory'."""
+def test_import_hook_toy_import_map_has_ndbuffer():
+    """Loader for toy.dgen resolves 'ndbuffer' → 'toy.dialects.ndbuffer'."""
     spec = sys.modules["toy.dialects.toy"].__spec__
     assert isinstance(spec.loader, DgenLoader)
-    assert spec.loader.import_map.get("memory") == "toy.dialects.memory"
+    assert spec.loader.import_map.get("ndbuffer") == "toy.dialects.ndbuffer"

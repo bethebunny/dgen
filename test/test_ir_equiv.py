@@ -10,7 +10,7 @@ from dgen.ir_diff import structural_diff
 from dgen.ir_equiv import Fingerprinter, graph_equivalent
 from dgen.module import ConstantOp
 from dgen.testing import strip_prefix
-from toy.dialects.memory import MemRef, Shape
+from toy.dialects.ndbuffer import NDBuffer, Shape
 
 
 def test_identical_ops_same_fingerprint():
@@ -92,7 +92,7 @@ def test_graph_equivalent_same_ir():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     assert graph_equivalent(parse_module(ir), parse_module(ir))
@@ -105,7 +105,7 @@ def test_graph_equivalent_different_names():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -113,7 +113,7 @@ def test_graph_equivalent_different_names():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %x : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %x : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %y : Nil = toy.print(%x)
     """)
     assert graph_equivalent(parse_module(a), parse_module(b))
@@ -125,7 +125,7 @@ def test_graph_not_equivalent_different_values():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -133,7 +133,7 @@ def test_graph_not_equivalent_different_values():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
     assert not graph_equivalent(parse_module(a), parse_module(b))
@@ -145,7 +145,7 @@ def test_structural_diff_returns_string():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -153,7 +153,7 @@ def test_structural_diff_returns_string():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
     diff = structural_diff(parse_module(a), parse_module(b))
@@ -173,13 +173,13 @@ def test_structural_diff_returns_string():
 def test_type_constant_with_dynamic_layout_param():
     """Type.__constant__ fails for types whose layout depends on a param type with a dynamic layout.
 
-    MemRef.__params__ = (("shape", Shape), ("dtype", TypeType)).
-    _resolve_layout("memory.MemRef") calls Shape().__layout__ to determine how to
+    NDBuffer.__params__ = (("shape", Shape), ("dtype", TypeType)).
+    _resolve_layout("ndbuffer.NDBuffer") calls Shape().__layout__ to determine how to
     serialize the "shape" field, but Shape.__layout__ is Array(Index.__layout__,
     self.rank.to_json()), which requires a concrete self.rank.
     """
     rank = ConstantOp(value=2, type=builtin.Index())
     shape = Shape(rank=rank)
-    memref_type = MemRef(shape=shape, dtype=number.Float64())
-    # Triggers TypeValue._resolve_layout("memory.MemRef") -> Shape().__layout__ -> TypeError
+    memref_type = NDBuffer(shape=shape, dtype=number.Float64())
+    # Triggers TypeValue._resolve_layout("ndbuffer.NDBuffer") -> Shape().__layout__ -> TypeError
     _ = memref_type.__constant__.to_json()

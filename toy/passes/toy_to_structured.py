@@ -1,4 +1,4 @@
-"""Toy IR to structured IR lowering (memory + control_flow + algebra)."""
+"""Toy IR to structured IR lowering (ndbuffer + control_flow + algebra)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.dialects import control_flow
-from toy.dialects import memory, shape_constant, toy
+from toy.dialects import ndbuffer, shape_constant, toy
 
 from typing import TYPE_CHECKING
 
@@ -85,13 +85,13 @@ class ToyToStructured(Pass):
         )
 
     def _shape(self, val: dgen.Value) -> list[int]:
-        assert isinstance(val.type, (toy.Tensor, memory.MemRef))
+        assert isinstance(val.type, (toy.Tensor, ndbuffer.NDBuffer))
         result = val.type.shape.__constant__.to_json()
         assert isinstance(result, list)
         return result
 
-    def _alloc(self, shape_val: dgen.Value) -> memory.AllocOp:
-        return memory.AllocOp(shape=shape_val, type=memory.MemRef(shape=shape_val))
+    def _alloc(self, shape_val: dgen.Value) -> ndbuffer.AllocOp:
+        return ndbuffer.AllocOp(shape=shape_val, type=ndbuffer.NDBuffer(shape=shape_val))
 
     @lowering_for(toy.TransposeOp)
     def lower_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
@@ -100,8 +100,8 @@ class ToyToStructured(Pass):
         alloc = self._alloc(op.type.shape)
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = memory.LoadOp(memref=op.input, indices=_index_pack(*ivars))
-            return memory.StoreOp(
+            load = ndbuffer.LoadOp(memref=op.input, indices=_index_pack(*ivars))
+            return ndbuffer.StoreOp(
                 value=load, memref=alloc, indices=_index_pack(*reversed(list(ivars)))
             )
 
@@ -130,13 +130,13 @@ class ToyToStructured(Pass):
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = _index_pack(*ivars)
-            lhs_elem = memory.LoadOp(memref=lhs, indices=idx)
+            lhs_elem = ndbuffer.LoadOp(memref=lhs, indices=idx)
             res = cls(
                 left=lhs_elem,
-                right=memory.LoadOp(memref=rhs, indices=idx),
+                right=ndbuffer.LoadOp(memref=rhs, indices=idx),
                 type=lhs_elem.type,
             )
-            return memory.StoreOp(value=res, memref=alloc, indices=idx)
+            return ndbuffer.StoreOp(value=res, memref=alloc, indices=idx)
 
         loop = _nested_for(shape, body, _get_block_args(lhs, rhs))
         rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
@@ -149,7 +149,7 @@ class ToyToStructured(Pass):
 
     @lowering_for(toy.PrintOp)
     def lower_print(self, op: toy.PrintOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, memory.PrintMemrefOp(input=op.input))
+        rewriter.replace_uses(op, ndbuffer.PrintMemrefOp(input=op.input))
         return True
 
     @lowering_for(toy.DimSizeOp)
@@ -169,8 +169,10 @@ class ToyToStructured(Pass):
         alloc = self._alloc(shape_constant(out_shape))
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = memory.LoadOp(memref=op.input, indices=_index_pack(*ivars[1:]))
-            return memory.StoreOp(value=load, memref=alloc, indices=_index_pack(*ivars))
+            load = ndbuffer.LoadOp(memref=op.input, indices=_index_pack(*ivars[1:]))
+            return ndbuffer.StoreOp(
+                value=load, memref=alloc, indices=_index_pack(*ivars)
+            )
 
         loop = _nested_for(out_shape, body, _get_block_args(op.input))
         rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
@@ -188,8 +190,8 @@ class ToyToStructured(Pass):
 
         def lhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = _index_pack(*ivars)
-            return memory.StoreOp(
-                value=memory.LoadOp(memref=op.lhs, indices=idx),
+            return ndbuffer.StoreOp(
+                value=ndbuffer.LoadOp(memref=op.lhs, indices=idx),
                 memref=alloc,
                 indices=idx,
             )
@@ -200,8 +202,8 @@ class ToyToStructured(Pass):
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             shifted = list(ivars)
             shifted[axis] = algebra.AddOp(left=ivars[axis], right=offset, type=Index())
-            return memory.StoreOp(
-                value=memory.LoadOp(memref=op.rhs, indices=_index_pack(*ivars)),
+            return ndbuffer.StoreOp(
+                value=ndbuffer.LoadOp(memref=op.rhs, indices=_index_pack(*ivars)),
                 memref=alloc,
                 indices=_index_pack(*shifted),
             )

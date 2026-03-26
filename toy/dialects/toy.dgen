@@ -1,8 +1,8 @@
 from builtin import Index, Nil, String, Span
 from number import Float64
-import memory
+import ndbuffer
 
-type Tensor<shape: memory.Shape, dtype: Type = Float64>:
+type Tensor<shape: ndbuffer.Shape, dtype: Type = Float64>:
     data: Span<dtype>
 
 type InferredShapeTensor<dtype: Type = Float64>:

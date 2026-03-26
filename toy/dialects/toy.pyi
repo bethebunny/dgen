@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-import toy.dialects.memory as memory
+import toy.dialects.ndbuffer as ndbuffer
 from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
@@ -15,7 +15,7 @@ toy = Dialect("toy")
 
 @dataclass(frozen=True, eq=False)
 class Tensor(Type):
-    shape: Value[memory.Shape]
+    shape: Value[ndbuffer.Shape]
     dtype: Value[dgen.TypeType] = Float64()
 
 @dataclass(frozen=True, eq=False)

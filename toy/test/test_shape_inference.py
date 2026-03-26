@@ -98,8 +98,8 @@ def test_concat(ir_snapshot):
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<memory.Shape<2>([3, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<ndbuffer.Shape<2>([3, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
@@ -115,8 +115,8 @@ def test_concat_axis1(ir_snapshot):
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<memory.Shape<2>([2, 5]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 5]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<1>(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
@@ -132,7 +132,7 @@ def test_tile_with_constant_count(ir_snapshot):
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<1>([3]), number.Float64> = [1.0, 2.0, 3.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64> = [1.0, 2.0, 3.0]
         |     %1 : index.Index = 4
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.tile<%1>(%0)
         |     %3 : Nil = toy.print(%2)
@@ -154,7 +154,7 @@ def test_tile_with_computed_count():
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<1>([3]), number.Float64> = [1.0, 2.0, 3.0]
+        |     %0 : toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64> = [1.0, 2.0, 3.0]
         |     %1 : index.Index = 2
         |     %2 : index.Index = 2
         |     %3 : index.Index = algebra.add(%1, %2)

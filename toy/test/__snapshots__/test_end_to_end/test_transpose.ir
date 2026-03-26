@@ -18,7 +18,7 @@ import toy
                 %7 : index.Index = 3
                 %8 : llvm.Int<1> = llvm.icmp<"slt">(%i1, %7)
                 %loop_body1 : goto.Label = goto.label() body(%j1: index.Index) captures(%self, %6, %j0):
-                    %9 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+                    %9 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
                     %10 : llvm.Ptr = llvm.load(%9)
                     %11 : index.Index = 3
                     %12 : llvm.Int<64> = llvm.mul(%j0, %11)

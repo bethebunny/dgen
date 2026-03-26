@@ -22,6 +22,7 @@ from dgen.gen.parser import parse
 _DEFAULT_MAP: dict[str, str] = {
     "builtin": "dgen.dialects.builtin",
     "index": "dgen.dialects.index",
+    "memory": "dgen.dialects.memory",
     "number": "dgen.dialects.number",
 }
 

@@ -24,7 +24,7 @@ from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, string_value
 from dgen.type import Memory
 from toy.dialects import shape_constant
-from toy.dialects.memory import MemRef, Shape
+from toy.dialects.ndbuffer import NDBuffer, Shape
 from toy.dialects.toy import InferredShapeTensor, Tensor
 from dgen.testing import strip_prefix
 
@@ -100,14 +100,14 @@ MEMORY_TYPES = [
         [2, 3],
         "[2, 3]",
         (2, 3),
-        id="memory.shape",
+        id="ndbuffer.shape",
     ),
     pytest.param(
-        MemRef(shape=shape_constant([2, 3])),
+        NDBuffer(shape=shape_constant([2, 3])),
         (0,),
         None,
         None,
-        id="memory.memref",
+        id="ndbuffer.ndbuffer",
     ),
 ]
 
@@ -149,7 +149,7 @@ VOID_TYPES = [
     pytest.param(builtin.Nil(), id="builtin.nil"),
     pytest.param(llvm.Void(), id="llvm.void"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
-    pytest.param(Shape(rank=builtin.Index().constant(0)), id="memory.shape_0"),
+    pytest.param(Shape(rank=builtin.Index().constant(0)), id="ndbuffer.shape_0"),
 ]
 
 
@@ -181,9 +181,9 @@ _ASM_TYPES = [
     pytest.param(Tensor(shape=shape_constant([3])), id="toy.tensor_1d"),
     pytest.param(Tensor(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
-    pytest.param(Shape(rank=builtin.Index().constant(0)), id="memory.shape_0"),
-    pytest.param(Shape(rank=builtin.Index().constant(2)), id="memory.shape_2"),
-    pytest.param(MemRef(shape=shape_constant([2, 3])), id="memory.memref"),
+    pytest.param(Shape(rank=builtin.Index().constant(0)), id="ndbuffer.shape_0"),
+    pytest.param(Shape(rank=builtin.Index().constant(2)), id="ndbuffer.shape_2"),
+    pytest.param(NDBuffer(shape=shape_constant([2, 3])), id="ndbuffer.ndbuffer"),
 ]
 
 
@@ -217,7 +217,7 @@ _PARSEABLE_TYPES = [
         [2, 3],
         "[2, 3]",
         (2, 3),
-        id="memory.shape",
+        id="ndbuffer.shape",
     ),
 ]
 
@@ -353,7 +353,7 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
         | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body(%x: index.Index):
-        |     %store : Nil = memory.store(%x, %x, [3, %x, 5])
+        |     %store : Nil = ndbuffer.store(%x, %x, [3, %x, 5])
     """)
     parsed = parse_module(ir_input)
     assert parsed == ir_snapshot
