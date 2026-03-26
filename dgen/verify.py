@@ -111,6 +111,30 @@ def verify_closed_blocks(module: Module) -> None:
     visited: set[Block] = set()
     for func in module.functions:
         _verify_block(func.body, module, visited)
+    # Verify no op appears in multiple blocks.
+    _verify_unique_ownership(module)
+
+
+def _verify_unique_ownership(module: Module) -> None:
+    """Assert every op belongs to exactly one block's walk_ops."""
+    owner: dict[int, str] = {}  # op id → block description
+
+    def _check_block(block: Block, name: str) -> None:
+        for op in block.ops:
+            op_id = id(op)
+            if op_id in owner:
+                raise ClosedBlockError(
+                    f"{type(op).__name__} %{op.name} appears in both "
+                    f"{owner[op_id]} and {name}\n\n" + _annotated_module(module, op)
+                )
+            owner[op_id] = name
+            if isinstance(op, dgen.Op):
+                for _, child_block in op.blocks:
+                    child_name = op.name or type(op).__name__
+                    _check_block(child_block, child_name)
+
+    for func in module.functions:
+        _check_block(func.body, func.name or "function")
 
 
 # ---------------------------------------------------------------------------

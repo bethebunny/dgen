@@ -20,13 +20,17 @@ from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass
 from dgen.type import Memory, TypeType, type_constant
 from dgen.testing import strip_prefix
-from toy.passes.structured_to_llvm import StructuredToLLVM
+from toy.passes.control_flow_to_goto import ControlFlowToGoto
+from toy.passes.ndbuffer_to_memory import NDBufferToMemory
+from toy.passes.memory_to_llvm import MemoryToLLVM
 
 _compiler = Compiler([], IdentityPass())
 
 
 def lower_to_llvm(m: Module) -> Module:
-    return StructuredToLLVM().run(m, _compiler)
+    m = ControlFlowToGoto().run(m, _compiler)
+    m = NDBufferToMemory().run(m, _compiler)
+    return MemoryToLLVM().run(m, _compiler)
 
 
 def test_parse_dict_literal():

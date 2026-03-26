@@ -1,0 +1,31 @@
+# serializer version: 1
+# name: test_nested_loop_llvm_ir
+  '''
+  declare void @print_memref(ptr, i64)
+  declare ptr @malloc(i64)
+  
+  define void @test() {
+  entry:
+  loop_header0:
+    %i0 = phi i64 [ %2, %loop_body0 ], [ 0, %entry ]
+    %4 = icmp slt i64 %i0, 2
+  loop_body0:
+    %j0 = phi i64 [ %i0, %loop_header0 ]
+  loop_header1:
+    %i1 = phi i64 [ %10, %loop_body1 ], [ 0, %loop_body0 ]
+    %12 = icmp slt i64 %i1, 2
+  loop_body1:
+    %j1 = phi i64 [ %i1, %loop_header1 ]
+    %10 = add i64 %j1, 1
+    br label %loop_header1
+    br i1 %12, label %loop_body1, label %loop_header1
+  exit1:
+    br label %loop_header1
+    %2 = add i64 %j0, 1
+    br label %loop_header0
+    br i1 %4, label %loop_body0, label %loop_header0
+  exit0:
+    br label %loop_header0
+  }
+  '''
+# ---

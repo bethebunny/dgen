@@ -38,12 +38,24 @@ def placeholder_block() -> dgen.Block:
 
 
 def walk_ops(root: dgen.Value, *, stop: Iterable[dgen.Value] = ()) -> list[dgen.Op]:
-    """Walk the use-def graph from root, return ops in topological order.
+    """Walk the use-def graph backwards from root, return ops in topological order.
 
-    - Only includes Op instances (not plain Values or BlockArguments).
-    - Does not descend into an op's nested blocks.
-    - Dependencies appear before dependents.
-    - Values in ``stop`` are treated as leaves (capture boundaries).
+    Traversal rules:
+    - Follows **operands** (Value-typed fields) of each op.
+    - Follows **parameters** (non-Value fields that hold Values, e.g. branch
+      targets). Parameters are compile-time values but still participate in
+      the use-def graph.
+    - Does **NOT** descend into an op's nested **blocks**. A LabelOp is
+      included as an op, but its body block's ops require a separate
+      ``walk_ops(label.body.result)`` call. Each block is its own walk scope.
+    - Values in ``stop`` are treated as **leaves**: the walk does not
+      traverse past them. This is how captures work — ``block.ops`` passes
+      ``stop=captures`` so that captured values are boundaries.
+
+    Returns:
+    - Only Op instances (not BlockArguments, BlockParameters, Constants,
+      Types, or plain Values).
+    - In topological order: if A depends on B, B appears before A.
     """
     visited: set[dgen.Value] = set(stop)
     order: list[dgen.Op] = []

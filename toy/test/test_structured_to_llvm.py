@@ -3,7 +3,9 @@
 from dgen.asm.parser import parse_module
 from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
-from toy.passes.structured_to_llvm import StructuredToLLVM
+from toy.passes.control_flow_to_goto import ControlFlowToGoto
+from toy.passes.ndbuffer_to_memory import NDBufferToMemory
+from toy.passes.memory_to_llvm import MemoryToLLVM
 from toy.passes.toy_to_structured import ToyToStructured
 from toy.test.helpers import strip_prefix
 
@@ -13,7 +15,9 @@ _compiler = Compiler([], IdentityPass())
 def compile_to_llvm(ir_text: str) -> Module:
     m = parse_module(ir_text)
     affine = ToyToStructured().run(m, _compiler)
-    return StructuredToLLVM().run(affine, _compiler)
+    affine = ControlFlowToGoto().run(affine, _compiler)
+    affine = NDBufferToMemory().run(affine, _compiler)
+    return MemoryToLLVM().run(affine, _compiler)
 
 
 def test_simple_constant(ir_snapshot):

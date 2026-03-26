@@ -11,10 +11,12 @@ from dgen.compiler import Compiler
 from dgen.dialects import builtin, number
 from dgen.testing import strip_prefix
 from dgen.type import Memory
-from toy.passes.structured_to_llvm import StructuredToLLVM
+from toy.passes.control_flow_to_goto import ControlFlowToGoto
+from toy.passes.ndbuffer_to_memory import NDBufferToMemory
+from toy.passes.memory_to_llvm import MemoryToLLVM
 
 actor_compiler: Compiler[Executable] = Compiler(
-    passes=[ActorToAffine(), StructuredToLLVM()],
+    passes=[ActorToAffine(), ControlFlowToGoto(), NDBufferToMemory(), MemoryToLLVM()],
     exit=LLVMCodegen(),
 )
 

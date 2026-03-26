@@ -22,7 +22,8 @@ if TYPE_CHECKING:
     from dgen.compiler import Compiler
 
 
-_EMPTY_PACK = PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
+def _empty_pack() -> PackOp:
+    return PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
 
 
 def _index_pack(*values: dgen.Value) -> PackOp:
@@ -32,40 +33,35 @@ def _index_pack(*values: dgen.Value) -> PackOp:
 def _nested_for(
     shape: Sequence[int],
     body_fn: Callable[[Sequence[dgen.Value]], dgen.Value],
-    outer_block_args: Sequence[BlockArgument] = (),
+    captures: Sequence[dgen.Value] = (),
 ) -> control_flow.ForOp:
     """Build nested ForOps for each dimension, innermost first.
 
-    Outer-loop ivars are threaded as explicit extra block arguments on inner
-    body blocks so that every block remains closed (no out-of-scope captures).
-    outer_block_args: function-parameter BlockArguments referenced in body_fn;
-    threaded at every nesting level so they remain in scope.
+    captures: values from the enclosing scope referenced by body_fn (e.g.
+    allocs, tensor constants, function parameters). Outer loop IVs are
+    also added as captures at each nesting level.
     """
     ivars = [BlockArgument(type=Index()) for _ in shape]
     innermost: dgen.Value = body_fn(ivars)
     for depth in range(len(shape) - 1, -1, -1):
+        # Outer IVs are captures, not threaded block args.
         outer_ivars = ivars[:depth]
-        captured: list[dgen.Value] = outer_ivars + list(outer_block_args)
-        init_pack = (
-            PackOp(values=captured, type=builtin.List(element_type=builtin.Nil()))
-            if captured
-            else _EMPTY_PACK
-        )
+        # Only capture non-constant values. Constants are self-contained
+        # (no dependencies, no side effects) and can be ambient.
+        all_captures = [
+            c for c in list(captures) + outer_ivars if not isinstance(c, ConstantOp)
+        ]
         innermost = control_flow.ForOp(
             lower_bound=Index().constant(0),
             upper_bound=Index().constant(shape[depth]),
-            initial_arguments=init_pack,
+            initial_arguments=_empty_pack(),
             body=dgen.Block(
                 result=innermost,
-                args=[ivars[depth]] + captured,
+                args=[ivars[depth]],
+                captures=all_captures,
             ),
         )
     return innermost  # type: ignore[return-value]
-
-
-def _get_block_args(*values: dgen.Value) -> list[BlockArgument]:
-    """Return only the BlockArgument instances from values."""
-    return [v for v in values if isinstance(v, BlockArgument)]
 
 
 class ToyToStructured(Pass):
@@ -108,7 +104,7 @@ class ToyToStructured(Pass):
                 value=load, memref=alloc, indices=_index_pack(*reversed(list(ivars)))
             )
 
-        loop = _nested_for(in_shape, body, _get_block_args(op.input))
+        loop = _nested_for(in_shape, body, captures=[alloc, op.input])
         rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
         return True
 
@@ -141,7 +137,7 @@ class ToyToStructured(Pass):
             )
             return ndbuffer.StoreOp(value=res, memref=alloc, indices=idx)
 
-        loop = _nested_for(shape, body, _get_block_args(lhs, rhs))
+        loop = _nested_for(shape, body, captures=[alloc, lhs, rhs])
         rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
         return True
 
@@ -177,7 +173,7 @@ class ToyToStructured(Pass):
                 value=load, memref=alloc, indices=_index_pack(*ivars)
             )
 
-        loop = _nested_for(out_shape, body, _get_block_args(op.input))
+        loop = _nested_for(out_shape, body, captures=[alloc, op.input])
         rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
         return True
 
@@ -199,7 +195,7 @@ class ToyToStructured(Pass):
                 indices=idx,
             )
 
-        lhs_loop = _nested_for(lhs_shape, lhs_body, _get_block_args(op.lhs))
+        lhs_loop = _nested_for(lhs_shape, lhs_body, captures=[alloc, op.lhs])
         offset = ConstantOp(value=lhs_shape[axis], type=Index())
 
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
@@ -211,7 +207,11 @@ class ToyToStructured(Pass):
                 indices=_index_pack(*shifted),
             )
 
-        rhs_loop = _nested_for(rhs_shape, rhs_body, _get_block_args(op.rhs))
+        rhs_loop = _nested_for(
+            rhs_shape,
+            rhs_body,
+            captures=[alloc, op.rhs, offset],
+        )
         after_lhs = ChainOp(lhs=alloc, rhs=lhs_loop, type=alloc.type)
         rewriter.replace_uses(op, ChainOp(lhs=after_lhs, rhs=rhs_loop, type=alloc.type))
         return True
@@ -239,7 +239,11 @@ class ToyToStructured(Pass):
             )
             return memory.StoreOp(value=updated, ptr=initialized)
 
-        loop = _nested_for(shape, body, _get_block_args(op.input))
+        loop = _nested_for(
+            shape,
+            body,
+            captures=[initialized, zero, op.input],
+        )
         after_loop = ChainOp(lhs=initialized, rhs=loop, type=reference_type)
         result = memory.LoadOp(ptr=after_loop, type=Index())
         rewriter.replace_uses(op, result)
