@@ -1,10 +1,11 @@
-from builtin import Index, Nil, F64, String, Span
+from builtin import Index, Nil, String, Span
+from number import Float64
 import memory
 
-type Tensor<shape: memory.Shape, dtype: Type = F64>:
+type Tensor<shape: memory.Shape, dtype: Type = Float64>:
     data: Span<dtype>
 
-type InferredShapeTensor<dtype: Type = F64>:
+type InferredShapeTensor<dtype: Type = Float64>:
     data: Nil
 
 op transpose(input: Tensor) -> Tensor

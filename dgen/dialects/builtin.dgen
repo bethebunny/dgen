@@ -2,9 +2,6 @@ trait HasSingleBlock
 
 from index import Index
 
-type F64:
-    layout Float64
-
 type Nil:
     layout Void
 

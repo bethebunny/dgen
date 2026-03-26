@@ -42,11 +42,11 @@ def test_if_with_capture_roundtrip():
         | import index
         | import function
         | import index
-        | %main : function.Function<F64> = function.function<F64>() body(%cond: index.Index, %x: F64):
-        |     %result : F64 = control_flow.if(%cond, [%x], [%x]) then_body(%x: F64):
-        |         %a : F64 = 1.0
-        |     else_body(%x: F64):
-        |         %b : F64 = 2.0
+        | %main : function.Function<number.Float64> = function.function<number.Float64>() body(%cond: index.Index, %x: number.Float64):
+        |     %result : number.Float64 = control_flow.if(%cond, [%x], [%x]) then_body(%x: number.Float64):
+        |         %a : number.Float64 = 1.0
+        |     else_body(%x: number.Float64):
+        |         %b : number.Float64 = 2.0
     """)
     module = parse_module(ir)
     fn = module.ops[0]

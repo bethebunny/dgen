@@ -8,7 +8,7 @@ from typing import ClassVar
 from dgen import Dialect, layout
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
-from dgen.dialects import builtin
+from dgen.dialects import builtin, number
 from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
 from dgen.module import string_value
 from dgen.testing import strip_prefix
@@ -110,7 +110,7 @@ def test_int_to_json():
 
 
 def test_float_to_json():
-    mem = Memory.from_value(builtin.F64(), 3.14)
+    mem = Memory.from_value(number.Float64(), 3.14)
     assert mem.to_json() == 3.14
 
 
@@ -122,7 +122,7 @@ def test_byte_to_json():
 
 
 def test_f64type_layout():
-    assert builtin.F64().__layout__.byte_size == 8
+    assert number.Float64().__layout__.byte_size == 8
 
 
 def test_index_type_layout():
@@ -188,7 +188,7 @@ def test_type_layout_parametric_value_param():
 
 def test_type_layout_parametric_type_param_nested():
     """Nested parametric type layout is still a fixed-size TypeValue pointer."""
-    inner = builtin.List(element_type=builtin.F64())
+    inner = builtin.List(element_type=number.Float64())
     outer = builtin.List(element_type=inner)
     tl = outer.type.__layout__
     assert isinstance(tl, TypeValue)
@@ -211,9 +211,9 @@ def test_type_value_memory_parametric():
 
 
 def test_type_value_memory_pointer():
-    """Pack and unpack Pointer<F64> as a type value through Memory."""
+    """Pack and unpack Pointer<number.Float64> as a type value through Memory."""
     metatype = TypeType()
-    data = {"tag": "builtin.Pointer", "pointee": {"tag": "builtin.F64"}}
+    data = {"tag": "builtin.Pointer", "pointee": {"tag": "number.Float64"}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
 
@@ -226,13 +226,13 @@ def test_type_value_memory_nil():
 
 
 def test_type_value_memory_nested():
-    """Pack and unpack List<List<F64>> as a type value through Memory."""
+    """Pack and unpack List<List<number.Float64>> as a type value through Memory."""
     metatype = TypeType()
     data = {
         "tag": "builtin.List",
         "element_type": {
             "tag": "builtin.List",
-            "element_type": {"tag": "builtin.F64"},
+            "element_type": {"tag": "number.Float64"},
         },
     }
     mem = Memory.from_json(metatype, data)
@@ -255,7 +255,7 @@ def test_type_type_layout_parametric():
 def test_type_layout_size_fixed():
     """Type layout size is fixed (8-byte pointer) regardless of params."""
     simple = builtin.List(element_type=builtin.Index())
-    nested = builtin.List(element_type=builtin.List(element_type=builtin.F64()))
+    nested = builtin.List(element_type=builtin.List(element_type=number.Float64()))
     assert simple.type.__layout__.byte_size == 8
     assert nested.type.__layout__.byte_size == 8
     assert simple.type.__layout__.byte_size == nested.type.__layout__.byte_size
@@ -268,15 +268,15 @@ def test_type_layout_size_fixed():
 
 def test_type_is_value():
     """Every Type instance is a Value."""
-    ty = builtin.F64()
+    ty = number.Float64()
     assert isinstance(ty, Value)
     assert isinstance(ty.type, TypeType)
 
 
 def test_type_constant_non_parametric():
     """Non-parametric type's __constant__ serializes to just a tag."""
-    ty = builtin.F64()
-    assert ty.__constant__.to_json() == {"tag": "builtin.F64"}
+    ty = number.Float64()
+    assert ty.__constant__.to_json() == {"tag": "number.Float64"}
 
 
 def test_type_constant_parametric():
@@ -308,9 +308,11 @@ def test_pointer_array_size():
 
 
 def test_pointer_array_type_layout():
-    """Pointer<Array<F64, 4>> type produces a Pointer(Array) layout."""
+    """Pointer<Array<number.Float64, 4>> type produces a Pointer(Array) layout."""
     pa = builtin.Pointer(
-        pointee=builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4))
+        pointee=builtin.Array(
+            element_type=number.Float64(), n=builtin.Index().constant(4)
+        )
     )
     ly = pa.__layout__
     assert isinstance(ly, Pointer)
@@ -331,17 +333,19 @@ def test_pointer_array_roundtrip():
 
 
 def test_pointer_array_type_asm():
-    """Pointer<Array<F64, 4>> formats correctly."""
+    """Pointer<Array<number.Float64, 4>> formats correctly."""
     pa = builtin.Pointer(
-        pointee=builtin.Array(element_type=builtin.F64(), n=builtin.Index().constant(4))
+        pointee=builtin.Array(
+            element_type=number.Float64(), n=builtin.Index().constant(4)
+        )
     )
-    assert type_asm(pa) == "Pointer<Array<F64, 4>>"
+    assert type_asm(pa) == "Pointer<Array<number.Float64, 4>>"
 
 
 def test_parse_type_with_pointer_array_param():
     """Parsing a type whose param is Pointer<Array<...>> with an explicit typed literal.
 
-    With the Type<params>(literal) syntax, Pointer<Array<F64, 3>>([10, 20, 30])
+    With the Type<params>(literal) syntax, Pointer<Array<number.Float64, 3>>([10, 20, 30])
     is parsed without any inference — the type is fully specified.
     """
     test_dialect = Dialect("_test_pa")
@@ -357,6 +361,6 @@ def test_parse_type_with_pointer_array_param():
         | import function
         | import _test_pa
         |
-        | %f : function.Function<_test_pa.Wrapper<Pointer<Array<F64, 3>>([10, 20, 30])>> = function.function<_test_pa.Wrapper<Pointer<Array<F64, 3>>([10, 20, 30])>>() body():
+        | %f : function.Function<_test_pa.Wrapper<Pointer<Array<number.Float64, 3>>([10, 20, 30])>> = function.function<_test_pa.Wrapper<Pointer<Array<number.Float64, 3>>([10, 20, 30])>>() body():
     """)
     parse_module(ir)

@@ -18,7 +18,7 @@ from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
 from dgen.compiler import Compiler
-from dgen.dialects import builtin, llvm
+from dgen.dialects import builtin, llvm, number
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, string_value
@@ -44,11 +44,11 @@ BUILTIN_TYPES = [
         id="builtin.index",
     ),
     pytest.param(
-        builtin.F64(),
+        number.Float64(),
         3.14,
         "3.14",
         (3.14,),
-        id="builtin.f64",
+        id="number.float64",
     ),
     # String and List use Span — tested separately below (not in from_value tests)
 ]
@@ -171,11 +171,13 @@ def test_layout_is_void(ty):
 
 _ASM_TYPES = [
     pytest.param(builtin.Index(), id="builtin.index"),
-    pytest.param(builtin.F64(), id="builtin.f64"),
+    pytest.param(number.Float64(), id="number.float64"),
     pytest.param(builtin.Nil(), id="builtin.nil"),
     pytest.param(builtin.String(), id="builtin.string"),
     pytest.param(builtin.List(element_type=builtin.Index()), id="builtin.list_index"),
-    pytest.param(builtin.List(element_type=builtin.F64()), id="builtin.list_f64"),
+    pytest.param(
+        builtin.List(element_type=number.Float64()), id="builtin.list_float64"
+    ),
     pytest.param(Tensor(shape=shape_constant([3])), id="toy.tensor_1d"),
     pytest.param(Tensor(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
@@ -199,7 +201,7 @@ def test_type_asm_roundtrip(ty):
 # Types that can round-trip through from_value/from_asm
 _PARSEABLE_TYPES = [
     pytest.param(builtin.Index(), 42, "42", (42,), id="builtin.index"),
-    pytest.param(builtin.F64(), 3.14, "3.14", (3.14,), id="builtin.f64"),
+    pytest.param(number.Float64(), 3.14, "3.14", (3.14,), id="number.float64"),
     # String uses Span — tested separately (not via from_value)
     # Tensor uses Span — tested separately below (not via unpack)
     pytest.param(
@@ -282,7 +284,7 @@ def test_tensor_from_asm_roundtrip():
 
 
 def test_tensor_layout_is_fatpointer():
-    """Tensor layout is Span(F64) — 16 bytes."""
+    """Tensor layout is Span(Float64) — 16 bytes."""
     from dgen.layout import Span
 
     ty = Tensor(shape=shape_constant([3]))
@@ -581,8 +583,8 @@ def test_single_element_list():
 
 
 def test_list_of_f64():
-    """List<F64> round-trips through Memory (float variant of Span)."""
-    ty = builtin.List(element_type=builtin.F64())
+    """List<Float64> round-trips through Memory (float variant of Span)."""
+    ty = builtin.List(element_type=number.Float64())
     mem = Memory.from_value(ty, [1.5, 2.5, 3.5])
     assert mem.to_json() == [1.5, 2.5, 3.5]
 
@@ -625,8 +627,8 @@ def test_list_identity_jit_roundtrip_full():
 
 
 def test_list_f64_jit_roundtrip():
-    """Pass List<F64> through JIT identity and read back."""
-    list_type = builtin.List(element_type=builtin.F64())
+    """Pass List<Float64> through JIT identity and read back."""
+    list_type = builtin.List(element_type=number.Float64())
     mem = Memory.from_value(list_type, [1.1, 2.2, 3.3])
     exe = _identity_exe(list_type)
     result = exe.run(mem)

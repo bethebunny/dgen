@@ -6,8 +6,9 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import F64, Nil
+from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
+from dgen.dialects.number import Float64
 
 memory = Dialect("memory")
 
@@ -18,7 +19,7 @@ class Shape(Type):
 @dataclass(frozen=True, eq=False)
 class MemRef(Type):
     shape: Value[Shape]
-    dtype: Value[dgen.TypeType] = F64()
+    dtype: Value[dgen.TypeType] = Float64()
 
 @dataclass(eq=False, kw_only=True)
 class AllocOp(Op):
@@ -34,7 +35,7 @@ class DeallocOp(Op):
 class LoadOp(Op):
     memref: Value
     indices: Value
-    type: Type = F64()
+    type: Type = Float64()
 
 @dataclass(eq=False, kw_only=True)
 class StoreOp(Op):

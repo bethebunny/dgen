@@ -22,7 +22,7 @@ import toy
                         %11 : index.Index = 2
                         %12 : llvm.Int<1> = llvm.icmp<"slt">(%i2, %11)
                         %loop_body2 : goto.Label = goto.label() body(%j2: index.Index) captures(%self, %6, %10, %j0, %j1):
-                            %13 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+                            %13 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
                             %14 : llvm.Ptr = llvm.load(%13)
                             %15 : index.Index = 4
                             %16 : llvm.Int<64> = llvm.mul(%j0, %15)
@@ -32,7 +32,7 @@ import toy
                             %20 : llvm.Int<64> = llvm.add(%19, %j2)
                             %21 : llvm.Ptr = llvm.gep(%14, %20)
                             %22 : llvm.Float = llvm.load(%21)
-                            %23 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+                            %23 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
                             %24 : llvm.Ptr = llvm.load(%23)
                             %25 : index.Index = 4
                             %26 : llvm.Int<64> = llvm.mul(%j0, %25)

@@ -15,7 +15,7 @@ def test_llvm_via_imports():
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
-        |     %1 : F64 = 1.0
+        |     %1 : number.Float64 = 1.0
         |     %store : Nil = llvm.store(%1, %0)
     """)
     module = parse_module(ir)

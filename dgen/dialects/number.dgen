@@ -1,5 +1,5 @@
 from index import Index
-from builtin import Byte, F64
+from builtin import Byte
 
 type Boolean:
     data: Byte
@@ -11,4 +11,4 @@ type UnsignedInteger<bits: Index>:
     data: Index
 
 type Float64:
-    data: F64
+    layout Float64

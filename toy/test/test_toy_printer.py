@@ -27,14 +27,17 @@ def test_constant_op():
     )
     assert (
         asm.format(op)
-        == "%0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
+        == "%0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
     )
 
 
 def test_transpose_op():
     a = dgen.Value(name="a", type=builtin.Nil())
     op = toy.TransposeOp(name="0", input=a, type=inferred())
-    assert asm.format(op) == "%0 : toy.InferredShapeTensor<F64> = toy.transpose(%a)"
+    assert (
+        asm.format(op)
+        == "%0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)"
+    )
 
 
 def test_reshape_op():
@@ -42,7 +45,7 @@ def test_reshape_op():
     op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
     assert (
         asm.format(op)
-        == "%1 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = toy.reshape(%0)"
+        == "%1 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)"
     )
 
 
@@ -50,14 +53,20 @@ def test_mul_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.MulOp(name="2", lhs=v0, rhs=v1, type=inferred())
-    assert asm.format(op) == "%2 : toy.InferredShapeTensor<F64> = toy.mul(%0, %1)"
+    assert (
+        asm.format(op)
+        == "%2 : toy.InferredShapeTensor<number.Float64> = toy.mul(%0, %1)"
+    )
 
 
 def test_add_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.AddOp(name="2", lhs=v0, rhs=v1, type=inferred())
-    assert asm.format(op) == "%2 : toy.InferredShapeTensor<F64> = toy.add(%0, %1)"
+    assert (
+        asm.format(op)
+        == "%2 : toy.InferredShapeTensor<number.Float64> = toy.add(%0, %1)"
+    )
 
 
 def test_call_op():
@@ -77,7 +86,7 @@ def test_call_op():
     )
     assert (
         asm.format(op)
-        == "%4 : toy.InferredShapeTensor<F64> = function.call<%multiply_transpose>([%1, %3])"
+        == "%4 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%1, %3])"
     )
 
 
@@ -98,14 +107,20 @@ def test_concat_op():
         rhs=v1,
         type=inferred(),
     )
-    assert asm.format(op) == "%2 : toy.InferredShapeTensor<F64> = toy.concat<0>(%0, %1)"
+    assert (
+        asm.format(op)
+        == "%2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)"
+    )
 
 
 def test_tile_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     n = dgen.Value(name="n", type=index.Index())
     op = toy.TileOp(name="1", input=v0, count=n, type=inferred())
-    assert asm.format(op) == "%1 : toy.InferredShapeTensor<F64> = toy.tile<%n>(%0)"
+    assert (
+        asm.format(op)
+        == "%1 : toy.InferredShapeTensor<number.Float64> = toy.tile<%n>(%0)"
+    )
 
 
 def test_add_index_op():
