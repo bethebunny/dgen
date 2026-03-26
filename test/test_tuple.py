@@ -6,7 +6,8 @@ from dgen import asm, layout
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
 from dgen.testing import assert_ir_equivalent
-from dgen.dialects.builtin import F64, Index, String, Tuple
+from dgen.dialects.builtin import Index, String, Tuple
+from dgen.dialects.number import Float64
 from dgen.type import _type_from_dict, type_constant
 from dgen.testing import strip_prefix
 
@@ -79,8 +80,8 @@ def test_tuple_type_from_dict_roundtrip():
 
 
 def test_tuple_three_types():
-    """Tuple<[index.Index, F64, Index]> layout has three fields."""
-    t = Tuple(types=[Index(), F64(), Index()])
+    """Tuple<[index.Index, Float64, Index]> layout has three fields."""
+    t = Tuple(types=[Index(), Float64(), Index()])
     expected = layout.Record(
         [
             ("0", layout.Int()),

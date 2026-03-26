@@ -6,15 +6,15 @@ import memory
 import toy
 
 %main : function.Function<()> = function.function<Nil>() body():
-    %0 : memory.MemRef<memory.Shape<3>([2, 2, 2]), F64> = memory.alloc(memory.Shape<3>([2, 2, 2]))
+    %0 : memory.MemRef<memory.Shape<3>([2, 2, 2]), number.Float64> = memory.alloc(memory.Shape<3>([2, 2, 2]))
     %1 : Nil = control_flow.for<0, 2>([]) body(%2: index.Index):
         %3 : Nil = control_flow.for<0, 2>([%2]) body(%4: index.Index, %2: index.Index):
             %5 : Nil = control_flow.for<0, 2>([%2, %4]) body(%6: index.Index, %2: index.Index, %4: index.Index):
-                %7 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-                %8 : F64 = memory.load(%7, [%2, %4, %6])
-                %9 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-                %10 : F64 = memory.load(%9, [%2, %4, %6])
-                %11 : F64 = algebra.multiply(%8, %10)
+                %7 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+                %8 : number.Float64 = memory.load(%7, [%2, %4, %6])
+                %9 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+                %10 : number.Float64 = memory.load(%9, [%2, %4, %6])
+                %11 : number.Float64 = algebra.multiply(%8, %10)
                 %12 : Nil = memory.store(%11, %0, [%2, %4, %6])
-    %13 : memory.MemRef<memory.Shape<3>([2, 2, 2]), F64> = chain(%0, %1)
+    %13 : memory.MemRef<memory.Shape<3>([2, 2, 2]), number.Float64> = chain(%0, %1)
     %14 : Nil = memory.print_memref(%13)

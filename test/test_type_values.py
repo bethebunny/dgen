@@ -274,7 +274,7 @@ def test_fat_pointer_with_ssa_pointee():
         | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.F64"}
+        |     %t : Type = {"tag": "number.Float64"}
         |     %p : Span<%t> = [0.0, 0.0]
     """)
     module = parse_module(ir)

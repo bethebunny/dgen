@@ -10,8 +10,9 @@ from math import prod
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.dialects import algebra, builtin, control_flow, goto, index, llvm
-from dgen.dialects.builtin import ChainOp, F64, Nil, String
+from dgen.dialects import algebra, builtin, control_flow, goto, index, llvm, number
+from dgen.dialects.builtin import ChainOp, Nil, String
+from dgen.dialects.number import Float64
 from dgen.dialects.function import Function, FunctionOp
 from dgen.graph import placeholder_block
 from dgen.module import ConstantOp, Module, PackOp
@@ -177,7 +178,7 @@ class StructuredToLLVM(Pass):
         if isinstance(op, algebra.MultiplyOp):
             left = self._map(op.left)
             right = self._map(op.right)
-            if isinstance(op.type, F64):
+            if isinstance(op.type, Float64):
                 self.value_map[op] = llvm.FmulOp(lhs=left, rhs=right)
             else:
                 self.value_map[op] = llvm.MulOp(lhs=left, rhs=right)
@@ -186,7 +187,7 @@ class StructuredToLLVM(Pass):
         if isinstance(op, algebra.AddOp):
             left = self._map(op.left)
             right = self._map(op.right)
-            if isinstance(op.type, F64):
+            if isinstance(op.type, Float64):
                 self.value_map[op] = llvm.FaddOp(lhs=left, rhs=right)
             else:
                 self.value_map[op] = llvm.AddOp(lhs=left, rhs=right)
@@ -347,7 +348,7 @@ class StructuredToLLVM(Pass):
         input_ptr = self._deref(self._map(op.input))
         assert isinstance(op.input.type, toy.Tensor)
         total = prod(op.input.type.shape.__constant__.to_json())
-        zero_f = ConstantOp(value=0.0, type=builtin.F64())
+        zero_f = ConstantOp(value=0.0, type=number.Float64())
         acc: dgen.Value = ConstantOp(value=0, type=index.Index())
         for i in range(total):
             idx = ConstantOp(value=i, type=index.Index())

@@ -20,7 +20,7 @@ def test_simple_constant(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     m = parse_module(ir_text)
@@ -34,8 +34,8 @@ def test_transpose(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.transpose(%0)
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<memory.Shape<2>([3, 2]), number.Float64> = toy.transpose(%0)
         |     %2 : Nil = toy.print(%1)
     """)
     m = parse_module(ir_text)
@@ -49,9 +49,9 @@ def test_mul(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = toy.mul(%0, %1)
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<memory.Shape<2>([2, 2]), number.Float64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : toy.Tensor<memory.Shape<2>([2, 2]), number.Float64> = toy.mul(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
     m = parse_module(ir_text)
@@ -65,9 +65,9 @@ def test_add(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [1.0, 2.0, 3.0, 4.0]
-        |     %1 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = [5.0, 6.0, 7.0, 8.0]
-        |     %2 : toy.Tensor<memory.Shape<2>([2, 2]), F64> = toy.add(%0, %1)
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0]
+        |     %1 : toy.Tensor<memory.Shape<2>([2, 2]), number.Float64> = [5.0, 6.0, 7.0, 8.0]
+        |     %2 : toy.Tensor<memory.Shape<2>([2, 2]), number.Float64> = toy.add(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
     m = parse_module(ir_text)
@@ -81,7 +81,7 @@ def test_print(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     m = parse_module(ir_text)
@@ -95,7 +95,7 @@ def test_3d_constant(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %0 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : Nil = toy.print(%0)
     """)
     m = parse_module(ir_text)
@@ -109,9 +109,9 @@ def test_3d_add(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = toy.add(%0, %1)
+        |     %0 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = toy.add(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
     m = parse_module(ir_text)
@@ -125,9 +125,9 @@ def test_3d_mul(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        |     %1 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.Tensor<memory.Shape<3>([2, 2, 2]), F64> = toy.mul(%0, %1)
+        |     %0 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        |     %1 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.Tensor<memory.Shape<3>([2, 2, 2]), number.Float64> = toy.mul(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
     m = parse_module(ir_text)
@@ -141,11 +141,11 @@ def test_full_example(ir_snapshot):
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.transpose(%0)
-        |     %2 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %3 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.transpose(%2)
-        |     %4 : toy.Tensor<memory.Shape<2>([3, 2]), F64> = toy.mul(%1, %3)
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<memory.Shape<2>([3, 2]), number.Float64> = toy.transpose(%0)
+        |     %2 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %3 : toy.Tensor<memory.Shape<2>([3, 2]), number.Float64> = toy.transpose(%2)
+        |     %4 : toy.Tensor<memory.Shape<2>([3, 2]), number.Float64> = toy.mul(%1, %3)
         |     %5 : Nil = toy.print(%4)
     """)
     m = parse_module(ir_text)

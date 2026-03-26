@@ -98,9 +98,9 @@ def test_concat(ir_snapshot):
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<memory.Shape<2>([3, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-        |     %2 : toy.InferredShapeTensor<F64> = toy.concat<0>(%0, %1)
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<memory.Shape<2>([3, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        |     %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
     module = parse_module(ir)
@@ -115,9 +115,9 @@ def test_concat_axis1(ir_snapshot):
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<memory.Shape<2>([2, 5]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-        |     %2 : toy.InferredShapeTensor<F64> = toy.concat<1>(%0, %1)
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<memory.Shape<2>([2, 5]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        |     %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<1>(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
     module = parse_module(ir)
@@ -132,9 +132,9 @@ def test_tile_with_constant_count(ir_snapshot):
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
+        |     %0 : toy.Tensor<memory.Shape<1>([3]), number.Float64> = [1.0, 2.0, 3.0]
         |     %1 : index.Index = 4
-        |     %2 : toy.InferredShapeTensor<F64> = toy.tile<%1>(%0)
+        |     %2 : toy.InferredShapeTensor<number.Float64> = toy.tile<%1>(%0)
         |     %3 : Nil = toy.print(%2)
     """)
     module = parse_module(ir)
@@ -154,11 +154,11 @@ def test_tile_with_computed_count():
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<1>([3]), F64> = [1.0, 2.0, 3.0]
+        |     %0 : toy.Tensor<memory.Shape<1>([3]), number.Float64> = [1.0, 2.0, 3.0]
         |     %1 : index.Index = 2
         |     %2 : index.Index = 2
         |     %3 : index.Index = algebra.add(%1, %2)
-        |     %4 : toy.InferredShapeTensor<F64> = toy.tile<%3>(%0)
+        |     %4 : toy.InferredShapeTensor<number.Float64> = toy.tile<%3>(%0)
         |     %5 : Nil = toy.print(%4)
     """)
     module = parse_module(ir)
@@ -167,7 +167,7 @@ def test_tile_with_computed_count():
     # Shape inference cannot resolve %4 — it stays InferredShapeTensor
     # because the count (%3) is not a constant, it's a computed value.
     # Resolving this requires a staging evaluator.
-    assert "toy.InferredShapeTensor<F64> = toy.tile" in out
+    assert "toy.InferredShapeTensor<number.Float64> = toy.tile" in out
 
 
 def test_full_tutorial_example(ir_snapshot):

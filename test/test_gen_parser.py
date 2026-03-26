@@ -57,14 +57,14 @@ def test_parse_parameterized_type():
 
 
 def test_parse_type_with_default_param():
-    result = parse("type Tensor<shape: Shape, dtype: Type = F64>:\n    data: Nil\n")
+    result = parse("type Tensor<shape: Shape, dtype: Type = Float64>:\n    data: Nil\n")
     t = result.types[0]
     assert len(t.params) == 2
     assert t.params[0].name == "shape"
     assert t.params[0].default is None
     assert t.params[1].name == "dtype"
     assert t.params[1].type.name == "Type"
-    assert t.params[1].default == "F64"
+    assert t.params[1].default == "Float64"
 
 
 def test_parse_type_fatpointer_field():
@@ -238,14 +238,14 @@ op multi() -> Nil:
 
 
 def test_parse_multiple_data_fields():
-    src = "type Foo:\n    x: Index\n    y: F64\n"
+    src = "type Foo:\n    x: Index\n    y: Float64\n"
     result = parse(src)
     t = result.types[0]
     assert len(t.data) == 2
     assert t.data[0].name == "x"
     assert t.data[0].type.name == "Index"
     assert t.data[1].name == "y"
-    assert t.data[1].type.name == "F64"
+    assert t.data[1].type.name == "Float64"
 
 
 def test_parse_has_trait_on_type():
@@ -312,7 +312,9 @@ def test_parse_bare_trait_still_works():
 
 
 def test_parse_type_with_static_fields():
-    src = "type F64:\n    has trait FloatingPoint\n    static bitwidth: Index = 64\n"
+    src = (
+        "type Float64:\n    has trait FloatingPoint\n    static bitwidth: Index = 64\n"
+    )
     result = parse(src)
     t = result.types[0]
     assert t.traits == ["FloatingPoint"]
@@ -322,7 +324,7 @@ def test_parse_type_with_static_fields():
 
 
 def test_parse_type_with_static_no_default():
-    src = "type F64:\n    static signed: Boolean\n"
+    src = "type Float64:\n    static signed: Boolean\n"
     result = parse(src)
     t = result.types[0]
     assert len(t.statics) == 1

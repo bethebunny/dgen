@@ -4,7 +4,7 @@ import pytest
 
 from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
-from dgen.dialects import builtin
+from dgen.dialects import builtin, number
 from dgen.dialects.llvm import AddOp, MulOp
 from dgen.ir_diff import structural_diff
 from dgen.ir_equiv import Fingerprinter, graph_equivalent
@@ -30,7 +30,7 @@ def test_different_value_different_fingerprint():
 
 def test_different_type_different_fingerprint():
     a = ConstantOp(value=1, type=builtin.Index())
-    b = ConstantOp(value=1, type=builtin.F64())
+    b = ConstantOp(value=1, type=number.Float64())
     fingerprinter = Fingerprinter()
     assert fingerprinter.fingerprint(a) != fingerprinter.fingerprint(b)
 
@@ -92,7 +92,7 @@ def test_graph_equivalent_same_ir():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     assert graph_equivalent(parse_module(ir), parse_module(ir))
@@ -105,7 +105,7 @@ def test_graph_equivalent_different_names():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -113,7 +113,7 @@ def test_graph_equivalent_different_names():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %x : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %x : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %y : Nil = toy.print(%x)
     """)
     assert graph_equivalent(parse_module(a), parse_module(b))
@@ -125,7 +125,7 @@ def test_graph_not_equivalent_different_values():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -133,7 +133,7 @@ def test_graph_not_equivalent_different_values():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
     assert not graph_equivalent(parse_module(a), parse_module(b))
@@ -145,7 +145,7 @@ def test_structural_diff_returns_string():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -153,7 +153,7 @@ def test_structural_diff_returns_string():
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), F64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        |     %0 : toy.Tensor<memory.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
     diff = structural_diff(parse_module(a), parse_module(b))
@@ -180,6 +180,6 @@ def test_type_constant_with_dynamic_layout_param():
     """
     rank = ConstantOp(value=2, type=builtin.Index())
     shape = Shape(rank=rank)
-    memref_type = MemRef(shape=shape, dtype=builtin.F64())
+    memref_type = MemRef(shape=shape, dtype=number.Float64())
     # Triggers TypeValue._resolve_layout("memory.MemRef") -> Shape().__layout__ -> TypeError
     _ = memref_type.__constant__.to_json()

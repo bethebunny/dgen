@@ -29,7 +29,7 @@ def test_roundtrip_gep_load_store():
         |     %0 : Nil = llvm.alloca<6>()
         |     %1 : index.Index = 0
         |     %2 : Nil = llvm.gep(%0, %1)
-        |     %3 : F64 = 1.0
+        |     %3 : number.Float64 = 1.0
         |     %4 : Nil = llvm.store(%3, %2)
         |     %5 : Nil = llvm.load(%2)
         |     %_ : Nil = chain(%5, %4)
@@ -45,8 +45,8 @@ def test_roundtrip_fadd_fmul():
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : F64 = 1.0
-        |     %1 : F64 = 2.0
+        |     %0 : number.Float64 = 1.0
+        |     %1 : number.Float64 = 2.0
         |     %2 : Nil = llvm.fadd(%0, %1)
         |     %3 : Nil = llvm.fmul(%0, %1)
         |     %_ : Nil = chain(%2, %3)
@@ -139,7 +139,7 @@ def test_roundtrip_return_value():
         | import function
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %0 : F64 = 42.0
+        |     %0 : number.Float64 = 42.0
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

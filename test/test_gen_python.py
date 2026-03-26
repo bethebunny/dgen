@@ -29,11 +29,11 @@ def test_generate_builtin_trait():
     assert "    ..." in code
 
 
-def test_generate_builtin_simple_type():
-    mod = importlib.import_module("dgen.dialects.builtin")
-    code = generate_pyi(mod, "builtin")
+def test_generate_number_simple_type():
+    mod = importlib.import_module("dgen.dialects.number")
+    code = generate_pyi(mod, "number")
     assert "@dataclass(frozen=True, eq=False)" in code
-    assert "class F64(Type):" in code
+    assert "class Float64(Type):" in code
 
 
 def test_generate_builtin_parametric_type():
@@ -181,7 +181,7 @@ def test_generate_toy_cross_dialect_param():
 def test_generate_toy_default_param():
     mod = importlib.import_module("toy.dialects.toy")
     code = generate_pyi(mod, "toy")
-    assert "dtype: Value[dgen.TypeType] = F64()" in code
+    assert "dtype: Value[dgen.TypeType] = Float64()" in code
 
 
 def test_generate_toy_valid_python():
@@ -199,8 +199,9 @@ def test_import_hook_loads_builtin():
     """The .dgen import hook makes dgen.dialects.builtin importable."""
     mod = importlib.import_module("dgen.dialects.builtin")
     assert hasattr(mod, "Index")
-    assert hasattr(mod, "F64")
     assert hasattr(mod, "builtin")
+    number_mod = importlib.import_module("dgen.dialects.number")
+    assert hasattr(number_mod, "Float64")
 
 
 def test_import_hook_loads_toy():

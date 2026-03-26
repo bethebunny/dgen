@@ -13,9 +13,6 @@ builtin = Dialect("builtin")
 class HasSingleBlock: ...
 
 @dataclass(frozen=True, eq=False)
-class F64(Type): ...
-
-@dataclass(frozen=True, eq=False)
 class Nil(Type): ...
 
 @dataclass(frozen=True, eq=False)

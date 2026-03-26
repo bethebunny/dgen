@@ -1,13 +1,14 @@
-from builtin import Index, Nil, F64, Array, Pointer
+from builtin import Index, Nil, Array, Pointer
+from number import Float64
 
 type Shape<rank: Index>:
     dims: Array<Index, rank>
 
-type MemRef<shape: Shape, dtype: Type = F64>:
+type MemRef<shape: Shape, dtype: Type = Float64>:
     data: Pointer<Nil>
 
 op alloc(shape: Shape) -> MemRef
 op dealloc(input: MemRef) -> Nil
-op load(memref: MemRef, indices: Index) -> F64
-op store(value: F64, memref: MemRef, indices: Index) -> Nil
+op load(memref: MemRef, indices: Index) -> Float64
+op store(value: Float64, memref: MemRef, indices: Index) -> Nil
 op print_memref(input: MemRef) -> Nil
