@@ -72,6 +72,7 @@ class ControlFlowToGoto(Pass):
                 result=cond_br,
                 parameters=[header_self, header_exit],
                 args=[header_iv],
+                captures=list(op.body.captures),
             ),
         )
 
