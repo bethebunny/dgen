@@ -6,9 +6,10 @@ from collections.abc import Callable, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import algebra, builtin
+from dgen.dialects import algebra, builtin, memory
 from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
+from dgen.dialects.number import Boolean, Float64
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
@@ -91,7 +92,9 @@ class ToyToStructured(Pass):
         return result
 
     def _alloc(self, shape_val: dgen.Value) -> ndbuffer.AllocOp:
-        return ndbuffer.AllocOp(shape=shape_val, type=ndbuffer.NDBuffer(shape=shape_val))
+        return ndbuffer.AllocOp(
+            shape=shape_val, type=ndbuffer.NDBuffer(shape=shape_val)
+        )
 
     @lowering_for(toy.TransposeOp)
     def lower_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
@@ -211,4 +214,33 @@ class ToyToStructured(Pass):
         rhs_loop = _nested_for(rhs_shape, rhs_body, _get_block_args(op.rhs))
         after_lhs = ChainOp(lhs=alloc, rhs=lhs_loop, type=alloc.type)
         rewriter.replace_uses(op, ChainOp(lhs=after_lhs, rhs=rhs_loop, type=alloc.type))
+        return True
+
+    @lowering_for(toy.NonzeroCountOp)
+    def lower_nonzero_count(self, op: toy.NonzeroCountOp, rewriter: Rewriter) -> bool:
+        """Count nonzero elements: stack-alloc accumulator, nested loop, load/compare/add."""
+        shape = self._shape(op.input)
+        reference_type = memory.Reference(element_type=Index())
+        accumulator = memory.StackAllocateOp(element_type=Index(), type=reference_type)
+        initial_store = memory.StoreOp(
+            value=ConstantOp(value=0, type=Index()), ptr=accumulator
+        )
+        initialized = ChainOp(lhs=accumulator, rhs=initial_store, type=reference_type)
+        zero = ConstantOp(value=0.0, type=Float64())
+
+        def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
+            element = ndbuffer.LoadOp(memref=op.input, indices=_index_pack(*ivars))
+            nonzero = algebra.NotEqualOp(left=element, right=zero, type=Boolean())
+            current = memory.LoadOp(ptr=initialized, type=Index())
+            updated = algebra.AddOp(
+                left=current,
+                right=algebra.CastOp(input=nonzero, type=Index()),
+                type=Index(),
+            )
+            return memory.StoreOp(value=updated, ptr=initialized)
+
+        loop = _nested_for(shape, body, _get_block_args(op.input))
+        after_loop = ChainOp(lhs=initialized, rhs=loop, type=reference_type)
+        result = memory.LoadOp(ptr=after_loop, type=Index())
+        rewriter.replace_uses(op, result)
         return True

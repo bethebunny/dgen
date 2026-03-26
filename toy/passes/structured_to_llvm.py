@@ -10,7 +10,16 @@ from math import prod
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.dialects import algebra, builtin, control_flow, goto, index, llvm, number
+from dgen.dialects import (
+    algebra,
+    builtin,
+    control_flow,
+    goto,
+    index,
+    llvm,
+    memory,
+    number,
+)
 from dgen.dialects.builtin import ChainOp, Nil, String
 from dgen.dialects.number import Float64
 from dgen.dialects.function import Function, FunctionOp
@@ -203,8 +212,41 @@ class StructuredToLLVM(Pass):
                 self.alloc_shapes[op] = self.alloc_shapes[new_lhs]
             return None
 
-        if isinstance(op, toy.NonzeroCountOp):
-            self._lower_nonzero_count(op)
+        if isinstance(op, memory.StackAllocateOp):
+            alloca = llvm.AllocaOp(elem_count=index.Index().constant(1))
+            self.value_map[op] = alloca
+            return alloca
+
+        if isinstance(op, memory.LoadOp):
+            ptr = self._map(op.ptr)
+            if isinstance(op.type, Float64):
+                self.value_map[op] = llvm.LoadOp(ptr=ptr)
+            else:
+                self.value_map[op] = llvm.LoadOp(ptr=ptr, type=op.type)
+            return None
+
+        if isinstance(op, memory.StoreOp):
+            return llvm.StoreOp(value=self._map(op.value), ptr=self._map(op.ptr))
+
+        if isinstance(op, algebra.NotEqualOp):
+            left = self._map(op.left)
+            right = self._map(op.right)
+            if isinstance(op.left.type, Float64):
+                self.value_map[op] = llvm.FcmpOp(
+                    pred=String().constant("one"), lhs=left, rhs=right
+                )
+            else:
+                self.value_map[op] = llvm.IcmpOp(
+                    pred=String().constant("ne"), lhs=left, rhs=right
+                )
+            return None
+
+        if isinstance(op, algebra.CastOp):
+            input_val = self._map(op.input)
+            if isinstance(op.input.type, number.Boolean):
+                self.value_map[op] = llvm.ZextOp(input=input_val)
+            else:
+                self.value_map[op] = input_val
             return None
 
         return None
@@ -343,20 +385,6 @@ class StructuredToLLVM(Pass):
             arguments=_make_pack([lo_op]),
         )
         return entry_br, exit_label
-
-    def _lower_nonzero_count(self, op: toy.NonzeroCountOp) -> None:
-        input_ptr = self._deref(self._map(op.input))
-        assert isinstance(op.input.type, toy.Tensor)
-        total = prod(op.input.type.shape.__constant__.to_json())
-        zero_f = ConstantOp(value=0.0, type=number.Float64())
-        acc: dgen.Value = ConstantOp(value=0, type=index.Index())
-        for i in range(total):
-            idx = ConstantOp(value=i, type=index.Index())
-            gep = llvm.GepOp(base=input_ptr, index=idx)
-            elem = llvm.LoadOp(ptr=gep)
-            cmp = llvm.FcmpOp(pred=String().constant("one"), lhs=elem, rhs=zero_f)
-            acc = llvm.AddOp(lhs=acc, rhs=llvm.ZextOp(input=cmp))
-        self.value_map[op] = acc
 
     def _lower_print(self, op: ndbuffer.PrintMemrefOp) -> llvm.CallOp:
         input_val = self._deref(self._map(op.input))
