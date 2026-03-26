@@ -4,7 +4,9 @@ from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.structured_to_llvm import StructuredToLLVM
+from toy.passes.control_flow_to_goto import ControlFlowToGoto
+from toy.passes.ndbuffer_to_memory import NDBufferToMemory
+from toy.passes.memory_to_llvm import MemoryToLLVM
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
 from toy.passes.toy_to_structured import ToyToStructured
@@ -15,7 +17,9 @@ compiler = Compiler(
         ToyOptimize(),
         ShapeInference(),
         ToyToStructured(),
-        StructuredToLLVM(),
+        ControlFlowToGoto(),
+        NDBufferToMemory(),
+        MemoryToLLVM(),
     ],
     exit=IdentityPass(),
 )
