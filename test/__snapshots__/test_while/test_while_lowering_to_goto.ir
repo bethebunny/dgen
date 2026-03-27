@@ -1,0 +1,15 @@
+import algebra
+import function
+import goto
+import index
+
+%main : function.Function<()> = function.function<Nil>() body():
+    %zero : index.Index = 0
+    %while_header0 : goto.Label = goto.label([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
+        %ten : index.Index = 10
+        %cmp : index.Index = algebra.less_than(%wh0_i, %ten)
+        %while_body0 : goto.Label = goto.label([]) body(%wb0_i: index.Index) captures(%self):
+            %one : index.Index = 1
+            %next : index.Index = algebra.add(%wb0_i, %one)
+            %0 : Nil = goto.branch<%self>([%next])
+        %1 : Nil = goto.conditional_branch<%while_body0, %exit0>(%cmp, [%wh0_i], [])

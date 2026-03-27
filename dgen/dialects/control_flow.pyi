@@ -19,6 +19,13 @@ class ForOp(HasSingleBlock, Op):
     body: Block
 
 @dataclass(eq=False, kw_only=True)
+class WhileOp(HasSingleBlock, Op):
+    initial_arguments: Value
+    type: Type = Nil()
+    condition: Block
+    body: Block
+
+@dataclass(eq=False, kw_only=True)
 class IfOp(Op):
     condition: Value
     then_arguments: Value

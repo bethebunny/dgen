@@ -16,16 +16,18 @@ Key design principles:
 
 ## Current Focus: Toy Dialect
 
-The current working demonstration is a Toy dialect (inspired by the MLIR Toy tutorial), implemented as a full pipeline: source → AST → Toy IR → Affine IR → LLVM IR → JIT execution via llvmlite.
+The current working demonstration is a Toy dialect (inspired by the MLIR Toy tutorial), implemented as a full pipeline: source → AST → Toy IR → structured IR → LLVM IR → JIT execution via llvmlite.
 
 Pipeline stages (in `toy/cli.py`):
 1. **Parse** `.toy` source → AST (`toy/parser/toy_parser.py`, `toy/parser/ast.py`)
 2. **Lower** AST → Toy IR (`toy/parser/lowering.py`)
 3. **Optimize** Toy IR → Toy IR (`toy/passes/optimize.py` — transpose folding, reshape elimination, dead code)
 4. **Shape inference** (`toy/passes/shape_inference.py`)
-5. **Lower** Toy → Affine dialect (`toy/passes/toy_to_affine.py`)
-6. **Lower** Affine → LLVM dialect (`toy/passes/affine_to_llvm.py`)
-7. **Codegen** → LLVM IR text → JIT via llvmlite (`dgen/codegen.py`)
+5. **Lower** Toy → structured (`toy/passes/toy_to_structured.py` — loops, memory, arithmetic)
+6. **Lower** control flow → goto (`toy/passes/control_flow_to_goto.py` — for/while → labels)
+7. **Lower** ndbuffer → memory (`toy/passes/ndbuffer_to_memory.py`)
+8. **Lower** memory → LLVM (`toy/passes/memory_to_llvm.py`)
+9. **Codegen** → LLVM IR text → JIT via llvmlite (`dgen/codegen.py`, three-phase: see `docs/codegen.md`)
 
 Implementation language: **Python**.
 
@@ -54,22 +56,27 @@ Implementation language: **Python**.
 ## IR Design: Blocks and Use-Def
 
 **Blocks are closed.** An op inside a block may only reference values defined in that same
-block (local ops or block arguments). Values from an enclosing scope must be threaded in
-as explicit block arguments — the same invariant as MLIR. The parser enforces this.
+block (local ops, block arguments, or captures). Values from an enclosing scope must be
+declared as **captures** — the block explicitly lists every outer-scope value it references.
+The parser and verifier enforce this.
 
-Two current exceptions (both transitional, to be resolved via symbols):
-- `llvm.LabelOp` values (branch targets) may be referenced across block boundaries.
-- `builtin.FunctionOp` values (call targets) may be referenced across block boundaries.
+**Three kinds of block inputs:**
+- **`args`** — runtime values, receive phi nodes at entry (e.g. loop induction variables)
+- **`parameters`** — compile-time values bound at block construction (e.g. `%self` for back-edges, `%exit` for loop exits)
+- **`captures`** — outer-scope values referenced directly (no phi, no copy — just a declared dependency)
 
 **Within a block, execution order is use-def order.** There is no implicit scheduling.
 Ops with no use-def relationship between them may execute in any order. Side-effecting ops
 must be chained via `ChainOp` to be reachable from `block.result` and to establish
-ordering. Two side-effecting ops not on the same chain spine have no ordering guarantee.
+ordering. `ChainOp(lhs=X, rhs=Y)` returns X's value with a use-def dependency on Y.
 
 **All ops must be reachable from `block.result` via `walk_ops`.** Unreachable ops are
 dead. `walk_ops(block.result)` gives the complete, canonical op list for a block.
+`walk_ops` follows operands, parameters, types, and **block captures** (parent-scope
+dependencies). It does NOT descend into nested block bodies — each block is its own
+walk scope, with captures as boundaries.
 
-See `docs/control-flow.md` for the full design.
+See `docs/control-flow.md` and `docs/codegen.md` for the full design.
 
 ## Key Architecture Patterns
 

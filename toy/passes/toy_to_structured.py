@@ -46,11 +46,7 @@ def _nested_for(
     for depth in range(len(shape) - 1, -1, -1):
         # Outer IVs are captures, not threaded block args.
         outer_ivars = ivars[:depth]
-        # Only capture non-constant values. Constants are self-contained
-        # (no dependencies, no side effects) and can be ambient.
-        all_captures = [
-            c for c in list(captures) + outer_ivars if not isinstance(c, ConstantOp)
-        ]
+        all_captures = list(captures) + outer_ivars
         innermost = control_flow.ForOp(
             lower_bound=Index().constant(0),
             upper_bound=Index().constant(shape[depth]),

@@ -3,13 +3,15 @@
 Type-directed dispatch: inspect the operand type, emit the corresponding LLVM
 op. Stateless — no context, no shape tracking, no control flow awareness.
 
-    algebra.add on Float64       → llvm.fadd
-    algebra.add on Index/Int → llvm.add
-    algebra.multiply on Float64  → llvm.fmul
-    algebra.multiply on Int  → llvm.mul
-    algebra.subtract         → llvm.sub
-    algebra.equal            → llvm.icmp("eq") + llvm.zext
-    algebra.less_than        → llvm.icmp("slt")
+Implemented:
+    algebra.add          → llvm.fadd / llvm.add (type-directed)
+    algebra.multiply     → llvm.fmul / llvm.mul (type-directed)
+    algebra.subtract     → llvm.sub
+    algebra.equal        → llvm.icmp("eq") + llvm.zext
+    algebra.not_equal    → llvm.fcmp("one") / llvm.icmp("ne") + llvm.zext
+    algebra.less_than    → llvm.icmp("slt")
+    algebra.cast         → identity (type-system cast, no runtime conversion)
+
 """
 
 from __future__ import annotations
@@ -51,4 +53,20 @@ class AlgebraToLLVM(Pass):
         rewriter.replace_uses(
             op, llvm.IcmpOp(pred=String().constant("slt"), lhs=op.left, rhs=op.right)
         )
+        return True
+
+    @lowering_for(algebra.NotEqualOp)
+    def lower_not_equal(self, op: algebra.NotEqualOp, rewriter: Rewriter) -> bool:
+        if isinstance(op.left.type, Float64):
+            cmp = llvm.FcmpOp(pred=String().constant("one"), lhs=op.left, rhs=op.right)
+        else:
+            cmp = llvm.IcmpOp(pred=String().constant("ne"), lhs=op.left, rhs=op.right)
+        rewriter.replace_uses(op, llvm.ZextOp(input=cmp))
+        return True
+
+    @lowering_for(algebra.CastOp)
+    def lower_cast(self, op: algebra.CastOp, rewriter: Rewriter) -> bool:
+        # After lowering, the input is already in the target representation.
+        # CastOp is a type-system cast, not a runtime conversion.
+        rewriter.replace_uses(op, op.input)
         return True

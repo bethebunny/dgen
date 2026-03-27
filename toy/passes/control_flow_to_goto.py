@@ -1,11 +1,44 @@
 """Lower control_flow dialect to goto dialect.
 
-Labels are expression blocks — they run when control reaches them, no explicit
-entry branch needed. The header has %self (for back-edges) and %exit (codegen
-emits this as the fall-through after the header block). Initial IV values are
-passed via the label's initial_arguments operand.
+Loops (ForOp, WhileOp) are lowered to goto labels. IfOp is NOT lowered here —
+it's structured control flow emitted directly by codegen (see docs/codegen.md).
 
-ForOp is replaced by the header label itself via rewriter.replace_uses.
+## Label-as-expression model
+
+A goto.label is semantically an expression block, not a jump target. It runs
+when control reaches it in the use-def order — no explicit entry branch is
+needed. The label's `initial_arguments` provide the first-iteration values for
+its block args (replacing the entry branch + phi pattern).
+
+## ForOp lowering
+
+    control_flow.for<lo, hi>([init]) body(%iv):
+        <body ops>
+
+becomes:
+
+    goto.label([lo]) body<%self, %exit>(%iv):
+        %cmp = less_than(%iv, hi)
+        goto.label([]) body(%jv) captures(%self):
+            <body ops, iv remapped to jv>
+            %next = chain(add(%jv, 1), <body result>)
+            goto.branch<%self>([%next])
+        goto.conditional_branch<%body, %exit>(%cmp, [%iv], [])
+
+Key points:
+- `%self` parameter enables back-edges (breaks use-def cycles)
+- `%exit` parameter: codegen emits this as a fall-through label after the header
+- The body label is nested inside the header
+- `chain(increment, body_result)` ensures the increment runs AFTER the body.
+  This is necessary because `add(%jv, 1)` doesn't naturally depend on the body
+  result — without the chain, the increment could be scheduled before inner loops.
+
+## WhileOp lowering
+
+Similar structure but simpler: the condition and body are user-provided blocks.
+No explicit chain is needed for the body because the body result IS the
+next-iteration values — the back-edge branch arguments reference them
+transitively.
 """
 
 from __future__ import annotations
@@ -92,6 +125,82 @@ class ControlFlowToGoto(Pass):
         rewriter.replace_uses(op, header_label)
 
         # Recurse into the body label's block to handle nested ForOps.
+        self._run_block(body_label.body)
+
+        return True
+
+    @lowering_for(control_flow.WhileOp)
+    def lower_while(self, op: control_flow.WhileOp, rewriter: Rewriter) -> bool:
+        lid = self._loop_counter
+        self._loop_counter += 1
+
+        # Block args for header and body, one per loop-carried variable.
+        header_args = [
+            BlockArgument(name=f"wh{lid}_{a.name}", type=a.type)
+            for a in op.condition.args
+        ]
+        body_args = [
+            BlockArgument(name=f"wb{lid}_{a.name}", type=a.type) for a in op.body.args
+        ]
+
+        header_self = BlockParameter(name="self", type=goto.Label())
+        header_exit = BlockParameter(name=f"exit{lid}", type=goto.Label())
+
+        # --- Body label: remap body block args, append back-edge ---
+        body_rewriter = Rewriter(op.body)
+        for orig, new in zip(op.body.args, body_args):
+            body_rewriter.replace_uses(orig, new)
+
+        # Body result is the next-iteration values. Wrap in a pack for the
+        # back-edge branch arguments. The branch already depends on body_result
+        # transitively via the arguments operand.
+        body_result = op.body.result
+        next_args: list[dgen.Value] = (
+            list(body_result.values)
+            if isinstance(body_result, PackOp)
+            else [body_result]
+        )
+        back_br = goto.BranchOp(target=header_self, arguments=_pack(next_args))
+
+        body_block = dgen.Block(
+            result=back_br,
+            args=body_args,
+            captures=[header_self] + list(op.body.captures),
+        )
+        body_label = goto.LabelOp(
+            name=f"while_body{lid}",
+            initial_arguments=_pack([]),
+            body=body_block,
+        )
+
+        # --- Header: remap condition block args, append conditional branch ---
+        cond_rewriter = Rewriter(op.condition)
+        for orig, new in zip(op.condition.args, header_args):
+            cond_rewriter.replace_uses(orig, new)
+
+        cond_result = op.condition.result
+        cond_br = goto.ConditionalBranchOp(
+            condition=cond_result,
+            true_target=body_label,
+            false_target=header_exit,
+            true_arguments=_pack(header_args),
+            false_arguments=_pack([]),
+        )
+
+        header_label = goto.LabelOp(
+            name=f"while_header{lid}",
+            initial_arguments=op.initial_arguments,
+            body=dgen.Block(
+                result=cond_br,
+                parameters=[header_self, header_exit],
+                args=header_args,
+                captures=list(op.condition.captures) + list(op.body.captures),
+            ),
+        )
+
+        rewriter.replace_uses(op, header_label)
+
+        # Recurse into body to handle nested loops.
         self._run_block(body_label.body)
 
         return True

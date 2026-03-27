@@ -3,6 +3,10 @@ from builtin import Index, Nil, HasSingleBlock, List
 op for<lower_bound: Index, upper_bound: Index>(initial_arguments: List) -> Nil:
     block body
     has trait HasSingleBlock
+op while(initial_arguments: List) -> Nil:
+    block condition
+    block body
+    has trait HasSingleBlock
 op if(condition: Index, then_arguments: List, else_arguments: List) -> Type:
     block then_body
     block else_body
