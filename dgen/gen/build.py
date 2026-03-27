@@ -7,6 +7,7 @@ exec()-ing source code.  Used by the DgenLoader import hook.
 from __future__ import annotations
 
 import ast as _ast
+import builtins
 import dataclasses
 import importlib
 from collections.abc import Callable
@@ -353,7 +354,13 @@ def build(
         if py_mod := import_map.get(imp.module):
             mod = importlib.import_module(py_mod)
             if imp.names:
-                ns.update({name: getattr(mod, name) for name in imp.names})
+                for name in imp.names:
+                    obj = getattr(mod, name)
+                    ns[name] = obj
+                    # Re-export imported types: register in current dialect so
+                    # unqualified lookup (e.g. parser) and formatting work.
+                    if isinstance(obj, builtins.type) and issubclass(obj, Type):
+                        d.types[name] = obj
             else:
                 ns[imp.module] = mod
 

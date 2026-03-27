@@ -1,7 +1,6 @@
 trait HasSingleBlock
 
-type Index:
-    layout Int
+from index import Index
 
 type F64:
     layout Float64

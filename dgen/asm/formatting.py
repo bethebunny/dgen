@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 
 from dgen.block import BlockArgument
+from dgen.dialect import Dialect
 from dgen.dialects.builtin import Nil
 from dgen.module import PackOp
 
@@ -135,7 +136,13 @@ def _dialect_prefix(dialect_name: str) -> str:
 
 def type_asm(type_obj: Type, tracker: SlotTracker | None = None) -> str:
     """Generic type formatter via field introspection."""
-    prefix = _dialect_prefix(type_obj.dialect.name)
+    # Suppress prefix for types re-exported by builtin (e.g. Index).
+    dialect_name = type_obj.dialect.name
+    if dialect_name != "builtin":
+        builtin = Dialect._registry.get("builtin")
+        if builtin is not None and type_obj.asm_name in builtin.types:
+            dialect_name = "builtin"
+    prefix = _dialect_prefix(dialect_name)
     name = f"{prefix}{type_obj.asm_name}"
     params = list(type_obj.parameters)
     if not params:

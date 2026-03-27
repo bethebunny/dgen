@@ -204,8 +204,8 @@ def test_import_hook_import_map_auto_resolved():
     """DgenLoader stores the resolved import_map after loading."""
     spec = sys.modules["dgen.dialects.builtin"].__spec__
     assert isinstance(spec.loader, DgenLoader)
-    # builtin.dgen has no cross-file imports so import_map should be empty
-    assert spec.loader.import_map == {}
+    # builtin.dgen imports Index from the index dialect
+    assert spec.loader.import_map == {"index": "dgen.dialects.index"}
 
 
 def test_import_hook_toy_import_map_has_affine():

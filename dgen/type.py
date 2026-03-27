@@ -121,7 +121,13 @@ class Type(Value["TypeType"]):
 
     @cached_property
     def qualified_name(self) -> str:
-        return f"{self.dialect.name}.{self.asm_name}"
+        # Use "builtin" prefix for types re-exported by builtin (e.g. Index).
+        dialect_name = self.dialect.name
+        if dialect_name != "builtin":
+            builtin = Dialect._registry.get("builtin")
+            if builtin is not None and self.asm_name in builtin.types:
+                dialect_name = "builtin"
+        return f"{dialect_name}.{self.asm_name}"
 
     @property
     def parameters(self) -> Iterator[tuple[str, Value]]:

@@ -1,0 +1,2 @@
+type Index:
+    layout Int

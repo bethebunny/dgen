@@ -6,28 +6,32 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
+from dgen.dialects.index import Index
 
 builtin = Dialect("builtin")
 
-class HasSingleBlock: ...
+class HasSingleBlock:
+    ...
 
 @dataclass(frozen=True, eq=False)
-class Index(Type): ...
+class F64(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class F64(Type): ...
+class Nil(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class Nil(Type): ...
+class String(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class String(Type): ...
+class TypeTag(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class TypeTag(Type): ...
-
-@dataclass(frozen=True, eq=False)
-class Byte(Type): ...
+class Byte(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
 class Array(Type):
@@ -104,3 +108,4 @@ class CallOp(Op):
     callee: Value[Function]
     args: Value
     type: Type
+
