@@ -34,14 +34,14 @@ def test_llvm_full_loop():
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
         |     %init : index.Index = 0
-        |     %loop_header : goto.Label = goto.label() body(%i0: index.Index):
+        |     %loop_header : goto.Label = goto.label([]) body(%i0: index.Index):
         |         %hi : index.Index = 3
         |         %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
-        |         %loop_body : goto.Label = goto.label() body(%j: index.Index):
+        |         %loop_body : goto.Label = goto.label([]) body(%j: index.Index):
         |             %one : index.Index = 1
         |             %next : Nil = llvm.add(%j, %one)
         |             %_ : Nil = goto.branch<%loop_header>([%next])
-        |         %loop_exit : goto.Label = goto.label() body():
+        |         %loop_exit : goto.Label = goto.label([]) body():
         |             %_ : Nil = ()
         |         %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [%i0], [])
         |     %br : Nil = goto.branch<%loop_header>([%init])

@@ -23,7 +23,7 @@ def test_roundtrip_captures():
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body(%x: index.Index):
-        |     %loop : goto.Label = goto.label() body<%self: goto.Label>(%i: index.Index) captures(%x):
+        |     %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index) captures(%x):
         |         %zero : index.Index = 0
     """)
     module = parse_module(ir)
@@ -43,7 +43,7 @@ def test_roundtrip_empty_captures():
         | import goto
         | import index
         |
-        | %loop : goto.Label = goto.label() body(%i: index.Index):
+        | %loop : goto.Label = goto.label([]) body(%i: index.Index):
         |     %zero : index.Index = 0
     """)
     module = parse_module(ir)
@@ -66,7 +66,7 @@ def test_verify_captured_block_arg_in_scope():
         | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%x: index.Index):
-        |     %inner : goto.Label = goto.label() body() captures(%x):
+        |     %inner : goto.Label = goto.label([]) body() captures(%x):
         |         %0 : index.Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
@@ -82,8 +82,8 @@ def test_verify_captured_block_parameter():
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %header : goto.Label = goto.label() body<%self: goto.Label>():
-        |         %body : goto.Label = goto.label() body() captures(%self):
+        |     %header : goto.Label = goto.label([]) body<%self: goto.Label>():
+        |         %body : goto.Label = goto.label([]) body() captures(%self):
         |             %0 : Nil = goto.branch<%self>([])
     """)
     verify_closed_blocks(parse_module(ir))
@@ -99,7 +99,7 @@ def test_verify_ambient_op_without_capture_passes():
         | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%x: index.Index):
-        |     %inner : goto.Label = goto.label() body():
+        |     %inner : goto.Label = goto.label([]) body():
         |         %0 : index.Index = 42
         |         %1 : index.Index = 0
         |         %2 : llvm.Int<64> = llvm.add(%0, %1)
@@ -122,7 +122,7 @@ def test_verify_missing_capture_of_block_arg():
         | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%x: index.Index):
-        |     %inner : goto.Label = goto.label() body():
+        |     %inner : goto.Label = goto.label([]) body():
         |         %0 : index.Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
@@ -139,8 +139,8 @@ def test_verify_missing_capture_of_block_parameter():
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %header : goto.Label = goto.label() body<%self: goto.Label>():
-        |         %body : goto.Label = goto.label() body():
+        |     %header : goto.Label = goto.label([]) body<%self: goto.Label>():
+        |         %body : goto.Label = goto.label([]) body():
         |             %0 : Nil = goto.branch<%self>([])
     """)
     with pytest.raises(ClosedBlockError):
@@ -162,8 +162,8 @@ def test_verify_chained_captures():
         | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%x: index.Index):
-        |     %mid : goto.Label = goto.label() body() captures(%x):
-        |         %inner : goto.Label = goto.label() body() captures(%x):
+        |     %mid : goto.Label = goto.label([]) body() captures(%x):
+        |         %inner : goto.Label = goto.label([]) body() captures(%x):
         |             %0 : index.Index = 0
         |             %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
@@ -180,8 +180,8 @@ def test_verify_unchained_capture_fails():
         | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%x: index.Index):
-        |     %mid : goto.Label = goto.label() body():
-        |         %inner : goto.Label = goto.label() body() captures(%x):
+        |     %mid : goto.Label = goto.label([]) body():
+        |         %inner : goto.Label = goto.label([]) body() captures(%x):
         |             %0 : index.Index = 0
         |             %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
@@ -204,7 +204,7 @@ def test_replace_uses_updates_captures():
         | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%old: index.Index, %new: index.Index):
-        |     %inner : goto.Label = goto.label() body() captures(%old):
+        |     %inner : goto.Label = goto.label([]) body() captures(%old):
         |         %0 : index.Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%old, %0)
     """)
@@ -233,8 +233,8 @@ def test_replace_uses_updates_chained_captures():
         | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%old: index.Index, %new: index.Index):
-        |     %mid : goto.Label = goto.label() body() captures(%old):
-        |         %inner : goto.Label = goto.label() body() captures(%old):
+        |     %mid : goto.Label = goto.label([]) body() captures(%old):
+        |         %inner : goto.Label = goto.label([]) body() captures(%old):
         |             %0 : index.Index = 0
         |             %1 : llvm.Int<64> = llvm.add(%old, %0)
     """)

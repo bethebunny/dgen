@@ -123,11 +123,26 @@ class BuiltinToLLVMLowering(Pass):
         if_id = self.if_counter
         self.if_counter += 1
 
-        then_label_op = goto.LabelOp(name=f"then_{if_id}", body=placeholder_block())
-        else_label_op = goto.LabelOp(name=f"else_{if_id}", body=placeholder_block())
+        then_label_op = goto.LabelOp(
+            initial_arguments=PackOp(
+                values=[], type=builtin.List(element_type=builtin.Nil())
+            ),
+            name=f"then_{if_id}",
+            body=placeholder_block(),
+        )
+        else_label_op = goto.LabelOp(
+            initial_arguments=PackOp(
+                values=[], type=builtin.List(element_type=builtin.Nil())
+            ),
+            name=f"else_{if_id}",
+            body=placeholder_block(),
+        )
 
         merge_result_arg = BlockArgument(name=f"merge_val{if_id}", type=op.type)
         merge_label_op = goto.LabelOp(
+            initial_arguments=PackOp(
+                values=[], type=builtin.List(element_type=builtin.Nil())
+            ),
             name=f"merge_{if_id}",
             body=dgen.Block(result=merge_result_arg, args=[merge_result_arg]),
         )

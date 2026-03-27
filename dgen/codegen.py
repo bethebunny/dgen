@@ -147,6 +147,21 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         if val in types or val in constants:
             return
         tracker.track_name(val)
+        if isinstance(val, Constant) and not isinstance(val, ConstantOp):
+            # Bare Constant (e.g. from algebra lowering). Same handling as ConstantOp.
+            mem = val.__constant__
+            if not mem.layout.register_passable:
+                host_buffers.append(mem)
+                constants[val] = f"ptr inttoptr (i64 {mem.address} to ptr)"
+                types[val] = "ptr"
+            else:
+                lt = _llvm_type(mem.layout)
+                raw = mem.unpack()[0]
+                constants[val] = (
+                    f"{lt} {format_float(raw) if isinstance(raw, float) else raw}"
+                )
+                types[val] = lt
+            return
         if isinstance(val, ConstantOp):
             mem = val.__constant__
             if not mem.layout.register_passable:

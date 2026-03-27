@@ -17,7 +17,7 @@ def test_roundtrip_label_with_self_param():
         | import goto
         | import index
         |
-        | %loop : goto.Label = goto.label() body<%self: goto.Label>(%i: index.Index):
+        | %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index):
         |     %zero : index.Index = 0
     """)
     module = parse_module(ir)
@@ -37,7 +37,7 @@ def test_roundtrip_label_no_params():
         | import goto
         | import index
         |
-        | %loop : goto.Label = goto.label() body(%i: index.Index):
+        | %loop : goto.Label = goto.label([]) body(%i: index.Index):
         |     %zero : index.Index = 0
     """)
     module = parse_module(ir)
@@ -54,7 +54,7 @@ def test_roundtrip_label_self_param_and_args():
         | import goto
         | import index
         |
-        | %loop : goto.Label = goto.label() body<%self: goto.Label>(%i: index.Index):
+        | %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index):
         |     %zero : index.Index = 0
     """)
     module = parse_module(ir)
@@ -66,7 +66,7 @@ def test_roundtrip_label_params_no_args():
         | import goto
         | import index
         |
-        | %exit : goto.Label = goto.label() body<%self: goto.Label>():
+        | %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
         |     %zero : index.Index = 0
     """)
     module = parse_module(ir)
@@ -86,7 +86,7 @@ def test_verify_block_param_in_scope():
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
-        |     %exit : goto.Label = goto.label() body<%self: goto.Label>():
+        |     %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
         |         %zero : index.Index = 0
     """)
     from dgen.verify import verify_closed_blocks
