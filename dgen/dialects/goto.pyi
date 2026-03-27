@@ -11,8 +11,7 @@ from dgen.dialects.builtin import Nil, Span
 goto = Dialect("goto")
 
 @dataclass(frozen=True, eq=False)
-class Label(Type):
-    ...
+class Label(Type): ...
 
 @dataclass(eq=False, kw_only=True)
 class LabelOp(Op):
@@ -34,4 +33,3 @@ class ConditionalBranchOp(Op):
     true_arguments: Value
     false_arguments: Value
     type: Type = Nil()
-

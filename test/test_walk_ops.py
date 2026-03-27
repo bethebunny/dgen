@@ -21,7 +21,7 @@ from dgen.dialects import builtin, goto
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
 from dgen.graph import walk_ops
-from dgen.module import ConstantOp
+from dgen.module import ConstantOp, PackOp
 
 
 def test_simple_chain():
@@ -57,6 +57,7 @@ def test_does_not_descend_into_label_body():
     """walk_ops reaches a LabelOp but does NOT walk into its body block."""
     inner_op = ConstantOp(name="inner", value=42, type=Index())
     label = goto.LabelOp(
+        initial_arguments=PackOp(values=[], type=builtin.List(element_type=Nil())),
         name="lbl",
         body=Block(result=inner_op),
     )
@@ -75,14 +76,18 @@ def test_label_body_is_separate_walk():
     inner_b = ConstantOp(name="inner_b", value=2, type=Index())
     inner_result = ChainOp(name="inner_c", lhs=inner_a, rhs=inner_b, type=Nil())
     label = goto.LabelOp(
+        initial_arguments=PackOp(values=[], type=builtin.List(element_type=Nil())),
         name="lbl",
         body=Block(result=inner_result),
     )
     outer = ChainOp(name="outer", lhs=label, rhs=label, type=Nil())
 
-    # Parent walk: only sees label and outer
+    # Parent walk: sees label, its initial_arguments PackOp, and outer
     parent_ops = walk_ops(outer)
-    assert set(parent_ops) == {label, outer}
+    assert label in parent_ops
+    assert outer in parent_ops
+    assert inner_a not in parent_ops
+    assert inner_b not in parent_ops
 
     # Label body walk: only sees inner ops
     body_ops = label.body.ops
@@ -94,7 +99,11 @@ def test_label_body_is_separate_walk():
 
 def test_follows_parameters():
     """walk_ops follows parameter references (e.g. branch targets)."""
-    label = goto.LabelOp(name="target", body=Block(result=Value(type=Nil())))
+    label = goto.LabelOp(
+        initial_arguments=PackOp(values=[], type=builtin.List(element_type=Nil())),
+        name="target",
+        body=Block(result=Value(type=Nil())),
+    )
     pack = dgen.module.PackOp(values=[], type=builtin.List(element_type=Nil()))
     branch = goto.BranchOp(target=label, arguments=pack)
 
