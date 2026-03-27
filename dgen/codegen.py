@@ -289,15 +289,10 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         elif isinstance(op, llvm.FcmpOp):
             yield f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
 
-    def _emit(block: dgen.Block, *, is_func_body: bool = False) -> Iterator[str]:
-        # Split block ops into: pre-branch ops, labels, and post-branch ops.
-        # Pre-branch ops are the current block's instructions.
-        # Labels start new basic blocks (emitted after the terminator).
-        # Post-branch ops are the continuation (emitted after the exit label).
+    def _emit(block: dgen.Block) -> Iterator[str]:
+        # Emit ops in topo order. Labels deferred to end of block.
+        # %exit labels emitted eagerly at the label's topo position.
         labels: list[goto.LabelOp] = []
-        pre_branch: list[dgen.Op] = []
-        post_branch: list[dgen.Op] = []
-        saw_branch = False
         for op in block.ops:
             _register(op)
             if isinstance(op, goto.LabelOp):
@@ -305,26 +300,13 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                 for param in op.body.parameters:
                     tracker.track_name(param)
                 labels.append(op)
-            elif saw_branch:
-                post_branch.append(op)
+                # Emit %exit labels here (at the label's topo position).
+                for param in op.body.parameters:
+                    if param.name and param.name.startswith("exit"):
+                        yield f"{tracker.track_name(param)}:"
             else:
-                pre_branch.append(op)
-                if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
-                    saw_branch = True
-
-        # Emit pre-branch ops (current block's instructions + terminator).
-        terminated = False
-        for op in pre_branch:
-            yield from _emit_op(op)
-            if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
-                terminated = True
-        if not terminated and is_func_body:
-            yield (
-                "  ret void"
-                if llvm_ret == "void"
-                else f"  ret {typed_ref(f.body.result)}"
-            )
-        # Labels (sub-blocks) after the current block's terminator.
+                yield from _emit_op(op)
+        # Deferred label bodies at end of block.
         for label_op in labels:
             yield f"{tracker.track_name(label_op)}:"
             for i, arg in enumerate(label_op.body.args):
@@ -335,24 +317,11 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                 ]
                 if parts:
                     yield f"  %{tracker.track_name(arg)} = phi {types.get(arg, 'i64')} {', '.join(parts)}"
-            yield from _emit(label_op.body, is_func_body=False)
-            for param in label_op.body.parameters:
-                if param.name and param.name.startswith("exit"):
-                    yield f"{tracker.track_name(param)}:"
-        # Post-branch continuation (fall-through after exit label).
-        post_terminated = False
-        for op in post_branch:
-            yield from _emit_op(op)
-            if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
-                post_terminated = True
-        if not post_terminated and (post_branch or labels):
-            yield (
-                "  ret void"
-                if llvm_ret == "void"
-                else f"  ret {typed_ref(f.body.result)}"
-            )
+            yield from _emit(label_op.body)
 
-    yield from _emit(f.body, is_func_body=True)
+    yield from _emit(f.body)
+    # Function body always ends with ret (entry block or last exit label).
+    yield "  ret void" if llvm_ret == "void" else f"  ret {typed_ref(f.body.result)}"
     yield "}"
 
 

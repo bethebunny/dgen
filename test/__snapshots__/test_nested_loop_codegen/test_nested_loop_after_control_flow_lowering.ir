@@ -5,15 +5,15 @@ import index
 
 %test : function.Function<()> = function.function<Nil>() body():
     %0 : index.Index = 0
-    %loop_header0 : goto.Label = goto.label() body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
+    %loop_header0 : goto.Label = goto.label([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
         %1 : index.Index = 2
         %2 : index.Index = algebra.less_than(%i0, %1)
-        %loop_body0 : goto.Label = goto.label() body(%j0: index.Index) captures(%self):
+        %loop_body0 : goto.Label = goto.label([]) body(%j0: index.Index) captures(%self):
             %3 : index.Index = 0
-            %loop_header1 : goto.Label = goto.label() body<%4: goto.Label, %exit1: goto.Label>(%i1: index.Index):
+            %loop_header1 : goto.Label = goto.label([%3]) body<%4: goto.Label, %exit1: goto.Label>(%i1: index.Index):
                 %5 : index.Index = 2
                 %6 : index.Index = algebra.less_than(%i1, %5)
-                %loop_body1 : goto.Label = goto.label() body(%j1: index.Index) captures(%4):
+                %loop_body1 : goto.Label = goto.label([]) body(%j1: index.Index) captures(%4):
                     %7 : index.Index = 0
                     %8 : Nil = chain(%7, %7)
                     %9 : index.Index = 1
@@ -21,10 +21,8 @@ import index
                     %11 : Nil = goto.branch<%4>([%10])
                     %12 : Nil = chain(%8, %11)
                 %13 : Nil = goto.conditional_branch<%loop_body1, %exit1>(%6, [%i1], [])
-            %14 : Nil = goto.branch<%loop_header1>([%3])
-            %15 : index.Index = 1
-            %16 : index.Index = algebra.add(%j0, %15)
-            %17 : Nil = goto.branch<%self>([%16])
-            %18 : Nil = chain(%14, %17)
-        %19 : Nil = goto.conditional_branch<%loop_body0, %exit0>(%2, [%i0], [])
-    %20 : Nil = goto.branch<%loop_header0>([%0])
+            %14 : index.Index = 1
+            %15 : index.Index = algebra.add(%j0, %14)
+            %16 : Nil = goto.branch<%self>([%15])
+            %17 : Nil = chain(%loop_header1, %16)
+        %18 : Nil = goto.conditional_branch<%loop_body0, %exit0>(%2, [%i0], [])
