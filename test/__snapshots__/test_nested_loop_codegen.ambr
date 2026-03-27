@@ -5,25 +5,35 @@
   declare ptr @malloc(i64)
   
   define void @test() {
-  entry:
-  exit0:
+  _blk0:
+    br label %loop_header0
   loop_header0:
-    %i0 = phi i64 [ %9, %loop_body0 ]
+    %i0 = phi i64 [ %9, %_blk3 ], [ 0, %_blk0 ]
+    br label %_blk1
+  _blk1:
     %3 = icmp slt i64 %i0, 2
     br i1 %3, label %loop_body0, label %exit0
   loop_body0:
-    %j0 = phi i64 [ %i0, %loop_header0 ]
+    %j0 = phi i64 [ %i0, %_blk1 ]
+    br label %_blk2
+  _blk2:
     %9 = add i64 %j0, 1
-  exit1:
-    br label %loop_header0
-  loop_header1:
-    %i1 = phi i64 [ %23, %loop_body1 ]
-    %17 = icmp slt i64 %i1, 2
-    br i1 %17, label %loop_body1, label %exit1
-  loop_body1:
-    %j1 = phi i64 [ %i1, %loop_header1 ]
-    %23 = add i64 %j1, 1
     br label %loop_header1
+  loop_header1:
+    %i1 = phi i64 [ %20, %loop_body1 ], [ 0, %_blk2 ]
+    br label %_blk4
+  _blk4:
+    %14 = icmp slt i64 %i1, 2
+    br i1 %14, label %loop_body1, label %exit1
+  loop_body1:
+    %j1 = phi i64 [ %i1, %_blk4 ]
+    %20 = add i64 %j1, 1
+    br label %loop_header1
+  exit1:
+    br label %_blk3
+  _blk3:
+    br label %loop_header0
+  exit0:
     ret void
   }
   '''
