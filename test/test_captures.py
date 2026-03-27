@@ -251,3 +251,40 @@ def test_replace_uses_updates_chained_captures():
     assert inner_label.body.ops[-1].lhs is new_arg
 
     verify_closed_blocks(module)
+
+
+# ---------------------------------------------------------------------------
+# ConstantOps in captures
+# ---------------------------------------------------------------------------
+
+
+def test_constant_captured_not_ambient():
+    """ConstantOps must be captured like any other op — no ambient nodes.
+
+    A ConstantOp used inside a block must appear in that block's captures
+    (or be defined within the block). The verifier rejects ConstantOps
+    that appear in multiple blocks' walk_ops without being captured.
+    """
+    ir = strip_prefix("""
+        | import goto
+        | import function
+        | import index
+        | %main : function.Function<()> = function.function<Nil>() body():
+        |     %c : index.Index = 42
+        |     %lbl : goto.Label = goto.label([]) body(%x: index.Index) captures(%c):
+        |         %use : index.Index = chain(%x, %c)
+    """)
+    module = parse_module(ir)
+    verify_closed_blocks(module)
+
+    # The ConstantOp %c is in the parent's ops (reachable from the label
+    # via block captures) and is a capture boundary in the label body
+    # (not in the body's ops).
+    func = module.functions[0]
+    label = func.body.ops[-1]
+    assert any(
+        isinstance(op, type(func.body.ops[0])) and op.name == "c"
+        for op in func.body.ops
+    )
+    # %c is NOT in the label body's ops — it's a capture boundary
+    assert not any(op.name == "c" for op in label.body.ops)

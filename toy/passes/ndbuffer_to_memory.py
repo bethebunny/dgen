@@ -15,8 +15,8 @@ from __future__ import annotations
 from math import prod
 
 import dgen
-from dgen.dialects import algebra, builtin, index, llvm, memory
-from dgen.dialects.builtin import Nil, String
+from dgen.dialects import algebra, builtin, llvm, memory
+from dgen.dialects.builtin import String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.module import ConstantOp, PackOp

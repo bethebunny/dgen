@@ -38,24 +38,14 @@ def placeholder_block() -> dgen.Block:
 
 
 def walk_ops(root: dgen.Value, *, stop: Iterable[dgen.Value] = ()) -> list[dgen.Op]:
-    """Walk the use-def graph backwards from root, return ops in topological order.
+    """Return all ops that are transitive dependencies of root, in the same block.
 
-    Traversal rules:
-    - Follows **operands** (Value-typed fields) of each op.
-    - Follows **parameters** (non-Value fields that hold Values, e.g. branch
-      targets). Parameters are compile-time values but still participate in
-      the use-def graph.
-    - Does **NOT** descend into an op's nested **blocks**. A LabelOp is
-      included as an op, but its body block's ops require a separate
-      ``walk_ops(label.body.result)`` call. Each block is its own walk scope.
-    - Values in ``stop`` are treated as **leaves**: the walk does not
-      traverse past them. This is how captures work — ``block.ops`` passes
-      ``stop=captures`` so that captured values are boundaries.
+    Follows dependency edges: operands, parameters, types, block captures,
+    and block argument types. Does NOT descend into nested block bodies —
+    each block is its own walk scope. Values in ``stop`` are leaves (capture
+    boundaries).
 
-    Returns:
-    - Only Op instances (not BlockArguments, BlockParameters, Constants,
-      Types, or plain Values).
-    - In topological order: if A depends on B, B appears before A.
+    Returns Op instances in topological order: dependencies before dependents.
     """
     visited: set[dgen.Value] = set(stop)
     order: list[dgen.Op] = []
@@ -90,8 +80,11 @@ def walk_ops(root: dgen.Value, *, stop: Iterable[dgen.Value] = ()) -> list[dgen.
             visit(param)
         # Visit type (may be an SSA value or a Type with SSA-valued params)
         visit(value.type)
-        # Visit block parameter and arg types (leaves in the use-def graph)
+        # Visit block captures, parameter types, and arg types.
+        # Captures are parent-scope values the block depends on.
         for _, block in value.blocks:
+            for capture in block.captures:
+                visit(capture)
             for param in block.parameters:
                 visit(param.type)
             for arg in block.args:

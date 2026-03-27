@@ -4,19 +4,16 @@
 
 ---
 
+---
+
 ## Abstract
 
-This document describes the recommended approach to scope, value capture, and use-def cycle
-management in the dgen IR. The central thesis is that the current IR lacks a formal invariant
-around value capture: ops inside a block may freely reference values from enclosing blocks without
-declaring them, creating implicit dependencies that are invisible in the use-def graph. This
-**implicit capture** leads to a fragile `walk_ops` implementation (patched with `isinstance`
-guards and circular imports) and complex lowering passes that must manually track cross-block
-dependencies. The recommendation is a **closed-block invariant**: every block is a closed term
-whose free variables are explicitly declared as block arguments. With this invariant, `walk_ops`
-becomes a simple DAG walk with no special cases, and block-level analysis, inlining, and
-scheduling become sound in isolation. The document also addresses use-def cycles from recursive
-functions and loop back-edges, which are eliminated by a `%self` mechanism at the block boundary.
+This document describes the approach to scope, value capture, and use-def cycle management in
+the dgen IR. The central invariant is the **closed-block invariant**: every block is a closed
+term whose dependencies on enclosing scopes are explicitly declared as captures.
+With this invariant, `walk_ops` is a simple DAG walk with no special cases, and block-level
+analysis, inlining, and scheduling are sound in isolation. Use-def cycles from loop back-edges
+are eliminated by a `%self` block parameter mechanism.
 
 ---
 

@@ -10,11 +10,9 @@ memory.deallocate → no-op (leak for now)
 
 from __future__ import annotations
 
-import dgen
-from dgen.dialects import builtin, index, llvm, memory
+from dgen.dialects import builtin, llvm, memory
 from dgen.dialects.builtin import Nil, String
 from dgen.dialects.index import Index
-from dgen.dialects.number import Float64
 from dgen.module import ConstantOp, PackOp
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 

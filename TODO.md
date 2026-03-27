@@ -66,6 +66,15 @@
 - Have values track their uses for forward iteration and fast `replace_uses`
 - Reimplement `Block.ops` as a generator, iterating in topological order from the block arguments following usage
 
+## Codegen
+- Refactor `_emit_func` — 500-line closure with seven dicts of mutable state. Extract into a class or separate functions with explicit state passing.
+- Replace isinstance dispatch chain in `_emit_op` with a dispatch table keyed on `(dialect_name, asm_name)`.
+- Formalize the `%exit` convention — currently uses `param.name.startswith("exit")`, a magic-string contract between `control_flow_to_goto.py` and codegen.
+- `ChainOp` type forwarding: when a pass mutates `op.type` (e.g. shape inference resolves `InferredShapeTensor → Tensor`), wrapping ChainOps keep the old type. Needs a general solution.
+
+## Algebra lowering
+- Add lowerings for: negate, reciprocal, divide, less_equal, greater_than, greater_equal, meet, join, complement, symmetric_difference
+
 ## Misc
 - Write more down into design docs
 - test_peano's `test_call_jit` _should not_ call the jit, let's verify that it doesn't and put it somewhere more sensible

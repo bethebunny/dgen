@@ -17,6 +17,6 @@ def run_toy(source: str, *, args: Sequence[object] | None = None) -> str:
         cli_args = [f.name]
         if args:
             cli_args.extend(str(a) if not isinstance(a, str) else a for a in args)
-        r = CliRunner().invoke(main, cli_args)
+        r = CliRunner().invoke(main, cli_args, catch_exceptions=False)
         assert r.exit_code == 0, r.output
         return r.output.strip()

@@ -16,7 +16,7 @@ Contract:
 
 import dgen
 from dgen import Block, Value
-from dgen.block import BlockArgument, BlockParameter
+from dgen.block import BlockArgument
 from dgen.dialects import builtin, goto
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
@@ -126,3 +126,26 @@ def test_captures_stop_walk():
     block_with_captures = Block(result=inner_op, captures=[outer_val])
     assert outer_val not in block_with_captures.ops
     assert inner_op in block_with_captures.ops
+
+
+def test_walk_visits_block_captures():
+    """Parent walk_ops visits a child block's captures as dependencies.
+
+    When an op has a block with captures, those captures are parent-scope
+    values that the op depends on. walk_ops must visit them so they appear
+    in the parent block's ops.
+    """
+    captured = ConstantOp(name="captured", value=42, type=Index())
+    inner_result = ConstantOp(name="inner", value=1, type=Index())
+    label = goto.LabelOp(
+        initial_arguments=PackOp(values=[], type=builtin.List(element_type=Nil())),
+        name="lbl",
+        body=Block(
+            result=ChainOp(lhs=inner_result, rhs=captured, type=Index()),
+            captures=[captured],
+        ),
+    )
+    ops = walk_ops(label)
+    # captured is visited as a dependency of the label (via block captures)
+    assert captured in ops
+    assert label in ops
