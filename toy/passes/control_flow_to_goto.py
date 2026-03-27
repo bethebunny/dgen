@@ -45,13 +45,16 @@ class ControlFlowToGoto(Pass):
         body_rewriter = Rewriter(op.body)
         body_rewriter.replace_uses(op.body.args[0], body_iv)
 
+        # The increment must depend on the inner loop body having run.
+        # op.body.result will become the inner header label after replace_uses,
+        # so chain(increment, body_result) ensures the increment comes after.
         one = ConstantOp(value=1, type=Index())
-        next_iv = algebra.AddOp(left=body_iv, right=one, type=Index())
+        next_iv_raw = algebra.AddOp(left=body_iv, right=one, type=Index())
+        next_iv = ChainOp(lhs=next_iv_raw, rhs=op.body.result, type=Index())
         back_br = goto.BranchOp(target=header_self, arguments=_pack([next_iv]))
-        body_result = ChainOp(lhs=op.body.result, rhs=back_br, type=Nil())
 
         body_block = dgen.Block(
-            result=body_result,
+            result=back_br,
             args=[body_iv],
             captures=[header_self] + list(op.body.captures),
         )
