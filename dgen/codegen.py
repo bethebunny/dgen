@@ -221,6 +221,43 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     yield f"define {llvm_ret} @{tracker.track_name(f)}({params}) {{"
     yield "entry:"
 
+    def _emit_op(op: dgen.Op) -> Iterator[str]:
+        """Emit a single non-label op as LLVM IR."""
+        name = tracker.track_name(op)
+        if isinstance(op, goto.BranchOp):
+            yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
+        elif isinstance(op, goto.ConditionalBranchOp):
+            yield f"  br i1 %{tracker.track_name(op.condition)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
+        elif isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
+            pass
+        elif isinstance(op, llvm.CallOp):
+            a = ", ".join(typed_ref(v) for v in unpack(op.args))
+            callee = string_value(op.callee)
+            yield (
+                f"  call void @{callee}({a})"
+                if isinstance(op.type, builtin.Nil)
+                else f"  %{name} = call {types[op]} @{callee}({a})"
+            )
+        elif isinstance(op, llvm.StoreOp):
+            yield f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}"
+        elif isinstance(op, llvm.AllocaOp):
+            yield f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
+        elif isinstance(op, llvm.GepOp):
+            yield f"  %{name} = getelementptr double, ptr {bare_ref(op.base)}, {typed_ref(op.index)}"
+        elif isinstance(op, llvm.LoadOp):
+            yield f"  %{name} = load {_llvm_type(dgen.type.type_constant(op.type).__layout__)}, {typed_ref(op.ptr)}"
+        elif isinstance(op, llvm.ZextOp):
+            yield f"  %{name} = zext i1 {bare_ref(op.input)} to i64"
+        elif isinstance(op, (llvm.FaddOp, llvm.FmulOp)):
+            yield f"  %{name} = {'fadd' if isinstance(op, llvm.FaddOp) else 'fmul'} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, (llvm.AddOp, llvm.SubOp, llvm.MulOp)):
+            instr = {"AddOp": "add", "SubOp": "sub", "MulOp": "mul"}[type(op).__name__]
+            yield f"  %{name} = {instr} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.IcmpOp):
+            yield f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.FcmpOp):
+            yield f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+
     def _emit(block: dgen.Block) -> Iterator[str]:
         # Split block ops into: pre-branch ops, labels, and post-branch ops.
         # Pre-branch ops are the current block's instructions.
@@ -247,51 +284,16 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         # Emit pre-branch ops (current block's instructions + terminator).
         terminated = False
         for op in pre_branch:
-            name = tracker.track_name(op)
-            if isinstance(op, goto.BranchOp):
-                yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
+            yield from _emit_op(op)
+            if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
                 terminated = True
-            elif isinstance(op, goto.ConditionalBranchOp):
-                yield f"  br i1 %{tracker.track_name(op.condition)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
-                terminated = True
-            elif isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
-                pass
-            elif isinstance(op, llvm.CallOp):
-                a = ", ".join(typed_ref(v) for v in unpack(op.args))
-                callee = string_value(op.callee)
-                yield (
-                    f"  call void @{callee}({a})"
-                    if isinstance(op.type, builtin.Nil)
-                    else f"  %{name} = call {types[op]} @{callee}({a})"
-                )
-            elif isinstance(op, llvm.StoreOp):
-                yield f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}"
-            elif isinstance(op, llvm.AllocaOp):
-                yield f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
-            elif isinstance(op, llvm.GepOp):
-                yield f"  %{name} = getelementptr double, ptr {bare_ref(op.base)}, {typed_ref(op.index)}"
-            elif isinstance(op, llvm.LoadOp):
-                yield f"  %{name} = load {_llvm_type(dgen.type.type_constant(op.type).__layout__)}, {typed_ref(op.ptr)}"
-            elif isinstance(op, llvm.ZextOp):
-                yield f"  %{name} = zext i1 {bare_ref(op.input)} to i64"
-            elif isinstance(op, (llvm.FaddOp, llvm.FmulOp)):
-                yield f"  %{name} = {'fadd' if isinstance(op, llvm.FaddOp) else 'fmul'} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            elif isinstance(op, (llvm.AddOp, llvm.SubOp, llvm.MulOp)):
-                instr = {"AddOp": "add", "SubOp": "sub", "MulOp": "mul"}[
-                    type(op).__name__
-                ]
-                yield f"  %{name} = {instr} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            elif isinstance(op, llvm.IcmpOp):
-                yield f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            elif isinstance(op, llvm.FcmpOp):
-                yield f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         if not terminated:
             yield (
                 "  ret void"
                 if llvm_ret == "void"
                 else f"  ret {typed_ref(f.body.result)}"
             )
-        # Now emit labels (sub-blocks) after the current block's terminator.
+        # Labels (sub-blocks) after the current block's terminator.
         for label_op in labels:
             yield f"{tracker.track_name(label_op)}:"
             for i, arg in enumerate(label_op.body.args):
@@ -306,45 +308,9 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             for param in label_op.body.parameters:
                 if param.name and param.name.startswith("exit"):
                     yield f"{tracker.track_name(param)}:"
-        # Emit post-branch continuation (ops after the terminator in topo order).
-        # These are the fall-through after the innermost exit label.
+        # Post-branch continuation (fall-through after exit label).
         for op in post_branch:
-            name = tracker.track_name(op)
-            if isinstance(op, goto.BranchOp):
-                yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
-            elif isinstance(op, goto.ConditionalBranchOp):
-                yield f"  br i1 %{tracker.track_name(op.condition)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
-            elif isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
-                pass
-            elif isinstance(op, llvm.CallOp):
-                a = ", ".join(typed_ref(v) for v in unpack(op.args))
-                callee = string_value(op.callee)
-                yield (
-                    f"  call void @{callee}({a})"
-                    if isinstance(op.type, builtin.Nil)
-                    else f"  %{name} = call {types[op]} @{callee}({a})"
-                )
-            elif isinstance(op, llvm.StoreOp):
-                yield f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}"
-            elif isinstance(op, llvm.AllocaOp):
-                yield f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
-            elif isinstance(op, llvm.GepOp):
-                yield f"  %{name} = getelementptr double, ptr {bare_ref(op.base)}, {typed_ref(op.index)}"
-            elif isinstance(op, llvm.LoadOp):
-                yield f"  %{name} = load {_llvm_type(dgen.type.type_constant(op.type).__layout__)}, {typed_ref(op.ptr)}"
-            elif isinstance(op, llvm.ZextOp):
-                yield f"  %{name} = zext i1 {bare_ref(op.input)} to i64"
-            elif isinstance(op, (llvm.FaddOp, llvm.FmulOp)):
-                yield f"  %{name} = {'fadd' if isinstance(op, llvm.FaddOp) else 'fmul'} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            elif isinstance(op, (llvm.AddOp, llvm.SubOp, llvm.MulOp)):
-                instr = {"AddOp": "add", "SubOp": "sub", "MulOp": "mul"}[
-                    type(op).__name__
-                ]
-                yield f"  %{name} = {instr} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            elif isinstance(op, llvm.IcmpOp):
-                yield f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-            elif isinstance(op, llvm.FcmpOp):
-                yield f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+            yield from _emit_op(op)
 
     yield from _emit(f.body)
     yield "}"
