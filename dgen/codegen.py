@@ -181,18 +181,204 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             tracker.track_name(arg)
             types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
-    # --- Predecessor map (needed before emission for phi nodes) ---
+    # ===================================================================
+    # Phase 1: Separate label ops from non-label ops.
+    # Mixed blocks get their non-label ops wrapped into new label blocks.
+    # After this, each block either only has label ops or only non-label ops.
+    # ===================================================================
 
-    def _scan_preds(block: dgen.Block, src: dgen.Value) -> None:
+    _synth_counter = 0
+
+    def _label_deps(op: dgen.Op, block_ops: list[dgen.Op]) -> frozenset[int]:
+        """Which label ops in this block does op transitively depend on?
+
+        Only follows operand dependencies, not parameter dependencies.
+        Branch targets are parameters — they don't affect scheduling.
+        """
+        labels_in_block = {id(o) for o in block_ops if isinstance(o, goto.LabelOp)}
+        deps: set[int] = set()
+        visited: set[int] = set()
+
+        def walk(v: dgen.Value) -> None:
+            if not isinstance(v, dgen.Op) or id(v) in visited:
+                return
+            visited.add(id(v))
+            if id(v) in labels_in_block:
+                deps.add(id(v))
+                return
+            for _, operand in v.operands:
+                walk(operand)
+            # Don't follow parameters — branch targets are structural,
+            # not data dependencies for scheduling purposes.
+
+        walk(op)
+        return frozenset(deps)
+
+    LabelBlock = tuple[goto.LabelOp | None, list[dgen.Op]]
+    # None means "entry" or "anonymous" block (synthetic label)
+
+    def _separate(block: dgen.Block) -> list[LabelBlock]:
+        """Split a block's ops into groups by label dependency.
+
+        Returns a list of (label_or_None, ops) pairs. Each group becomes
+        an LLVM basic block. Groups are ordered: {} first, then by the
+        topo position of their label dependency.
+        """
+        nonlocal _synth_counter
+
+        ops = block.ops
+        labels_in_block = [op for op in ops if isinstance(op, goto.LabelOp)]
+        if not labels_in_block:
+            # Pure non-label block — no separation needed.
+            return [(None, ops)]
+
+        non_label_ops = [op for op in ops if not isinstance(op, goto.LabelOp)]
+        if not non_label_ops:
+            # Pure label block — no separation needed.
+            return [(label, []) for label in labels_in_block]
+
+        # Group non-label ops by label dependency set.
+        groups: dict[frozenset[int], list[dgen.Op]] = {}
+        for op in non_label_ops:
+            deps = _label_deps(op, ops)
+            groups.setdefault(deps, []).append(op)
+
+        # Build the result: interleave label ops and groups in topo order.
+        # Labels appear at their topo position. Groups go after their
+        # deepest label dependency (or first if no dependency).
+        result: list[LabelBlock] = []
+
+        # No-dependency group goes first (before any labels).
+        no_dep = groups.pop(frozenset(), None)
+        if no_dep:
+            synth = goto.LabelOp(
+                name=f"_blk{_synth_counter}",
+                initial_arguments=PackOp(
+                    values=[], type=builtin.List(element_type=builtin.Nil())
+                ),
+                body=dgen.Block(
+                    result=no_dep[-1] if no_dep else dgen.Value(type=Nil())
+                ),
+            )
+            _synth_counter += 1
+            result.append((synth, no_dep))
+
+        # Each label, followed by groups that depend on it.
+        for label in labels_in_block:
+            # Recursively separate the label's body.
+            result.append((label, []))
+            dep_key = frozenset({id(label)})
+            dep_ops = groups.pop(dep_key, None)
+            if dep_ops:
+                synth = goto.LabelOp(
+                    name=f"_blk{_synth_counter}",
+                    initial_arguments=PackOp(
+                        values=[], type=builtin.List(element_type=builtin.Nil())
+                    ),
+                    body=dgen.Block(
+                        result=dep_ops[-1] if dep_ops else dgen.Value(type=Nil())
+                    ),
+                )
+                _synth_counter += 1
+                result.append((synth, dep_ops))
+
+        return result
+
+    # ===================================================================
+    # Phase 2: Linearize — flatten the tree into a list of LLVM blocks.
+    # Each LabelBlock becomes one LLVM basic block.
+    # ===================================================================
+
+    @dataclass
+    class LinearBlock:
+        name: str
+        ops: list[dgen.Op]
+        label: goto.LabelOp | None = None
+
+    _visited_labels: set[int] = set()
+
+    def _linearize(block: dgen.Block, name: str) -> list[LinearBlock]:
+        """Recursively flatten a block and its label children."""
+        separated = _separate(block)
+        result: list[LinearBlock] = []
+
+        for label, ops in separated:
+            if label is None:
+                # Pure non-label block — ops belong to the current block.
+                for op in ops:
+                    _register(op)
+                if result:
+                    result[-1].ops.extend(ops)
+                else:
+                    result.append(LinearBlock(name, ops))
+                continue
+
+            label_name = tracker.track_name(label)
+            _register(label)
+            _register_block_args(label.body)
+            for param in label.body.parameters:
+                tracker.track_name(param)
+
+            if id(label) in _visited_labels:
+                continue
+            _visited_labels.add(id(label))
+
+            if ops:
+                # Synthetic block with actual ops.
+                for op in ops:
+                    _register(op)
+                result.append(LinearBlock(label_name, list(ops)))
+            else:
+                # Real label — emit phis, then recurse into body.
+                label_block = LinearBlock(label_name, [], label)
+                result.append(label_block)
+                children = _linearize(label.body, label_name)
+                # If the first child is a pure-ops block with the same name,
+                # merge its ops into the label block.
+                if (
+                    children
+                    and children[0].label is None
+                    and children[0].name == label_name
+                ):
+                    label_block.ops.extend(children[0].ops)
+                    children = children[1:]
+                result.extend(children)
+                for param in label.body.parameters:
+                    if param.name and param.name.startswith("exit"):
+                        result.append(LinearBlock(tracker.track_name(param), []))
+
+        return result
+
+    # Register %self → label mappings (needed for resolve_target).
+    def _scan_self_params(block: dgen.Block) -> None:
         for op in block.ops:
             if isinstance(op, goto.LabelOp):
-                # Only map %self (back-edge target) to the label.
-                # %exit parameters are emitted as separate labels by the codegen.
                 for param in op.body.parameters:
                     if param.name == "self":
                         param_to_label[param] = op
-                _scan_preds(op.body, op)
-            elif isinstance(op, goto.BranchOp):
+                _scan_self_params(op.body)
+
+    _scan_self_params(f.body)
+
+    # Register function args and linearize.
+    _register_block_args(f.body)
+
+    llvm_ret = (
+        "void"
+        if isinstance(f.result, builtin.Nil)
+        else _llvm_type(dgen.type.type_constant(f.result).__layout__)
+    )
+    params = ", ".join(
+        f"{types.get(a, 'i64')} %{tracker.track_name(a)}" for a in f.body.args
+    )
+    blocks = _linearize(f.body, "entry")
+
+    # Build predecessor map from linearized blocks.
+    # Each block's branches use the block's name as source.
+    for blk in blocks:
+        src = dgen.Value(name=blk.name, type=goto.Label())
+        for op in blk.ops:
+            if isinstance(op, goto.BranchOp):
                 predecessors.setdefault(id(resolve_target(op.target)), []).append(
                     (src, unpack(op.arguments))
                 )
@@ -204,56 +390,22 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                     predecessors.setdefault(id(resolve_target(t)), []).append(
                         (src, unpack(a))
                     )
+    # Fall-through predecessors: if block i has no terminator, it falls through to block i+1.
+    for i, blk in enumerate(blocks):
+        has_term = any(
+            isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)) for op in blk.ops
+        )
+        if not has_term and i + 1 < len(blocks) and blocks[i + 1].label is not None:
+            src = dgen.Value(name=blk.name, type=goto.Label())
+            label_op = blocks[i + 1].label
+            init_args = unpack(label_op.initial_arguments)
+            predecessors.setdefault(id(label_op), []).append((src, init_args))
 
-    _scan_preds(f.body, entry_sentinel)
-
-    # --- Pre-register SSA names in emission order (LLVM requires sequential numbering) ---
-
-    def _preregister(block: dgen.Block) -> None:
-        """Register ops in the same order _emit will yield them."""
-        _register_block_args(block)
-        labels: list[goto.LabelOp] = []
-        saw_branch = False
-        for op in block.ops:
-            if isinstance(op, goto.LabelOp):
-                labels.append(op)
-                _register_block_args(op.body)
-                for param in op.body.parameters:
-                    tracker.track_name(param)
-            elif not saw_branch:
-                _register(op)
-                if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
-                    saw_branch = True
-        # Labels (sub-blocks) registered after pre-branch ops.
-        for label_op in labels:
-            _register(label_op)
-            _preregister(label_op.body)
-        # Post-branch continuation registered last.
-        saw_branch = False
-        for op in block.ops:
-            if isinstance(op, goto.LabelOp):
-                continue
-            if saw_branch:
-                _register(op)
-            elif isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
-                saw_branch = True
-
-    _preregister(f.body)
-
-    # --- Emit ---
-    llvm_ret = (
-        "void"
-        if isinstance(f.result, builtin.Nil)
-        else _llvm_type(dgen.type.type_constant(f.result).__layout__)
-    )
-    params = ", ".join(
-        f"{types.get(a, 'i64')} %{tracker.track_name(a)}" for a in f.body.args
-    )
-    yield f"define {llvm_ret} @{tracker.track_name(f)}({params}) {{"
-    yield "entry:"
+    # ===================================================================
+    # Phase 3: Emit — walk the linear list and emit LLVM IR.
+    # ===================================================================
 
     def _emit_op(op: dgen.Op) -> Iterator[str]:
-        """Emit a single non-label op as LLVM IR."""
         name = tracker.track_name(op)
         if isinstance(op, goto.BranchOp):
             yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
@@ -289,39 +441,40 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         elif isinstance(op, llvm.FcmpOp):
             yield f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
 
-    def _emit(block: dgen.Block) -> Iterator[str]:
-        # Emit ops in topo order. Labels deferred to end of block.
-        # %exit labels emitted eagerly at the label's topo position.
-        labels: list[goto.LabelOp] = []
-        for op in block.ops:
-            _register(op)
-            if isinstance(op, goto.LabelOp):
-                _register_block_args(op.body)
-                for param in op.body.parameters:
-                    tracker.track_name(param)
-                labels.append(op)
-                # Emit %exit labels here (at the label's topo position).
-                for param in op.body.parameters:
-                    if param.name and param.name.startswith("exit"):
-                        yield f"{tracker.track_name(param)}:"
-            else:
-                yield from _emit_op(op)
-        # Deferred label bodies at end of block.
-        for label_op in labels:
-            yield f"{tracker.track_name(label_op)}:"
-            for i, arg in enumerate(label_op.body.args):
-                parts = [
-                    f"[ {bare_ref(a[i])}, %{tracker.track_name(s)} ]"
-                    for s, a in predecessors.get(id(label_op), [])
-                    if i < len(a)
-                ]
-                if parts:
-                    yield f"  %{tracker.track_name(arg)} = phi {types.get(arg, 'i64')} {', '.join(parts)}"
-            yield from _emit(label_op.body)
+    yield f"define {llvm_ret} @{tracker.track_name(f)}({params}) {{"
 
-    yield from _emit(f.body)
-    # Function body always ends with ret (entry block or last exit label).
-    yield "  ret void" if llvm_ret == "void" else f"  ret {typed_ref(f.body.result)}"
+    for i, blk in enumerate(blocks):
+        yield f"{blk.name}:"
+        # Phi nodes for real labels.
+        if blk.label is not None:
+            preds = predecessors.get(id(blk.label), [])
+            for arg_idx, arg in enumerate(blk.label.body.args):
+                ty = types.get(arg, "i64")
+                phi_parts = []
+                for pred_src, pred_args in preds:
+                    if arg_idx < len(pred_args):
+                        phi_parts.append(
+                            f"[ {bare_ref(pred_args[arg_idx])}, %{pred_src.name} ]"
+                        )
+                if phi_parts:
+                    yield f"  %{tracker.track_name(arg)} = phi {ty} {', '.join(phi_parts)}"
+        # Emit ops.
+        has_terminator = False
+        for op in blk.ops:
+            yield from _emit_op(op)
+            if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
+                has_terminator = True
+        # If no terminator, branch to next block or ret.
+        if not has_terminator:
+            if i + 1 < len(blocks):
+                yield f"  br label %{blocks[i + 1].name}"
+            else:
+                yield (
+                    "  ret void"
+                    if llvm_ret == "void"
+                    else f"  ret {typed_ref(f.body.result)}"
+                )
+
     yield "}"
 
 
