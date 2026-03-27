@@ -3,7 +3,7 @@ from builtin import Nil, Span
 type Label:
     data: Nil
 
-op label() -> Label:
+op label(initial_arguments: Span) -> Label:
     block body
 op branch<target: Label>(arguments: Span) -> Nil
 op conditional_branch<true_target: Label, false_target: Label>(condition, true_arguments: Span, false_arguments: Span) -> Nil

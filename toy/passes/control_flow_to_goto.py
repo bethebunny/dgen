@@ -1,10 +1,11 @@
 """Lower control_flow dialect to goto dialect.
 
-The body label lives inside the header. The header has two block parameters:
-%self (for back-edges) and %exit (codegen emits this as the fall-through
-after the header block). No separate exit label needed.
+Labels are expression blocks — they run when control reaches them, no explicit
+entry branch needed. The header has %self (for back-edges) and %exit (codegen
+emits this as the fall-through after the header block). Initial IV values are
+passed via the label's initial_arguments operand.
 
-ForOp is replaced by chain(%exit, entry_branch) via rewriter.replace_uses.
+ForOp is replaced by the header label itself via rewriter.replace_uses.
 """
 
 from __future__ import annotations
@@ -54,7 +55,11 @@ class ControlFlowToGoto(Pass):
             args=[body_iv],
             captures=[header_self] + list(op.body.captures),
         )
-        body_label = goto.LabelOp(name=f"loop_body{lid}", body=body_block)
+        body_label = goto.LabelOp(
+            name=f"loop_body{lid}",
+            initial_arguments=_pack([]),
+            body=body_block,
+        )
 
         # --- Header: compare, branch to body or %exit ---
         hi = ConstantOp(value=op.upper_bound.__constant__.to_json(), type=Index())
@@ -66,8 +71,11 @@ class ControlFlowToGoto(Pass):
             true_arguments=_pack([header_iv]),
             false_arguments=_pack([]),
         )
+
+        lo = ConstantOp(value=op.lower_bound.__constant__.to_json(), type=Index())
         header_label = goto.LabelOp(
             name=f"loop_header{lid}",
+            initial_arguments=_pack([lo]),
             body=dgen.Block(
                 result=cond_br,
                 parameters=[header_self, header_exit],
@@ -76,11 +84,9 @@ class ControlFlowToGoto(Pass):
             ),
         )
 
-        # --- Entry branch + replacement ---
-        lo = ConstantOp(value=op.lower_bound.__constant__.to_json(), type=Index())
-        entry_br = goto.BranchOp(target=header_label, arguments=_pack([lo]))
-
-        rewriter.replace_uses(op, entry_br)
+        # Replace ForOp with the header label. The label is an expression
+        # block — it runs when control reaches it. No entry branch needed.
+        rewriter.replace_uses(op, header_label)
 
         # Recurse into the body label's block to handle nested ForOps.
         self._run_block(body_label.body)
