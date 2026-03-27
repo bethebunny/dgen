@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import dgen
 from dgen import asm
-from dgen.block import Block, BlockArgument
-from dgen.graph import walk_ops
+from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.module import Module, _walk_all_ops
 
 
@@ -53,11 +52,16 @@ def _verify_block(
         return
     visited.add(block)
 
-    valid: set[dgen.Value] = set(block.parameters) | set(block.args)
+    valid: set[dgen.Value] = (
+        set(block.parameters) | set(block.args) | set(block.captures)
+    )
     for op in block.ops:
         valid.add(op)
 
-    if isinstance(block.result, (dgen.Op, BlockArgument)) and block.result not in valid:
+    if (
+        isinstance(block.result, (dgen.Op, BlockArgument, BlockParameter))
+        and block.result not in valid
+    ):
         raise ClosedBlockError(
             f"block.result references out-of-scope "
             f"{type(block.result).__name__} %{block.result.name}\n\n"
@@ -66,20 +70,39 @@ def _verify_block(
 
     for op in block.ops:
         for name, operand in op.operands:
-            if isinstance(operand, (dgen.Op, BlockArgument)) and operand not in valid:
+            if (
+                isinstance(operand, (dgen.Op, BlockArgument, BlockParameter))
+                and operand not in valid
+            ):
                 raise ClosedBlockError(
                     f"{type(op).__name__}.{name} references out-of-scope "
                     f"{type(operand).__name__} %{operand.name}\n\n"
                     + _annotated_module(module, op)
                 )
         for name, param in op.parameters:
-            if isinstance(param, (dgen.Op, BlockArgument)) and param not in valid:
+            if (
+                isinstance(param, (dgen.Op, BlockArgument, BlockParameter))
+                and param not in valid
+            ):
                 raise ClosedBlockError(
                     f"{type(op).__name__}.{name} references out-of-scope "
                     f"{type(param).__name__} %{param.name}\n\n"
                     + _annotated_module(module, op)
                 )
         for _, child_block in op.blocks:
+            # Captures must chain: every capture of a child block must be
+            # in scope in the parent. Otherwise replace_uses on the parent
+            # can't maintain the child's captures.
+            for capture in child_block.captures:
+                if (
+                    isinstance(capture, (dgen.Op, BlockArgument, BlockParameter))
+                    and capture not in valid
+                ):
+                    raise ClosedBlockError(
+                        f"child block captures out-of-scope "
+                        f"{type(capture).__name__} %{capture.name}\n\n"
+                        + _annotated_module(module, capture)
+                    )
             _verify_block(child_block, module, visited)
 
 
@@ -113,8 +136,7 @@ def verify_dag(module: Module) -> None:
         if value in path:
             raise CycleError(
                 f"Use-def cycle detected at %{value.name} "
-                f"({type(value).__name__})\n\n"
-                + _annotated_module(module, value)
+                f"({type(value).__name__})\n\n" + _annotated_module(module, value)
             )
         path.add(value)
         for _, operand in value.operands:

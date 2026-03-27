@@ -13,7 +13,7 @@ import json
 import struct
 
 import dgen
-from dgen.block import Block, BlockArgument
+from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.module import Module, PackOp
 from dgen.dialects.builtin import Nil
 from dgen.type import Constant, Type, Value
@@ -39,12 +39,12 @@ class Fingerprinter:
 
     def __init__(self) -> None:
         self._cache: dict[Value, bytes] = {}
-        self._arg_positions: dict[BlockArgument, int] = {}
+        self._arg_positions: dict[BlockArgument | BlockParameter, int] = {}
 
     def register_block(self, block: Block) -> None:
-        """Register block argument positions and recurse into nested blocks."""
-        for i, arg in enumerate(block.args):
-            self._arg_positions[arg] = i
+        """Register block argument/parameter positions and recurse into nested blocks."""
+        for i, val in enumerate([*block.parameters, *block.args]):
+            self._arg_positions[val] = i
         for op in block.ops:
             for _, nested in op.blocks:
                 self.register_block(nested)
@@ -79,7 +79,7 @@ class Fingerprinter:
 
     def _compute(self, value: Value) -> bytes:
         match value:
-            case BlockArgument(type=arg_type):
+            case BlockArgument(type=arg_type) | BlockParameter(type=arg_type):
                 pos = self._arg_positions[value]
                 return _hash_parts(
                     b"arg", pos.to_bytes(4, "big"), self._fingerprint_type(arg_type)

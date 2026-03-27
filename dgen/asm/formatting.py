@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from dgen.block import BlockArgument
+from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialects.builtin import Nil
 from dgen.module import PackOp
 
@@ -149,9 +149,8 @@ def type_asm(type_obj: Type, tracker: SlotTracker | None = None) -> str:
 # ===----------------------------------------------------------------------=== #
 
 
-def _format_block_arg(arg: BlockArgument, tracker: SlotTracker) -> str:
+def _format_block_arg(arg: BlockArgument | BlockParameter, tracker: SlotTracker) -> str:
     return f"%{tracker.track_name(arg)}: {format_expr(arg.type, tracker)}"
-
 
 
 def op_asm(
@@ -202,19 +201,25 @@ def op_asm(
             op_str += f"<{', '.join(param_parts)}>"
         op_str += f"({', '.join(operand_parts)})"
         parts.append(op_str)
+
+    def _format_block_header(name: str, block: Block) -> str:
+        args_str = ", ".join(_format_block_arg(a, tracker) for a in block.args)
+        header = name
+        if block.parameters:
+            params_str = ", ".join(
+                _format_block_arg(p, tracker) for p in block.parameters
+            )
+            header += f"<{params_str}>"
+        header += f"({args_str})"
+        if block.captures:
+            caps_str = ", ".join(f"%{tracker.track_name(v)}" for v in block.captures)
+            header += f" captures({caps_str})"
+        return header + ":"
+
     blocks = list(op.blocks)
     if blocks:
         first_block_name, first_block = blocks[0]
-        args_str = ", ".join(
-            _format_block_arg(a, tracker) for a in first_block.args
-        )
-        if first_block.parameters:
-            params_str = ", ".join(
-                _format_block_arg(p, tracker) for p in first_block.parameters
-            )
-            parts.append(f" {first_block_name}<{params_str}>({args_str}):")
-        else:
-            parts.append(f" {first_block_name}({args_str}):")
+        parts.append(f" {_format_block_header(first_block_name, first_block)}")
     else:
         parts.append("")
 
@@ -223,14 +228,7 @@ def op_asm(
 
     for block_idx, (block_name, block) in enumerate(blocks):
         if block_idx > 0:
-            args_str = ", ".join(_format_block_arg(a, tracker) for a in block.args)
-            if block.parameters:
-                params_str = ", ".join(
-                    _format_block_arg(p, tracker) for p in block.parameters
-                )
-                yield f"{block_name}<{params_str}>({args_str}):"
-            else:
-                yield f"{block_name}({args_str}):"
+            yield _format_block_header(block_name, block)
         for child_op in block.ops:
             if _is_sugar_op(child_op):
                 continue

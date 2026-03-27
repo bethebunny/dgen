@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import dgen
 
 
@@ -35,14 +37,15 @@ def placeholder_block() -> dgen.Block:
     return dgen.Block(result=dgen.Value(type=Nil()))
 
 
-def walk_ops(root: dgen.Value) -> list[dgen.Op]:
+def walk_ops(root: dgen.Value, *, stop: Iterable[dgen.Value] = ()) -> list[dgen.Op]:
     """Walk the use-def graph from root, return ops in topological order.
 
     - Only includes Op instances (not plain Values or BlockArguments).
     - Does not descend into an op's nested blocks.
     - Dependencies appear before dependents.
+    - Values in ``stop`` are treated as leaves (capture boundaries).
     """
-    visited: set[dgen.Value] = set()
+    visited: set[dgen.Value] = set(stop)
     order: list[dgen.Op] = []
 
     def visit(value: object) -> None:
