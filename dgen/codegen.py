@@ -207,9 +207,40 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
 
     _scan_preds(f.body, entry_sentinel)
 
-    # --- Emit ---
+    # --- Pre-register SSA names in emission order (LLVM requires sequential numbering) ---
 
-    _register_block_args(f.body)
+    def _preregister(block: dgen.Block) -> None:
+        """Register ops in the same order _emit will yield them."""
+        _register_block_args(block)
+        labels: list[goto.LabelOp] = []
+        saw_branch = False
+        for op in block.ops:
+            if isinstance(op, goto.LabelOp):
+                labels.append(op)
+                _register_block_args(op.body)
+                for param in op.body.parameters:
+                    tracker.track_name(param)
+            elif not saw_branch:
+                _register(op)
+                if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
+                    saw_branch = True
+        # Labels (sub-blocks) registered after pre-branch ops.
+        for label_op in labels:
+            _register(label_op)
+            _preregister(label_op.body)
+        # Post-branch continuation registered last.
+        saw_branch = False
+        for op in block.ops:
+            if isinstance(op, goto.LabelOp):
+                continue
+            if saw_branch:
+                _register(op)
+            elif isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
+                saw_branch = True
+
+    _preregister(f.body)
+
+    # --- Emit ---
     llvm_ret = (
         "void"
         if isinstance(f.result, builtin.Nil)
@@ -258,7 +289,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         elif isinstance(op, llvm.FcmpOp):
             yield f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
 
-    def _emit(block: dgen.Block) -> Iterator[str]:
+    def _emit(block: dgen.Block, *, is_func_body: bool = False) -> Iterator[str]:
         # Split block ops into: pre-branch ops, labels, and post-branch ops.
         # Pre-branch ops are the current block's instructions.
         # Labels start new basic blocks (emitted after the terminator).
@@ -287,7 +318,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             yield from _emit_op(op)
             if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
                 terminated = True
-        if not terminated:
+        if not terminated and is_func_body:
             yield (
                 "  ret void"
                 if llvm_ret == "void"
@@ -304,15 +335,24 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                 ]
                 if parts:
                     yield f"  %{tracker.track_name(arg)} = phi {types.get(arg, 'i64')} {', '.join(parts)}"
-            yield from _emit(label_op.body)
+            yield from _emit(label_op.body, is_func_body=False)
             for param in label_op.body.parameters:
                 if param.name and param.name.startswith("exit"):
                     yield f"{tracker.track_name(param)}:"
         # Post-branch continuation (fall-through after exit label).
+        post_terminated = False
         for op in post_branch:
             yield from _emit_op(op)
+            if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
+                post_terminated = True
+        if not post_terminated and (post_branch or labels):
+            yield (
+                "  ret void"
+                if llvm_ret == "void"
+                else f"  ret {typed_ref(f.body.result)}"
+            )
 
-    yield from _emit(f.body)
+    yield from _emit(f.body, is_func_body=True)
     yield "}"
 
 
