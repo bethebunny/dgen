@@ -8,21 +8,21 @@
   entry:
   exit0:
   loop_header0:
-    %i0 = phi i64 [ %12, %loop_body0 ]
+    %i0 = phi i64 [ %9, %loop_body0 ]
     %3 = icmp slt i64 %i0, 2
     br i1 %3, label %loop_body0, label %exit0
   loop_body0:
     %j0 = phi i64 [ %i0, %loop_header0 ]
+    %9 = add i64 %j0, 1
   exit1:
-    %12 = add i64 %j0, 1
     br label %loop_header0
   loop_header1:
-    %i1 = phi i64 [ %24, %loop_body1 ]
-    %16 = icmp slt i64 %i1, 2
-    br i1 %16, label %loop_body1, label %exit1
+    %i1 = phi i64 [ %23, %loop_body1 ]
+    %17 = icmp slt i64 %i1, 2
+    br i1 %17, label %loop_body1, label %exit1
   loop_body1:
     %j1 = phi i64 [ %i1, %loop_header1 ]
-    %24 = add i64 %j1, 1
+    %23 = add i64 %j1, 1
     br label %loop_header1
     ret void
   }
