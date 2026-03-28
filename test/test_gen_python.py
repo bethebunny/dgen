@@ -136,26 +136,14 @@ def test_generate_llvm_valid_python():
 
 
 # ---------------------------------------------------------------------------
-# Affine dialect tests
+# Control flow dialect tests
 # ---------------------------------------------------------------------------
-
-
-def test_generate_affine_cross_dialect_import():
-    mod = importlib.import_module("toy.dialects.affine")
-    code = generate_pyi(mod, "affine")
-    assert "from dgen.dialects.builtin import" in code
 
 
 def test_generate_control_flow_op_trait_base():
     mod = importlib.import_module("dgen.dialects.control_flow")
     code = generate_pyi(mod, "control_flow")
     assert "class ForOp(Op):" in code
-
-
-def test_generate_affine_valid_python():
-    mod = importlib.import_module("toy.dialects.affine")
-    code = generate_pyi(mod, "affine")
-    compile(code, "<affine.pyi>", "exec")
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +155,7 @@ def test_generate_toy_module_alias_import():
     """Module alias import (import ndbuffer) should appear in stub."""
     mod = importlib.import_module("toy.dialects.toy")
     code = generate_pyi(mod, "toy")
-    assert "import toy.dialects.ndbuffer as ndbuffer" in code
+    assert "import dgen.dialects.ndbuffer as ndbuffer" in code
 
 
 def test_generate_toy_cross_dialect_param():
@@ -204,7 +192,7 @@ def test_import_hook_loads_builtin():
 
 
 def test_import_hook_loads_toy():
-    """The .dgen import hook resolves cross-file imports (affine in toy)."""
+    """The .dgen import hook resolves cross-file imports (ndbuffer in toy)."""
     mod = importlib.import_module("toy.dialects.toy")
     assert hasattr(mod, "Tensor")
     assert hasattr(mod, "toy")
@@ -219,7 +207,7 @@ def test_import_hook_import_map_auto_resolved():
 
 
 def test_import_hook_toy_import_map_has_ndbuffer():
-    """Loader for toy.dgen resolves 'ndbuffer' → 'toy.dialects.ndbuffer'."""
+    """Loader for toy.dgen resolves 'ndbuffer' → 'dgen.dialects.ndbuffer'."""
     spec = sys.modules["toy.dialects.toy"].__spec__
     assert isinstance(spec.loader, DgenLoader)
-    assert spec.loader.import_map.get("ndbuffer") == "toy.dialects.ndbuffer"
+    assert spec.loader.import_map.get("ndbuffer") == "dgen.dialects.ndbuffer"

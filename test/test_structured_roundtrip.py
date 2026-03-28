@@ -1,14 +1,14 @@
-"""Round-trip tests for affine dialect: construct -> asm -> parse -> asm."""
+"""Round-trip tests for structured dialect: construct -> asm -> parse -> asm."""
 
 from dgen import asm
 from dgen.asm.parser import parse_module
 from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
 from dgen.testing import assert_ir_equivalent
-from toy.passes.control_flow_to_goto import ControlFlowToGoto
-from toy.passes.ndbuffer_to_memory import NDBufferToMemory
-from toy.passes.memory_to_llvm import MemoryToLLVM
-from toy.test.helpers import strip_prefix
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.testing import strip_prefix
 
 _compiler = Compiler([], IdentityPass())
 
@@ -189,7 +189,7 @@ def test_roundtrip_ssa_in_type_param():
 
 
 def test_ssa_shape_through_lowering():
-    """SSA shape reference form works through affine-to-LLVM lowering."""
+    """SSA shape reference form works through structured-to-LLVM lowering."""
     ir = strip_prefix("""
         |
         | import function

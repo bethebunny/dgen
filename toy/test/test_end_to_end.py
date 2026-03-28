@@ -1,12 +1,12 @@
-"""End-to-end tests: Toy source -> parse -> lower -> optimize -> affine -> LLVM IR."""
+"""End-to-end tests: Toy source -> parse -> lower -> optimize -> structured -> LLVM IR."""
 
 from dgen.compiler import Compiler, IdentityPass
 from dgen.module import Module
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.control_flow_to_goto import ControlFlowToGoto
-from toy.passes.ndbuffer_to_memory import NDBufferToMemory
-from toy.passes.memory_to_llvm import MemoryToLLVM
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.memory_to_llvm import MemoryToLLVM
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
 from toy.passes.toy_to_structured import ToyToStructured

@@ -14,7 +14,8 @@ from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, pack
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.dialects import control_flow
-from toy.dialects import ndbuffer, shape_constant, toy
+from dgen.dialects import ndbuffer
+from toy.dialects import shape_constant, toy
 
 from typing import TYPE_CHECKING
 

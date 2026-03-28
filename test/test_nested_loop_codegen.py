@@ -9,7 +9,7 @@ from dgen.asm.parser import parse_module
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.testing import strip_prefix
-from toy.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
 
 NESTED_FOR = strip_prefix("""

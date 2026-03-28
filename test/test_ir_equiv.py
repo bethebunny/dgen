@@ -10,7 +10,7 @@ from dgen.ir_diff import structural_diff
 from dgen.ir_equiv import Fingerprinter, graph_equivalent
 from dgen.module import ConstantOp
 from dgen.testing import strip_prefix
-from toy.dialects.ndbuffer import NDBuffer, Shape
+from dgen.dialects.ndbuffer import NDBuffer, Shape
 
 
 def test_identical_ops_same_fingerprint():

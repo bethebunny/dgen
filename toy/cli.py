@@ -14,9 +14,9 @@ from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.control_flow_to_goto import ControlFlowToGoto
-from toy.passes.memory_to_llvm import MemoryToLLVM
-from toy.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
 from toy.passes.toy_to_structured import ToyToStructured

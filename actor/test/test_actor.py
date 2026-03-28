@@ -13,9 +13,9 @@ from dgen.dialects.number import Float64
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.testing import strip_prefix
 from dgen.type import Memory
-from toy.passes.control_flow_to_goto import ControlFlowToGoto
-from toy.passes.memory_to_llvm import MemoryToLLVM
-from toy.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 
 actor_compiler: Compiler[Executable] = Compiler(
     passes=[
