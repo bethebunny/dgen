@@ -20,9 +20,9 @@ from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass
 from dgen.type import Memory, TypeType, type_constant
 from dgen.testing import strip_prefix
-from toy.passes.control_flow_to_goto import ControlFlowToGoto
-from toy.passes.ndbuffer_to_memory import NDBufferToMemory
-from toy.passes.memory_to_llvm import MemoryToLLVM
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.memory_to_llvm import MemoryToLLVM
 
 _compiler = Compiler([], IdentityPass())
 

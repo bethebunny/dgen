@@ -21,7 +21,8 @@ from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
-from toy.dialects import ndbuffer, toy
+from dgen.dialects import ndbuffer
+from toy.dialects import toy
 
 
 def _shape_of(val: dgen.Value) -> list[int]:

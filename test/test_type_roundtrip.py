@@ -24,7 +24,7 @@ from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, string_value
 from dgen.type import Memory
 from toy.dialects import shape_constant
-from toy.dialects.ndbuffer import NDBuffer, Shape
+from dgen.dialects.ndbuffer import NDBuffer, Shape
 from toy.dialects.toy import InferredShapeTensor, Tensor
 from dgen.testing import strip_prefix
 

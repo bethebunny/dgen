@@ -1,4 +1,4 @@
-"""Ch5 tests: Toy IR to Affine IR lowering."""
+"""Ch5 tests: Toy IR to structured IR lowering."""
 
 from dgen.asm.parser import parse_module
 from dgen.compiler import Compiler, IdentityPass
@@ -9,7 +9,7 @@ from toy.test.helpers import strip_prefix
 _compiler = Compiler([], IdentityPass())
 
 
-def lower_to_affine(m: Module) -> Module:
+def lower_to_structured(m: Module) -> Module:
     return ToyToStructured().run(m, _compiler)
 
 
@@ -24,7 +24,7 @@ def test_simple_constant(ir_snapshot):
         |     %1 : Nil = toy.print(%0)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot
 
 
 def test_transpose(ir_snapshot):
@@ -39,7 +39,7 @@ def test_transpose(ir_snapshot):
         |     %2 : Nil = toy.print(%1)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot
 
 
 def test_mul(ir_snapshot):
@@ -55,7 +55,7 @@ def test_mul(ir_snapshot):
         |     %3 : Nil = toy.print(%2)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot
 
 
 def test_add(ir_snapshot):
@@ -71,7 +71,7 @@ def test_add(ir_snapshot):
         |     %3 : Nil = toy.print(%2)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot
 
 
 def test_print(ir_snapshot):
@@ -85,7 +85,7 @@ def test_print(ir_snapshot):
         |     %1 : Nil = toy.print(%0)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot
 
 
 def test_3d_constant(ir_snapshot):
@@ -99,7 +99,7 @@ def test_3d_constant(ir_snapshot):
         |     %1 : Nil = toy.print(%0)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot
 
 
 def test_3d_add(ir_snapshot):
@@ -115,7 +115,7 @@ def test_3d_add(ir_snapshot):
         |     %3 : Nil = toy.print(%2)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot
 
 
 def test_3d_mul(ir_snapshot):
@@ -131,7 +131,7 @@ def test_3d_mul(ir_snapshot):
         |     %3 : Nil = toy.print(%2)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot
 
 
 def test_full_example(ir_snapshot):
@@ -149,4 +149,4 @@ def test_full_example(ir_snapshot):
         |     %5 : Nil = toy.print(%4)
     """)
     m = parse_module(ir_text)
-    assert lower_to_affine(m) == ir_snapshot
+    assert lower_to_structured(m) == ir_snapshot

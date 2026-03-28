@@ -44,7 +44,7 @@ def test_empty_non_label_group_in_mixed_block():
         |         %br : Nil = goto.branch<%self>([%next])
     """)
     module = parse_module(ir)
-    from toy.passes.control_flow_to_goto import ControlFlowToGoto
+    from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
     exe = Compiler([ControlFlowToGoto()], LLVMCodegen()).compile(module)
     assert "define" in exe.ir

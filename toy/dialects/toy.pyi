@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-import toy.dialects.ndbuffer as ndbuffer
-from dgen.dialects.builtin import Nil
+import dgen.dialects.ndbuffer as ndbuffer
+from dgen.dialects.builtin import Nil, Span, String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 

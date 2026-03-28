@@ -15,9 +15,9 @@ from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.staging import ConstantFold
 from dgen.verify import ClosedBlockError
 from toy.dialects import toy
-from toy.passes.control_flow_to_goto import ControlFlowToGoto
-from toy.passes.ndbuffer_to_memory import NDBufferToMemory
-from toy.passes.memory_to_llvm import MemoryToLLVM
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.testing import strip_prefix
 
 

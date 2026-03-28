@@ -24,9 +24,9 @@ Pipeline stages (in `toy/cli.py`):
 3. **Optimize** Toy IR → Toy IR (`toy/passes/optimize.py` — transpose folding, reshape elimination, dead code)
 4. **Shape inference** (`toy/passes/shape_inference.py`)
 5. **Lower** Toy → structured (`toy/passes/toy_to_structured.py` — loops, memory, arithmetic)
-6. **Lower** control flow → goto (`toy/passes/control_flow_to_goto.py` — for/while → labels)
-7. **Lower** ndbuffer → memory (`toy/passes/ndbuffer_to_memory.py`)
-8. **Lower** memory → LLVM (`toy/passes/memory_to_llvm.py`)
+6. **Lower** control flow → goto (`dgen/passes/control_flow_to_goto.py` — for/while → labels)
+7. **Lower** ndbuffer → memory (`dgen/passes/ndbuffer_to_memory.py`)
+8. **Lower** memory → LLVM (`dgen/passes/memory_to_llvm.py`)
 9. **Codegen** → LLVM IR text → JIT via llvmlite (`dgen/codegen.py`, three-phase: see `docs/codegen.md`)
 
 Implementation language: **Python**.
@@ -39,11 +39,11 @@ Implementation language: **Python**.
   - `asm/` — IR text formatting (`formatting.py`) and parsing (`parser.py`)
   - `dialects/builtin.pyi` — Builtin dialect type stubs (loaded at runtime from `builtin.dgen`)
   - `dialects/llvm.pyi` — LLVM dialect type stubs (loaded at runtime from `llvm.dgen`)
+  - `dialects/ndbuffer.pyi` — NDBuffer dialect type stubs (loaded at runtime from `ndbuffer.dgen`)
   - `codegen.py` — LLVM IR emission and JIT compilation via llvmlite
   - `layout.py` — Memory layout descriptors for types
 - `toy/` — Toy dialect implementation
   - `dialects/toy.pyi` — Toy dialect type stubs (loaded at runtime from `toy.dgen`)
-  - `dialects/affine.pyi` — Affine dialect type stubs (loaded at runtime from `affine.dgen`)
   - `parser/` — Toy language frontend (lexer, parser, AST, lowering to IR)
   - `passes/` — Lowering and optimization passes
   - `test/` — All tests (pytest)
@@ -140,7 +140,7 @@ To regenerate `.pyi` stubs (run from repo root):
 ```bash
 python -m dgen.gen dgen/dialects/builtin.dgen > dgen/dialects/builtin.pyi
 python -m dgen.gen dgen/dialects/llvm.dgen > dgen/dialects/llvm.pyi
-python -m dgen.gen toy/dialects/affine.dgen > toy/dialects/affine.pyi
+python -m dgen.gen dgen/dialects/ndbuffer.dgen > dgen/dialects/ndbuffer.pyi
 python -m dgen.gen toy/dialects/toy.dgen > toy/dialects/toy.pyi
 ```
 

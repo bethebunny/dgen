@@ -23,6 +23,7 @@ _DEFAULT_MAP: dict[str, str] = {
     "builtin": "dgen.dialects.builtin",
     "index": "dgen.dialects.index",
     "memory": "dgen.dialects.memory",
+    "ndbuffer": "dgen.dialects.ndbuffer",
     "number": "dgen.dialects.number",
 }
 

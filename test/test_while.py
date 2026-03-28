@@ -13,7 +13,7 @@ from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import control_flow
 from dgen.testing import assert_ir_equivalent, strip_prefix
-from toy.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
 
 # -- ASM round-trip tests --
