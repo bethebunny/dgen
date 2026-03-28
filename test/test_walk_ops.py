@@ -14,14 +14,13 @@ Contract:
 - Returns ops in topological order: dependencies before dependents.
 """
 
-import dgen
 from dgen import Block, Value
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, goto
+from dgen.dialects import goto
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
 from dgen.graph import walk_ops
-from dgen.module import ConstantOp, PackOp, pack
+from dgen.module import ConstantOp, pack
 
 
 def test_simple_chain():

@@ -8,7 +8,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function as FunctionType
-from dgen.module import ConstantOp, Module, PackOp, pack
+from dgen.module import ConstantOp, Module, pack
 from toy.dialects import shape_constant, toy
 from toy.parser.ast import (
     BinaryOp,
