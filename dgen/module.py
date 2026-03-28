@@ -34,8 +34,6 @@ class ConstantOp(Op, Constant):
     value: object
     type: Value[TypeType]
 
-    __operands__ = (("value", Type),)
-
     @cached_property
     def memory(self) -> Memory:
         if isinstance(self.value, Memory):

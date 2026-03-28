@@ -10,7 +10,7 @@ from collections.abc import Iterable, Sequence
 
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialects.builtin import Nil
-from dgen.module import PackOp
+from dgen.module import ConstantOp, PackOp
 
 from ..op import Op
 from ..type import Memory, Type
@@ -193,8 +193,8 @@ def op_asm(
     )
     parts = [f"%{result_name} : {type_str} = "]
     prefix = _dialect_prefix(dialect_name)
-    if asm_name == "constant" and dialect_name == "builtin":
-        parts.append(", ".join(param_parts + operand_parts))
+    if isinstance(op, ConstantOp):
+        parts.append(format_expr(op.value, tracker))
     else:
         op_str = f"{prefix}{asm_name}"
         if param_parts:

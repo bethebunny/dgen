@@ -11,8 +11,8 @@
     %wh0_i = phi i64 [ %6, %_blk3 ], [ 0, %_blk0 ]
     br label %_blk1
   _blk1:
-    %1 = icmp slt i64 %wh0_i, 2
-    br i1 %1, label %while_body0, label %exit0
+    %2 = icmp slt i64 %wh0_i, 2
+    br i1 %2, label %while_body0, label %exit0
   while_body0:
     %wb0_oi = phi i64 [ %wh0_i, %_blk1 ]
     br label %_blk2
@@ -23,8 +23,8 @@
     %wh1_j = phi i64 [ 0, %while_body1 ], [ 0, %_blk2 ]
     br label %_blk4
   _blk4:
-    %9 = icmp slt i64 %wh1_j, 2
-    br i1 %9, label %while_body1, label %exit1
+    %10 = icmp slt i64 %wh1_j, 2
+    br i1 %10, label %while_body1, label %exit1
   while_body1:
     %wb1_j2 = phi i64 [ %wh1_j, %_blk4 ]
     br label %while_header1
@@ -49,8 +49,8 @@
     %wh0_i = phi i64 [ %6, %while_body0 ], [ 0, %_blk0 ]
     br label %_blk1
   _blk1:
-    %1 = icmp slt i64 %wh0_i, 10
-    br i1 %1, label %while_body0, label %exit0
+    %2 = icmp slt i64 %wh0_i, 10
+    br i1 %2, label %while_body0, label %exit0
   while_body0:
     %wb0_i = phi i64 [ %wh0_i, %_blk1 ]
     %6 = add i64 %wb0_i, 1
