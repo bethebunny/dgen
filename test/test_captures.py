@@ -28,7 +28,7 @@ def test_roundtrip_captures():
     """)
     module = parse_module(ir)
     (func,) = module.ops
-    label = func.body.ops[0]
+    label = func.body.ops[-1]
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.captures) == 1
     assert label.body.captures[0].name == "x"
@@ -214,7 +214,7 @@ def test_replace_uses_updates_captures():
 
     Rewriter(func.body).replace_uses(old_arg, new_arg)
 
-    label = func.body.ops[0]
+    label = func.body.ops[-1]
     assert isinstance(label, goto.LabelOp)
     assert new_arg in label.body.captures
     assert old_arg not in label.body.captures
@@ -244,9 +244,9 @@ def test_replace_uses_updates_chained_captures():
 
     Rewriter(func.body).replace_uses(old_arg, new_arg)
 
-    mid_label = func.body.ops[0]
+    mid_label = func.body.ops[-1]
     assert new_arg in mid_label.body.captures
-    inner_label = mid_label.body.ops[0]
+    inner_label = mid_label.body.ops[-1]
     assert new_arg in inner_label.body.captures
     assert inner_label.body.ops[-1].lhs is new_arg
 
@@ -282,9 +282,6 @@ def test_constant_captured_not_ambient():
     # (not in the body's ops).
     func = module.functions[0]
     label = func.body.ops[-1]
-    assert any(
-        isinstance(op, type(func.body.ops[0])) and op.name == "c"
-        for op in func.body.ops
-    )
+    assert any(op.name == "c" for op in func.body.ops)
     # %c is NOT in the label body's ops — it's a capture boundary
     assert not any(op.name == "c" for op in label.body.ops)

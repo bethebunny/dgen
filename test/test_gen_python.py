@@ -22,11 +22,10 @@ def test_generate_builtin_header():
     assert 'Dialect("builtin")' in code
 
 
-def test_generate_builtin_trait():
+def test_generate_builtin_no_trait():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
-    assert "class HasSingleBlock:" in code
-    assert "    ..." in code
+    assert "HasSingleBlock" not in code
 
 
 def test_generate_number_simple_type():
@@ -44,7 +43,7 @@ def test_generate_builtin_parametric_type():
     assert "n: Value[Index]" in code
 
 
-def test_generate_builtin_list_type():
+def test_generate_builtin_span_type():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
     assert "class Tuple(Type):" in code
@@ -87,7 +86,7 @@ def test_generate_function_type():
 def test_generate_function_define_op_with_block():
     mod = importlib.import_module("dgen.dialects.function")
     code = generate_pyi(mod, "function")
-    assert "class FunctionOp(HasSingleBlock, Op):" in code
+    assert "class FunctionOp(Op):" in code
     assert "body: Block" in code
     assert "Block" in code.split("from dgen import")[1].split("\n")[0]
 
@@ -150,7 +149,7 @@ def test_generate_affine_cross_dialect_import():
 def test_generate_control_flow_op_trait_base():
     mod = importlib.import_module("dgen.dialects.control_flow")
     code = generate_pyi(mod, "control_flow")
-    assert "class ForOp(HasSingleBlock, Op):" in code
+    assert "class ForOp(Op):" in code
 
 
 def test_generate_affine_valid_python():

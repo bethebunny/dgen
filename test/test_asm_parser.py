@@ -114,7 +114,7 @@ class TestReadList:
 class TestParseErrors:
     """Error reporting for common ASM mistakes."""
 
-    def test_bare_list_for_parameterized_type(self) -> None:
+    def test_bare_span_for_parameterized_type(self) -> None:
         ir = strip_prefix("""
             | import function
             | import toy

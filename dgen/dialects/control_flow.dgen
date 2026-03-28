@@ -1,12 +1,10 @@
-from builtin import Index, Nil, HasSingleBlock, List
+from builtin import Index, Nil, Span
 
-op for<lower_bound: Index, upper_bound: Index>(initial_arguments: List) -> Nil:
+op for<lower_bound: Index, upper_bound: Index>(initial_arguments: Span) -> Nil:
     block body
-    has trait HasSingleBlock
-op while(initial_arguments: List) -> Nil:
+op while(initial_arguments: Span) -> Nil:
     block condition
     block body
-    has trait HasSingleBlock
-op if(condition: Index, then_arguments: List, else_arguments: List) -> Type:
+op if(condition: Index, then_arguments: Span, else_arguments: Span) -> Type:
     block then_body
     block else_body

@@ -1,5 +1,3 @@
-trait HasSingleBlock
-
 from index import Index
 
 type Nil:
@@ -23,11 +21,7 @@ type Pointer<pointee: Type>:
 type Span<pointee: Type>:
     layout Span
 
-type List<element_type: Type>:
-    storage: Span<element_type>
-
-type Tuple<types: List<Type>>:
+type Tuple<types: Span<Type>>:
     layout Record
 
-op list_get<index: Index>(list: List)
 op chain(lhs, rhs) -> Type

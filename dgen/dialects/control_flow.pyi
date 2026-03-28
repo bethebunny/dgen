@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import HasSingleBlock, Nil
+from dgen.dialects.builtin import Nil, Span
 from dgen.dialects.index import Index
 
 control_flow = Dialect("control_flow")
 
 @dataclass(eq=False, kw_only=True)
-class ForOp(HasSingleBlock, Op):
+class ForOp(Op):
     lower_bound: Value[Index]
     upper_bound: Value[Index]
     initial_arguments: Value
@@ -19,7 +20,7 @@ class ForOp(HasSingleBlock, Op):
     body: Block
 
 @dataclass(eq=False, kw_only=True)
-class WhileOp(HasSingleBlock, Op):
+class WhileOp(Op):
     initial_arguments: Value
     type: Type = Nil()
     condition: Block

@@ -18,9 +18,9 @@ def test_parse_multiple_imports():
 
 
 def test_parse_trait():
-    result = parse("trait HasSingleBlock\n")
+    result = parse("trait SomeTrait\n")
     assert len(result.traits) == 1
-    assert result.traits[0].name == "HasSingleBlock"
+    assert result.traits[0].name == "SomeTrait"
 
 
 def test_parse_simple_type():
@@ -118,7 +118,7 @@ def test_parse_op_with_default_operand():
     assert op.operands[0].default == "Nil"
 
 
-def test_parse_list_operand():
+def test_parse_span_operand():
     result = parse("op pack(values: list<Type>) -> List\n")
     op = result.ops[0]
     assert op.operands[0].type is not None
@@ -126,7 +126,7 @@ def test_parse_list_operand():
     assert op.operands[0].type.args[0].name == "Type"
 
 
-def test_parse_op_with_list_param():
+def test_parse_op_with_span_param():
     result = parse("op phi<labels: list<String>>(values: list<Type>) -> Type\n")
     op = result.ops[0]
     assert op.params[0].type.name == "list"
@@ -172,7 +172,7 @@ def test_parse_full_file():
     src = """\
 from builtin import Index, Nil
 
-trait HasSingleBlock
+trait SomeTrait
 
 type Shape<rank: Index>:
     dims: Array<Index, rank>
@@ -254,7 +254,7 @@ def test_parse_has_trait_on_type():
     assert result.types[0].traits == ["FloatingPoint"]
 
 
-def test_parse_bare_list_operand():
+def test_parse_bare_span_operand():
     """Bare list (no inner type) in operand position parses as a type named 'list'."""
     result = parse("op pack(values: list)\n")
     op = result.ops[0]
@@ -263,9 +263,9 @@ def test_parse_bare_list_operand():
 
 
 def test_parse_has_trait_on_op():
-    src = "op for() -> Nil:\n    block body\n    has trait HasSingleBlock\n"
+    src = "op for() -> Nil:\n    block body\n    has trait SomeTrait\n"
     result = parse(src)
-    assert result.ops[0].traits == ["HasSingleBlock"]
+    assert result.ops[0].traits == ["SomeTrait"]
     assert result.ops[0].blocks == ["body"]
 
 
@@ -305,9 +305,9 @@ def test_parse_trait_with_static_default():
 
 
 def test_parse_bare_trait_still_works():
-    result = parse("trait HasSingleBlock\n")
+    result = parse("trait SomeTrait\n")
     assert len(result.traits) == 1
-    assert result.traits[0].name == "HasSingleBlock"
+    assert result.traits[0].name == "SomeTrait"
     assert result.traits[0].statics == []
 
 

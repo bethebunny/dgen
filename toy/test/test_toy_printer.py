@@ -7,7 +7,7 @@ from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function
-from dgen.module import ConstantOp, Module, PackOp
+from dgen.module import ConstantOp, Module, PackOp, pack
 from toy.dialects import shape_constant, toy
 
 
@@ -76,7 +76,7 @@ def test_call_op():
     pack = PackOp(
         name="p",
         values=[v1, v3],
-        type=builtin.List(element_type=inferred()),
+        type=builtin.Span(pointee=inferred()),
     )
     op = function.CallOp(
         name="4",
@@ -158,19 +158,13 @@ def test_full_module(ir_snapshot):
     )
     r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
     mt_ref = dgen.Value(name="multiply_transpose", type=builtin.Nil())
-    pack4 = PackOp(
-        values=[r1, r3],
-        type=builtin.List(element_type=inferred()),
-    )
+    pack4 = pack([r1, r3])
     function.CallOp(
         callee=mt_ref,
         arguments=pack4,
         type=inferred(),
     )
-    pack5 = PackOp(
-        values=[r3, r1],
-        type=builtin.List(element_type=inferred()),
-    )
+    pack5 = pack([r3, r1])
     call5 = function.CallOp(
         callee=mt_ref,
         arguments=pack5,
