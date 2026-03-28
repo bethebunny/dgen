@@ -31,6 +31,15 @@ class Value(Generic[T]):
             yield name, getattr(self, name)
 
     @property
+    def dependencies(self) -> Iterator[Value]:
+        """All Value dependencies for use-def graph traversal.
+
+        Base Value has no dependencies — it is a leaf in walk_ops.
+        """
+        return
+        yield
+
+    @property
     def __constant__(self) -> Memory[T]:
         raise NotImplementedError
 
@@ -127,6 +136,16 @@ class Type(Value["TypeType"]):
     def parameters(self) -> Iterator[tuple[str, Value]]:
         for name, field in self.__params__:
             yield name, getattr(self, name)
+
+    @property
+    def dependencies(self) -> Iterator[Value]:
+        for _, param in self.parameters:
+            if isinstance(param, list):
+                for item in param:
+                    if isinstance(item, Value):
+                        yield item
+            elif isinstance(param, Value):
+                yield param
 
 
 @dataclass(eq=False, kw_only=True)

@@ -40,57 +40,23 @@ def placeholder_block() -> dgen.Block:
 def walk_ops(root: dgen.Value, *, stop: Iterable[dgen.Value] = ()) -> list[dgen.Op]:
     """Return all ops that are transitive dependencies of root, in the same block.
 
-    Follows dependency edges: operands, parameters, types, block captures,
-    and block argument types. Does NOT descend into nested block bodies —
-    each block is its own walk scope. Values in ``stop`` are leaves (capture
-    boundaries).
+    Walks ``value.dependencies`` recursively. Does NOT descend into nested
+    block bodies — each block is its own walk scope. Values in ``stop`` are
+    leaves (capture boundaries).
 
     Returns Op instances in topological order: dependencies before dependents.
     """
     visited: set[dgen.Value] = set(stop)
     order: list[dgen.Op] = []
 
-    def visit(value: object) -> None:
-        if isinstance(value, list):
-            for item in value:
-                visit(item)
-            return
-        if not isinstance(value, dgen.Value):
-            # Traverse Type params to find SSA-valued references
-            if isinstance(value, dgen.Type):
-                for param_name, _ in value.__params__:
-                    visit(getattr(value, param_name))
-            return
+    def visit(value: dgen.Value) -> None:
         if value in visited:
             return
         visited.add(value)
-
-        # Type is a Value subclass — traverse its params to find SSA-valued refs
-        if isinstance(value, dgen.Type):
-            for param_name, _ in value.__params__:
-                visit(getattr(value, param_name))
-
-        if not isinstance(value, dgen.Op):
-            return
-
-        # Visit dependencies first (both operands and parameter values)
-        for _, operand in value.operands:
-            visit(operand)
-        for _, param in value.parameters:
-            visit(param)
-        # Visit type (may be an SSA value or a Type with SSA-valued params)
-        visit(value.type)
-        # Visit block captures, parameter types, and arg types.
-        # Captures are parent-scope values the block depends on.
-        for _, block in value.blocks:
-            for capture in block.captures:
-                visit(capture)
-            for param in block.parameters:
-                visit(param.type)
-            for arg in block.args:
-                visit(arg.type)
-
-        order.append(value)
+        for dep in value.dependencies:
+            visit(dep)
+        if isinstance(value, dgen.Op):
+            order.append(value)
 
     visit(root)
     return order
