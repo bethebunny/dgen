@@ -17,7 +17,6 @@ from dgen.dialects import builtin, control_flow, function, goto, llvm
 from dgen.module import ConstantOp, Module, PackOp, string_value
 from dgen.layout import Layout
 from dgen.compiler import Compiler, IdentityPass
-from dgen.passes.builtin_to_llvm import BuiltinToLLVMLowering
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.type import Constant, Memory, Value
 
@@ -544,6 +543,14 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             yield f"  br i1 %{tracker.track_name(op.condition)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
         elif isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
             pass
+        elif isinstance(op, function.CallOp):
+            a = ", ".join(typed_ref(v) for v in unpack(op.arguments))
+            callee = op.callee.name
+            yield (
+                f"  call void @{callee}({a})"
+                if isinstance(op.type, builtin.Nil)
+                else f"  %{name} = call {types[op]} @{callee}({a})"
+            )
         elif isinstance(op, llvm.CallOp):
             a = ", ".join(typed_ref(v) for v in unpack(op.args))
             callee = string_value(op.callee)
@@ -680,7 +687,6 @@ class Executable:
 def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
     """Emit LLVM IR and bundle with execution metadata."""
     _dummy = Compiler([], IdentityPass())
-    module = BuiltinToLLVMLowering().run(module, _dummy)
     module = AlgebraToLLVM().run(module, _dummy)
     ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]

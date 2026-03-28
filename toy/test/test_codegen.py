@@ -6,7 +6,6 @@ from dgen.module import Module
 from dgen.codegen import emit_llvm_ir
 from dgen.compiler import Compiler
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVMLowering
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.control_flow_to_goto import ControlFlowToGoto
@@ -44,7 +43,6 @@ def test_transpose_phi_emission():
             ControlFlowToGoto(),
             NDBufferToMemory(),
             MemoryToLLVM(),
-            BuiltinToLLVMLowering(),
             AlgebraToLLVM(),
         ],
         exit=LowerLLVMToLLVMIR(),
