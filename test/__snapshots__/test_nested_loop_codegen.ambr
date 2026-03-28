@@ -11,8 +11,8 @@
     %i0 = phi i64 [ %9, %_blk3 ], [ 0, %_blk0 ]
     br label %_blk1
   _blk1:
-    %3 = icmp slt i64 %i0, 2
-    br i1 %3, label %loop_body0, label %exit0
+    %4 = icmp slt i64 %i0, 2
+    br i1 %4, label %loop_body0, label %exit0
   loop_body0:
     %j0 = phi i64 [ %i0, %_blk1 ]
     br label %_blk2
@@ -23,8 +23,8 @@
     %i1 = phi i64 [ %20, %loop_body1 ], [ 0, %_blk2 ]
     br label %_blk4
   _blk4:
-    %14 = icmp slt i64 %i1, 2
-    br i1 %14, label %loop_body1, label %exit1
+    %15 = icmp slt i64 %i1, 2
+    br i1 %15, label %loop_body1, label %exit1
   loop_body1:
     %j1 = phi i64 [ %i1, %_blk4 ]
     %20 = add i64 %j1, 1

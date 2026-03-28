@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Iterator
 from typing import Iterable
 
 import dgen
@@ -70,6 +71,15 @@ class Block:
     args: list[BlockArgument] = field(default_factory=list)
     parameters: list[BlockParameter] = field(default_factory=list)
     captures: list[dgen.Value] = field(default_factory=list)
+
+    @property
+    def dependencies(self) -> Iterator[dgen.Value]:
+        """Outer-scope Value dependencies: captures and argument/parameter types."""
+        yield from self.captures
+        for param in self.parameters:
+            yield param.type
+        for arg in self.args:
+            yield arg.type
 
     @property
     def ops(self) -> list[dgen.Op]:

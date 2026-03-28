@@ -18,6 +18,8 @@ class Value(Generic[T]):
     """Base class for SSA values."""
 
     __params__: ClassVar[Fields] = ()
+    __operands__: ClassVar[Fields] = ()
+    __blocks__: ClassVar[tuple[str, ...]] = ()
     name: str | None = None
     type: Value[TypeType]
 
@@ -31,13 +33,28 @@ class Value(Generic[T]):
             yield name, getattr(self, name)
 
     @property
-    def dependencies(self) -> Iterator[Value]:
-        """All Value dependencies for use-def graph traversal.
+    def operands(self) -> Iterator[tuple[str, Value]]:
+        for name, _ in self.__operands__:
+            yield name, getattr(self, name)
 
-        Base Value has no dependencies — it is a leaf in walk_ops.
-        """
-        return
-        yield
+    @property
+    def blocks(self) -> Iterator[tuple[str, dgen.Block]]:
+        for name in self.__blocks__:
+            yield name, getattr(self, name)
+
+    @property
+    def dependencies(self) -> Iterator[Value]:
+        """All Value dependencies for use-def graph traversal."""
+        yield self.type
+        for _, param in self.parameters:
+            if isinstance(param, list):
+                yield from param
+            else:
+                yield param
+        for _, operand in self.operands:
+            yield operand
+        for _, block in self.blocks:
+            yield from block.dependencies
 
     @property
     def __constant__(self) -> Memory[T]:
@@ -139,12 +156,12 @@ class Type(Value["TypeType"]):
 
     @property
     def dependencies(self) -> Iterator[Value]:
+        # Type.type is always TypeType() — a leaf with no dependencies.
+        # Only yield params, skipping the metatype to avoid useless traversal.
         for _, param in self.parameters:
             if isinstance(param, list):
-                for item in param:
-                    if isinstance(item, Value):
-                        yield item
-            elif isinstance(param, Value):
+                yield from param
+            else:
                 yield param
 
 

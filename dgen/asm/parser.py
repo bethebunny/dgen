@@ -271,6 +271,11 @@ def op_statement(parser: ASMParser) -> Op:
         parser.name_table[name] = op
         return op
     op_cls, parameters, operands, blocks = op_expression(parser)
+    if issubclass(op_cls, ConstantOp):
+        assert len(operands) == 1
+        op = ConstantOp(name=name, value=operands[0], type=pre_type)
+        parser.name_table[name] = op
+        return op
     kwargs: dict[str, object] = {"name": name}
     if pre_type is not None:
         kwargs["type"] = pre_type
@@ -339,8 +344,6 @@ def _coerce_operand(
             field_type, builtin.Span
         ):
             return _pack_list(parser, value, field_type)
-        return value
-    if issubclass(op_cls, ConstantOp):
         return value
     # For polymorphic ops (field_type is base Type), infer concrete type from
     # the explicit result type annotation when available.
