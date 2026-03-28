@@ -65,14 +65,8 @@ def _is_type_kinded(param_type: type[Type]) -> bool:
     return param_type is Type or issubclass(param_type, TypeType)
 
 
-def _is_list_of_types(param_type: type[Type]) -> bool:
-    """True when *param_type* holds a list of types (e.g. the builtin List<Type>).
-
-    A type qualifies when it has a type-kinded param AND its layout is
-    Span-based (i.e. it stores elements as a variable-length array).
-    This distinguishes List<Type> (Span layout) from Function<Type>
-    (Void layout).
-    """
+def _is_span_of_types(param_type: type[Type]) -> bool:
+    """True when *param_type* is a Span whose element is type-kinded."""
     params: tuple[tuple[str, type[Type]], ...] = getattr(param_type, "__params__", ())
     if not any(_is_type_kinded(pt) for _, pt in params):
         return False
@@ -146,7 +140,7 @@ def _make_layout(
         # (e.g. Tuple<types: List<Type>>: layout Record).
         if ctor is layout.Record and (
             lp := next(
-                (p for p in td.params if _is_list_of_types(resolved_params[p.name])),
+                (p for p in td.params if _is_span_of_types(resolved_params[p.name])),
                 None,
             )
         ):
@@ -178,8 +172,6 @@ def _make_layout(
 
 
 def _annotation_for_param(param_type: type[Type]) -> str:
-    if _is_list_of_types(param_type):
-        return "list[Value[dgen.TypeType]]"
     if _is_type_kinded(param_type):
         return "Value[dgen.TypeType]"
     return f"Value[{param_type.__name__}]"

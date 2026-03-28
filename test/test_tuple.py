@@ -8,26 +8,27 @@ from dgen.asm.parser import parse_module
 from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import Index, String, Tuple
 from dgen.dialects.number import Float64
+from dgen.module import pack
 from dgen.type import _type_from_dict, type_constant
 from dgen.testing import strip_prefix
 
 
 def test_tuple_construction():
     """Tuple<[index.Index, String]> constructs with a list of types."""
-    t = Tuple(types=[Index(), String()])
-    assert len(t.types) == 2
+    t = Tuple(types=pack([Index(), String()]))
+    assert len(list(t.types)) == 2
 
 
 def test_tuple_layout():
     """Tuple<[index.Index, String]> has Record layout with fields "0", "1"."""
-    t = Tuple(types=[Index(), String()])
+    t = Tuple(types=pack([Index(), String()]))
     expected = layout.Record([("0", layout.Int()), ("1", layout.String())])
     assert t.__layout__ == expected
 
 
 def test_empty_tuple_layout():
     """Tuple<[]> has empty Record layout (zero bytes)."""
-    t = Tuple(types=[])
+    t = Tuple(types=pack([]))
     expected = layout.Record([])
     assert t.__layout__ == expected
     assert t.__layout__.byte_size == 0
@@ -35,13 +36,13 @@ def test_empty_tuple_layout():
 
 def test_tuple_type_asm_format():
     """Tuple<[index.Index, String]> formats as Tuple<[index.Index, String]>."""
-    t = Tuple(types=[Index(), String()])
+    t = Tuple(types=pack([Index(), String()]))
     assert type_asm(t) == "Tuple<[index.Index, String]>"
 
 
 def test_empty_tuple_asm_format():
     """Tuple<[]> formats as Tuple<[]>."""
-    t = Tuple(types=[])
+    t = Tuple(types=pack([]))
     assert type_asm(t) == "Tuple<[]>"
 
 
@@ -60,7 +61,7 @@ def test_tuple_constant_roundtrip():
 
 def test_tuple_type_constant_serialization():
     """Tuple.__constant__ serializes types list as a proper list of dicts."""
-    t = Tuple(types=[Index(), String()])
+    t = Tuple(types=pack([Index(), String()]))
     data = t.__constant__.to_json()
     assert data == {
         "tag": "builtin.Tuple",
@@ -70,18 +71,19 @@ def test_tuple_type_constant_serialization():
 
 def test_tuple_type_from_dict_roundtrip():
     """Tuple type round-trips through __constant__ → _type_from_dict."""
-    t = Tuple(types=[Index(), String()])
+    t = Tuple(types=pack([Index(), String()]))
     data = t.__constant__.to_json()
     reconstructed = _type_from_dict(data)
     assert isinstance(reconstructed, Tuple)
-    assert len(reconstructed.types) == 2
-    assert isinstance(type_constant(reconstructed.types[0]), Index)
-    assert isinstance(type_constant(reconstructed.types[1]), String)
+    types = list(reconstructed.types)
+    assert len(types) == 2
+    assert isinstance(type_constant(types[0]), Index)
+    assert isinstance(type_constant(types[1]), String)
 
 
 def test_tuple_three_types():
     """Tuple<[index.Index, Float64, Index]> layout has three fields."""
-    t = Tuple(types=[Index(), Float64(), Index()])
+    t = Tuple(types=pack([Index(), Float64(), Index()]))
     expected = layout.Record(
         [
             ("0", layout.Int()),

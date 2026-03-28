@@ -29,13 +29,9 @@ T = TypeVar("T")
 
 
 def _walk_inputs(op: dgen.Op) -> Iterator[dgen.Value]:
-    """Append all parameter and operand Values to worklist, flattening lists."""
+    """Yield all parameter and operand Values."""
     for _, val in itertools.chain(op.parameters, op.operands):
-        if isinstance(val, list):
-            # TODO: remove this case once we push through Tuple types
-            yield from (v for v in val if isinstance(v, dgen.Value))
-        elif isinstance(val, dgen.Value):
-            yield val
+        yield val
 
 
 def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
@@ -149,14 +145,7 @@ def _resolve_comptime_field(
 
 def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
     """Get all Value inputs from a set of fields, flattening list-valued ones."""
-    result: list[dgen.Value] = []
-    for name, _ in fields:
-        val = getattr(op, name)
-        if isinstance(val, list):
-            result.extend(v for v in val if isinstance(v, dgen.Value))
-        elif isinstance(val, dgen.Value):
-            result.append(val)
-    return result
+    return [getattr(op, name) for name, _ in fields]
 
 
 def compute_stages(func: FunctionOp) -> dict[dgen.Value, int]:

@@ -80,6 +80,11 @@ class PackOp(Op):
     def replace_operand(self, old: Value, new: Value) -> None:
         self.values = [new if v is old else v for v in self.values]
 
+    @property
+    def __constant__(self) -> Memory:
+        json_list = [v.__constant__.to_json() for v in self.values]
+        return Memory.from_json(self.type, json_list)
+
 
 def pack(values: Iterable[Value] = ()) -> PackOp:
     """Create a PackOp, inferring the element type from the values."""

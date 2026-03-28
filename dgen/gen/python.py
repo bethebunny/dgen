@@ -12,7 +12,7 @@ import dataclasses
 from collections.abc import Iterator
 from types import ModuleType
 
-from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
+from dgen import Block, Dialect, Op, Type, TypeType, Value
 from dgen.type import Constant
 
 _DGEN_CORE: frozenset[type] = frozenset({Type, Op, Value, Block, TypeType})
@@ -25,17 +25,6 @@ _DGEN_CORE: frozenset[type] = frozenset({Type, Op, Value, Block, TypeType})
 
 def _is_type_kinded(param_type: type[Type]) -> bool:
     return param_type is Type or issubclass(param_type, TypeType)
-
-
-def _is_list_of_types(param_type: type[Type]) -> bool:
-    params: tuple[tuple[str, type[Type]], ...] = getattr(param_type, "__params__", ())
-    if not any(_is_type_kinded(pt) for _, pt in params):
-        return False
-    try:
-        kwargs = {name: TypeType() for name, pt in params if _is_type_kinded(pt)}
-        return isinstance(param_type(**kwargs).__layout__, layout.Span)
-    except Exception:
-        return False
 
 
 def _own_fields(cls: type) -> list[dataclasses.Field[object]]:
@@ -61,8 +50,6 @@ def _stub_repr(value: object) -> str:
 
 def _param_annotation(param_type: type[Type], type_to_name: dict[type, str]) -> str:
     """Annotation string for a compile-time parameter field."""
-    if _is_list_of_types(param_type):
-        return "list[Value[dgen.TypeType]]"
     if _is_type_kinded(param_type):
         return "Value[dgen.TypeType]"
     return f"Value[{type_to_name.get(param_type, param_type.__name__)}]"
