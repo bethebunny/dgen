@@ -154,16 +154,6 @@ class Type(Value["TypeType"]):
         for name, field in self.__params__:
             yield name, getattr(self, name)
 
-    @property
-    def dependencies(self) -> Iterator[Value]:
-        # Type.type is always TypeType() — a leaf with no dependencies.
-        # Only yield params, skipping the metatype to avoid useless traversal.
-        for _, param in self.parameters:
-            if isinstance(param, list):
-                yield from param
-            else:
-                yield param
-
 
 @dataclass(eq=False, kw_only=True)
 class Constant(Value[T]):
