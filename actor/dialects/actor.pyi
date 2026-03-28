@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import HasSingleBlock, Nil
-from dgen.dialects.index import Index
+from dgen.dialects.builtin import HasSingleBlock, Index, Nil
 
 actor = Dialect("actor")
 
