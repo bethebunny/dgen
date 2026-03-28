@@ -13,9 +13,8 @@ from typing import ClassVar
 
 from dgen import Constant, Dialect, Op, Type, TypeType, Value
 from dgen.dialects.builtin import (
-    HasSingleBlock,
-    List,
     Nil,
+    Span,
     String,
     builtin,
 )
@@ -87,7 +86,7 @@ class PackOp(Op):
 def pack(values: Iterable[Value] = ()) -> PackOp:
     """Create a PackOp, inferring the element type from the values."""
     vals = list(values)
-    return PackOp(values=vals, type=List(element_type=vals[0].type if vals else Nil()))
+    return PackOp(values=vals, type=Span(pointee=vals[0].type if vals else Nil()))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -186,5 +185,4 @@ class Module:
 # Monkey-patches (activated on import)
 # ===----------------------------------------------------------------------=== #
 
-HasSingleBlock.__annotations__["__blocks__"] = ClassVar[tuple[str, ...]]
 builtin.type("Type")(TypeType)

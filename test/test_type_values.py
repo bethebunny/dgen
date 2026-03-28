@@ -249,15 +249,15 @@ def test_type_constant_jit_return():
     assert result.to_json() == {"tag": "index.Index"}
 
 
-def test_list_with_ssa_element_type():
-    """List<%t> — SSA type value as element_type param, round-trips through ASM."""
+def test_span_with_ssa_element_type():
+    """Span<%t> — SSA type value as pointee param, round-trips through ASM."""
     ir = strip_prefix("""
         | import function
         | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %xs : List<%t> = [1, 2, 3]
+        |     %xs : Span<%t> = [1, 2, 3]
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -265,8 +265,8 @@ def test_list_with_ssa_element_type():
     ops = module.functions[0].body.ops
     t_op = ops[0]
     xs_op = ops[1]
-    assert isinstance(xs_op.type, builtin.List)
-    assert xs_op.type.element_type is t_op
+    assert isinstance(xs_op.type, builtin.Span)
+    assert xs_op.type.pointee is t_op
     assert xs_op.type.ready
     assert xs_op.type.__layout__ == layout.Span(layout.Int())
 

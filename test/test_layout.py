@@ -72,18 +72,18 @@ def test_string_type_asm_no_params():
     assert type_asm(s) == "String"
 
 
-def test_list_fatpointer_layout():
-    """List type uses Span(element.__layout__) — 16 bytes, not inline."""
-    list_type = builtin.List(element_type=builtin.Index())
+def test_span_fatpointer_layout():
+    """Span type uses Span(pointee.__layout__) — 16 bytes, not inline."""
+    list_type = builtin.Span(pointee=builtin.Index())
     ly = list_type.__layout__
     assert isinstance(ly, Span)
     assert ly.byte_size == 16
     assert isinstance(ly.pointee, layout.Int)
 
 
-def test_list_constant_fatpointer():
-    """List constant via Span: data in origin, pointer in Memory."""
-    list_type = builtin.List(element_type=builtin.Index())
+def test_span_constant_fatpointer():
+    """Span constant: data in origin, pointer in Memory."""
+    list_type = builtin.Span(pointee=builtin.Index())
     c = list_type.constant([10, 20, 30])
     mem = c.__constant__
     # Memory is 16 bytes (ptr + i64 length)
@@ -98,10 +98,10 @@ def test_list_constant_fatpointer():
     assert mem.to_json() == [10, 20, 30]
 
 
-def test_list_type_asm_one_param():
-    """List type formats as 'List<index>' — just element_type, no count."""
-    list_type = builtin.List(element_type=builtin.Index())
-    assert type_asm(list_type) == "List<index.Index>"
+def test_span_type_asm_one_param():
+    """Span type formats as 'Span<index>' — just pointee, no count."""
+    list_type = builtin.Span(pointee=builtin.Index())
+    assert type_asm(list_type) == "Span<index.Index>"
 
 
 def test_int_to_json():
@@ -130,7 +130,7 @@ def test_index_type_layout():
 
 
 def test_fatpointer_to_json():
-    ty = builtin.List(element_type=builtin.Index())
+    ty = builtin.Span(pointee=builtin.Index())
     mem = Memory.from_value(ty, [10, 20, 30])
     assert mem.to_json() == [10, 20, 30]
 
@@ -145,8 +145,8 @@ def test_int_from_json_roundtrip():
     assert mem.to_json() == 42
 
 
-def test_list_from_json_roundtrip():
-    ty = builtin.List(element_type=builtin.Index())
+def test_span_from_json_roundtrip():
+    ty = builtin.Span(pointee=builtin.Index())
     mem = Memory.from_json(ty, [10, 20, 30])
     assert mem.to_json() == [10, 20, 30]
 
@@ -163,9 +163,9 @@ def test_type_tag_layout():
     assert isinstance(tag.__layout__, layout.String)
 
 
-def test_nested_list_from_json_roundtrip():
-    inner = builtin.List(element_type=builtin.Index())
-    outer = builtin.List(element_type=inner)
+def test_nested_span_from_json_roundtrip():
+    inner = builtin.Span(pointee=builtin.Index())
+    outer = builtin.Span(pointee=inner)
     mem = Memory.from_json(outer, [[1, 2], [3, 4, 5]])
     assert mem.to_json() == [[1, 2], [3, 4, 5]]
 
@@ -180,7 +180,7 @@ def test_type_layout_non_parametric():
 
 def test_type_layout_parametric_value_param():
     """Parametric type layout is a fixed-size TypeValue pointer (8 bytes)."""
-    list_type = builtin.List(element_type=builtin.Index())
+    list_type = builtin.Span(pointee=builtin.Index())
     tl = list_type.type.__layout__
     assert isinstance(tl, TypeValue)
     assert tl.byte_size == 8
@@ -188,8 +188,8 @@ def test_type_layout_parametric_value_param():
 
 def test_type_layout_parametric_type_param_nested():
     """Nested parametric type layout is still a fixed-size TypeValue pointer."""
-    inner = builtin.List(element_type=number.Float64())
-    outer = builtin.List(element_type=inner)
+    inner = builtin.Span(pointee=number.Float64())
+    outer = builtin.Span(pointee=inner)
     tl = outer.type.__layout__
     assert isinstance(tl, TypeValue)
     assert tl.byte_size == 8
@@ -203,9 +203,9 @@ def test_type_value_memory_non_parametric():
 
 
 def test_type_value_memory_parametric():
-    """Pack and unpack List<index.Index> as a type value through Memory."""
+    """Pack and unpack Span<index.Index> as a type value through Memory."""
     metatype = TypeType()
-    data = {"tag": "builtin.List", "element_type": {"tag": "index.Index"}}
+    data = {"tag": "builtin.Span", "pointee": {"tag": "index.Index"}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
 
@@ -226,13 +226,13 @@ def test_type_value_memory_nil():
 
 
 def test_type_value_memory_nested():
-    """Pack and unpack List<List<number.Float64>> as a type value through Memory."""
+    """Pack and unpack Span<Span<number.Float64>> as a type value through Memory."""
     metatype = TypeType()
     data = {
-        "tag": "builtin.List",
-        "element_type": {
-            "tag": "builtin.List",
-            "element_type": {"tag": "number.Float64"},
+        "tag": "builtin.Span",
+        "pointee": {
+            "tag": "builtin.Span",
+            "pointee": {"tag": "number.Float64"},
         },
     }
     mem = Memory.from_json(metatype, data)
@@ -247,15 +247,15 @@ def test_type_type_layout_non_parametric():
 
 def test_type_type_layout_parametric():
     """TypeType() layout matches the list's type.__layout__."""
-    inner = builtin.List(element_type=builtin.Index())
+    inner = builtin.Span(pointee=builtin.Index())
     tt = TypeType()
     assert tt.__layout__ == inner.type.__layout__
 
 
 def test_type_layout_size_fixed():
     """Type layout size is fixed (8-byte pointer) regardless of params."""
-    simple = builtin.List(element_type=builtin.Index())
-    nested = builtin.List(element_type=builtin.List(element_type=number.Float64()))
+    simple = builtin.Span(pointee=builtin.Index())
+    nested = builtin.Span(pointee=builtin.Span(pointee=number.Float64()))
     assert simple.type.__layout__.byte_size == 8
     assert nested.type.__layout__.byte_size == 8
     assert simple.type.__layout__.byte_size == nested.type.__layout__.byte_size
@@ -281,18 +281,18 @@ def test_type_constant_non_parametric():
 
 def test_type_constant_parametric():
     """Parametric type's __constant__ includes param values."""
-    ty = builtin.List(element_type=builtin.Index())
+    ty = builtin.Span(pointee=builtin.Index())
     data = ty.__constant__.to_json()
-    expected = {"tag": "builtin.List", "element_type": {"tag": "index.Index"}}
+    expected = {"tag": "builtin.Span", "pointee": {"tag": "index.Index"}}
     assert data == expected
 
 
 def test_type_params_are_bare_types():
     """Type-kinded params are bare Type instances, not Constant[TypeType]."""
-    ty = builtin.List(element_type=builtin.Index())
-    assert isinstance(ty.element_type, builtin.Index)
-    assert isinstance(ty.element_type, Type)
-    assert not isinstance(ty.element_type, Constant)
+    ty = builtin.Span(pointee=builtin.Index())
+    assert isinstance(ty.pointee, builtin.Index)
+    assert isinstance(ty.pointee, Type)
+    assert not isinstance(ty.pointee, Constant)
 
 
 # ===----------------------------------------------------------------------=== #

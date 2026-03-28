@@ -174,10 +174,8 @@ _ASM_TYPES = [
     pytest.param(number.Float64(), id="number.float64"),
     pytest.param(builtin.Nil(), id="builtin.nil"),
     pytest.param(builtin.String(), id="builtin.string"),
-    pytest.param(builtin.List(element_type=builtin.Index()), id="builtin.list_index"),
-    pytest.param(
-        builtin.List(element_type=number.Float64()), id="builtin.list_float64"
-    ),
+    pytest.param(builtin.Span(pointee=builtin.Index()), id="builtin.list_index"),
+    pytest.param(builtin.Span(pointee=number.Float64()), id="builtin.list_float64"),
     pytest.param(Tensor(shape=shape_constant([3])), id="toy.tensor_1d"),
     pytest.param(Tensor(shape=shape_constant([2, 3])), id="toy.tensor_2d"),
     pytest.param(InferredShapeTensor(), id="toy.inferred_shape_tensor"),
@@ -297,18 +295,18 @@ def test_tensor_layout_is_fatpointer():
 # ---------------------------------------------------------------------------
 
 
-def test_list_jit_identity():
+def test_span_jit_identity():
     """Pass List<index> through identity JIT function."""
-    ty = builtin.List(element_type=builtin.Index())
+    ty = builtin.Span(pointee=builtin.Index())
     mem = Memory.from_value(ty, [10, 20, 30])
     exe = _identity_exe(ty)
     result = exe.run(mem)
     assert result.to_json() == mem.to_json()
 
 
-def test_list_constant_jit_return():
+def test_span_constant_jit_return():
     """JIT function returns a list constant: main() -> List<index>."""
-    list_type = builtin.List(element_type=builtin.Index())
+    list_type = builtin.Span(pointee=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
     func = FunctionOp(
         name="main",
@@ -326,17 +324,17 @@ def test_list_constant_jit_return():
 # ---------------------------------------------------------------------------
 
 
-def test_list_of_lists_memory_roundtrip():
+def test_span_of_spans_memory_roundtrip():
     """List<List<index>> round-trips through Memory."""
-    inner = builtin.List(element_type=builtin.Index())
-    outer = builtin.List(element_type=inner)
+    inner = builtin.Span(pointee=builtin.Index())
+    outer = builtin.Span(pointee=inner)
     mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
     assert mem.to_json() == [[1, 2], [3, 4, 5]]
 
 
-def test_list_of_strings_memory_roundtrip():
+def test_span_of_strings_memory_roundtrip():
     """List<String> round-trips through Memory."""
-    ty = builtin.List(element_type=builtin.String())
+    ty = builtin.Span(pointee=builtin.String())
     mem = Memory.from_value(ty, ["hello", "world"])
     assert mem.to_json() == ["hello", "world"]
 
@@ -485,30 +483,30 @@ def test_deepcopy_string_constant():
     assert copied.origins is mem.origins
 
 
-def test_deepcopy_list_of_strings():
+def test_deepcopy_span_of_strings():
     """Deepcopy of List<String> constant preserves nested pointer validity."""
-    ty = builtin.List(element_type=builtin.String())
+    ty = builtin.Span(pointee=builtin.String())
     mem = Memory.from_value(ty, ["hello", "world"])
     copied = deepcopy(mem)
     assert copied.to_json() == ["hello", "world"]
 
 
-def test_deepcopy_list_of_lists():
+def test_deepcopy_span_of_spans():
     """Deepcopy of List<List<index>> constant preserves nested pointer validity."""
-    inner = builtin.List(element_type=builtin.Index())
-    outer = builtin.List(element_type=inner)
+    inner = builtin.Span(pointee=builtin.Index())
+    outer = builtin.Span(pointee=inner)
     mem = Memory.from_value(outer, [[1, 2], [3, 4, 5]])
     copied = deepcopy(mem)
     assert copied.to_json() == [[1, 2], [3, 4, 5]]
 
 
-def test_deepcopy_module_with_list_constant():
+def test_deepcopy_module_with_span_constant():
     """Deepcopy an entire module containing a List constant.
 
     This is what staging does — deepcopy the module, then JIT subgraphs.
     The list constant's backing data must survive the copy.
     """
-    list_type = builtin.List(element_type=builtin.Index())
+    list_type = builtin.Span(pointee=builtin.Index())
     const = ConstantOp(value=[3, 5, 7], type=list_type)
     func = FunctionOp(
         name="main",
@@ -555,9 +553,9 @@ def test_memory_equality_strings():
     assert a == b
 
 
-def test_memory_equality_lists():
+def test_memory_equality_spans():
     """Two List memories from the same Python value should be equal."""
-    ty = builtin.List(element_type=builtin.Index())
+    ty = builtin.Span(pointee=builtin.Index())
     a = Memory.from_value(ty, [1, 2, 3])
     b = Memory.from_value(ty, [1, 2, 3])
     assert a == b
@@ -568,32 +566,32 @@ def test_memory_equality_lists():
 # ---------------------------------------------------------------------------
 
 
-def test_empty_list():
+def test_empty_span():
     """Empty list round-trips through Memory."""
-    ty = builtin.List(element_type=builtin.Index())
+    ty = builtin.Span(pointee=builtin.Index())
     mem = Memory.from_value(ty, [])
     assert mem.to_json() == []
 
 
-def test_single_element_list():
+def test_single_element_span():
     """Single-element list round-trips through Memory."""
-    ty = builtin.List(element_type=builtin.Index())
+    ty = builtin.Span(pointee=builtin.Index())
     mem = Memory.from_value(ty, [42])
     assert mem.to_json() == [42]
 
 
-def test_list_of_f64():
+def test_span_of_f64():
     """List<Float64> round-trips through Memory (float variant of Span)."""
-    ty = builtin.List(element_type=number.Float64())
+    ty = builtin.Span(pointee=number.Float64())
     mem = Memory.from_value(ty, [1.5, 2.5, 3.5])
     assert mem.to_json() == [1.5, 2.5, 3.5]
 
 
 def test_three_level_nesting():
     """List<List<List<index>>> — 3 levels of Span nesting."""
-    l1 = builtin.List(element_type=builtin.Index())
-    l2 = builtin.List(element_type=l1)
-    l3 = builtin.List(element_type=l2)
+    l1 = builtin.Span(pointee=builtin.Index())
+    l2 = builtin.Span(pointee=l1)
+    l3 = builtin.Span(pointee=l2)
     mem = Memory.from_value(l3, [[[1, 2], [3]], [[4, 5, 6]]])
     assert mem.to_json() == [[[1, 2], [3]], [[4, 5, 6]]]
 
@@ -604,10 +602,10 @@ def test_empty_string():
     assert mem.to_json() == ""
 
 
-def test_list_of_empty_lists():
+def test_span_of_empty_spans():
     """List of empty lists round-trips through Memory."""
-    inner = builtin.List(element_type=builtin.Index())
-    outer = builtin.List(element_type=inner)
+    inner = builtin.Span(pointee=builtin.Index())
+    outer = builtin.Span(pointee=inner)
     mem = Memory.from_value(outer, [[], [], []])
     assert mem.to_json() == [[], [], []]
 
@@ -617,18 +615,18 @@ def test_list_of_empty_lists():
 # ---------------------------------------------------------------------------
 
 
-def test_list_identity_jit_roundtrip_full():
+def test_span_identity_jit_roundtrip_full():
     """Pass List<index>, read back via from_raw — full data integrity check."""
-    list_type = builtin.List(element_type=builtin.Index())
+    list_type = builtin.Span(pointee=builtin.Index())
     mem = Memory.from_value(list_type, [10, 20, 30])
     exe = _identity_exe(list_type)
     result = exe.run(mem)
     assert result.to_json() == [10, 20, 30]
 
 
-def test_list_f64_jit_roundtrip():
+def test_span_f64_jit_roundtrip():
     """Pass List<Float64> through JIT identity and read back."""
-    list_type = builtin.List(element_type=number.Float64())
+    list_type = builtin.Span(pointee=number.Float64())
     mem = Memory.from_value(list_type, [1.1, 2.2, 3.3])
     exe = _identity_exe(list_type)
     result = exe.run(mem)

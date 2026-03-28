@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import HasSingleBlock
+from dgen.dialects.builtin import Nil, Span
 
 function = Dialect("function")
 
@@ -15,7 +15,7 @@ class Function(Type):
     result: Value[dgen.TypeType]
 
 @dataclass(eq=False, kw_only=True)
-class FunctionOp(HasSingleBlock, Op):
+class FunctionOp(Op):
     result: Value[dgen.TypeType]
     type: Type
     body: Block

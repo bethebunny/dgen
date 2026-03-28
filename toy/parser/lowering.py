@@ -8,7 +8,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function as FunctionType
-from dgen.module import ConstantOp, Module, PackOp
+from dgen.module import ConstantOp, Module, PackOp, pack
 from toy.dialects import shape_constant, toy
 from toy.parser.ast import (
     BinaryOp,
@@ -229,12 +229,11 @@ class Lowering:
         for a in call.args:
             args.append((yield from self.lower_expr(a)))
         callee_ref = dgen.Value(name=call.callee, type=builtin.Nil())
-        element_type = toy.InferredShapeTensor()
-        pack = PackOp(values=args, type=builtin.List(element_type=element_type))
-        yield pack
+        p = pack(args)
+        yield p
         op = function.CallOp(
             callee=callee_ref,
-            arguments=pack,
+            arguments=p,
             type=toy.InferredShapeTensor(),
         )
         yield op

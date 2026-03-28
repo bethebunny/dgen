@@ -336,7 +336,7 @@ def _coerce_operand(
         return value
     if isinstance(value, list):
         if any(isinstance(v, Value) for v in value) or issubclass(
-            field_type, builtin.List
+            field_type, builtin.Span
         ):
             return _pack_list(parser, value, field_type)
         return value
@@ -362,8 +362,8 @@ def _wrap_constant(field_type: type[Type], raw: object) -> Constant:
 def _pack_list(
     parser: ASMParser, elems: list[object], field_type: type[Type]
 ) -> PackOp:
-    if field_type is builtin.List or field_type.__params__:
-        # List is parameterized; infer element type from first Value element
+    if field_type is builtin.Span or field_type.__params__:
+        # Span is parameterized; infer element type from first Value element
         element_type: Type | None = None
         for elem in elems:
             if isinstance(elem, Value):
@@ -381,7 +381,7 @@ def _pack_list(
             op = ConstantOp(value=elem, type=element_type)
             parser.pending_ops.append(op)
             values.append(op)
-    pack = PackOp(values=values, type=builtin.List(element_type=element_type))
+    pack = PackOp(values=values, type=builtin.Span(pointee=element_type))
     parser.pending_ops.append(pack)
     return pack
 

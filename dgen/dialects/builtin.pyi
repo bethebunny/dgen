@@ -10,19 +10,21 @@ from dgen.dialects.index import Index
 
 builtin = Dialect("builtin")
 
-class HasSingleBlock: ...
+@dataclass(frozen=True, eq=False)
+class Nil(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class Nil(Type): ...
+class String(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class String(Type): ...
+class TypeTag(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class TypeTag(Type): ...
-
-@dataclass(frozen=True, eq=False)
-class Byte(Type): ...
+class Byte(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
 class Array(Type):
@@ -38,21 +40,12 @@ class Span(Type):
     pointee: Value[dgen.TypeType]
 
 @dataclass(frozen=True, eq=False)
-class List(Type):
-    element_type: Value[dgen.TypeType]
-
-@dataclass(frozen=True, eq=False)
 class Tuple(Type):
     types: list[Value[dgen.TypeType]]
-
-@dataclass(eq=False, kw_only=True)
-class ListGetOp(Op):
-    index: Value[Index]
-    list: Value
-    type: Type
 
 @dataclass(eq=False, kw_only=True)
 class ChainOp(Op):
     lhs: Value
     rhs: Value
     type: Type
+

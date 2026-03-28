@@ -1,4 +1,4 @@
-from builtin import Index, Nil, String, Pointer, List
+from builtin import Index, Nil, String, Pointer, Span
 from number import Float64
 
 type Ptr:
@@ -32,4 +32,4 @@ op xor(lhs: Int<64>, rhs: Int<64>) -> Int<64>
 op icmp<pred: String>(lhs: Int<64>, rhs: Int<64>) -> Int<1>
 op fcmp<pred: String>(lhs: Float, rhs: Float) -> Int<1>
 op zext(input: Int<1>) -> Int<64>
-op call<callee: String>(args: List) -> Nil
+op call<callee: String>(args: Span) -> Nil
