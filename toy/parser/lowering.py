@@ -17,7 +17,6 @@ from toy.parser.ast import (
     ExprStmt,
     Function,
     NumberLiteral,
-    PrintExpr,
     ReturnStmt,
     Statement,
     TensorLiteral,
@@ -142,8 +141,6 @@ class Lowering:
             return result_op
         if isinstance(expr, CallExpr):
             return (yield from self._lower_call(expr))
-        if isinstance(expr, PrintExpr):
-            return (yield from self._lower_print(expr))
         raise RuntimeError("Unknown expression type")
 
     def _lower_index_expr(
@@ -156,73 +153,84 @@ class Lowering:
             return op
         return (yield from self.lower_expr(expr))
 
+    # Builtin dispatch table: name → (arity, handler method name)
+    _BUILTINS: dict[str, tuple[int, str]] = {
+        "print": (1, "_lower_builtin_print"),
+        "transpose": (1, "_lower_builtin_transpose"),
+        "tile": (2, "_lower_builtin_tile"),
+        "nonzero_count": (1, "_lower_builtin_nonzero_count"),
+        "concat": (3, "_lower_builtin_concat"),
+        "dim_size": (2, "_lower_builtin_dim_size"),
+        "add_index": (2, "_lower_builtin_add_index"),
+    }
+
+    def _lower_builtin_transpose(
+        self, call: CallExpr
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        arg = yield from self.lower_expr(call.args[0])
+        op = toy.TransposeOp(input=arg, type=toy.InferredShapeTensor())
+        yield op
+        return op
+
+    def _lower_builtin_tile(
+        self, call: CallExpr
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        input_val = yield from self.lower_expr(call.args[0])
+        count_val = yield from self._lower_index_expr(call.args[1])
+        op = toy.TileOp(
+            input=input_val, count=count_val, type=toy.InferredShapeTensor()
+        )
+        yield op
+        return op
+
+    def _lower_builtin_nonzero_count(
+        self, call: CallExpr
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        arg = yield from self.lower_expr(call.args[0])
+        op = toy.NonzeroCountOp(input=arg)
+        yield op
+        return op
+
+    def _lower_builtin_concat(
+        self, call: CallExpr
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        lhs = yield from self.lower_expr(call.args[0])
+        rhs = yield from self.lower_expr(call.args[1])
+        if not isinstance(call.args[2], NumberLiteral):
+            raise RuntimeError("concat axis must be a literal")
+        axis = index.Index().constant(int(call.args[2].value))
+        op = toy.ConcatOp(axis=axis, lhs=lhs, rhs=rhs, type=toy.InferredShapeTensor())
+        yield op
+        return op
+
+    def _lower_builtin_dim_size(
+        self, call: CallExpr
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        input_val = yield from self.lower_expr(call.args[0])
+        if not isinstance(call.args[1], NumberLiteral):
+            raise RuntimeError("dim_size axis must be a literal")
+        axis = index.Index().constant(int(call.args[1].value))
+        op = toy.DimSizeOp(axis=axis, input=input_val)
+        yield op
+        return op
+
+    def _lower_builtin_add_index(
+        self, call: CallExpr
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        lhs = yield from self._lower_index_expr(call.args[0])
+        rhs = yield from self._lower_index_expr(call.args[1])
+        op = algebra.AddOp(left=lhs, right=rhs, type=index.Index())
+        yield op
+        return op
+
     def _lower_call(self, call: CallExpr) -> Generator[dgen.Op, None, dgen.Value]:
-        # Builtin: transpose
-        if call.callee == "transpose":
-            if len(call.args) != 1:
-                raise RuntimeError("transpose takes exactly 1 argument")
-            arg = yield from self.lower_expr(call.args[0])
-            op = toy.TransposeOp(input=arg, type=toy.InferredShapeTensor())
-            yield op
-            return op
-
-        # Builtin: tile(tensor, count)
-        if call.callee == "tile":
-            if len(call.args) != 2:
-                raise RuntimeError("tile takes exactly 2 arguments")
-            input_val = yield from self.lower_expr(call.args[0])
-            count_val = yield from self._lower_index_expr(call.args[1])
-            op = toy.TileOp(
-                input=input_val, count=count_val, type=toy.InferredShapeTensor()
-            )
-            yield op
-            return op
-
-        # Builtin: nonzero_count(tensor)
-        if call.callee == "nonzero_count":
-            if len(call.args) != 1:
-                raise RuntimeError("nonzero_count takes exactly 1 argument")
-            arg = yield from self.lower_expr(call.args[0])
-            op = toy.NonzeroCountOp(input=arg)
-            yield op
-            return op
-
-        # Builtin: concat(lhs, rhs, axis)
-        if call.callee == "concat":
-            if len(call.args) != 3:
-                raise RuntimeError("concat takes exactly 3 arguments")
-            lhs = yield from self.lower_expr(call.args[0])
-            rhs = yield from self.lower_expr(call.args[1])
-            if not isinstance(call.args[2], NumberLiteral):
-                raise RuntimeError("concat axis must be a literal")
-            axis = index.Index().constant(int(call.args[2].value))
-            op = toy.ConcatOp(
-                axis=axis, lhs=lhs, rhs=rhs, type=toy.InferredShapeTensor()
-            )
-            yield op
-            return op
-
-        # Builtin: dim_size(tensor, axis)
-        if call.callee == "dim_size":
-            if len(call.args) != 2:
-                raise RuntimeError("dim_size takes exactly 2 arguments")
-            input_val = yield from self.lower_expr(call.args[0])
-            if not isinstance(call.args[1], NumberLiteral):
-                raise RuntimeError("dim_size axis must be a literal")
-            axis = index.Index().constant(int(call.args[1].value))
-            op = toy.DimSizeOp(axis=axis, input=input_val)
-            yield op
-            return op
-
-        # Builtin: add_index(lhs, rhs)
-        if call.callee == "add_index":
-            if len(call.args) != 2:
-                raise RuntimeError("add_index takes exactly 2 arguments")
-            lhs = yield from self._lower_index_expr(call.args[0])
-            rhs = yield from self._lower_index_expr(call.args[1])
-            op = algebra.AddOp(left=lhs, right=rhs, type=index.Index())
-            yield op
-            return op
+        entry = self._BUILTINS.get(call.callee)
+        if entry is not None:
+            arity, method_name = entry
+            if len(call.args) != arity:
+                raise RuntimeError(f"{call.callee} takes exactly {arity} argument(s)")
+            handler = getattr(self, method_name)
+            return (yield from handler(call))
 
         # Generic call
         args = []
@@ -239,8 +247,10 @@ class Lowering:
         yield op
         return op
 
-    def _lower_print(self, p: PrintExpr) -> Generator[dgen.Op, None, dgen.Value]:
-        arg = yield from self.lower_expr(p.arg)
+    def _lower_builtin_print(
+        self, call: CallExpr
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        arg = yield from self.lower_expr(call.args[0])
         if self.last_effect is not None:
             chain_op = builtin.ChainOp(lhs=arg, rhs=self.last_effect, type=arg.type)
             yield chain_op

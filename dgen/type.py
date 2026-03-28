@@ -75,9 +75,7 @@ def _type_from_dict(data: dict[str, object]) -> Type:
     """Reconstruct a Type from its serialized TypeType dict."""
     tag = data["tag"]
     assert isinstance(tag, str)
-    dialect_name, type_name = tag.split(".")
-    dialect = Dialect.get(dialect_name)
-    cls = dialect.types[type_name]
+    _, cls = Dialect.resolve_type_tag(tag)
     params = {k: v for k, v in data.items() if k != "tag"}
     if not params:
         return cls()

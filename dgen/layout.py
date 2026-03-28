@@ -259,9 +259,7 @@ class TypeValue(Layout):
 
     def _resolve_layout(self, tag: str) -> Record:
         """Look up a type class by tag and return its TypeType Record layout."""
-        dialect_name, type_name = tag.split(".")
-        dialect = Dialect.get(dialect_name)
-        cls = dialect.types[type_name]
+        _, cls = Dialect.resolve_type_tag(tag)
         fields: list[tuple[str, Layout]] = [("tag", String())]
         for param_name, param_type in cls.__params__:
             if self._is_type_kinded(param_type):

@@ -9,7 +9,6 @@ from toy.parser.ast import (
     ExprStmt,
     Function,
     NumberLiteral,
-    PrintExpr,
     Prototype,
     ReturnStmt,
     Statement,
@@ -148,11 +147,6 @@ class ToyParser:
     def _parse_call(self, callee: str) -> Expression:
         """Parse the argument list of a call: name(args)."""
         self.expect("(")
-        # Special handling for print
-        if callee == "print":
-            arg = self.parse_expression()
-            self.expect(")")
-            return PrintExpr(arg=arg)
         args: list[Expression] = []
         if self.current.kind != ")":
             args.append(self.parse_expression())

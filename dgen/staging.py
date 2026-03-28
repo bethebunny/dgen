@@ -148,6 +148,18 @@ def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
     return [getattr(op, name) for name, _ in fields]
 
 
+def _is_unresolved_param(value: dgen.Value) -> bool:
+    """True if value is a parameter that still needs resolution.
+
+    Resolved values (Constants, Types, FunctionOps) are not boundaries.
+    Ops, BlockArguments, and BlockParameters that aren't already resolved
+    represent unresolved parameter boundaries.
+    """
+    return isinstance(
+        value, (dgen.Op, BlockArgument, BlockParameter)
+    ) and not isinstance(value, (Constant, dgen.Type, FunctionOp))
+
+
 def compute_stages(func: FunctionOp) -> dict[dgen.Value, int]:
     """Assign a stage number to every Value in a function.
 
@@ -192,9 +204,7 @@ def compute_stages(func: FunctionOp) -> dict[dgen.Value, int]:
         for ov in _field_values(value, value.__operands__):
             parts.append(_stage(ov))
         # Unresolved type ref counts as a param boundary
-        if isinstance(value.type, dgen.Value) and not isinstance(
-            value.type, (Constant, dgen.Type)
-        ):
+        if _is_unresolved_param(value.type):
             s = _stage(value.type)
             parts.append(1 + s if s > 0 else s)
         result = max(parts, default=0)
@@ -220,14 +230,10 @@ def _unresolved_boundaries(
     boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
     for op in func.body.ops:
         for field_name, value in op.parameters:
-            if isinstance(
-                value, (dgen.Op, BlockArgument, BlockParameter)
-            ) and not isinstance(value, (Constant, dgen.Type, FunctionOp)):
+            if _is_unresolved_param(value):
                 boundaries.append((stages.get(op, 0), op, field_name, value))
         # Also check op.type — if it's an unresolved SSA ref (Value, not Type)
-        if isinstance(op.type, dgen.Value) and not isinstance(
-            op.type, (Constant, dgen.Type)
-        ):
+        if _is_unresolved_param(op.type):
             boundaries.append((stages.get(op, 0), op, "type", op.type))
     boundaries.sort(key=lambda t: t[0])
     return boundaries
@@ -299,9 +305,7 @@ def _has_nested_boundaries(func: FunctionOp) -> bool:
         for _, block in op.blocks:
             for nested_op in block.ops:
                 for _, value in nested_op.parameters:
-                    if isinstance(
-                        value, (dgen.Op, BlockArgument, BlockParameter)
-                    ) and not isinstance(value, (Constant, dgen.Type, FunctionOp)):
+                    if _is_unresolved_param(value):
                         return True
     return False
 
@@ -410,8 +414,6 @@ def _build_callback_thunk(
     The callback resolves all remaining __params__ values (using the full
     stage-1 resolution loop), then JIT-compiles and executes stage-2.
     """
-    stage2_template = resolved
-
     # Derive callback LLVM signature from original function
     assert func.name is not None
     callback_name = f"_stage2_{func.name}"
@@ -430,8 +432,8 @@ def _build_callback_thunk(
     param_ctypes = [_ctype(t.__layout__) for t in orig_types]
     cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
 
-    # Capture template + compiler in closure
-    func_name = func.name
+    # Capture the specific function template (not the whole module)
+    stage2_func_template = func
     callback_host_refs: list[object] = []  # Keep JIT data alive across calls
 
     def _callback(*raw_args: object) -> object:
@@ -440,9 +442,8 @@ def _build_callback_thunk(
             _raw_to_json(raw_args[i], orig_types[i]) for i in range(len(orig_types))
         ]
 
-        # Deep-copy template and resolve all __params__ with runtime args
-        template = deepcopy(stage2_template)
-        s2_func = next(f for f in template.functions if f.name == func_name)
+        # Deep-copy the function template and resolve all __params__ with runtime args
+        s2_func: FunctionOp = deepcopy(stage2_func_template)
 
         # Specialize IfOps: evaluate conditions, inline taken branches
         _specialize_ifs(s2_func, compiler.run, s2_func.body.args, python_args)

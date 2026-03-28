@@ -125,6 +125,16 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     def unpack(val: Value) -> list[Value]:
         return list(val) if isinstance(val, PackOp) else [val]
 
+    def _type_of(val: dgen.Value) -> str:
+        """Look up the LLVM type string for a value, or raise."""
+        try:
+            return types[val]
+        except KeyError:
+            raise KeyError(
+                f"codegen: no LLVM type registered for "
+                f"%{val.name or '?'} ({type(val).__name__})"
+            ) from None
+
     def resolve_target(target: dgen.Value) -> dgen.Value:
         if isinstance(target, goto.LabelOp):
             return target
@@ -137,7 +147,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         return (
             constants[val]
             if val in constants
-            else f"{types.get(val, 'i64')} %{tracker.track_name(val)}"
+            else f"{_type_of(val)} %{tracker.track_name(val)}"
         )
 
     def bare_ref(val: dgen.Value) -> str:
@@ -170,16 +180,22 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             _register_constant(val, val.__constant__)
         elif isinstance(val, builtin.ChainOp):
             _register(val.lhs)
-            types[val] = types.get(val.lhs, "i64")
+            types[val] = _type_of(val.lhs)
             constants[val] = (
                 constants[val.lhs]
                 if val.lhs in constants
-                else f"{types.get(val.lhs, 'i64')} %{tracker.track_name(val.lhs)}"
+                else f"{_type_of(val.lhs)} %{tracker.track_name(val.lhs)}"
             )
         elif isinstance(val, dgen.Op):
             rt = _result_type_str(val.type)
             if rt is not None:
                 types[val] = rt
+            elif isinstance(val, (llvm.IcmpOp, llvm.FcmpOp)):
+                # TODO: fix these ops to carry correct types (plan.md Phase 1a)
+                types[val] = "i1"
+            elif isinstance(val, llvm.ZextOp):
+                # TODO: fix ZextOp to carry correct type (plan.md Phase 1a)
+                types[val] = "i64"
             for _, operand in val.operands:
                 if isinstance(operand, Constant):
                     _register(operand)
@@ -460,19 +476,21 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                     label_block.ops.extend(children[0].ops)
                     children = children[1:]
                 result.extend(children)
-                for param in label.body.parameters:
-                    if param.name and param.name.startswith("exit"):
-                        result.append(LinearBlock(tracker.track_name(param), []))
+                # Label bodies with parameters have [self, exit] by convention.
+                # Emit the exit label as a fall-through block after the body.
+                if len(label.body.parameters) >= 2:
+                    exit_param = label.body.parameters[1]
+                    result.append(LinearBlock(tracker.track_name(exit_param), []))
 
         return result
 
     # Register %self → label mappings (needed for resolve_target).
+    # Label bodies with parameters have [self, exit] by convention.
     def _scan_self_params(block: dgen.Block) -> None:
         for op in block.ops:
             if isinstance(op, goto.LabelOp):
-                for param in op.body.parameters:
-                    if param.name == "self":
-                        param_to_label[param] = op
+                if op.body.parameters:
+                    param_to_label[op.body.parameters[0]] = op
                 _scan_self_params(op.body)
 
     _scan_self_params(f.body)
@@ -485,9 +503,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         if isinstance(f.result, builtin.Nil)
         else _llvm_type(dgen.type.type_constant(f.result).__layout__)
     )
-    params = ", ".join(
-        f"{types.get(a, 'i64')} %{tracker.track_name(a)}" for a in f.body.args
-    )
+    params = ", ".join(f"{_type_of(a)} %{tracker.track_name(a)}" for a in f.body.args)
     blocks = _linearize(f.body, "entry")
     if not blocks:
         blocks = [LinearBlock("entry", [])]
@@ -530,7 +546,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         if id(op) in if_blocks:
             if_op, then_name, else_name = if_blocks[id(op)]
             cond_ref = bare_ref(if_op.condition)
-            cond_type = types.get(if_op.condition, "i1")
+            cond_type = _type_of(if_op.condition)
             if cond_type != "i1":
                 yield f"  %{name} = icmp ne {cond_type} {cond_ref}, 0"
                 cond_ref = f"%{name}"
@@ -613,7 +629,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         if blk.label is not None:
             preds = predecessors.get(id(blk.label), [])
             for arg_idx, arg in enumerate(blk.label.body.args):
-                ty = types.get(arg, "i64")
+                ty = _type_of(arg)
                 phi_parts = []
                 for pred_src, pred_args in preds:
                     if arg_idx < len(pred_args):
@@ -625,7 +641,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         # Phi for if/else merge blocks.
         if blk.name in if_phis:
             if_op, then_result, then_exit, else_result, else_exit = if_phis[blk.name]
-            rt = types.get(if_op, "i64")
+            rt = _type_of(if_op)
             if not isinstance(if_op.type, builtin.Nil):
                 yield (
                     f"  %{tracker.track_name(if_op)} = phi {rt}"
@@ -647,11 +663,10 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             elif i + 1 < len(blocks):
                 yield f"  br label %{blocks[i + 1].name}"
             else:
-                yield (
-                    "  ret void"
-                    if llvm_ret == "void"
-                    else f"  ret {typed_ref(f.body.result)}"
-                )
+                if llvm_ret == "void" or f.body.result not in types:
+                    yield "  ret void"
+                else:
+                    yield f"  ret {typed_ref(f.body.result)}"
 
     yield "}"
 

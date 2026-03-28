@@ -27,6 +27,30 @@ class Dialect:
     def get(cls, name: str) -> Dialect:
         return cls._registry[name]
 
+    @classmethod
+    def resolve_type_tag(cls, tag: str) -> tuple[Dialect, builtins.type[Type]]:
+        """Parse 'dialect.name' tag and return (Dialect, type class).
+
+        Raises ValueError with a clear message on malformed or unknown tags.
+        """
+        parts = tag.split(".", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError(f"Malformed type tag {tag!r}: expected 'dialect.name'")
+        dialect_name, type_name = parts
+        try:
+            dialect = cls._registry[dialect_name]
+        except KeyError:
+            raise ValueError(
+                f"Unknown dialect {dialect_name!r} in type tag {tag!r}"
+            ) from None
+        try:
+            type_cls = dialect.types[type_name]
+        except KeyError:
+            raise ValueError(
+                f"Unknown type {type_name!r} in dialect {dialect_name!r} (tag {tag!r})"
+            ) from None
+        return dialect, type_cls
+
     def op(self, asm_name: str) -> Callable[[builtins.type[_O]], builtins.type[_O]]:
         def decorator(cls: builtins.type[_O]) -> builtins.type[_O]:
             cls.asm_name = asm_name

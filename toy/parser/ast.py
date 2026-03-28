@@ -48,12 +48,7 @@ class CallExpr:
     args: list[Expression]
 
 
-@dataclass
-class PrintExpr:
-    arg: Expression
-
-
-Expression = Union[NumberLiteral, TensorLiteral, VarRef, BinaryOp, CallExpr, PrintExpr]
+Expression = Union[NumberLiteral, TensorLiteral, VarRef, BinaryOp, CallExpr]
 
 
 # ===----------------------------------------------------------------------=== #
