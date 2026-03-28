@@ -13,10 +13,10 @@ import llvmlite.binding as llvmlite
 import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
-from dgen.dialects import builtin, control_flow, function, goto, llvm
-from dgen.module import ConstantOp, Module, PackOp, pack, string_value
-from dgen.layout import Layout
 from dgen.compiler import Compiler, IdentityPass
+from dgen.dialects import builtin, control_flow, function, goto, llvm
+from dgen.layout import Layout
+from dgen.module import ConstantOp, Module, PackOp, pack, string_value
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.type import Constant, Memory, Value
 
@@ -200,7 +200,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     def _label_deps(op: dgen.Op, block_ops: list[dgen.Op]) -> frozenset[goto.LabelOp]:
         """Which label ops in this block does op transitively depend on?
 
-        This is intentionally NOT walk_ops — we only follow operand edges,
+        This is intentionally NOT block.ops — we only follow operand edges,
         not parameter edges. A BranchOp's target is a parameter; it's a
         control-flow reference, not a data dependency. For scheduling the
         non-label ops into LLVM blocks, we only care about data deps.

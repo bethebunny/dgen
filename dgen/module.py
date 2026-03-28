@@ -169,7 +169,7 @@ class Module:
         # The _formatted set is shared across all top-level ops so that each
         # op is printed at most once.  Ambient ops (no block-argument
         # dependencies — e.g. FunctionOps, constants) are reachable via
-        # walk_ops from every block that references them, so without sharing
+        # block.ops from every block that references them, so without sharing
         # they would be printed once at module level AND again inside each
         # referencing block.  Sharing _formatted makes the formatter an
         # implicit scheduler: an ambient op is emitted wherever the formatter

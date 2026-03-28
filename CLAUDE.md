@@ -70,9 +70,9 @@ Ops with no use-def relationship between them may execute in any order. Side-eff
 must be chained via `ChainOp` to be reachable from `block.result` and to establish
 ordering. `ChainOp(lhs=X, rhs=Y)` returns X's value with a use-def dependency on Y.
 
-**All ops must be reachable from `block.result` via `walk_ops`.** Unreachable ops are
-dead. `walk_ops(block.result)` gives the complete, canonical op list for a block.
-`walk_ops` follows operands, parameters, types, and **block captures** (parent-scope
+**All ops must be reachable from `block.result` via `transitive_dependencies`.** Unreachable ops are
+dead. `block.ops` gives the complete, canonical op list for a block.
+`dependencies` follows operands, parameters, types, and block captures (parent-scope
 dependencies). It does NOT descend into nested block bodies — each block is its own
 walk scope, with captures as boundaries.
 

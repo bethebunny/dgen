@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import dgen
 
@@ -37,26 +37,20 @@ def placeholder_block() -> dgen.Block:
     return dgen.Block(result=dgen.Value(type=Nil()))
 
 
-def walk_ops(root: dgen.Value, *, stop: Iterable[dgen.Value] = ()) -> list[dgen.Op]:
-    """Return all ops that are transitive dependencies of root, in the same block.
+def transitive_dependencies(
+    value: dgen.Value, *, stop: Iterable[dgen.Value] = ()
+) -> Iterator[dgen.Value]:
+    """Iterate over all transitive dependencies in topological order.
 
-    Walks ``value.dependencies`` recursively. Does NOT descend into nested
-    block bodies — each block is its own walk scope. Values in ``stop`` are
-    leaves (capture boundaries).
-
-    Returns Op instances in topological order: dependencies before dependents.
-    """
+    Stop at any elements in theh `stop` set."""
     visited: set[dgen.Value] = set(stop)
-    order: list[dgen.Op] = []
 
-    def visit(value: dgen.Value) -> None:
-        if value in visited:
-            return
+    def visit(value: dgen.Value) -> Iterator[dgen.Value]:
         visited.add(value)
         for dep in value.dependencies:
-            visit(dep)
-        if isinstance(value, dgen.Op):
-            order.append(value)
+            # check before recursing to reduce function call overhead
+            if dep not in visited:
+                yield from visit(dep)
+        yield value
 
-    visit(root)
-    return order
+    yield from () if value in visited else visit(value)

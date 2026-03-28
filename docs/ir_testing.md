@@ -77,4 +77,4 @@ Three components:
 2. **Test helper** — `assert_ir_equivalent(actual, expected)` in `dgen/testing.py` or `conftest.py`
 3. **Test migration** — existing pass output tests adopt the helper
 
-The graph walk already exists (`block.ops` via `walk_ops`). Fingerprinting is straightforward recursive hashing with memoization on object identity. `structural_diff` can start as a side-by-side format of the two modules and be refined from there.
+The graph walk already exists (`block.ops`). Fingerprinting is straightforward recursive hashing with memoization on object identity. `structural_diff` can start as a side-by-side format of the two modules and be refined from there.

@@ -33,7 +33,7 @@ enclosing scope must be declared in the block's `captures` list.
   `<name: Type>` syntax in ASM.
 - **`captures`** — outer-scope values referenced directly. No phi, no copy — just a
   declared dependency. The block doesn't own the captured value; it's a boundary in
-  `walk_ops`.
+  `transitive_dependencies`.
 
 ### Within-Block: Sea-of-Nodes Semantics
 
@@ -49,9 +49,9 @@ eliminate them.
 reachable from the block result. Chain edges encode both liveness (the op will execute) and
 ordering (the chain spine defines the sequence).
 
-**All ops in a block must be reachable from the block's `result` via `walk_ops`.** An op
+**All ops in a block must be reachable from the block's `result` via `block.ops`.** An op
 not reachable from the result is dead and will not execute. The block's `result` is the
-use-def root; `walk_ops` on `result` gives the canonical op list.
+use-def root; `block.ops` on `result` gives the canonical op list.
 
 ### What `ChainOp` Is
 
@@ -68,9 +68,9 @@ they participate in that ordering.
 
 The chain spine is the schedule for a block's side effects.
 
-### What `walk_ops` Follows
+### What `transitive_dependencies` Follows
 
-`walk_ops(root, stop)` returns all ops that are transitive dependencies of the root,
+`transitive_dependencies(root, stop)` returns all values that are transitive dependencies of the root,
 in the same block. The dependency edges are: operands, parameters, types, block
 captures, and block argument types. These are exactly the edges that connect a value
 to the values it depends on within a single block scope.
