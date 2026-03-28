@@ -10,52 +10,42 @@ memory.deallocate → no-op (leak for now)
 
 from __future__ import annotations
 
+import dgen
 from dgen.dialects import llvm, memory
 from dgen.dialects.builtin import Nil, String
 from dgen.dialects.index import Index
 from dgen.module import ConstantOp, pack
-from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.passes.pass_ import Pass, lowering_for
 
 
 class MemoryToLLVM(Pass):
     allow_unregistered_ops = True
 
     @lowering_for(memory.HeapAllocateOp)
-    def lower_heap_allocate(
-        self, op: memory.HeapAllocateOp, rewriter: Rewriter
-    ) -> bool:
+    def lower_heap_allocate(self, op: memory.HeapAllocateOp) -> dgen.Value | None:
         # malloc(count * 8) for 8-byte doubles
         byte_count = ConstantOp(value=8, type=Index())
         total = llvm.MulOp(lhs=op.count, rhs=byte_count)
-        malloc_op = llvm.CallOp(
+        return llvm.CallOp(
             callee=String().constant("malloc"), args=pack([total]), type=llvm.Ptr()
         )
-        rewriter.replace_uses(op, malloc_op)
-        return True
 
     @lowering_for(memory.StackAllocateOp)
-    def lower_stack_allocate(
-        self, op: memory.StackAllocateOp, rewriter: Rewriter
-    ) -> bool:
-        rewriter.replace_uses(op, llvm.AllocaOp(elem_count=Index().constant(1)))
-        return True
+    def lower_stack_allocate(self, op: memory.StackAllocateOp) -> dgen.Value | None:
+        return llvm.AllocaOp(elem_count=Index().constant(1))
 
     @lowering_for(memory.DeallocateOp)
-    def lower_deallocate(self, op: memory.DeallocateOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, ConstantOp(value=0, type=Nil()))
-        return True
+    def lower_deallocate(self, op: memory.DeallocateOp) -> dgen.Value | None:
+        return ConstantOp(value=0, type=Nil())
 
     @lowering_for(memory.LoadOp)
-    def lower_load(self, op: memory.LoadOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, llvm.LoadOp(ptr=op.ptr, type=op.type))
-        return True
+    def lower_load(self, op: memory.LoadOp) -> dgen.Value | None:
+        return llvm.LoadOp(ptr=op.ptr, type=op.type)
 
     @lowering_for(memory.StoreOp)
-    def lower_store(self, op: memory.StoreOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, llvm.StoreOp(value=op.value, ptr=op.ptr))
-        return True
+    def lower_store(self, op: memory.StoreOp) -> dgen.Value | None:
+        return llvm.StoreOp(value=op.value, ptr=op.ptr)
 
     @lowering_for(memory.OffsetOp)
-    def lower_offset(self, op: memory.OffsetOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, llvm.GepOp(base=op.ptr, index=op.index))
-        return True
+    def lower_offset(self, op: memory.OffsetOp) -> dgen.Value | None:
+        return llvm.GepOp(base=op.ptr, index=op.index)

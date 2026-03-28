@@ -59,7 +59,7 @@ class ControlFlowToGoto(Pass):
         self._loop_counter = 0
 
     @lowering_for(control_flow.ForOp)
-    def lower_for(self, op: control_flow.ForOp, rewriter: Rewriter) -> bool:
+    def lower_for(self, op: control_flow.ForOp) -> dgen.Value | None:
         lid = self._loop_counter
         self._loop_counter += 1
 
@@ -114,17 +114,15 @@ class ControlFlowToGoto(Pass):
             ),
         )
 
-        # Replace ForOp with the header label. The label is an expression
-        # block — it runs when control reaches it. No entry branch needed.
-        rewriter.replace_uses(op, header_label)
-
         # Recurse into the body label's block to handle nested ForOps.
         self._run_block(body_label.body)
 
-        return True
+        # Replace ForOp with the header label. The label is an expression
+        # block — it runs when control reaches it. No entry branch needed.
+        return header_label
 
     @lowering_for(control_flow.WhileOp)
-    def lower_while(self, op: control_flow.WhileOp, rewriter: Rewriter) -> bool:
+    def lower_while(self, op: control_flow.WhileOp) -> dgen.Value | None:
         lid = self._loop_counter
         self._loop_counter += 1
 
@@ -190,9 +188,7 @@ class ControlFlowToGoto(Pass):
             ),
         )
 
-        rewriter.replace_uses(op, header_label)
-
         # Recurse into body to handle nested loops.
         self._run_block(body_label.body)
 
-        return True
+        return header_label

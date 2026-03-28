@@ -79,7 +79,8 @@ def test_fused_pipeline() -> None:
 @pytest.mark.xfail(reason="JIT malloc return pointer read-back needs investigation")
 def test_unfused_pipeline() -> None:
     """Two actors with different rates. input * 2, then first 2 elements + 1."""
-    module = asm.parse(strip_prefix("""
+    module = asm.parse(
+        strip_prefix("""
         | import actor
         | import algebra
         | import control_flow
@@ -107,7 +108,8 @@ def test_unfused_pipeline() -> None:
         |                 %22 : Nil = ndbuffer.store(%21, %out, [%18])
         |             %23 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = chain(%16, %17)
         |             %24 : Nil = actor.produce(%23)
-    """))
+    """)
+    )
     exe = actor_compiler.compile(module)
     memref = exe.input_types[0]
     f64x4 = builtin.Array(element_type=Float64(), n=builtin.Index().constant(4))

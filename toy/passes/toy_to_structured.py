@@ -12,7 +12,7 @@ from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean, Float64
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, pack
-from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.passes.pass_ import Pass, lowering_for
 from dgen.dialects import control_flow
 from toy.dialects import ndbuffer, shape_constant, toy
 
@@ -81,7 +81,7 @@ class ToyToStructured(Pass):
         )
 
     @lowering_for(toy.TransposeOp)
-    def lower_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
+    def lower_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
         assert isinstance(op.type, toy.Tensor)
         in_shape = self._shape(op.input)
         alloc = self._alloc(op.type.shape)
@@ -93,25 +93,22 @@ class ToyToStructured(Pass):
             )
 
         loop = _nested_for(in_shape, body, captures=[alloc, op.input])
-        rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
-        return True
+        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
 
     @lowering_for(toy.MulOp)
-    def lower_mul(self, op: toy.MulOp, rewriter: Rewriter) -> bool:
-        return self._lower_binop(op, op.lhs, op.rhs, algebra.MultiplyOp, rewriter)
+    def lower_mul(self, op: toy.MulOp) -> dgen.Value | None:
+        return self._lower_binop(op.lhs, op.rhs, algebra.MultiplyOp)
 
     @lowering_for(toy.AddOp)
-    def lower_add(self, op: toy.AddOp, rewriter: Rewriter) -> bool:
-        return self._lower_binop(op, op.lhs, op.rhs, algebra.AddOp, rewriter)
+    def lower_add(self, op: toy.AddOp) -> dgen.Value | None:
+        return self._lower_binop(op.lhs, op.rhs, algebra.AddOp)
 
     def _lower_binop(
         self,
-        op: dgen.Op,
         lhs: dgen.Value,
         rhs: dgen.Value,
         cls: type,
-        rewriter: Rewriter,
-    ) -> bool:
+    ) -> dgen.Value:
         shape = self._shape(lhs)
         alloc = self._alloc(lhs.type.shape)
 
@@ -126,29 +123,25 @@ class ToyToStructured(Pass):
             return ndbuffer.StoreOp(value=res, memref=alloc, indices=idx)
 
         loop = _nested_for(shape, body, captures=[alloc, lhs, rhs])
-        rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
-        return True
+        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
 
     @lowering_for(toy.ReshapeOp)
-    def lower_reshape(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, op.input)
-        return True
+    def lower_reshape(self, op: toy.ReshapeOp) -> dgen.Value | None:
+        return op.input
 
     @lowering_for(toy.PrintOp)
-    def lower_print(self, op: toy.PrintOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, ndbuffer.PrintMemrefOp(input=op.input))
-        return True
+    def lower_print(self, op: toy.PrintOp) -> dgen.Value | None:
+        return ndbuffer.PrintMemrefOp(input=op.input)
 
     @lowering_for(toy.DimSizeOp)
-    def lower_dim_size(self, op: toy.DimSizeOp, rewriter: Rewriter) -> bool:
+    def lower_dim_size(self, op: toy.DimSizeOp) -> dgen.Value | None:
         shape = self._shape(op.input)
         axis = op.axis.__constant__.to_json()
         assert isinstance(axis, int)
-        rewriter.replace_uses(op, ConstantOp(value=shape[axis], type=Index()))
-        return True
+        return ConstantOp(value=shape[axis], type=Index())
 
     @lowering_for(toy.TileOp)
-    def lower_tile(self, op: toy.TileOp, rewriter: Rewriter) -> bool:
+    def lower_tile(self, op: toy.TileOp) -> dgen.Value | None:
         count = op.count.__constant__.to_json()
         assert isinstance(count, int)
         in_shape = self._shape(op.input)
@@ -160,11 +153,10 @@ class ToyToStructured(Pass):
             return ndbuffer.StoreOp(value=load, memref=alloc, indices=pack(ivars))
 
         loop = _nested_for(out_shape, body, captures=[alloc, op.input])
-        rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
-        return True
+        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
 
     @lowering_for(toy.ConcatOp)
-    def lower_concat(self, op: toy.ConcatOp, rewriter: Rewriter) -> bool:
+    def lower_concat(self, op: toy.ConcatOp) -> dgen.Value | None:
         lhs_shape = self._shape(op.lhs)
         rhs_shape = self._shape(op.rhs)
         axis = op.axis.__constant__.to_json()
@@ -199,11 +191,10 @@ class ToyToStructured(Pass):
             captures=[alloc, op.rhs, offset],
         )
         after_lhs = ChainOp(lhs=alloc, rhs=lhs_loop, type=alloc.type)
-        rewriter.replace_uses(op, ChainOp(lhs=after_lhs, rhs=rhs_loop, type=alloc.type))
-        return True
+        return ChainOp(lhs=after_lhs, rhs=rhs_loop, type=alloc.type)
 
     @lowering_for(toy.NonzeroCountOp)
-    def lower_nonzero_count(self, op: toy.NonzeroCountOp, rewriter: Rewriter) -> bool:
+    def lower_nonzero_count(self, op: toy.NonzeroCountOp) -> dgen.Value | None:
         """Count nonzero elements: stack-alloc accumulator, nested loop, load/compare/add."""
         shape = self._shape(op.input)
         reference_type = memory.Reference(element_type=Index())
@@ -231,6 +222,4 @@ class ToyToStructured(Pass):
             captures=[initialized, zero, op.input],
         )
         after_loop = ChainOp(lhs=initialized, rhs=loop, type=reference_type)
-        result = memory.LoadOp(ptr=after_loop, type=Index())
-        rewriter.replace_uses(op, result)
-        return True
+        return memory.LoadOp(ptr=after_loop, type=Index())

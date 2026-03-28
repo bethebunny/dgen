@@ -10,6 +10,7 @@ from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects.builtin import Nil
 from dgen.dialects.function import FunctionOp
 from dgen.module import ConstantOp, Module
+import dgen
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.staging import ConstantFold
 from dgen.verify import ClosedBlockError
@@ -28,8 +29,8 @@ from dgen.testing import strip_prefix
 def test_lowering_for_registers_handler():
     class MyPass(Pass):
         @lowering_for(ConstantOp)
-        def handle_constant(self, op: ConstantOp, rewriter: Rewriter) -> bool:
-            return False
+        def handle_constant(self, op: ConstantOp) -> dgen.Value | None:
+            return None
 
     assert ConstantOp in MyPass._handlers
     assert len(MyPass._handlers[ConstantOp]) == 1
@@ -38,12 +39,12 @@ def test_lowering_for_registers_handler():
 def test_multiple_handlers_per_op_type():
     class MyPass(Pass):
         @lowering_for(ConstantOp)
-        def handler_a(self, op: ConstantOp, rewriter: Rewriter) -> bool:
-            return False
+        def handler_a(self, op: ConstantOp) -> dgen.Value | None:
+            return None
 
         @lowering_for(ConstantOp)
-        def handler_b(self, op: ConstantOp, rewriter: Rewriter) -> bool:
-            return True
+        def handler_b(self, op: ConstantOp) -> dgen.Value | None:
+            return op
 
     assert len(MyPass._handlers[ConstantOp]) == 2
     names = [h.__name__ for h in MyPass._handlers[ConstantOp]]
@@ -104,11 +105,10 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
         allow_unregistered_ops = True
 
         @lowering_for(toy.TransposeOp)
-        def eliminate(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
+        def eliminate(self, op: toy.TransposeOp) -> dgen.Value | None:
             if not isinstance(op.input, toy.TransposeOp):
-                return False
-            rewriter.replace_uses(op, op.input.input)
-            return True
+                return None
+            return op.input.input
 
     m = parse_module(ir_text)
     compiler = Compiler(passes=[], exit=IdentityPass())
@@ -145,14 +145,14 @@ def test_pass_multiple_handlers_first_wins():
         allow_unregistered_ops = True
 
         @lowering_for(ConstantOp)
-        def first(self, op: ConstantOp, rewriter: Rewriter) -> bool:
+        def first(self, op: ConstantOp) -> dgen.Value | None:
             call_log.append("first")
-            return True
+            return op
 
         @lowering_for(ConstantOp)
-        def second(self, op: ConstantOp, rewriter: Rewriter) -> bool:
+        def second(self, op: ConstantOp) -> dgen.Value | None:
             call_log.append("second")
-            return True
+            return op
 
     ir_text = strip_prefix("""
         | import function
