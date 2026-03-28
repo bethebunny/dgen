@@ -2,12 +2,13 @@ import algebra
 import function
 import goto
 import index
+import number
 
 %main : function.Function<()> = function.function<Nil>() body():
     %zero : index.Index = 0
     %while_header0 : goto.Label = goto.label([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
         %ten : index.Index = 10
-        %cmp : index.Index = algebra.less_than(%wh0_i, %ten)
+        %cmp : number.Boolean = algebra.less_than(%wh0_i, %ten)
         %while_body0 : goto.Label = goto.label([]) body(%wb0_i: index.Index) captures(%self):
             %one : index.Index = 1
             %next : index.Index = algebra.add(%wb0_i, %one)

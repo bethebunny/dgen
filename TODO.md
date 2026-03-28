@@ -50,8 +50,5 @@
 - Formalize the `%exit` convention — currently uses `param.name.startswith("exit")`, a magic-string contract between `control_flow_to_goto.py` and codegen.
 - `ChainOp` type forwarding: when a pass mutates `op.type` (e.g. shape inference resolves `InferredShapeTensor → Tensor`), wrapping ChainOps keep the old type. Needs a general solution.
 
-## Algebra lowering
-- Add lowerings for: negate, reciprocal, divide, less_equal, greater_than, greater_equal, meet, join, complement, symmetric_difference
-
 ## Misc
 - test_peano's `test_call_jit` _should not_ call the jit, let's verify that it doesn't and put it somewhere more sensible

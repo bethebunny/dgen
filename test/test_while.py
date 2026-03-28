@@ -23,6 +23,7 @@ def test_while_basic_roundtrip():
     """Simple while loop: count from 0 to 10."""
     ir = strip_prefix("""
         | import algebra
+        | import number
         | import control_flow
         | import index
         | import function
@@ -30,7 +31,7 @@ def test_while_basic_roundtrip():
         |     %zero : index.Index = 0
         |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
         |         %ten : index.Index = 10
-        |         %cmp : index.Index = algebra.less_than(%i, %ten)
+        |         %cmp : number.Boolean = algebra.less_than(%i, %ten)
         |     body(%i: index.Index):
         |         %one : index.Index = 1
         |         %next : index.Index = algebra.add(%i, %one)
@@ -51,13 +52,14 @@ def test_while_with_capture_roundtrip():
     """While loop that captures a value from the enclosing scope."""
     ir = strip_prefix("""
         | import algebra
+        | import number
         | import control_flow
         | import index
         | import function
         | %main : function.Function<()> = function.function<Nil>() body(%limit: index.Index):
         |     %zero : index.Index = 0
         |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
-        |         %cmp : index.Index = algebra.less_than(%i, %limit)
+        |         %cmp : number.Boolean = algebra.less_than(%i, %limit)
         |     body(%i: index.Index):
         |         %one : index.Index = 1
         |         %next : index.Index = algebra.add(%i, %one)
@@ -95,13 +97,14 @@ def test_while_no_ivs_roundtrip():
 
 SIMPLE_WHILE = strip_prefix("""
     | import algebra
+    | import number
     | import control_flow
     | import function
     | %main : function.Function<()> = function.function<Nil>() body():
     |     %zero : index.Index = 0
     |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
     |         %ten : index.Index = 10
-    |         %cmp : index.Index = algebra.less_than(%i, %ten)
+    |         %cmp : number.Boolean = algebra.less_than(%i, %ten)
     |     body(%i: index.Index):
     |         %one : index.Index = 1
     |         %next : index.Index = algebra.add(%i, %one)
@@ -124,18 +127,19 @@ def test_while_llvm_ir(snapshot):
 
 NESTED_WHILE = strip_prefix("""
     | import algebra
+    | import number
     | import control_flow
     | import function
     | %main : function.Function<()> = function.function<Nil>() body():
     |     %zero : index.Index = 0
     |     %outer : Nil = control_flow.while([%zero]) condition(%i: index.Index):
     |         %two : index.Index = 2
-    |         %cmp : index.Index = algebra.less_than(%i, %two)
+    |         %cmp : number.Boolean = algebra.less_than(%i, %two)
     |     body(%oi: index.Index):
     |         %izero : index.Index = 0
     |         %inner : Nil = control_flow.while([%izero]) condition(%j: index.Index):
     |             %jtwo : index.Index = 2
-    |             %jcmp : index.Index = algebra.less_than(%j, %jtwo)
+    |             %jcmp : number.Boolean = algebra.less_than(%j, %jtwo)
     |         body(%j2: index.Index):
     |             %nop : index.Index = 0
     |             %nop2 : Nil = chain(%nop, %nop)
