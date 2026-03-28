@@ -97,7 +97,7 @@ def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
         return "()"
     # Inline list sugar: PackOp → [elem0, elem1, ...]
     if isinstance(value, PackOp):
-        return "[" + ", ".join(format_expr(v, tracker) for v in value.values) + "]"
+        return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
     if isinstance(value, Constant) and not isinstance(value, Op):
         json_str = format_expr(value.__constant__.to_json(), tracker)
         if type(value.type).__params__:

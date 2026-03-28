@@ -45,17 +45,11 @@ from __future__ import annotations
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.dialects import algebra, builtin, control_flow, goto
-from dgen.dialects.builtin import ChainOp, Nil
+from dgen.dialects import algebra, control_flow, goto
+from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
-from dgen.module import ConstantOp, PackOp
+from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
-
-
-def _pack(values: list[dgen.Value]) -> PackOp:
-    if not values:
-        return PackOp(values=[], type=builtin.List(element_type=Nil()))
-    return PackOp(values=values, type=builtin.List(element_type=values[0].type))
 
 
 class ControlFlowToGoto(Pass):
@@ -84,7 +78,7 @@ class ControlFlowToGoto(Pass):
         one = ConstantOp(value=1, type=Index())
         next_iv_raw = algebra.AddOp(left=body_iv, right=one, type=Index())
         next_iv = ChainOp(lhs=next_iv_raw, rhs=op.body.result, type=Index())
-        back_br = goto.BranchOp(target=header_self, arguments=_pack([next_iv]))
+        back_br = goto.BranchOp(target=header_self, arguments=pack([next_iv]))
 
         body_block = dgen.Block(
             result=back_br,
@@ -93,7 +87,7 @@ class ControlFlowToGoto(Pass):
         )
         body_label = goto.LabelOp(
             name=f"loop_body{lid}",
-            initial_arguments=_pack([]),
+            initial_arguments=pack([]),
             body=body_block,
         )
 
@@ -104,14 +98,14 @@ class ControlFlowToGoto(Pass):
             condition=cmp,
             true_target=body_label,
             false_target=header_exit,
-            true_arguments=_pack([header_iv]),
-            false_arguments=_pack([]),
+            true_arguments=pack([header_iv]),
+            false_arguments=pack([]),
         )
 
         lo = ConstantOp(value=op.lower_bound.__constant__.to_json(), type=Index())
         header_label = goto.LabelOp(
             name=f"loop_header{lid}",
-            initial_arguments=_pack([lo]),
+            initial_arguments=pack([lo]),
             body=dgen.Block(
                 result=cond_br,
                 parameters=[header_self, header_exit],
@@ -156,11 +150,9 @@ class ControlFlowToGoto(Pass):
         # transitively via the arguments operand.
         body_result = op.body.result
         next_args: list[dgen.Value] = (
-            list(body_result.values)
-            if isinstance(body_result, PackOp)
-            else [body_result]
+            list(body_result) if isinstance(body_result, PackOp) else [body_result]
         )
-        back_br = goto.BranchOp(target=header_self, arguments=_pack(next_args))
+        back_br = goto.BranchOp(target=header_self, arguments=pack(next_args))
 
         body_block = dgen.Block(
             result=back_br,
@@ -169,7 +161,7 @@ class ControlFlowToGoto(Pass):
         )
         body_label = goto.LabelOp(
             name=f"while_body{lid}",
-            initial_arguments=_pack([]),
+            initial_arguments=pack([]),
             body=body_block,
         )
 
@@ -183,8 +175,8 @@ class ControlFlowToGoto(Pass):
             condition=cond_result,
             true_target=body_label,
             false_target=header_exit,
-            true_arguments=_pack(header_args),
-            false_arguments=_pack([]),
+            true_arguments=pack(header_args),
+            false_arguments=pack([]),
         )
 
         header_label = goto.LabelOp(

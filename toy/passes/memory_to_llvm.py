@@ -10,10 +10,10 @@ memory.deallocate → no-op (leak for now)
 
 from __future__ import annotations
 
-from dgen.dialects import builtin, llvm, memory
+from dgen.dialects import llvm, memory
 from dgen.dialects.builtin import Nil, String
 from dgen.dialects.index import Index
-from dgen.module import ConstantOp, PackOp
+from dgen.module import ConstantOp, pack
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 
 
@@ -27,9 +27,8 @@ class MemoryToLLVM(Pass):
         # malloc(count * 8) for 8-byte doubles
         byte_count = ConstantOp(value=8, type=Index())
         total = llvm.MulOp(lhs=op.count, rhs=byte_count)
-        malloc_args = PackOp(values=[total], type=builtin.List(element_type=Index()))
         malloc_op = llvm.CallOp(
-            callee=String().constant("malloc"), args=malloc_args, type=llvm.Ptr()
+            callee=String().constant("malloc"), args=pack([total]), type=llvm.Ptr()
         )
         rewriter.replace_uses(op, malloc_op)
         return True

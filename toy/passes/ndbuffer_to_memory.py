@@ -15,11 +15,11 @@ from __future__ import annotations
 from math import prod
 
 import dgen
-from dgen.dialects import algebra, builtin, llvm, memory
+from dgen.dialects import algebra, llvm, memory
 from dgen.dialects.builtin import String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
-from dgen.module import ConstantOp, PackOp
+from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from toy.dialects import ndbuffer, toy
 
@@ -99,7 +99,7 @@ class NDBufferToMemory(Pass):
         ptr = _deref(op.memref)
         assert isinstance(op.indices, PackOp)
         shape = self._resolve_shape(op.memref)
-        offset = _linearize(shape, list(op.indices.values))
+        offset = _linearize(shape, list(op.indices))
         ref_type = (
             ptr.type
             if isinstance(ptr.type, memory.Reference)
@@ -114,7 +114,7 @@ class NDBufferToMemory(Pass):
         ptr = _deref(op.memref)
         assert isinstance(op.indices, PackOp)
         shape = self._resolve_shape(op.memref)
-        offset = _linearize(shape, list(op.indices.values))
+        offset = _linearize(shape, list(op.indices))
         ref_type = (
             ptr.type
             if isinstance(ptr.type, memory.Reference)
@@ -129,11 +129,8 @@ class NDBufferToMemory(Pass):
         ptr = _deref(op.input)
         shape = self._resolve_shape(op.input)
         size = prod(shape)
-        pack = PackOp(
-            values=[ptr, ConstantOp(value=size, type=Index())],
-            type=builtin.List(element_type=ptr.type),
-        )
+        args = pack([ptr, ConstantOp(value=size, type=Index())])
         rewriter.replace_uses(
-            op, llvm.CallOp(callee=String().constant("print_memref"), args=pack)
+            op, llvm.CallOp(callee=String().constant("print_memref"), args=args)
         )
         return True
