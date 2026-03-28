@@ -10,6 +10,8 @@
 ## Block / scope invariants
 - Implement `func.recursive` op for recursive functions (see `docs/block-scoping.md` §3.1). Currently recursive functions like `%natural` calling itself via `call<%natural>` violate the DAG property — `walk_ops` follows the callee parameter edge back into the function, creating a cycle. `func.recursive` breaks the cycle by providing `%self` as a block argument.
 - Blocks should explicitly capture function references (currently they cross block boundaries without being captured)
+- Verifier should reject duplicate SSA names in the same scope
+- Parser should reject forward references (use before def) and undefined names
 
 ## Actor framework
 - Add a loop fusion optimization pass — currently `ActorToAffine` emits separate loops per actor; a general fusion pass would subsume the fused-pipeline special case
