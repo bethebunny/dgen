@@ -8,7 +8,7 @@
 - Consider removing the generic `builtin.ChainOp` in favor of a monadic effects design (explicit effect tokens threaded through the use-def graph). ChainOp causes dangling chain ops after passes that remove their operands, and the monadic design makes ordering dependencies explicit and composable.
 
 ## Block / scope invariants
-- Implement `func.recursive` op for recursive functions (see `docs/block-scoping.md` §3.1). Currently recursive functions like `%natural` calling itself via `call<%natural>` violate the DAG property — `walk_ops` follows the callee parameter edge back into the function, creating a cycle. `func.recursive` breaks the cycle by providing `%self` as a block argument.
+- Implement `func.recursive` op for recursive functions (see `docs/block-scoping.md` §3.1). Currently recursive functions like `%natural` calling itself via `call<%natural>` violate the DAG property — `block.ops` follows the callee parameter edge back into the function, creating a cycle. `func.recursive` breaks the cycle by providing `%self` as a block argument.
 - Blocks should explicitly capture function references (currently they cross block boundaries without being captured)
 
 ## Actor framework
@@ -41,7 +41,6 @@
 - Disambiguate `Type` — it means 3 things: "type value" (in `__params__`), "any type" wildcard (in `__operands__`), and "polymorphic return" (in `-> Type`)
 
 ## Block / value infrastructure
-- Eliminate `walk_ops`; implement directly in `Block.ops`
 - Have values track their uses for forward iteration and fast `replace_uses`
 
 ## Codegen

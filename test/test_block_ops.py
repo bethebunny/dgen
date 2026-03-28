@@ -1,15 +1,15 @@
-"""Tests for walk_ops: the use-def graph traversal.
+"""Tests for Block.ops: the canonical op list derived from use-def traversal.
 
-walk_ops(root, stop) returns ops in topological order (dependencies before
-dependents) by walking the use-def graph backwards from root.
+Block.ops returns ops reachable from block.result via transitive_dependencies,
+filtered to Op instances, in topological order (dependencies before dependents).
 
 Contract:
 - Follows operands (Value-typed fields) and parameters (non-Value fields
   that are Values, e.g. branch targets)
 - Does NOT descend into nested blocks (op.blocks). A LabelOp is an op in
   the walk, but its body block's ops are a separate walk.
-- Stops at values in the stop set (capture boundaries). These are leaves.
-- Only returns Op instances (not BlockArguments, BlockParameters, Constants,
+- Stops at captures (capture boundaries). These are leaves.
+- Only returns Op instances (not BlockArguments, BlockParameters, type values,
   or plain Values).
 - Returns ops in topological order: dependencies before dependents.
 """
@@ -19,41 +19,39 @@ from dgen.block import BlockArgument
 from dgen.dialects import goto
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
-from dgen.graph import walk_ops
 from dgen.module import ConstantOp, pack
 
 
 def test_simple_chain():
-    """walk_ops follows operands in topological order."""
+    """Block.ops follows operands in topological order."""
     a = ConstantOp(name="a", value=1, type=Index())
     b = ConstantOp(name="b", value=2, type=Index())
     c = ChainOp(name="c", lhs=a, rhs=b, type=Index())
-    ops = walk_ops(c)
-    assert ops == [a, b, c]
+    block = Block(result=c)
+    assert block.ops == [a, b, c]
 
 
 def test_block_args_not_included():
-    """BlockArguments are not ops — walk_ops skips them."""
+    """BlockArguments are not ops — Block.ops skips them."""
     x = BlockArgument(name="x", type=Index())
     a = ConstantOp(name="a", value=1, type=Index())
     c = ChainOp(name="c", lhs=x, rhs=a, type=Index())
-    ops = walk_ops(c)
-    # x is a BlockArgument, not an Op — not in the result
-    assert ops == [a, c]
+    block = Block(result=c, args=[x])
+    assert block.ops == [a, c]
 
 
-def test_stop_set():
-    """Values in stop set are leaves — walk_ops doesn't traverse past them."""
+def test_captures_stop_walk():
+    """Captured values are leaves — Block.ops doesn't traverse past them."""
     a = ConstantOp(name="a", value=1, type=Index())
     b = ConstantOp(name="b", value=2, type=Index())
     c = ChainOp(name="c", lhs=a, rhs=b, type=Index())
-    # Stop at a — it becomes a leaf, not included in results
-    ops = walk_ops(c, stop={a})
-    assert ops == [b, c]
+    # Stop at a — it's a capture, not included in results
+    block = Block(result=c, captures=[a])
+    assert block.ops == [b, c]
 
 
 def test_does_not_descend_into_label_body():
-    """walk_ops reaches a LabelOp but does NOT walk into its body block."""
+    """Block.ops reaches a LabelOp but does NOT walk into its body block."""
     inner_op = ConstantOp(name="inner", value=42, type=Index())
     label = goto.LabelOp(
         initial_arguments=pack(),
@@ -61,8 +59,9 @@ def test_does_not_descend_into_label_body():
         body=Block(result=inner_op),
     )
     outer_op = ChainOp(name="outer", lhs=label, rhs=label, type=Nil())
+    block = Block(result=outer_op)
 
-    ops = walk_ops(outer_op)
+    ops = block.ops
     # label is reached (it's an Op), but inner_op is NOT — it's inside
     # the label's body block, which is a separate walk.
     assert label in ops
@@ -80,9 +79,10 @@ def test_label_body_is_separate_walk():
         body=Block(result=inner_result),
     )
     outer = ChainOp(name="outer", lhs=label, rhs=label, type=Nil())
+    block = Block(result=outer)
 
-    # Parent walk: sees label, its initial_arguments PackOp, and outer
-    parent_ops = walk_ops(outer)
+    # Parent walk: sees label and outer, not inner ops
+    parent_ops = block.ops
     assert label in parent_ops
     assert outer in parent_ops
     assert inner_a not in parent_ops
@@ -97,22 +97,23 @@ def test_label_body_is_separate_walk():
 
 
 def test_follows_parameters():
-    """walk_ops follows parameter references (e.g. branch targets)."""
+    """Block.ops follows parameter references (e.g. branch targets)."""
     label = goto.LabelOp(
         initial_arguments=pack(),
         name="target",
         body=Block(result=Value(type=Nil())),
     )
     branch = goto.BranchOp(target=label, arguments=pack())
+    block = Block(result=branch)
 
-    ops = walk_ops(branch)
+    ops = block.ops
     # label is reached via the 'target' parameter
     assert label in ops
     assert branch in ops
 
 
-def test_captures_stop_walk():
-    """block.ops uses captures as stop set — captured values are leaves."""
+def test_captures_as_parent_dependencies():
+    """Block.ops uses captures as stop set — captured values are leaves."""
     outer_val = ConstantOp(name="outer", value=99, type=Index())
     inner_op = ChainOp(name="use", lhs=outer_val, rhs=outer_val, type=Index())
 
@@ -126,12 +127,12 @@ def test_captures_stop_walk():
     assert inner_op in block_with_captures.ops
 
 
-def test_walk_visits_block_captures():
-    """Parent walk_ops visits a child block's captures as dependencies.
+def test_parent_sees_child_block_captures():
+    """Parent Block.ops visits a child block's captures as dependencies.
 
     When an op has a block with captures, those captures are parent-scope
-    values that the op depends on. walk_ops must visit them so they appear
-    in the parent block's ops.
+    values that the op depends on. Block.ops must include them so they appear
+    in the parent block's op list.
     """
     captured = ConstantOp(name="captured", value=42, type=Index())
     inner_result = ConstantOp(name="inner", value=1, type=Index())
@@ -143,7 +144,8 @@ def test_walk_visits_block_captures():
             captures=[captured],
         ),
     )
-    ops = walk_ops(label)
+    block = Block(result=label)
+    ops = block.ops
     # captured is visited as a dependency of the label (via block captures)
     assert captured in ops
     assert label in ops

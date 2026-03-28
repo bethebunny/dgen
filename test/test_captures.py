@@ -263,7 +263,7 @@ def test_constant_captured_not_ambient():
 
     A ConstantOp used inside a block must appear in that block's captures
     (or be defined within the block). The verifier rejects ConstantOps
-    that appear in multiple blocks' walk_ops without being captured.
+    that appear in multiple blocks' block.ops without being captured.
     """
     ir = strip_prefix("""
         | import goto

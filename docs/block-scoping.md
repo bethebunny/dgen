@@ -11,7 +11,7 @@
 This document describes the approach to scope, value capture, and use-def cycle management in
 the dgen IR. The central invariant is the **closed-block invariant**: every block is a closed
 term whose dependencies on enclosing scopes are explicitly declared as captures.
-With this invariant, `walk_ops` is a simple DAG walk with no special cases, and block-level
+With this invariant, `block.ops` is a simple DAG walk with no special cases, and block-level
 analysis, inlining, and scheduling are sound in isolation. Use-def cycles from loop back-edges
 are eliminated by a `%self` block parameter mechanism.
 
@@ -122,7 +122,7 @@ A block has three kinds of declared inputs:
   for loop-header labels). Callers never pass them. Syntax: `block_name<%param: Type>`.
 - **`args`**: runtime values passed by callers at every branch site, generating phi nodes in
   the lowered CFG. Syntax: `block_name(%arg: Type)`.
-- **`captures`**: outer-scope values referenced directly. They are leaves in `walk_ops` (the
+- **`captures`**: outer-scope values referenced directly. They are leaves in `block.ops` (the
   walk stops at capture boundaries) and do not generate phi nodes. Syntax:
   `block_name(...) captures(%val)`.
 
@@ -136,19 +136,18 @@ Cross-scope references that are not ambient must appear in one of these three li
 recursion and loops are broken at block-argument boundaries: a recursive call passes `%self` (a
 block parameter, a leaf in the graph) as the callee, not a direct edge back to the defining op.
 
-### 2.2 walk_ops: The Clean Invariant
+### 2.2 transitive_dependencies: The Clean Invariant
 
-With the closed-block and DAG invariants enforced, `walk_ops` on any well-formed IR value has a
+With the closed-block and DAG invariants enforced, `transitive_dependencies` on any well-formed IR value has a
 simple, exception-free specification:
 
-> Given value V, `walk_ops(V)` visits ops by following **operands**, **parameter values**, the
-> **result type**, and **block argument types**. Captured values are treated as leaves (the walk
+> Given value V, `transitive_dependencies(V)` visits ops by following **operands**, **parameter values**, the
+> **result type**, **block argument types**, and **block closures**. Captured values are treated as leaves (the walk
 > stops at capture boundaries). No special cases. No `isinstance` guards. The traversal
 > terminates because the use-def graph is a DAG.
 
-**The locality property.** `walk_ops(B.result)` produces exactly:
-- Ops whose transitive dependencies are entirely within `B.parameters ∪ B.args ∪ B.captures`, and
-- Ambient ops (no block-argument dependencies) reachable via the use-def graph.
+**The locality property.** `block.ops` produces exactly
+ ops whose transitive dependencies are entirely within `B.parameters ∪ B.args`, bounded by `B.captures`.
 
 It will never surface ops whose scope belongs to a different block. This is what makes block-level
 analysis, inlining, and scheduling sound in isolation: a block's complete dependency set is
@@ -167,7 +166,7 @@ closed-block invariant.
     %val : F64 = affine.load(%src, [%i])    // %src captured implicitly from outer block
 ```
 
-`walk_ops` on the `affine.for` result does not see `%src` as a dependency of the loop body—yet
+`block.ops` on the `affine.for` result does not see `%src` as a dependency of the loop body—yet
 the loop body functionally depends on it. The `llvm.alloca` op belongs to the outer block, and
 the loop body references it without declaration. This dependency is invisible to any tool that
 inspects block structure.
@@ -180,7 +179,7 @@ inspects block structure.
     %val : F64 = affine.load(%src, [%i])
 ```
 
-`walk_ops` on this block's result treats `%src` as a leaf (it's in the captures stop set) and
+`block.ops` on this block's result treats `%src` as a leaf (it's in the captures stop set) and
 returns only the block-local ops. The block's complete dependency set is manifest in its argument
 and capture lists. Any tool that operates on this block—a scheduler, a verifier, an inliner—reads
 its inputs directly by inspection.
@@ -407,7 +406,7 @@ This approach was rejected because it creates severe complexity in practice:
   `false_args`, `PipelineOp` threads through its body arg. There is no shared mechanism.
 
 The captures design eliminates all of this. Outer-scope values are listed once on each block
-that references them. `walk_ops` stops at capture boundaries, maintaining the locality property.
+that references them. `block.ops` stops at capture boundaries, maintaining the locality property.
 `replace_uses` maintains captures with a single list substitution per block. The lowering lists
 captures at construction time (typically derived from the input IR's own block args), and no
 further tracking or remapping is needed.
@@ -474,7 +473,7 @@ calls between module-level functions. It does not directly work for:
    already works in the parser, since block arguments can appear in parameter position.
 2. **Higher-order functions**: a function value passed as a block argument of type `Function<T>`
    can appear as a parameter.
-3. **walk_ops**: when `call<%fn>` has a `FunctionOp` as its parameter, `walk_ops` descends into
+3. **block.ops**: when `call<%fn>` has a `FunctionOp` as its parameter, `block.ops` descends into
    that function's body. This requires the `isinstance(param, FunctionOp)` guard.
 
 Three design options address this tension. Each is shown with a **recursive function** example and
@@ -515,13 +514,13 @@ op call(callee: Function<T>, args: List<T>) -> T
     %result : Index = call(%f, [%n])    // uniform — identical syntax to the recursive case
 ```
 
-`walk_ops` on `call(%self, [%n1])` follows the operand edge to `%self`, which is a
-`BlockArgument` — a leaf. `walk_ops` on `call(%factorial, [%five])` follows the operand edge to
-`%factorial`, an ambient op. `walk_ops` visits `%factorial` itself but does not descend into its
+`block.ops` on `call(%self, [%n1])` follows the operand edge to `%self`, which is a
+`BlockArgument` — a leaf. `block.ops` on `call(%factorial, [%five])` follows the operand edge to
+`%factorial`, an ambient op. `block.ops` visits `%factorial` itself but does not descend into its
 body (nested blocks are not traversed). The `FunctionOp` guard disappears entirely.
 
 **Trade-offs:** Requires changing the `call` op signature. All call sites (static and dynamic)
-become uniform. The cost is one op-signature change; the gain is a uniform, guard-free `walk_ops`.
+become uniform. The cost is one op-signature change; the gain is a uniform, guard-free `block.ops`.
 
 ---
 
@@ -560,9 +559,9 @@ refers to itself directly.
 
 **Trade-offs:** No change to `call`, no `func_ref` op needed. However, `call<%factorial>` inside
 `%factorial`'s body creates a **parameter-level cycle**: `%factorial` contains an op whose
-parameter IS `%factorial`. This violates the DAG property from Section 2.1. `walk_ops` handles
+parameter IS `%factorial`. This violates the DAG property from Section 2.1. `block.ops` handles
 it via the `visited` set (no infinite loop), but the IR is technically not a DAG for recursive
-functions. The FunctionOp guard is replaced by implicit cycle tolerance, not removed. For first-
+functions. The FunctionOp guard is replaced by implicit cycle tolerance, not removed. For firstblock.ops
 class function values that are not self-recursive, the design is unchanged and clean; the DAG
 violation is confined to the recursive case.
 
@@ -642,7 +641,7 @@ with how `%self` works for labels (auto-supplied by lowering, not threaded by ca
 named-block syntax makes the self-reference explicit and structurally distinct from ordinary block
 arguments. Option A is clean and uniform but requires changing the `call` op signature.
 Option B is the cheapest to implement but violates the DAG property and does not eliminate the
-structural special case in `walk_ops`.
+structural special case in `block.ops`.
 
 ### 3.7 Scheduling Shared Pure Subgraphs
 
@@ -669,9 +668,9 @@ is:
 - Revisit dgen-side scheduling when dgen's higher-level semantic knowledge (purity by
   construction, specialization decisions) can demonstrably improve on what LLVM can infer.
 
-### 3.8 `walk_ops`: End State
+### 3.8 `block.ops`: End State
 
-Under the closed-block and DAG invariants, `walk_ops` reduces to a straightforward recursive DAG
+Under the closed-block and DAG invariants, `block.ops` reduces to a straightforward recursive DAG
 walk:
 
 ```python

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from typing import Iterable
 
 import dgen
 
-from .graph import walk_ops
+from .graph import transitive_dependencies
 from .type import Memory, TypeType, Value
 
 
@@ -57,14 +57,13 @@ class Block:
 
     Ops are derived by walking the use-def graph from the result value.
 
-    ``parameters`` are :class:`BlockParameter` values bound once by the op's
-    lowering pass (e.g. ``%self`` for loop-header labels); callers never pass
-    them explicitly.
-    ``args`` are :class:`BlockArgument` values passed by callers at every
-    call/branch site (phi nodes).
+    Parameters and arguments have semantics defined by the op holding the block.
+    - ``parameters`` are :class:`BlockParameter` values
+    - ``args`` are :class:`BlockArgument` values
+
     ``captures`` are outer-scope values referenced directly; they are leaves
-    in walk_ops (the walk stops at capture boundaries) and do not generate
-    phi nodes.
+    in block.ops (the walk stops at capture boundaries) but are always explicitly
+    present to locally analyze block dependencies.
     """
 
     result: dgen.Value
@@ -83,7 +82,11 @@ class Block:
 
     @property
     def ops(self) -> list[dgen.Op]:
-        return walk_ops(self.result, stop=set(self.captures))
+        return [
+            v
+            for v in transitive_dependencies(self.result, stop=self.captures)
+            if isinstance(v, dgen.Op)
+        ]
 
     @property
     def asm(self) -> Iterable[str]:

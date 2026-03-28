@@ -116,7 +116,7 @@ def verify_closed_blocks(module: Module) -> None:
 
 
 def _verify_unique_ownership(module: Module) -> None:
-    """Assert every op belongs to exactly one block's walk_ops."""
+    """Assert every op belongs to exactly one block's block.ops."""
     owner: dict[int, str] = {}  # op id → block description
 
     def _check_block(block: Block, name: str) -> None:
@@ -145,7 +145,7 @@ def _verify_unique_ownership(module: Module) -> None:
 def verify_dag(module: Module) -> None:
     """Assert the use-def graph is a DAG (no cycles).
 
-    Uses the same traversal as walk_ops but with DFS path tracking:
+    Uses the same traversal as block.ops but with DFS path tracking:
     if a value is encountered while still on the current path, there
     is a cycle.
     """
