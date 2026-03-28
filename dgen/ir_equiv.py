@@ -90,9 +90,7 @@ class Fingerprinter:
                     b"constant", self._fingerprint_type(value.type), serialized.encode()
                 )
             case PackOp() as pack:
-                element_fingerprints = b"".join(
-                    self.fingerprint(v) for v in pack.values
-                )
+                element_fingerprints = b"".join(self.fingerprint(v) for v in pack)
                 return _hash_parts(b"pack", element_fingerprints)
             case list() as lst:
                 element_fingerprints = b"".join(

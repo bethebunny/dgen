@@ -14,7 +14,7 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.dialects import builtin, control_flow, function, goto, llvm
-from dgen.module import ConstantOp, Module, PackOp, string_value
+from dgen.module import ConstantOp, Module, PackOp, pack, string_value
 from dgen.layout import Layout
 from dgen.compiler import Compiler, IdentityPass
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
@@ -123,7 +123,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     entry_sentinel = dgen.Value(name="entry", type=goto.Label())
 
     def unpack(val: Value) -> list[Value]:
-        return val.values if isinstance(val, PackOp) else [val]
+        return list(val) if isinstance(val, PackOp) else [val]
 
     def resolve_target(target: dgen.Value) -> dgen.Value:
         if isinstance(target, goto.LabelOp):
@@ -258,9 +258,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             nonlocal _synth_counter
             synth = goto.LabelOp(
                 name=f"_blk{_synth_counter}",
-                initial_arguments=PackOp(
-                    values=[], type=builtin.List(element_type=builtin.Nil())
-                ),
+                initial_arguments=pack(),
                 body=dgen.Block(
                     result=ops_list[-1] if ops_list else dgen.Value(type=builtin.Nil())
                 ),

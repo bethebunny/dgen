@@ -14,6 +14,8 @@ from typing import ClassVar
 from dgen import Constant, Dialect, Op, Type, TypeType, Value
 from dgen.dialects.builtin import (
     HasSingleBlock,
+    List,
+    Nil,
     String,
     builtin,
 )
@@ -70,6 +72,9 @@ class PackOp(Op):
     type: Type
     __operands__: ClassVar[Fields] = ()
 
+    def __iter__(self) -> Iterator[Value]:
+        return iter(self.values)
+
     @property
     def operands(self) -> Iterator[tuple[str, Value]]:
         for i, v in enumerate(self.values):
@@ -77,6 +82,12 @@ class PackOp(Op):
 
     def replace_operand(self, old: Value, new: Value) -> None:
         self.values = [new if v is old else v for v in self.values]
+
+
+def pack(values: Iterable[Value] = ()) -> PackOp:
+    """Create a PackOp, inferring the element type from the values."""
+    vals = list(values)
+    return PackOp(values=vals, type=List(element_type=vals[0].type if vals else Nil()))
 
 
 # ===----------------------------------------------------------------------=== #

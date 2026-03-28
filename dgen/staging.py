@@ -14,10 +14,10 @@ import dgen
 from dgen import codegen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable, _ctype, _llvm_type
-from dgen.dialects import builtin, control_flow, function, index, llvm
+from dgen.dialects import builtin, control_flow, function, llvm
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module, PackOp
+from dgen.module import ConstantOp, Module, PackOp, pack
 from dgen.type import Constant, Memory
 
 from dgen.passes.pass_ import Pass
@@ -81,7 +81,7 @@ def _extern_declarations(subgraph: list[dgen.Op]) -> list[str]:
             ret_llvm = _llvm_type(result_type.__layout__)
         # Derive param types from the call args
         if isinstance(op.arguments, PackOp):
-            arg_values = op.arguments.values
+            arg_values = list(op.arguments)
         else:
             arg_values = [op.arguments]
         param_types = [
@@ -486,10 +486,9 @@ def _build_callback_thunk(
 
     # Build stage-1 thunk: call callback with all original params, return result
     thunk_args = [BlockArgument(name=arg.name, type=arg.type) for arg in func.body.args]
-    pack = PackOp(values=thunk_args, type=builtin.List(element_type=index.Index()))
     call_op = llvm.CallOp(
         callee=String().constant(callback_name),
-        args=pack,
+        args=pack(thunk_args),
         type=result_type,
     )
     thunk_func = function.FunctionOp(

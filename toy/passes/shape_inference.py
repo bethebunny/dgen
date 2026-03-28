@@ -90,7 +90,7 @@ class ShapeInference(Pass):
     @lowering_for(function.CallOp)
     def infer_call(self, op: function.CallOp, rewriter: Rewriter) -> bool:
         args = (
-            op.arguments.values if isinstance(op.arguments, PackOp) else [op.arguments]
+            list(op.arguments) if isinstance(op.arguments, PackOp) else [op.arguments]
         )
         callee = self._func_map.get(op.callee.name)
         if callee is None:

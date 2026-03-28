@@ -6,12 +6,12 @@ from collections.abc import Callable, Sequence
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import algebra, builtin, memory
+from dgen.dialects import algebra, memory
 from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean, Float64
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module, PackOp
+from dgen.module import ConstantOp, Module, pack
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 from dgen.dialects import control_flow
 from toy.dialects import ndbuffer, shape_constant, toy
@@ -20,14 +20,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from dgen.compiler import Compiler
-
-
-def _empty_pack() -> PackOp:
-    return PackOp(values=[], type=builtin.List(element_type=builtin.Nil()))
-
-
-def _index_pack(*values: dgen.Value) -> PackOp:
-    return PackOp(values=list(values), type=builtin.List(element_type=Index()))
 
 
 def _nested_for(
@@ -50,7 +42,7 @@ def _nested_for(
         innermost = control_flow.ForOp(
             lower_bound=Index().constant(0),
             upper_bound=Index().constant(shape[depth]),
-            initial_arguments=_empty_pack(),
+            initial_arguments=pack(),
             body=dgen.Block(
                 result=innermost,
                 args=[ivars[depth]],
@@ -95,9 +87,9 @@ class ToyToStructured(Pass):
         alloc = self._alloc(op.type.shape)
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = ndbuffer.LoadOp(memref=op.input, indices=_index_pack(*ivars))
+            load = ndbuffer.LoadOp(memref=op.input, indices=pack(ivars))
             return ndbuffer.StoreOp(
-                value=load, memref=alloc, indices=_index_pack(*reversed(list(ivars)))
+                value=load, memref=alloc, indices=pack(reversed(list(ivars)))
             )
 
         loop = _nested_for(in_shape, body, captures=[alloc, op.input])
@@ -124,7 +116,7 @@ class ToyToStructured(Pass):
         alloc = self._alloc(lhs.type.shape)
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            idx = _index_pack(*ivars)
+            idx = pack(ivars)
             lhs_elem = ndbuffer.LoadOp(memref=lhs, indices=idx)
             res = cls(
                 left=lhs_elem,
@@ -164,10 +156,8 @@ class ToyToStructured(Pass):
         alloc = self._alloc(shape_constant(out_shape))
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = ndbuffer.LoadOp(memref=op.input, indices=_index_pack(*ivars[1:]))
-            return ndbuffer.StoreOp(
-                value=load, memref=alloc, indices=_index_pack(*ivars)
-            )
+            load = ndbuffer.LoadOp(memref=op.input, indices=pack(ivars[1:]))
+            return ndbuffer.StoreOp(value=load, memref=alloc, indices=pack(ivars))
 
         loop = _nested_for(out_shape, body, captures=[alloc, op.input])
         rewriter.replace_uses(op, ChainOp(lhs=alloc, rhs=loop, type=alloc.type))
@@ -184,7 +174,7 @@ class ToyToStructured(Pass):
         alloc = self._alloc(shape_constant(out_shape))
 
         def lhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            idx = _index_pack(*ivars)
+            idx = pack(ivars)
             return ndbuffer.StoreOp(
                 value=ndbuffer.LoadOp(memref=op.lhs, indices=idx),
                 memref=alloc,
@@ -198,9 +188,9 @@ class ToyToStructured(Pass):
             shifted = list(ivars)
             shifted[axis] = algebra.AddOp(left=ivars[axis], right=offset, type=Index())
             return ndbuffer.StoreOp(
-                value=ndbuffer.LoadOp(memref=op.rhs, indices=_index_pack(*ivars)),
+                value=ndbuffer.LoadOp(memref=op.rhs, indices=pack(ivars)),
                 memref=alloc,
-                indices=_index_pack(*shifted),
+                indices=pack(shifted),
             )
 
         rhs_loop = _nested_for(
@@ -225,7 +215,7 @@ class ToyToStructured(Pass):
         zero = ConstantOp(value=0.0, type=Float64())
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            element = ndbuffer.LoadOp(memref=op.input, indices=_index_pack(*ivars))
+            element = ndbuffer.LoadOp(memref=op.input, indices=pack(ivars))
             nonzero = algebra.NotEqualOp(left=element, right=zero, type=Boolean())
             current = memory.LoadOp(ptr=initialized, type=Index())
             updated = algebra.AddOp(

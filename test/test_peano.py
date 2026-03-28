@@ -27,7 +27,7 @@ from dgen.dialects.index import Index
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler
 from dgen.dialects.function import FunctionOp
-from dgen.module import ConstantOp, Module, PackOp
+from dgen.module import ConstantOp, Module, PackOp, pack
 from dgen.verify import CycleError, verify_dag
 from dgen.passes.pass_ import Pass
 from dgen.type import Fields, TypeType, type_constant
@@ -137,8 +137,7 @@ def _lower_peano_ops(
             replacements[op] = const
         elif isinstance(op, function.CallOp):
             if isinstance(op.arguments, PackOp):
-                new_values = [replacements.get(a, a) for a in op.arguments.values]
-                new_pack = PackOp(values=new_values, type=op.arguments.type)
+                new_pack = pack(replacements.get(a, a) for a in op.arguments)
                 new_ops.append(new_pack)
                 new_call = function.CallOp(
                     callee=op.callee,
