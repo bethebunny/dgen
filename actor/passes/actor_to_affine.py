@@ -13,6 +13,7 @@ is valid in the caller's scope.
 
 from __future__ import annotations
 
+import dgen
 from dgen.graph import inline_block
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 
@@ -31,10 +32,6 @@ class ActorToAffine(Pass):
         # Step 2: Inline each actor body in sequence, threading produce
         # values through. After pipeline inline, actor inputs reference
         # actual values from the function scope.
-        #
-        # TODO: check fusibility criteria (matching consume/produce rates)
-        # before inlining. Mismatched rates need separate loops with an
-        # intermediate buffer instead of direct inlining.
         actors = [o for o in op.body.ops if isinstance(o, ActorOp)]
         pipeline_rewriter = Rewriter(op.body)
         for actor in actors:
