@@ -17,14 +17,15 @@ if TYPE_CHECKING:
 # Handler registration
 # ---------------------------------------------------------------------------
 
-_HandlerFn = Callable[..., bool]
+_HandlerFn = Callable[..., dgen.Value | None]
 
 
 def lowering_for(op_type: type[dgen.Op]) -> Callable[[_HandlerFn], _HandlerFn]:
     """Decorator to register a method as a handler for an op type.
 
-    Multiple handlers per op type are allowed; they are tried in
-    registration order until one returns True.
+    Handlers return ``Value | None``:
+    - ``Value``: the framework calls ``replace_uses(op, result)``
+    - ``None``: no match, try the next handler
     """
 
     def decorator(fn: _HandlerFn) -> _HandlerFn:
@@ -72,10 +73,9 @@ class Rewriter:
     def __init__(self, block: dgen.Block) -> None:
         self._block = block
 
-    def replace_uses(self, old: dgen.Value, new: dgen.Value) -> bool:
+    def replace_uses(self, old: dgen.Value, new: dgen.Value) -> None:
         """Eagerly replace all references to old with new, recursively."""
         self._replace_in_block(self._block, old, new)
-        return True
 
     def _replace_in_block(
         self, block: dgen.Block, old: dgen.Value, new: dgen.Value
@@ -100,11 +100,9 @@ class Rewriter:
 class Pass(metaclass=_PassMeta):
     """Base class for IR passes.
 
-    Subclasses declare:
-      - op_domain / op_range: sets of op types
-      - type_domain / type_range: sets of type types
-      - allow_unregistered_ops: bool
-      - @lowering_for handlers
+    Subclasses register ``@lowering_for`` handlers that return
+    ``Value | None``. The framework calls ``replace_uses`` automatically
+    when a handler returns a value.
     """
 
     _handlers: dict[type[dgen.Op], list[_HandlerFn]]
@@ -121,16 +119,17 @@ class Pass(metaclass=_PassMeta):
         rewriter = Rewriter(block)
         for op in list(block.ops):  # snapshot — graph may change
             handlers = self._handlers.get(type(op), [])
-            handled = False
+            result: dgen.Value | None = None
             for handler in handlers:
-                if handler(self, op, rewriter):
-                    handled = True
+                result = handler(self, op)
+                if result is not None:
+                    rewriter.replace_uses(op, result)
                     break
-            if not handled and not self.allow_unregistered_ops:
+            if result is None and not self.allow_unregistered_ops:
                 raise TypeError(
                     f"No handler for {type(op).__name__} in {type(self).__name__}"
                 )
-            if not handled:
+            if result is None:
                 # Recurse into nested blocks for unhandled ops
                 for _, child_block in op.blocks:
                     self._run_block(child_block)

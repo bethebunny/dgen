@@ -24,7 +24,7 @@ class ActorToAffine(Pass):
     allow_unregistered_ops = True
 
     @lowering_for(PipelineOp)
-    def lower_pipeline(self, op: PipelineOp, rewriter: Rewriter) -> bool:
+    def lower_pipeline(self, op: PipelineOp) -> dgen.Value | None:
         # Step 1: Inline the pipeline body — substitute pipeline body arg
         # with the pipeline's input operand.
         inline_block(op.body, [op.input])
@@ -41,5 +41,4 @@ class ActorToAffine(Pass):
 
         # Step 3: Replace the pipeline op in the function body with the
         # pipeline body's result (the last actor's produce value).
-        rewriter.replace_uses(op, op.body.result)
-        return True
+        return op.body.result

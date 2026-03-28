@@ -20,7 +20,7 @@ from dgen.dialects.builtin import String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.module import ConstantOp, PackOp, pack
-from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import ndbuffer, toy
 
 
@@ -75,7 +75,7 @@ class NDBufferToMemory(Pass):
         return _shape_of(val)
 
     @lowering_for(ndbuffer.AllocOp)
-    def lower_alloc(self, op: ndbuffer.AllocOp, rewriter: Rewriter) -> bool:
+    def lower_alloc(self, op: ndbuffer.AllocOp) -> dgen.Value | None:
         assert isinstance(op.type, ndbuffer.NDBuffer)
         shape = _shape_of(op)
         total = prod(shape)
@@ -86,16 +86,14 @@ class NDBufferToMemory(Pass):
             type=memory.Reference(element_type=dtype),
         )
         self._shapes[id(alloc)] = shape
-        rewriter.replace_uses(op, alloc)
-        return True
+        return alloc
 
     @lowering_for(ndbuffer.DeallocOp)
-    def lower_dealloc(self, op: ndbuffer.DeallocOp, rewriter: Rewriter) -> bool:
-        rewriter.replace_uses(op, memory.DeallocateOp(ptr=op.input))
-        return True
+    def lower_dealloc(self, op: ndbuffer.DeallocOp) -> dgen.Value | None:
+        return memory.DeallocateOp(ptr=op.input)
 
     @lowering_for(ndbuffer.LoadOp)
-    def lower_load(self, op: ndbuffer.LoadOp, rewriter: Rewriter) -> bool:
+    def lower_load(self, op: ndbuffer.LoadOp) -> dgen.Value | None:
         ptr = _deref(op.memref)
         assert isinstance(op.indices, PackOp)
         shape = self._resolve_shape(op.memref)
@@ -106,11 +104,10 @@ class NDBufferToMemory(Pass):
             else memory.Reference(element_type=Float64())
         )
         offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ref_type)
-        rewriter.replace_uses(op, memory.LoadOp(ptr=offset_ptr, type=op.type))
-        return True
+        return memory.LoadOp(ptr=offset_ptr, type=op.type)
 
     @lowering_for(ndbuffer.StoreOp)
-    def lower_store(self, op: ndbuffer.StoreOp, rewriter: Rewriter) -> bool:
+    def lower_store(self, op: ndbuffer.StoreOp) -> dgen.Value | None:
         ptr = _deref(op.memref)
         assert isinstance(op.indices, PackOp)
         shape = self._resolve_shape(op.memref)
@@ -121,16 +118,12 @@ class NDBufferToMemory(Pass):
             else memory.Reference(element_type=Float64())
         )
         offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ref_type)
-        rewriter.replace_uses(op, memory.StoreOp(value=op.value, ptr=offset_ptr))
-        return True
+        return memory.StoreOp(value=op.value, ptr=offset_ptr)
 
     @lowering_for(ndbuffer.PrintMemrefOp)
-    def lower_print(self, op: ndbuffer.PrintMemrefOp, rewriter: Rewriter) -> bool:
+    def lower_print(self, op: ndbuffer.PrintMemrefOp) -> dgen.Value | None:
         ptr = _deref(op.input)
         shape = self._resolve_shape(op.input)
         size = prod(shape)
         args = pack([ptr, ConstantOp(value=size, type=Index())])
-        rewriter.replace_uses(
-            op, llvm.CallOp(callee=String().constant("print_memref"), args=args)
-        )
-        return True
+        return llvm.CallOp(callee=String().constant("print_memref"), args=args)

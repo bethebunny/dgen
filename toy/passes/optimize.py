@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import dgen
 from dgen.module import Module, _walk_all_ops
-from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import toy
 
 
@@ -24,14 +25,14 @@ class ToyOptimize(Pass):
                     )
 
     @lowering_for(toy.TransposeOp)
-    def eliminate_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
+    def eliminate_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
         if isinstance(op.input, toy.TransposeOp):
-            return rewriter.replace_uses(op, op.input.input)
+            return op.input.input
+        return None
 
     @lowering_for(toy.ReshapeOp)
-    def simplify_reshape(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
+    def simplify_reshape(self, op: toy.ReshapeOp) -> dgen.Value | None:
         # Collapse sequences of reshapes
         if isinstance(op.input, toy.ReshapeOp):
-            return rewriter.replace_uses(
-                op, toy.ReshapeOp(input=op.input.input, type=op.type)
-            )
+            return toy.ReshapeOp(input=op.input.input, type=op.type)
+        return None
