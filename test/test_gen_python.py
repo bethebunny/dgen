@@ -47,7 +47,7 @@ def test_generate_builtin_span_type():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
     assert "class Tuple(Type):" in code
-    assert "types: list[Value[dgen.TypeType]]" in code
+    assert "types: Value[Span]" in code
 
 
 def test_generate_algebra_op():

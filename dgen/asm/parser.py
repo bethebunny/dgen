@@ -14,7 +14,7 @@ from dgen import Block, Constant, Dialect, Op, Type, Value
 from dgen.block import BlockArgument, BlockParameter
 from dgen.graph import walk_ops
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module, PackOp
+from dgen.module import ConstantOp, Module, PackOp, pack
 
 
 class ParseError(RuntimeError):
@@ -322,10 +322,9 @@ def _coerce_param(value: object, field_type: type[Type]) -> object:
     """Wrap a parsed value to match an expected param type."""
     if isinstance(value, Value):
         return value
-    if isinstance(value, list) and (
-        not field_type.__params__ or any(isinstance(v, Value) for v in value)
-    ):
-        return [_coerce_param(v, field_type) for v in value]
+    if isinstance(value, list):
+        coerced = [_coerce_param(v, field_type) for v in value]
+        return pack(coerced)
     return _wrap_constant(field_type, value)
 
 

@@ -50,8 +50,6 @@ class Fingerprinter:
                 self.register_block(nested)
 
     def fingerprint(self, value: Value) -> bytes:
-        if isinstance(value, list):
-            return self._compute(value)
         if value in self._cache:
             return self._cache[value]
         result = self._compute(value)
@@ -66,10 +64,7 @@ class Fingerprinter:
             type_value.asm_name.encode(),
         ]
         for _, param in type_value.parameters:
-            if isinstance(param, list):
-                parts.append(b"".join(self._fingerprint_type_param(v) for v in param))
-            else:
-                parts.append(self._fingerprint_type_param(param))
+            parts.append(self._fingerprint_type_param(param))
         return _hash_parts(*parts)
 
     def _fingerprint_type_param(self, value: Value) -> bytes:

@@ -47,10 +47,7 @@ class Value(Generic[T]):
         """All Value dependencies for use-def graph traversal."""
         yield self.type
         for _, param in self.parameters:
-            if isinstance(param, list):
-                yield from param
-            else:
-                yield param
+            yield param
         for _, operand in self.operands:
             yield operand
         for _, block in self.blocks:
@@ -89,12 +86,16 @@ def _type_from_dict(data: dict[str, object]) -> Type:
         for field_name, field_type in cls.__params__:
             if field_name == param_name:
                 if isinstance(param_value, list):
-                    kwargs[param_name] = [
-                        _type_from_dict(v)
-                        if isinstance(v, dict)
-                        else field_type().constant(v)
-                        for v in param_value
-                    ]
+                    from dgen.module import pack
+
+                    kwargs[param_name] = pack(
+                        [
+                            _type_from_dict(v)
+                            if isinstance(v, dict)
+                            else field_type().constant(v)
+                            for v in param_value
+                        ]
+                    )
                 elif isinstance(param_value, dict):
                     kwargs[param_name] = _type_from_dict(param_value)
                 else:
@@ -139,10 +140,7 @@ class Type(Value["TypeType"]):
     def __constant__(self) -> Memory[TypeType]:
         data: dict[str, object] = {"tag": self.qualified_name}
         for name, param in self.parameters:
-            if isinstance(param, list):
-                data[name] = [p.__constant__.to_json() for p in param]
-            else:
-                data[name] = param.__constant__.to_json()
+            data[name] = param.__constant__.to_json()
         return Memory.from_json(self.type, data)
 
     @cached_property

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import Array, Nil, Pointer
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 
@@ -48,3 +48,4 @@ class StoreOp(Op):
 class PrintMemrefOp(Op):
     input: Value
     type: Type = Nil()
+
