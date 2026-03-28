@@ -1,4 +1,4 @@
-"""Emit valid LLVM IR text from LLModule and JIT-compile via llvmlite."""
+"""Emit valid LLVM IR text from a Module and JIT-compile via llvmlite."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from dgen.asm.formatting import SlotTracker, format_float
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import builtin, control_flow, function, goto, llvm
 from dgen.layout import Layout
-from dgen.module import ConstantOp, Module, PackOp, pack, string_value
+from dgen.module import ConstantOp, Module, PackOp, string_value
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.type import Constant, Memory, Value
 
@@ -29,7 +29,6 @@ _FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double, "B": ctypes.c_bool}
 
 
 def _llvm_type(layout: Layout) -> str:
-    """Derive LLVM IR type string from a layout."""
     if not layout.register_passable:
         return "ptr"
     fmt = layout.struct.format.lstrip("=@<>!")
@@ -37,7 +36,6 @@ def _llvm_type(layout: Layout) -> str:
 
 
 def _ctype(layout: Layout) -> type[ctypes._CData]:
-    """Derive ctypes type from a layout."""
     if not layout.register_passable:
         return ctypes.c_void_p
     fmt = layout.struct.format.lstrip("=@<>!")
@@ -74,15 +72,62 @@ def _ensure_initialized() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Linearized IR: the bridge between phases 2 and 3
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LinearBlock:
+    """One LLVM basic block.
+
+    label       — set for real goto.LabelOp blocks; drives phi-node emission.
+    cond_branch — set when the block ends with an IfOp expansion:
+                  (if_op, then_label_name, else_label_name).
+    """
+
+    name: str
+    ops: list[dgen.Op] = field(default_factory=list)
+    label: goto.LabelOp | None = None
+    cond_branch: tuple[control_flow.IfOp, str, str] | None = None
+
+
+@dataclass
+class IfMerge:
+    """Phi-node info for the merge block produced by lowering an IfOp."""
+
+    if_op: control_flow.IfOp
+    then_result: dgen.Value
+    then_exit: str
+    else_result: dgen.Value
+    else_exit: str
+
+
+# Binary ops: op type → full LLVM instruction string. All entries have .lhs/.rhs.
+_BINOP: dict[type[dgen.Op], str] = {
+    llvm.FaddOp: "fadd double",
+    llvm.FsubOp: "fsub double",
+    llvm.FmulOp: "fmul double",
+    llvm.FdivOp: "fdiv double",
+    llvm.AddOp: "add i64",
+    llvm.SubOp: "sub i64",
+    llvm.MulOp: "mul i64",
+    llvm.SdivOp: "sdiv i64",
+    llvm.AndOp: "and i64",
+    llvm.OrOp: "or i64",
+    llvm.XorOp: "xor i64",
+}
+
+
+# ---------------------------------------------------------------------------
 # IR emission
 # ---------------------------------------------------------------------------
 
 
 def emit_llvm_ir(module: Module, *, externs: Sequence[str] = ()) -> tuple[str, list]:
-    """Emit valid LLVM IR text that llvmlite can parse.
+    """Emit LLVM IR text for a module.
 
     Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
-    alive for the lifetime of the JIT.
+    alive for the lifetime of the JIT engine.
     """
     host_buffers: list = []
 
@@ -98,7 +143,7 @@ def emit_llvm_ir(module: Module, *, externs: Sequence[str] = ()) -> tuple[str, l
 
 
 def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
-    """Derive LLVM IR type string from an op's type, or None for void ops."""
+    """Map an op's result type to an LLVM type string, or None for void."""
     if isinstance(ty, builtin.Nil):
         return None
     resolved = dgen.type.type_constant(ty)
@@ -108,30 +153,32 @@ def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
 
 
 def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
-    """Emit a function as LLVM IR by recursively walking block.ops."""
-    tracker = SlotTracker()
+    """Three-phase LLVM IR emission for one function.
+
+    Phase 1 (separate):  split mixed dgen blocks into pure label / non-label groups.
+    Phase 2 (linearize): flatten the label tree into a list of LinearBlocks.
+    Phase 3 (emit):      walk the list, emitting phis, ops, and terminators.
+    """
+    tracker: SlotTracker = SlotTracker()
     constants: dict[dgen.Value, str] = {}
     types: dict[dgen.Value, str] = {}
     param_to_label: dict[dgen.Value, goto.LabelOp] = {}
     predecessors: dict[int, list[tuple[dgen.Value, list[dgen.Value]]]] = {}
-    # IfOp expansion state: cond_i1 placeholder → (IfOp, then_name, else_name)
-    if_blocks: dict[int, tuple[control_flow.IfOp, str, str]] = {}
-    # merge block name → (IfOp, then_result, then_exit_name, else_result, else_exit_name)
-    if_phis: dict[str, tuple[control_flow.IfOp, dgen.Value, str, dgen.Value, str]] = {}
-    # block name → merge block name (for then/else blocks that need br to merge)
+    if_merges: dict[str, IfMerge] = {}
     if_merge_targets: dict[str, str] = {}
-    entry_sentinel = dgen.Value(name="entry", type=goto.Label())
+
+    # -----------------------------------------------------------------------
+    # Value registration helpers
+    # -----------------------------------------------------------------------
 
     def unpack(val: Value) -> list[Value]:
         return list(val) if isinstance(val, PackOp) else [val]
 
     def resolve_target(target: dgen.Value) -> dgen.Value:
+        """Resolve a branch target to its canonical value (label or %exit param)."""
         if isinstance(target, goto.LabelOp):
             return target
-        if target in param_to_label:
-            return param_to_label[target]
-        # BlockParameter like %exit — used directly as a label name
-        return target
+        return param_to_label.get(target, target)
 
     def typed_ref(val: dgen.Value) -> str:
         return (
@@ -148,7 +195,6 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         )
 
     def _register_constant(val: dgen.Value, mem: Memory) -> None:
-        """Register a constant value's LLVM representation."""
         if not mem.layout.register_passable:
             host_buffers.append(mem)
             constants[val] = f"ptr inttoptr (i64 {mem.address} to ptr)"
@@ -189,33 +235,34 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             tracker.track_name(arg)
             types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
-    # ===================================================================
-    # Phase 1: Separate label ops from non-label ops.
-    # Mixed blocks get their non-label ops wrapped into new label blocks.
-    # After this, each block either only has label ops or only non-label ops.
-    # ===================================================================
+    # -----------------------------------------------------------------------
+    # Phase 1: Separate — split mixed blocks into label / non-label groups.
+    #
+    # A dgen block may contain both LabelOps (which become LLVM basic blocks)
+    # and regular ops (which belong inside those blocks). _separate assigns
+    # each non-label op to the label it data-depends on, or to a synthetic
+    # block if it has no label dependency.
+    # -----------------------------------------------------------------------
 
-    _synth_counter = 0
+    _synth_n = 0
 
     def _label_deps(op: dgen.Op, block_ops: list[dgen.Op]) -> frozenset[goto.LabelOp]:
-        """Which label ops in this block does op transitively depend on?
+        """Label ops this op transitively depends on (operand edges only).
 
-        This is intentionally NOT block.ops — we only follow operand edges,
-        not parameter edges. A BranchOp's target is a parameter; it's a
-        control-flow reference, not a data dependency. For scheduling the
-        non-label ops into LLVM blocks, we only care about data deps.
+        Branch targets are parameters, not operands — they don't appear here.
+        That's why cond_br groups with the no-dep ops: its target is a parameter.
         """
-        labels_in_block: set[goto.LabelOp] = {
+        labels: set[goto.LabelOp] = {
             o for o in block_ops if isinstance(o, goto.LabelOp)
         }
         deps: set[goto.LabelOp] = set()
-        visited: set[dgen.Value] = set()
+        seen: set[dgen.Value] = set()
 
         def walk(v: dgen.Value) -> None:
-            if not isinstance(v, dgen.Op) or v in visited:
+            if not isinstance(v, dgen.Op) or v in seen:
                 return
-            visited.add(v)
-            if v in labels_in_block:
+            seen.add(v)
+            if v in labels:
                 assert isinstance(v, goto.LabelOp)
                 deps.add(v)
                 return
@@ -225,233 +272,160 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         walk(op)
         return frozenset(deps)
 
-    LabelBlock = tuple[goto.LabelOp | None, list[dgen.Op]]
-    # None means "entry" or "anonymous" block (synthetic label)
+    @dataclass
+    class _Seg:
+        """One separated segment for _linearize to consume.
 
-    def _separate(block: dgen.Block) -> list[LabelBlock]:
-        """Split a block's ops into groups by label dependency.
-
-        Returns a list of (label_or_None, ops) pairs. Each group becomes
-        an LLVM basic block. Groups are ordered: {} first, then by the
-        topo position of their label dependency.
+        label:      real LabelOp to recurse into (ops must be empty).
+        ops:        inline ops for synthetic or anonymous segments.
+        synth_name: LLVM block name when label is None and ops are non-empty.
+                    If both label and synth_name are None, fold ops into the
+                    current block (anonymous segment).
         """
-        nonlocal _synth_counter
 
+        label: goto.LabelOp | None
+        ops: list[dgen.Op]
+        synth_name: str | None = None
+
+    def _separate(block: dgen.Block) -> list[_Seg]:
+        """Split a block's ops into segments by label-dependency.
+
+        Ordering: no-dep group first, then each label followed by its
+        single-dep ops, then any remaining labels, then multi-dep groups.
+        """
+        nonlocal _synth_n
         ops = block.ops
-        labels_in_block = [op for op in ops if isinstance(op, goto.LabelOp)]
-        if not labels_in_block:
-            # Pure non-label block — no separation needed.
-            return [(None, ops)]
+        labels = [op for op in ops if isinstance(op, goto.LabelOp)]
+        if not labels:
+            return [_Seg(None, ops)]
 
-        non_label_ops = [op for op in ops if not isinstance(op, goto.LabelOp)]
-        if not non_label_ops:
-            # Pure label block — no separation needed.
-            return [(label, []) for label in labels_in_block]
+        non_label = [op for op in ops if not isinstance(op, goto.LabelOp)]
+        if not non_label:
+            return [_Seg(label, []) for label in labels]
 
-        # Group non-label ops by label dependency set.
         groups: dict[frozenset[goto.LabelOp], list[dgen.Op]] = {}
-        for op in non_label_ops:
-            deps = _label_deps(op, ops)
-            groups.setdefault(deps, []).append(op)
+        for op in non_label:
+            groups.setdefault(_label_deps(op, ops), []).append(op)
 
-        def _make_synthetic_label(ops_list: list[dgen.Op]) -> goto.LabelOp:
-            nonlocal _synth_counter
-            synth = goto.LabelOp(
-                name=f"_blk{_synth_counter}",
-                initial_arguments=pack(),
-                body=dgen.Block(
-                    result=ops_list[-1] if ops_list else dgen.Value(type=builtin.Nil())
-                ),
-            )
-            _synth_counter += 1
-            return synth
+        def synth(ops_list: list[dgen.Op]) -> _Seg:
+            nonlocal _synth_n
+            name, _synth_n = f"_blk{_synth_n}", _synth_n + 1
+            return _Seg(None, ops_list, synth_name=name)
 
-        # Assemble result: no-dep group first, then each label followed by
-        # its dependent ops group, then multi-label groups last.
-        result: list[LabelBlock] = []
-        emitted_labels: set[goto.LabelOp] = set()
+        result: list[_Seg] = []
+        emitted: set[goto.LabelOp] = set()
 
         no_dep = groups.pop(frozenset(), None)
         if no_dep:
-            result.append((_make_synthetic_label(no_dep), no_dep))
+            result.append(synth(no_dep))
 
-        for label in labels_in_block:
-            dep_key = frozenset({label})
-            dep_ops = groups.pop(dep_key, None)
+        for label in labels:
+            dep_ops = groups.pop(frozenset({label}), None)
             if dep_ops is not None:
-                result.append((label, []))
-                result.append((_make_synthetic_label(dep_ops), dep_ops))
-                emitted_labels.add(label)
+                result.append(_Seg(label, []))
+                result.append(synth(dep_ops))
+                emitted.add(label)
 
-        for label in labels_in_block:
-            if label not in emitted_labels:
-                result.append((label, []))
+        for label in labels:
+            if label not in emitted:
+                result.append(_Seg(label, []))
 
         for dep_ops in groups.values():
-            result.append((_make_synthetic_label(dep_ops), dep_ops))
+            result.append(synth(dep_ops))
 
         return result
 
-    # ===================================================================
-    # Phase 2: Linearize — flatten the tree into a list of LLVM blocks.
-    # Each LabelBlock becomes one LLVM basic block.
-    # ===================================================================
+    # -----------------------------------------------------------------------
+    # Phase 2: Linearize — flatten the label tree into a list of LinearBlocks.
+    # -----------------------------------------------------------------------
 
-    @dataclass
-    class LinearBlock:
-        name: str
-        ops: list[dgen.Op]
-        label: goto.LabelOp | None = None
-
+    _if_n: int = 0
     _visited_labels: set[goto.LabelOp] = set()
-    _if_counter = 0
 
     def _linearize_ops(ops: list[dgen.Op], start_name: str) -> list[LinearBlock]:
-        """Linearize a flat list of ops, expanding IfOps inline.
+        """Linearize a flat op list, expanding IfOps into then/else/merge triples.
 
-        When an IfOp is encountered, the current block is split:
-          current_block → br i1 %cond, %then_N, %else_N
-          then_N: <then_body ops> → br %merge_N
-          else_N: <else_body ops> → br %merge_N
+        IfOp expansion layout:
+          <current block>  →  icmp ne + br i1 %cond, %then_N, %else_N
+          then_N:  <then body ops>  →  br %merge_N
+          else_N:  <else body ops>  →  br %merge_N
           merge_N: phi [then_result, %then_N], [else_result, %else_N]
-                   <remaining ops, with IfOp aliased to phi result>
+                   <remaining ops after the IfOp>
         """
-        nonlocal _if_counter
-
+        nonlocal _if_n
         result: list[LinearBlock] = []
-        current_ops: list[dgen.Op] = []
+
+        def current() -> LinearBlock:
+            if not result:
+                result.append(LinearBlock(start_name))
+            return result[-1]
 
         for op in ops:
             if not isinstance(op, control_flow.IfOp):
                 _register(op)
-                current_ops.append(op)
+                current().ops.append(op)
                 continue
 
-            # --- IfOp: split the block ---
-            if_id = _if_counter
-            _if_counter += 1
+            if_id, _if_n = _if_n, _if_n + 1
             then_name = f"then_{if_id}"
             else_name = f"else_{if_id}"
             merge_name = f"merge_{if_id}"
 
-            # Register the IfOp itself (for its result type).
             _register(op)
+            current().cond_branch = (op, then_name, else_name)
 
-            # Current block ends with a conditional branch.
-            blk_name = result[-1].name if result and not current_ops else start_name
-            if current_ops:
-                if result:
-                    result[-1].ops.extend(current_ops)
-                else:
-                    result.append(LinearBlock(start_name, current_ops))
-                current_ops = []
-
-            # Ensure we have a block to append the cond_br to.
-            if not result:
-                result.append(LinearBlock(start_name, []))
-
-            # The condition needs icmp ne 0 to convert i64 → i1.
-            cond_i1_name = f"_if_cond_{if_id}"
-            cond_i1 = dgen.Value(
-                name=cond_i1_name, type=llvm.Int(bits=builtin.Nil().constant(1))
-            )
-            tracker.track_name(cond_i1)
-            types[cond_i1] = "i1"
-            result[-1].ops.append(cond_i1)  # placeholder for emit
-
-            # Record the IfOp for phase 3 to emit cond_br + icmp.
-            if_blocks[id(cond_i1)] = (op, then_name, else_name)
-
-            # Then block: linearize then_body ops.
             _register_block_args(op.then_body)
-            then_body_ops = op.then_body.ops
-            then_blocks = _linearize_ops(then_body_ops, then_name)
-            if not then_blocks:
-                then_blocks = [LinearBlock(then_name, [])]
-            else:
-                then_blocks[0].name = then_name
-            result.extend(then_blocks)
-
-            # Else block: linearize else_body ops.
             _register_block_args(op.else_body)
-            else_body_ops = op.else_body.ops
-            else_blocks = _linearize_ops(else_body_ops, else_name)
-            if not else_blocks:
-                else_blocks = [LinearBlock(else_name, [])]
-            else:
-                else_blocks[0].name = else_name
+            then_blocks = _linearize_ops(op.then_body.ops, then_name) or [
+                LinearBlock(then_name)
+            ]
+            else_blocks = _linearize_ops(op.else_body.ops, else_name) or [
+                LinearBlock(else_name)
+            ]
+            then_blocks[0].name = then_name
+            else_blocks[0].name = else_name
+            result.extend(then_blocks)
             result.extend(else_blocks)
+            result.append(LinearBlock(merge_name))
 
-            # Merge block: phi collects results from both branches.
-            merge_block = LinearBlock(merge_name, [])
-            result.append(merge_block)
+            if_merges[merge_name] = IfMerge(
+                op,
+                op.then_body.result,
+                then_blocks[-1].name,
+                op.else_body.result,
+                else_blocks[-1].name,
+            )
+            if_merge_targets[then_blocks[-1].name] = merge_name
+            if_merge_targets[else_blocks[-1].name] = merge_name
 
-            # Record the phi info for emit.
-            then_result = op.then_body.result
-            else_result = op.else_body.result
-            # The last then/else block names (in case they expanded further).
-            then_exit = then_blocks[-1].name
-            else_exit = else_blocks[-1].name
-            if_phis[merge_name] = (op, then_result, then_exit, else_result, else_exit)
-            if_merge_targets[then_exit] = merge_name
-            if_merge_targets[else_exit] = merge_name
-
-            # Alias IfOp result to the phi value (registered in types).
             rt = _result_type_str(op.type)
             if rt is not None:
                 types[op] = rt
 
-            # Start_name for remaining ops is the merge block.
-            start_name = merge_name
-
-        # Remaining ops after last IfOp (or all ops if no IfOps).
-        if current_ops:
-            if result:
-                result[-1].ops.extend(current_ops)
-            else:
-                result.append(LinearBlock(start_name, current_ops))
-
         return result
 
     def _linearize(block: dgen.Block, name: str) -> list[LinearBlock]:
-        """Recursively flatten a block and its label children."""
-        separated = _separate(block)
+        """Recursively flatten a block and its label subtree into LinearBlocks."""
         result: list[LinearBlock] = []
 
-        for label, ops in separated:
-            if label is None:
-                # Pure non-label block — expand IfOps inline.
-                cur_name = result[-1].name if result else name
-                expanded = _linearize_ops(ops, cur_name)
-                if expanded and result and expanded[0].name == cur_name:
-                    # Merge first expanded block into existing.
-                    result[-1].ops.extend(expanded[0].ops)
-                    result.extend(expanded[1:])
-                else:
-                    result.extend(expanded)
-                continue
+        for seg in _separate(block):
+            if seg.label is not None:
+                # Real label: emit a phi block, then recurse into its body.
+                label_name = tracker.track_name(seg.label)
+                _register(seg.label)
+                _register_block_args(seg.label.body)
+                for param in seg.label.body.parameters:
+                    tracker.track_name(param)
 
-            label_name = tracker.track_name(label)
-            _register(label)
-            _register_block_args(label.body)
-            for param in label.body.parameters:
-                tracker.track_name(param)
+                if seg.label in _visited_labels:
+                    continue
+                _visited_labels.add(seg.label)
 
-            if label in _visited_labels:
-                continue
-            _visited_labels.add(label)
-
-            if ops:
-                # Synthetic block with actual ops — expand IfOps.
-                expanded = _linearize_ops(ops, label_name)
-                result.extend(expanded)
-            else:
-                # Real label — emit phis, then recurse into body.
-                label_block = LinearBlock(label_name, [], label)
+                label_block = LinearBlock(label_name, [], seg.label)
                 result.append(label_block)
-                children = _linearize(label.body, label_name)
-                # If the first child is a pure-ops block with the same name,
-                # merge its ops into the label block.
+                children = _linearize(seg.label.body, label_name)
+                # Merge an immediately following anonymous block of the same name
+                # into the label block, avoiding a spurious block split.
                 if (
                     children
                     and children[0].label is None
@@ -460,13 +434,27 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                     label_block.ops.extend(children[0].ops)
                     children = children[1:]
                 result.extend(children)
-                for param in label.body.parameters:
+                for param in seg.label.body.parameters:
                     if param.name and param.name.startswith("exit"):
                         result.append(LinearBlock(tracker.track_name(param), []))
 
+            elif seg.synth_name is not None:
+                # Synthetic block: expand inline with IfOp handling.
+                result.extend(_linearize_ops(seg.ops, seg.synth_name))
+
+            else:
+                # Anonymous ops: fold into the current block (or start a new one).
+                cur_name = result[-1].name if result else name
+                expanded = _linearize_ops(seg.ops, cur_name)
+                if expanded and result and expanded[0].name == cur_name:
+                    result[-1].ops.extend(expanded[0].ops)
+                    result.extend(expanded[1:])
+                else:
+                    result.extend(expanded)
+
         return result
 
-    # Register %self → label mappings (needed for resolve_target).
+    # Populate param_to_label so resolve_target can map %self → its LabelOp.
     def _scan_self_params(block: dgen.Block) -> None:
         for op in block.ops:
             if isinstance(op, goto.LabelOp):
@@ -476,8 +464,6 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                 _scan_self_params(op.body)
 
     _scan_self_params(f.body)
-
-    # Register function args and linearize.
     _register_block_args(f.body)
 
     llvm_ret = (
@@ -488,12 +474,9 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     params = ", ".join(
         f"{types.get(a, 'i64')} %{tracker.track_name(a)}" for a in f.body.args
     )
-    blocks = _linearize(f.body, "entry")
-    if not blocks:
-        blocks = [LinearBlock("entry", [])]
+    blocks = _linearize(f.body, "entry") or [LinearBlock("entry")]
 
-    # Build predecessor map from linearized blocks.
-    # Each block's branches use the block's name as source.
+    # Build predecessor map: branch target id → [(source block value, arg values)].
     for blk in blocks:
         src = dgen.Value(name=blk.name, type=goto.Label())
         for op in blk.ops:
@@ -502,64 +485,58 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                     (src, unpack(op.arguments))
                 )
             elif isinstance(op, goto.ConditionalBranchOp):
-                for t, a in [
+                for target, args in [
                     (op.true_target, op.true_arguments),
                     (op.false_target, op.false_arguments),
                 ]:
-                    predecessors.setdefault(id(resolve_target(t)), []).append(
-                        (src, unpack(a))
+                    predecessors.setdefault(id(resolve_target(target)), []).append(
+                        (src, unpack(args))
                     )
-    # Fall-through predecessors: if block i has no terminator, it falls through to block i+1.
+    # A block without a terminator falls through to the next real label block.
     for i, blk in enumerate(blocks):
-        has_term = any(
-            isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)) for op in blk.ops
+        terminated = (
+            any(
+                isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp))
+                for op in blk.ops
+            )
+            or blk.cond_branch is not None
         )
-        if not has_term and i + 1 < len(blocks) and blocks[i + 1].label is not None:
+        if not terminated and i + 1 < len(blocks) and blocks[i + 1].label is not None:
             src = dgen.Value(name=blk.name, type=goto.Label())
-            label_op = blocks[i + 1].label
-            init_args = unpack(label_op.initial_arguments)
-            predecessors.setdefault(id(label_op), []).append((src, init_args))
+            next_lbl = blocks[i + 1].label
+            predecessors.setdefault(id(next_lbl), []).append(
+                (src, unpack(next_lbl.initial_arguments))
+            )
 
-    # ===================================================================
-    # Phase 3: Emit — walk the linear list and emit LLVM IR.
-    # ===================================================================
+    # -----------------------------------------------------------------------
+    # Phase 3: Emit — walk the LinearBlocks and produce LLVM IR text.
+    # -----------------------------------------------------------------------
 
     def _emit_op(op: dgen.Op) -> Iterator[str]:
         name = tracker.track_name(op)
-        # IfOp condition placeholder: emit cond_br (condition is i1 Boolean).
-        if id(op) in if_blocks:
-            if_op, then_name, else_name = if_blocks[id(op)]
-            cond_ref = bare_ref(if_op.condition)
-            cond_type = types.get(if_op.condition, "i1")
-            if cond_type != "i1":
-                yield f"  %{name} = icmp ne {cond_type} {cond_ref}, 0"
-                cond_ref = f"%{name}"
-            yield f"  br i1 {cond_ref}, label %{then_name}, label %{else_name}"
-            return
-        if isinstance(op, control_flow.IfOp):
-            # IfOp itself is a no-op — result aliased to merge phi.
+        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, control_flow.IfOp)):
             return
         if isinstance(op, goto.BranchOp):
             yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
         elif isinstance(op, goto.ConditionalBranchOp):
-            yield f"  br i1 %{tracker.track_name(op.condition)}, label %{tracker.track_name(resolve_target(op.true_target))}, label %{tracker.track_name(resolve_target(op.false_target))}"
-        elif isinstance(op, (ConstantOp, PackOp, builtin.ChainOp)):
-            pass
+            true_lbl = tracker.track_name(resolve_target(op.true_target))
+            false_lbl = tracker.track_name(resolve_target(op.false_target))
+            yield f"  br i1 %{tracker.track_name(op.condition)}, label %{true_lbl}, label %{false_lbl}"
         elif isinstance(op, function.CallOp):
-            a = ", ".join(typed_ref(v) for v in unpack(op.arguments))
+            args = ", ".join(typed_ref(v) for v in unpack(op.arguments))
             callee = op.callee.name
             yield (
-                f"  call void @{callee}({a})"
+                f"  call void @{callee}({args})"
                 if isinstance(op.type, builtin.Nil)
-                else f"  %{name} = call {types[op]} @{callee}({a})"
+                else f"  %{name} = call {types[op]} @{callee}({args})"
             )
         elif isinstance(op, llvm.CallOp):
-            a = ", ".join(typed_ref(v) for v in unpack(op.args))
+            args = ", ".join(typed_ref(v) for v in unpack(op.args))
             callee = string_value(op.callee)
             yield (
-                f"  call void @{callee}({a})"
+                f"  call void @{callee}({args})"
                 if isinstance(op.type, builtin.Nil)
-                else f"  %{name} = call {types[op]} @{callee}({a})"
+                else f"  %{name} = call {types[op]} @{callee}({args})"
             )
         elif isinstance(op, llvm.StoreOp):
             yield f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}"
@@ -571,34 +548,29 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             yield f"  %{name} = load {_llvm_type(dgen.type.type_constant(op.type).__layout__)}, {typed_ref(op.ptr)}"
         elif isinstance(op, llvm.ZextOp):
             yield f"  %{name} = zext i1 {bare_ref(op.input)} to i64"
-        elif isinstance(op, llvm.FaddOp):
-            yield f"  %{name} = fadd double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.FsubOp):
-            yield f"  %{name} = fsub double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.FmulOp):
-            yield f"  %{name} = fmul double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.FdivOp):
-            yield f"  %{name} = fdiv double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(op, llvm.FnegOp):
             yield f"  %{name} = fneg double {bare_ref(op.input)}"
-        elif isinstance(op, llvm.AddOp):
-            yield f"  %{name} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.SubOp):
-            yield f"  %{name} = sub i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.MulOp):
-            yield f"  %{name} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.SdivOp):
-            yield f"  %{name} = sdiv i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.AndOp):
-            yield f"  %{name} = and i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.OrOp):
-            yield f"  %{name} = or i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
-        elif isinstance(op, llvm.XorOp):
-            yield f"  %{name} = xor i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(op, llvm.IcmpOp):
             yield f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(op, llvm.FcmpOp):
             yield f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(
+            op,
+            (
+                llvm.FaddOp,
+                llvm.FsubOp,
+                llvm.FmulOp,
+                llvm.FdivOp,
+                llvm.AddOp,
+                llvm.SubOp,
+                llvm.MulOp,
+                llvm.SdivOp,
+                llvm.AndOp,
+                llvm.OrOp,
+                llvm.XorOp,
+            ),
+        ):
+            yield f"  %{name} = {_BINOP[type(op)]} {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         else:
             raise ValueError(
                 f"codegen: unhandled op {type(op).__name__} "
@@ -609,39 +581,52 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
 
     for i, blk in enumerate(blocks):
         yield f"{blk.name}:"
-        # Phi nodes for real labels.
+
+        # Phi nodes for real label blocks.
         if blk.label is not None:
             preds = predecessors.get(id(blk.label), [])
             for arg_idx, arg in enumerate(blk.label.body.args):
                 ty = types.get(arg, "i64")
-                phi_parts = []
-                for pred_src, pred_args in preds:
-                    if arg_idx < len(pred_args):
-                        phi_parts.append(
-                            f"[ {bare_ref(pred_args[arg_idx])}, %{pred_src.name} ]"
-                        )
+                phi_parts = [
+                    f"[ {bare_ref(pred_args[arg_idx])}, %{pred_src.name} ]"
+                    for pred_src, pred_args in preds
+                    if arg_idx < len(pred_args)
+                ]
                 if phi_parts:
                     yield f"  %{tracker.track_name(arg)} = phi {ty} {', '.join(phi_parts)}"
+
         # Phi for if/else merge blocks.
-        if blk.name in if_phis:
-            if_op, then_result, then_exit, else_result, else_exit = if_phis[blk.name]
-            rt = types.get(if_op, "i64")
-            if not isinstance(if_op.type, builtin.Nil):
+        if blk.name in if_merges:
+            m = if_merges[blk.name]
+            rt = types.get(m.if_op, "i64")
+            if not isinstance(m.if_op.type, builtin.Nil):
                 yield (
-                    f"  %{tracker.track_name(if_op)} = phi {rt}"
-                    f" [ {bare_ref(then_result)}, %{then_exit} ],"
-                    f" [ {bare_ref(else_result)}, %{else_exit} ]"
+                    f"  %{tracker.track_name(m.if_op)} = phi {rt}"
+                    f" [ {bare_ref(m.then_result)}, %{m.then_exit} ],"
+                    f" [ {bare_ref(m.else_result)}, %{m.else_exit} ]"
                 )
-        # Emit ops.
-        has_terminator = False
+
+        # Ops.
+        has_term = False
         for op in blk.ops:
             yield from _emit_op(op)
             if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
-                has_terminator = True
-            if id(op) in if_blocks:
-                has_terminator = True  # cond_br was emitted
-        # If no terminator, branch to merge (if then/else), next block, or ret.
-        if not has_terminator:
+                has_term = True
+
+        # Conditional branch from IfOp expansion (emitted after the block's ops).
+        if blk.cond_branch is not None:
+            if_op, then_lbl, else_lbl = blk.cond_branch
+            cond = bare_ref(if_op.condition)
+            cond_type = types.get(if_op.condition, "i64")
+            if cond_type != "i1":
+                tmp = f"_cond_{then_lbl}"
+                yield f"  %{tmp} = icmp ne {cond_type} {cond}, 0"
+                cond = f"%{tmp}"
+            yield f"  br i1 {cond}, label %{then_lbl}, label %{else_lbl}"
+            has_term = True
+
+        # Fall-through terminator.
+        if not has_term:
             if blk.name in if_merge_targets:
                 yield f"  br label %{if_merge_targets[blk.name]}"
             elif i + 1 < len(blocks):
@@ -673,54 +658,53 @@ class Executable:
 
     @property
     def ctype(self) -> type[_ctypes.CFuncPtr]:
-        """ctypes function pointer type for this executable."""
-        param_ctypes = [_ctype(t.__layout__) for t in self.input_types]
-        result_ctype = _ctype(self.result_type.__layout__)
-        return ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
+        """ctypes function pointer type matching this executable's signature."""
+        return ctypes.CFUNCTYPE(
+            _ctype(self.result_type.__layout__),
+            *(_ctype(t.__layout__) for t in self.input_types),
+        )
 
     def run(self, *args: Memory | object) -> Memory:
-        """JIT and execute, returning the function's result as a Memory.
+        """JIT and execute, returning the result as a Memory object.
 
-        Args can be Memory objects or raw Python values (str, int, float).
-        Raw values are converted to Memory via Memory.from_value.
+        Args may be Memory objects or raw Python values (int, float, etc.),
+        which are converted via Memory.from_value.
         """
         memories: list[Memory] = [
             arg if isinstance(arg, Memory) else Memory.from_value(ty, arg)
             for arg, ty in zip(args, self.input_types)
         ]
-
-        engine = _jit_engine(self)
+        engine = _jit_engine(self)  # must stay alive until cfunc returns
         func_ptr = engine.get_function_address(self.main_name)
         cfunc = self.ctype(func_ptr)
-        ctypes_args = [
+        raw_args = [
             m.unpack()[0] if t.__layout__.register_passable else m.address
             for m, t in zip(memories, self.input_types)
         ]
-        result = cfunc(*ctypes_args)
+        result = cfunc(*raw_args)
         if self.result_type.__layout__.register_passable:
             return Memory.from_value(self.result_type, result)
         return Memory.from_raw(self.result_type, result)
 
 
 def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
-    """Emit LLVM IR and bundle with execution metadata."""
+    """Lower a Module to LLVM IR and bundle with execution metadata."""
     _dummy = Compiler([], IdentityPass())
     module = AlgebraToLLVM().run(module, _dummy)
     ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]
     assert main.name is not None
-    result = dgen.type.type_constant(main.result)
     return Executable(
         ir=ir,
         input_types=[dgen.type.type_constant(arg.type) for arg in main.body.args],
         main_name=main.name,
-        result_type=result,
+        result_type=dgen.type.type_constant(main.result),
         host_refs=host_buffers,
     )
 
 
 def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
-    """Parse, verify, and create MCJIT engine from an Executable."""
+    """Parse, verify, and create an MCJIT engine from an Executable."""
     _ensure_initialized()
     mod = llvmlite.parse_assembly(exe.ir)
     mod.verify()
@@ -730,12 +714,12 @@ def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
 
 
 # ---------------------------------------------------------------------------
-# LLVMCodegen exit pass
+# Exit pass
 # ---------------------------------------------------------------------------
 
 
 class LLVMCodegen:
-    """Exit pass: lower builtin ops to LLVM, emit IR, bundle as Executable."""
+    """Exit pass: lower to LLVM, emit IR, bundle as Executable."""
 
     def run(self, module: Module) -> Executable:
         return compile(module)
