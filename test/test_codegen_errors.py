@@ -11,15 +11,15 @@ from dgen.testing import strip_prefix
 def test_unhandled_op_raises():
     """Codegen raises ValueError for ops it cannot emit, not silent drop."""
     ir = strip_prefix("""
-        | import algebra
         | import function
-        | import index
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %y : index.Index = algebra.negate(%x)
+        | import ndbuffer
+        | import number
+        | %main : function.Function<()> = function.function<Nil>() body():
+        |     %a : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([2]))
     """)
     module = parse_module(ir)
-    # algebra.negate has no lowering in AlgebraToLLVM, so it passes through
-    # to codegen which should raise, not silently drop it.
+    # ndbuffer.alloc has no lowering in codegen (needs NDBufferToMemory first),
+    # so it should raise, not silently drop it.
     with pytest.raises(ValueError, match="unhandled op"):
         Compiler([], LLVMCodegen()).compile(module)
 

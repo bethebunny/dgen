@@ -2,19 +2,20 @@ import algebra
 import function
 import goto
 import index
+import number
 
 %test : function.Function<()> = function.function<Nil>() body():
     %0 : index.Index = 0
     %loop_header0 : goto.Label = goto.label([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
         %1 : index.Index = 2
-        %2 : index.Index = algebra.less_than(%i0, %1)
+        %2 : number.Boolean = algebra.less_than(%i0, %1)
         %loop_body0 : goto.Label = goto.label([]) body(%j0: index.Index) captures(%self):
             %3 : index.Index = 1
             %4 : index.Index = algebra.add(%j0, %3)
             %5 : index.Index = 0
             %loop_header1 : goto.Label = goto.label([%5]) body<%6: goto.Label, %exit1: goto.Label>(%i1: index.Index):
                 %7 : index.Index = 2
-                %8 : index.Index = algebra.less_than(%i1, %7)
+                %8 : number.Boolean = algebra.less_than(%i1, %7)
                 %loop_body1 : goto.Label = goto.label([]) body(%j1: index.Index) captures(%6):
                     %9 : index.Index = 1
                     %10 : index.Index = algebra.add(%j1, %9)

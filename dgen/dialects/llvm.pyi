@@ -52,9 +52,26 @@ class FaddOp(Op):
     type: Type = Float()
 
 @dataclass(eq=False, kw_only=True)
+class FsubOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = Float()
+
+@dataclass(eq=False, kw_only=True)
 class FmulOp(Op):
     lhs: Value
     rhs: Value
+    type: Type = Float()
+
+@dataclass(eq=False, kw_only=True)
+class FdivOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = Float()
+
+@dataclass(eq=False, kw_only=True)
+class FnegOp(Op):
+    input: Value
     type: Type = Float()
 
 @dataclass(eq=False, kw_only=True)
@@ -71,6 +88,30 @@ class SubOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class MulOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = Int(bits=Index().constant(64))
+
+@dataclass(eq=False, kw_only=True)
+class SdivOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = Int(bits=Index().constant(64))
+
+@dataclass(eq=False, kw_only=True)
+class AndOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = Int(bits=Index().constant(64))
+
+@dataclass(eq=False, kw_only=True)
+class OrOp(Op):
+    lhs: Value
+    rhs: Value
+    type: Type = Int(bits=Index().constant(64))
+
+@dataclass(eq=False, kw_only=True)
+class XorOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))

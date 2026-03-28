@@ -48,6 +48,7 @@ from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import algebra, control_flow, goto
 from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
+from dgen.dialects.number import Boolean
 from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, Rewriter, lowering_for
 
@@ -93,7 +94,7 @@ class ControlFlowToGoto(Pass):
 
         # --- Header: compare, branch to body or %exit ---
         hi = ConstantOp(value=op.upper_bound.__constant__.to_json(), type=Index())
-        cmp = algebra.LessThanOp(left=header_iv, right=hi, type=Index())
+        cmp = algebra.LessThanOp(left=header_iv, right=hi, type=Boolean())
         cond_br = goto.ConditionalBranchOp(
             condition=cmp,
             true_target=body_label,

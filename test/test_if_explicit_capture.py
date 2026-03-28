@@ -15,11 +15,12 @@ def test_if_no_capture_roundtrip():
     """if with no captured values: then_arguments=[], else_arguments=[] — no block args."""
     ir = strip_prefix("""
         | import algebra
+        | import number
         | import control_flow
         | import index
         | import function
         | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : index.Index = algebra.equal(%n, 0)
+        |     %cond : number.Boolean = algebra.equal(%n, 0)
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : index.Index = 10
         |     else_body():

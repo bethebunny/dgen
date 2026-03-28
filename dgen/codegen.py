@@ -24,8 +24,8 @@ from dgen.type import Constant, Memory, Value
 # Layout → LLVM / ctypes mapping
 # ---------------------------------------------------------------------------
 
-_FMT_LLVM = {"q": "i64", "d": "double"}
-_FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double}
+_FMT_LLVM = {"q": "i64", "d": "double", "B": "i1"}
+_FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double, "B": ctypes.c_bool}
 
 
 def _llvm_type(layout: Layout) -> str:
@@ -526,11 +526,15 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
 
     def _emit_op(op: dgen.Op) -> Iterator[str]:
         name = tracker.track_name(op)
-        # IfOp condition placeholder: emit icmp + cond_br.
+        # IfOp condition placeholder: emit cond_br (condition is i1 Boolean).
         if id(op) in if_blocks:
             if_op, then_name, else_name = if_blocks[id(op)]
-            yield f"  %{name} = icmp ne i64 {bare_ref(if_op.condition)}, 0"
-            yield f"  br i1 %{name}, label %{then_name}, label %{else_name}"
+            cond_ref = bare_ref(if_op.condition)
+            cond_type = types.get(if_op.condition, "i1")
+            if cond_type != "i1":
+                yield f"  %{name} = icmp ne {cond_type} {cond_ref}, 0"
+                cond_ref = f"%{name}"
+            yield f"  br i1 {cond_ref}, label %{then_name}, label %{else_name}"
             return
         if isinstance(op, control_flow.IfOp):
             # IfOp itself is a no-op — result aliased to merge phi.
@@ -567,14 +571,30 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             yield f"  %{name} = load {_llvm_type(dgen.type.type_constant(op.type).__layout__)}, {typed_ref(op.ptr)}"
         elif isinstance(op, llvm.ZextOp):
             yield f"  %{name} = zext i1 {bare_ref(op.input)} to i64"
-        elif isinstance(op, (llvm.FaddOp, llvm.FmulOp)):
-            yield f"  %{name} = {'fadd' if isinstance(op, llvm.FaddOp) else 'fmul'} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.FaddOp):
+            yield f"  %{name} = fadd double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.FsubOp):
+            yield f"  %{name} = fsub double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.FmulOp):
+            yield f"  %{name} = fmul double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.FdivOp):
+            yield f"  %{name} = fdiv double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.FnegOp):
+            yield f"  %{name} = fneg double {bare_ref(op.input)}"
         elif isinstance(op, llvm.AddOp):
             yield f"  %{name} = add i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(op, llvm.SubOp):
             yield f"  %{name} = sub i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(op, llvm.MulOp):
             yield f"  %{name} = mul i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.SdivOp):
+            yield f"  %{name} = sdiv i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.AndOp):
+            yield f"  %{name} = and i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.OrOp):
+            yield f"  %{name} = or i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+        elif isinstance(op, llvm.XorOp):
+            yield f"  %{name} = xor i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(op, llvm.IcmpOp):
             yield f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(op, llvm.FcmpOp):
