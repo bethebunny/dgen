@@ -5,7 +5,7 @@ type Reference<element_type: Type>:
 
 op stack_allocate<element_type: Type>() -> Reference<element_type>
 op heap_allocate<element_type: Type>(count: Index) -> Reference<element_type>
-op deallocate(ptr: Reference) -> Nil
+op deallocate(mem, ptr: Reference) -> Nil
 
 # The `mem` operand on load and store creates an explicit use-def edge for
 # memory ordering.  Pass the result of the previous memory operation (a prior

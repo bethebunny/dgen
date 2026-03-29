@@ -74,8 +74,7 @@ def test_roundtrip_deallocate():
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %n : index.Index = 1
         |     %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
-        |     %dealloc : Nil = memory.deallocate(%alloc)
-        |     %_ : Nil = chain(%alloc, %dealloc)
+        |     %dealloc : Nil = memory.deallocate(%alloc, %alloc)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
