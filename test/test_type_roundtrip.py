@@ -351,7 +351,7 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
         | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body(%x: index.Index):
-        |     %store : Nil = ndbuffer.store(%x, %x, [3, %x, 5])
+        |     %store : Nil = ndbuffer.store(%x, %x, %x, [3, %x, 5])
     """)
     parsed = parse_module(ir_input)
     assert parsed == ir_snapshot

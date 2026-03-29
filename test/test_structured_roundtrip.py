@@ -42,9 +42,8 @@ def test_roundtrip_store_load():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
         |     %1 : number.Float64 = 1.0
         |     %2 : index.Index = 0
-        |     %store : Nil = ndbuffer.store(%1, %0, [%2])
-        |     %3 : number.Float64 = ndbuffer.load(%0, [%2])
-        |     %4 : number.Float64 = chain(%3, %store)
+        |     %store : Nil = ndbuffer.store(%0, %1, %0, [%2])
+        |     %3 : number.Float64 = ndbuffer.load(%store, %0, [%2])
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -103,7 +102,7 @@ def test_roundtrip_for_op():
         |     %loop : Nil = control_flow.for<0, 3>([]) body(%i0: index.Index):
         |         %1 : number.Float64 = 1.0
         |         %2 : index.Index = 0
-        |         %_ : Nil = ndbuffer.store(%1, %0, [%2])
+        |         %_ : Nil = ndbuffer.store(%0, %1, %0, [%2])
         |     %print : Nil = ndbuffer.print_memref(%0)
         |     %3 : Nil = chain(%print, %loop)
     """)
@@ -123,7 +122,7 @@ def test_roundtrip_nested_for():
         |         %_ : Nil = control_flow.for<0, 3>([]) body(%i1: index.Index):
         |             %1 : number.Float64 = 1.0
         |             %2 : index.Index = 0
-        |             %_ : Nil = ndbuffer.store(%1, %0, [%2, %2])
+        |             %_ : Nil = ndbuffer.store(%0, %1, %0, [%2, %2])
         |     %3 : Nil = chain(%loop, %0)
     """)
     module = parse_module(ir)
@@ -152,9 +151,8 @@ def test_roundtrip_multi_index_load_store():
         |     %1 : number.Float64 = 5.0
         |     %2 : index.Index = 0
         |     %3 : index.Index = 1
-        |     %store : Nil = ndbuffer.store(%1, %0, [%2, %3])
-        |     %4 : number.Float64 = ndbuffer.load(%0, [%2, %3])
-        |     %5 : number.Float64 = chain(%4, %store)
+        |     %store : Nil = ndbuffer.store(%0, %1, %0, [%2, %3])
+        |     %4 : number.Float64 = ndbuffer.load(%store, %0, [%2, %3])
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -200,11 +198,10 @@ def test_ssa_shape_through_lowering():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(%shape)
         |     %1 : number.Float64 = 1.0
         |     %2 : index.Index = 0
-        |     %store : Nil = ndbuffer.store(%1, %0, [%2, %2])
-        |     %3 : number.Float64 = ndbuffer.load(%0, [%2, %2])
-        |     %4 : number.Float64 = chain(%3, %store)
+        |     %store : Nil = ndbuffer.store(%0, %1, %0, [%2, %2])
+        |     %3 : number.Float64 = ndbuffer.load(%store, %0, [%2, %2])
         |     %dealloc : Nil = ndbuffer.dealloc(%0)
-        |     %5 : Nil = chain(%dealloc, %4)
+        |     %4 : Nil = chain(%dealloc, %3)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

@@ -9,6 +9,6 @@ type NDBuffer<shape: Shape, dtype: Type = Float64>:
 
 op alloc(shape: Shape) -> NDBuffer
 op dealloc(input: NDBuffer) -> Nil
-op load(memref: NDBuffer, indices: Index) -> Float64
-op store(value: Float64, memref: NDBuffer, indices: Index) -> Nil
+op load(mem, memref: NDBuffer, indices: Index) -> Float64
+op store(mem, value: Float64, memref: NDBuffer, indices: Index) -> Nil
 op print_memref(input: NDBuffer) -> Nil

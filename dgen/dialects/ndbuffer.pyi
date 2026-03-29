@@ -33,12 +33,14 @@ class DeallocOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
+    mem: Value
     memref: Value
     indices: Value
     type: Type = Float64()
 
 @dataclass(eq=False, kw_only=True)
 class StoreOp(Op):
+    mem: Value
     value: Value
     memref: Value
     indices: Value
