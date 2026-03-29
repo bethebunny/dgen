@@ -7,16 +7,17 @@ from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
 def test_llvm_via_imports():
-    """Parse a function using llvm ops via import headers."""
+    """Parse a function using memory ops via import headers."""
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import memory
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
         |     %1 : number.Float64 = 1.0
-        |     %store : Nil = llvm.store(%1, %0)
+        |     %store : Nil = memory.store(%0, %1, %0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

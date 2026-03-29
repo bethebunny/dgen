@@ -59,7 +59,9 @@ def _deref(val: dgen.Value) -> dgen.Value:
     """If val is a tensor constant, load its data pointer."""
     if not isinstance(val.type, toy.Tensor):
         return val
-    return memory.LoadOp(ptr=val, type=memory.Reference(element_type=Float64()))
+    return memory.LoadOp(
+        mem=val, ptr=val, type=memory.Reference(element_type=Float64())
+    )
 
 
 class NDBufferToMemory(Pass):
@@ -105,7 +107,7 @@ class NDBufferToMemory(Pass):
             else memory.Reference(element_type=Float64())
         )
         offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ref_type)
-        return memory.LoadOp(ptr=offset_ptr, type=op.type)
+        return memory.LoadOp(mem=offset_ptr, ptr=offset_ptr, type=op.type)
 
     @lowering_for(ndbuffer.StoreOp)
     def lower_store(self, op: ndbuffer.StoreOp) -> dgen.Value | None:
@@ -119,7 +121,7 @@ class NDBufferToMemory(Pass):
             else memory.Reference(element_type=Float64())
         )
         offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ref_type)
-        return memory.StoreOp(value=op.value, ptr=offset_ptr)
+        return memory.StoreOp(mem=offset_ptr, value=op.value, ptr=offset_ptr)
 
     @lowering_for(ndbuffer.PrintMemrefOp)
     def lower_print(self, op: ndbuffer.PrintMemrefOp) -> dgen.Value | None:

@@ -6,6 +6,6 @@ type Reference<element_type: Type>:
 op stack_allocate<element_type: Type>() -> Reference<element_type>
 op heap_allocate<element_type: Type>(count: Index) -> Reference<element_type>
 op deallocate(ptr: Reference) -> Nil
-op load(ptr: Reference) -> Type
-op store(value: Type, ptr: Reference) -> Nil
+op load(mem, ptr: Reference) -> Type
+op store(mem, value: Type, ptr: Reference) -> Nil
 op offset(ptr: Reference, index: Index) -> Reference

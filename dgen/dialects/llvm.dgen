@@ -15,8 +15,6 @@ type Void:
 
 op alloca<elem_count: Index>() -> Ptr
 op gep(base: Ptr, index: Int<64>) -> Ptr
-op load(ptr: Ptr) -> Float
-op store(value: Float, ptr: Ptr) -> Nil
 op fadd(lhs: Float, rhs: Float) -> Float
 op fsub(lhs: Float, rhs: Float) -> Float
 op fmul(lhs: Float, rhs: Float) -> Float

@@ -32,11 +32,13 @@ class DeallocateOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
+    mem: Value
     ptr: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
 class StoreOp(Op):
+    mem: Value
     value: Value
     ptr: Value
     type: Type = Nil()

@@ -38,14 +38,6 @@ class MemoryToLLVM(Pass):
     def lower_deallocate(self, op: memory.DeallocateOp) -> dgen.Value | None:
         return ConstantOp(value=0, type=Nil())
 
-    @lowering_for(memory.LoadOp)
-    def lower_load(self, op: memory.LoadOp) -> dgen.Value | None:
-        return llvm.LoadOp(ptr=op.ptr, type=op.type)
-
-    @lowering_for(memory.StoreOp)
-    def lower_store(self, op: memory.StoreOp) -> dgen.Value | None:
-        return llvm.StoreOp(value=op.value, ptr=op.ptr)
-
     @lowering_for(memory.OffsetOp)
     def lower_offset(self, op: memory.OffsetOp) -> dgen.Value | None:
         return llvm.GepOp(base=op.ptr, index=op.index)

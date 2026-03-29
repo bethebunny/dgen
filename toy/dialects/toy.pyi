@@ -72,3 +72,4 @@ class DimSizeOp(Op):
 class PrintOp(Op):
     input: Value
     type: Type = Nil()
+

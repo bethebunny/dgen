@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil, Pointer, Span, String
+from dgen.dialects.builtin import Nil, String
 from dgen.dialects.index import Index
-from dgen.dialects.number import Float64
 
 llvm = Dialect("llvm")
 
@@ -35,17 +33,6 @@ class GepOp(Op):
     base: Value
     index: Value
     type: Type = Ptr()
-
-@dataclass(eq=False, kw_only=True)
-class LoadOp(Op):
-    ptr: Value
-    type: Type = Float()
-
-@dataclass(eq=False, kw_only=True)
-class StoreOp(Op):
-    value: Value
-    ptr: Value
-    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class FaddOp(Op):

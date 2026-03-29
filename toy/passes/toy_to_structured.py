@@ -201,26 +201,25 @@ class ToyToStructured(Pass):
         reference_type = memory.Reference(element_type=Index())
         accumulator = memory.StackAllocateOp(element_type=Index(), type=reference_type)
         initial_store = memory.StoreOp(
-            value=ConstantOp(value=0, type=Index()), ptr=accumulator
+            mem=accumulator, value=ConstantOp(value=0, type=Index()), ptr=accumulator
         )
-        initialized = ChainOp(lhs=accumulator, rhs=initial_store, type=reference_type)
         zero = ConstantOp(value=0.0, type=Float64())
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             element = ndbuffer.LoadOp(memref=op.input, indices=pack(ivars))
             nonzero = algebra.NotEqualOp(left=element, right=zero, type=Boolean())
-            current = memory.LoadOp(ptr=initialized, type=Index())
+            current = memory.LoadOp(mem=initial_store, ptr=accumulator, type=Index())
             updated = algebra.AddOp(
                 left=current,
                 right=algebra.CastOp(input=nonzero, type=Index()),
                 type=Index(),
             )
-            return memory.StoreOp(value=updated, ptr=initialized)
+            return memory.StoreOp(mem=current, value=updated, ptr=accumulator)
 
         loop = _nested_for(
             shape,
             body,
-            captures=[initialized, zero, op.input],
+            captures=[accumulator, initial_store, zero, op.input],
         )
-        after_loop = ChainOp(lhs=initialized, rhs=loop, type=reference_type)
-        return memory.LoadOp(ptr=after_loop, type=Index())
+        after_loop = ChainOp(lhs=accumulator, rhs=loop, type=reference_type)
+        return memory.LoadOp(mem=after_loop, ptr=accumulator, type=Index())
