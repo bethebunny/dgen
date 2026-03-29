@@ -487,9 +487,10 @@ class TestSqlite3:
         assert elapsed < 120, f"Lowering took {elapsed:.1f}s"
 
     def test_codegen_sqlite3(self, sqlite3_ast: object) -> None:
-        """Lower sqlite3.c through the full pipeline to LLVM IR.
+        """Lower sqlite3.c through the full pipeline to LLVM-verified IR.
 
-        Emits LLVM IR per-function, then verifies each with llvmlite.
+        Tracks progress across four stages. Each assertion is a ratchet —
+        update the threshold as improvements land.
         """
         from dgen.codegen import _emit_func
         from dgen.passes.control_flow_to_goto import ControlFlowToGoto
@@ -506,7 +507,9 @@ class TestSqlite3:
         )
         module = pipeline.run(module)
 
+        total = len(module.functions)
         emitted = 0
+        parsed = 0
         verified = 0
         preamble = "declare void @print_memref(ptr, i64)\ndeclare ptr @malloc(i64)\n\n"
         for func in module.functions:
@@ -518,11 +521,22 @@ class TestSqlite3:
             ir = preamble + "\n".join(lines)
             try:
                 mod = llvm_binding.parse_assembly(ir)
+                parsed += 1
                 mod.verify()
                 verified += 1
             except Exception:
                 pass
 
-        total = len(module.functions)
-        assert emitted > total * 0.95, f"Only {emitted}/{total} emitted"
-        assert verified > 500, f"Only {verified} functions produce valid LLVM IR"
+        report = (
+            f"\nsqlite3 codegen progress:\n"
+            f"  functions:     {total}\n"
+            f"  IR emitted:    {emitted:5d} ({100 * emitted / total:5.1f}%)\n"
+            f"  LLVM parsed:   {parsed:5d} ({100 * parsed / total:5.1f}%)\n"
+            f"  LLVM verified: {verified:5d} ({100 * verified / total:5.1f}%)\n"
+        )
+        print(report)
+
+        # Ratchets — raise these as we fix things
+        assert emitted >= 2500, f"emitted regressed: {emitted}\n{report}"
+        assert parsed >= 600, f"parsed regressed: {parsed}\n{report}"
+        assert verified >= 600, f"verified regressed: {verified}\n{report}"
