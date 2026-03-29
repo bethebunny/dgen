@@ -6,31 +6,10 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Span, String
+from dgen.dialects.builtin import Nil, Span, String
 from dgen.dialects.index import Index
 
 c = Dialect("c")
-
-@dataclass(frozen=True, eq=False)
-class CInt(Type):
-    bits: Value[Index]
-    signed: Value[Index]
-
-@dataclass(frozen=True, eq=False)
-class CFloat(Type):
-    kind: Value[Index]
-
-@dataclass(frozen=True, eq=False)
-class CVoid(Type): ...
-
-@dataclass(frozen=True, eq=False)
-class CPtr(Type):
-    pointee: Value[dgen.TypeType]
-
-@dataclass(frozen=True, eq=False)
-class CArray(Type):
-    element: Value[dgen.TypeType]
-    count: Value[Index]
 
 @dataclass(frozen=True, eq=False)
 class CStruct(Type):
@@ -43,12 +22,6 @@ class CUnion(Type):
     tag_name: Value[String]
     field_names: Value[String]
     field_types: Value[String]
-
-@dataclass(frozen=True, eq=False)
-class CFuncType(Type):
-    return_type: Value[dgen.TypeType]
-    param_types: Value[dgen.TypeType]
-    variadic: Value[Index]
 
 @dataclass(eq=False, kw_only=True)
 class ModOp(Op):
@@ -93,17 +66,17 @@ class CallIndirectOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class ReturnVoidOp(Op):
-    type: Type = CVoid()
+    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class ReturnValueOp(Op):
     value: Value
-    type: Type = CVoid()
+    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class DoWhileOp(Op):
     init: Value
-    type: Type = CVoid()
+    type: Type = Nil()
     body: Block
     condition: Block
 
@@ -111,16 +84,16 @@ class DoWhileOp(Op):
 class SwitchOp(Op):
     case_values: Value[Span]
     selector: Value
-    type: Type = CVoid()
+    type: Type = Nil()
     default_body: Block
 
 @dataclass(eq=False, kw_only=True)
 class BreakOp(Op):
-    type: Type = CVoid()
+    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class ContinueOp(Op):
-    type: Type = CVoid()
+    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class StructMemberOp(Op):

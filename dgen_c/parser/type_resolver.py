@@ -7,15 +7,11 @@ from pycparser import c_ast
 import dgen
 from dgen.dialects.index import Index
 from dgen.dialects.builtin import String
-from dgen_c.dialects import c_int, c_void
-from dgen_c.dialects.c import (
-    CArray,
-    CFloat,
-    CFuncType,
-    CPtr,
-    CStruct,
-    CUnion,
-)
+from dgen.dialects.builtin import Array
+from dgen.dialects.function import Function
+from dgen.dialects.number import Float64
+from dgen_c.dialects import c_int, c_ptr, c_void
+from dgen_c.dialects.c import CStruct, CUnion
 
 
 # Standard C integer type widths (LP64 model)
@@ -71,12 +67,12 @@ class TypeResolver:
 
         if isinstance(node, c_ast.PtrDecl):
             pointee = self.resolve(node.type)
-            return CPtr(pointee=pointee)
+            return c_ptr(pointee)
 
         if isinstance(node, c_ast.ArrayDecl):
             element = self.resolve(node.type)
             count = self._eval_array_dim(node.dim)
-            return CArray(element=element, count=Index().constant(count))
+            return Array(element_type=element, n=Index().constant(count))
 
         if isinstance(node, c_ast.FuncDecl):
             return self._resolve_func_decl(node)
@@ -107,7 +103,7 @@ class TypeResolver:
             return c_int(bits, signed)
 
         if joined in _FLOAT_KINDS:
-            return CFloat(kind=Index().constant(_FLOAT_KINDS[joined]))
+            return Float64()
 
         if joined == "void":
             return c_void()
@@ -129,20 +125,9 @@ class TypeResolver:
         return c_int(64, signed=True)
 
     def _resolve_func_decl(self, node: c_ast.FuncDecl) -> dgen.Type:
-        """Resolve a FuncDecl to a CFuncType."""
+        """Resolve a FuncDecl to a Function type."""
         ret_type = self.resolve(node.type)
-        variadic = False
-
-        if node.args is not None:
-            for param in node.args.params:
-                if isinstance(param, c_ast.EllipsisParam):
-                    variadic = True
-
-        return CFuncType(
-            return_type=ret_type,
-            param_types=ret_type,  # simplified
-            variadic=Index().constant(1 if variadic else 0),
-        )
+        return Function(result=ret_type)
 
     def _resolve_struct(self, node: c_ast.Struct) -> dgen.Type:
         """Resolve a struct definition or forward reference."""
