@@ -14,74 +14,67 @@ from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.index import Index
 from dgen.module import ConstantOp, Module, pack
 
+from dgen.dialects import algebra, memory
 from dgen.dialects.control_flow import IfOp, WhileOp
+from dgen.dialects.number import Float64
 from dgen_c.dialects import c_int
 from dgen_c.dialects.c import (
-    AddOp,
-    AllocaOp,
-    ArrayIndexOp,
-    BitandOp,
-    BitnotOp,
-    BitorOp,
-    BitxorOp,
     BreakOp,
     CallOp,
-    CastOp,
     CFloat,
     ContinueOp,
     CPtr,
     CVoid,
-    DerefOp,
-    DivOp,
-    EqOp,
-    GeOp,
-    GtOp,
-    LeOp,
-    LoadOp,
-    LogandOp,
     LognotOp,
-    LogorOp,
-    LtOp,
     ModOp,
-    MulOp,
-    NeOp,
-    NegOp,
     ReturnValueOp,
     ReturnVoidOp,
     ShlOp,
     ShrOp,
     SizeofOp,
-    StoreOp,
     StructMemberOp,
     StructPtrMemberOp,
-    SubOp,
     TernaryOp,
 )
 from dgen_c.parser.type_resolver import TypeResolver
 
+
 # ---------------------------------------------------------------------------
-# Binary op dispatch
+# Binary op dispatch — algebra ops use left/right, C ops use lhs/rhs
 # ---------------------------------------------------------------------------
 
+
+def _binop(
+    op_cls: type[dgen.Op], a: dgen.Value, b: dgen.Value, ty: dgen.Type
+) -> dgen.Op:
+    """Construct a binary op, handling algebra (left/right) vs C (lhs/rhs)."""
+    if (
+        hasattr(op_cls, "__dataclass_fields__")
+        and "left" in op_cls.__dataclass_fields__
+    ):
+        return op_cls(left=a, right=b, type=ty)
+    return op_cls(lhs=a, rhs=b, type=ty)
+
+
 _BINOP_MAP: dict[str, type[dgen.Op]] = {
-    "+": AddOp,
-    "-": SubOp,
-    "*": MulOp,
-    "/": DivOp,
+    "+": algebra.AddOp,
+    "-": algebra.SubtractOp,
+    "*": algebra.MultiplyOp,
+    "/": algebra.DivideOp,
     "%": ModOp,
-    "&": BitandOp,
-    "|": BitorOp,
-    "^": BitxorOp,
+    "&": algebra.MeetOp,
+    "|": algebra.JoinOp,
+    "^": algebra.SymmetricDifferenceOp,
     "<<": ShlOp,
     ">>": ShrOp,
-    "==": EqOp,
-    "!=": NeOp,
-    "<": LtOp,
-    "<=": LeOp,
-    ">": GtOp,
-    ">=": GeOp,
-    "&&": LogandOp,
-    "||": LogorOp,
+    "==": algebra.EqualOp,
+    "!=": algebra.NotEqualOp,
+    "<": algebra.LessThanOp,
+    "<=": algebra.LessEqualOp,
+    ">": algebra.GreaterThanOp,
+    ">=": algebra.GreaterEqualOp,
+    "&&": algebra.MeetOp,
+    "||": algebra.JoinOp,
 }
 
 # Compound assignment: +=, -=, etc. -> base operator
@@ -344,14 +337,16 @@ class Lowering:
             return
 
         # Allocate stack space
-        alloca = AllocaOp(element_type=var_type, type=CPtr(pointee=var_type))
+        alloca = memory.StackAllocateOp(
+            element_type=var_type, type=memory.Reference(element_type=var_type)
+        )
         yield alloca
         self.scope[node.name] = alloca
 
         # Initialize if there's an initializer
         if node.init is not None:
             init_val = yield from self._lower_expr(node.init)
-            store = StoreOp(value=init_val, ptr=alloca)
+            store = memory.StoreOp(value=init_val, ptr=alloca)
             yield store
 
     def _lower_assignment(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
@@ -363,15 +358,15 @@ class Lowering:
             # Compound assignment: load current, apply op, store
             base_op = _COMPOUND_ASSIGN.get(node.op)
             if base_op is not None:
-                current = LoadOp(ptr=ptr, type=self._expr_type(node.lvalue))
+                current = memory.LoadOp(ptr=ptr, type=self._expr_type(node.lvalue))
                 yield current
                 op_cls = _BINOP_MAP.get(base_op)
                 if op_cls is not None:
-                    combined = op_cls(lhs=current, rhs=rhs, type=current.type)
+                    combined = _binop(op_cls, current, rhs, current.type)
                     yield combined
                     rhs = combined
 
-        store = StoreOp(value=rhs, ptr=ptr)
+        store = memory.StoreOp(value=rhs, ptr=ptr)
         yield store
 
     def _lower_return(self, node: c_ast.Return) -> Iterator[dgen.Op]:
@@ -630,6 +625,8 @@ class Lowering:
         # Unknown — return a named placeholder value
         return dgen.Value(name=node.name, type=c_int(64))
 
+    _COMPARISON_OPS: set[str] = {"==", "!=", "<", "<=", ">", ">="}
+
     def _lower_binop(self, node: c_ast.BinaryOp) -> Iterator[dgen.Op]:
         """Lower a binary operation."""
         lhs = yield from self._lower_expr(node.left)
@@ -637,12 +634,18 @@ class Lowering:
 
         op_cls = _BINOP_MAP.get(node.op)
         if op_cls is None:
-            # Unknown op — return lhs
             return lhs
 
         result_type = self._promote_types(lhs.type, rhs.type)
-        op = op_cls(lhs=lhs, rhs=rhs, type=result_type)
+        op = _binop(op_cls, lhs, rhs, result_type)
         yield op
+
+        # Comparisons produce i1 in LLVM; cast to C int
+        if node.op in self._COMPARISON_OPS:
+            cast = algebra.CastOp(input=op, type=c_int(32))
+            yield cast
+            return cast
+
         return op
 
     def _lower_unaryop(self, node: c_ast.UnaryOp) -> Iterator[dgen.Op]:
@@ -666,7 +669,7 @@ class Lowering:
             # Dereference
             inner = yield from self._lower_expr(node.expr)
             pointee = self._deref_type(inner.type)
-            op = DerefOp(ptr=inner, type=pointee)
+            op = memory.LoadOp(ptr=inner, type=pointee)
             yield op
             return op
 
@@ -674,26 +677,26 @@ class Lowering:
         if node.op in ("++", "p++"):
             ptr = yield from self._lower_lvalue(node.expr)
             val_type = self._expr_type(node.expr)
-            load = LoadOp(ptr=ptr, type=val_type)
+            load = memory.LoadOp(ptr=ptr, type=val_type)
             yield load
             one = ConstantOp(value=1, type=val_type)
             yield one
-            inc = AddOp(lhs=load, rhs=one, type=val_type)
+            inc = algebra.AddOp(left=load, right=one, type=val_type)
             yield inc
-            store = StoreOp(value=inc, ptr=ptr)
+            store = memory.StoreOp(value=inc, ptr=ptr)
             yield store
             return load if node.op == "p++" else inc
 
         if node.op in ("--", "p--"):
             ptr = yield from self._lower_lvalue(node.expr)
             val_type = self._expr_type(node.expr)
-            load = LoadOp(ptr=ptr, type=val_type)
+            load = memory.LoadOp(ptr=ptr, type=val_type)
             yield load
             one = ConstantOp(value=1, type=val_type)
             yield one
-            dec = SubOp(lhs=load, rhs=one, type=val_type)
+            dec = algebra.SubtractOp(left=load, right=one, type=val_type)
             yield dec
-            store = StoreOp(value=dec, ptr=ptr)
+            store = memory.StoreOp(value=dec, ptr=ptr)
             yield store
             return load if node.op == "p--" else dec
 
@@ -701,12 +704,12 @@ class Lowering:
         inner = yield from self._lower_expr(node.expr)
 
         if node.op == "-":
-            op = NegOp(operand=inner, type=inner.type)
+            op = algebra.NegateOp(input=inner, type=inner.type)
             yield op
             return op
 
         if node.op == "~":
-            op = BitnotOp(operand=inner, type=inner.type)
+            op = algebra.ComplementOp(input=inner, type=inner.type)
             yield op
             return op
 
@@ -770,15 +773,15 @@ class Lowering:
         if node.op != "=":
             base_op = _COMPOUND_ASSIGN.get(node.op)
             if base_op is not None:
-                current = LoadOp(ptr=ptr, type=self._expr_type(node.lvalue))
+                current = memory.LoadOp(ptr=ptr, type=self._expr_type(node.lvalue))
                 yield current
                 op_cls = _BINOP_MAP.get(base_op)
                 if op_cls is not None:
-                    combined = op_cls(lhs=current, rhs=rhs, type=current.type)
+                    combined = _binop(op_cls, current, rhs, current.type)
                     yield combined
                     rhs = combined
 
-        store = StoreOp(value=rhs, ptr=ptr)
+        store = memory.StoreOp(value=rhs, ptr=ptr)
         yield store
         return rhs
 
@@ -786,7 +789,7 @@ class Lowering:
         """Lower a type cast."""
         inner = yield from self._lower_expr(node.expr)
         target = self.types.resolve(node.to_type)
-        op = CastOp(target_type=target, operand=inner, type=target)
+        op = algebra.CastOp(input=inner, type=target)
         yield op
         return op
 
@@ -795,10 +798,10 @@ class Lowering:
         base = yield from self._lower_expr(node.name)
         idx = yield from self._lower_expr(node.subscript)
         elem_type = self._deref_type(base.type)
-        op = ArrayIndexOp(base=base, index=idx, type=CPtr(pointee=elem_type))
+        op = memory.OffsetOp(ptr=base, index=idx, type=CPtr(pointee=elem_type))
         yield op
         # Load the element
-        load = LoadOp(ptr=op, type=elem_type)
+        load = memory.LoadOp(ptr=op, type=elem_type)
         yield load
         return load
 
@@ -862,7 +865,7 @@ class Lowering:
             base = yield from self._lower_expr(node.name)
             idx = yield from self._lower_expr(node.subscript)
             elem_type = self._deref_type(base.type)
-            op = ArrayIndexOp(base=base, index=idx, type=CPtr(pointee=elem_type))
+            op = memory.OffsetOp(ptr=base, index=idx, type=CPtr(pointee=elem_type))
             yield op
             return op
 
@@ -924,16 +927,19 @@ class Lowering:
             pointee = ty.pointee
             if isinstance(pointee, dgen.Type):
                 return pointee
+        if isinstance(ty, memory.Reference):
+            elem = ty.element_type
+            if isinstance(elem, dgen.Type):
+                return elem
         return c_int(64)
 
     def _promote_types(self, a: dgen.Type, b: dgen.Type) -> dgen.Type:
         """C-style type promotion (simplified)."""
         # Float wins over int
-        if isinstance(a, CFloat) or isinstance(b, CFloat):
-            if isinstance(a, CFloat) and isinstance(b, CFloat):
-                # Higher precision wins
-                return a  # simplified
-            return a if isinstance(a, CFloat) else b
+        if isinstance(a, (CFloat, Float64)) or isinstance(b, (CFloat, Float64)):
+            if isinstance(a, (CFloat, Float64)) and isinstance(b, (CFloat, Float64)):
+                return a
+            return a if isinstance(a, (CFloat, Float64)) else b
 
         # Pointer wins
         if isinstance(a, CPtr):

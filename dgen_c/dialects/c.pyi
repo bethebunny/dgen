@@ -51,64 +51,7 @@ class CFuncType(Type):
     variadic: Value[Index]
 
 @dataclass(eq=False, kw_only=True)
-class AddOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class SubOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class MulOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class DivOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
 class ModOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class NegOp(Op):
-    operand: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class BitnotOp(Op):
-    operand: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class LognotOp(Op):
-    operand: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class BitandOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class BitorOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class BitxorOp(Op):
     lhs: Value
     rhs: Value
     type: Type
@@ -126,101 +69,14 @@ class ShrOp(Op):
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class EqOp(Op):
-    lhs: Value
-    rhs: Value
+class LognotOp(Op):
+    operand: Value
     type: Type
-
-@dataclass(eq=False, kw_only=True)
-class NeOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class LtOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class LeOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class GtOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class GeOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class LogandOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class LogorOp(Op):
-    lhs: Value
-    rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class AllocaOp(Op):
-    element_type: Value[dgen.TypeType]
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class LoadOp(Op):
-    ptr: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class StoreOp(Op):
-    value: Value
-    ptr: Value
-    type: Type = CVoid()
 
 @dataclass(eq=False, kw_only=True)
 class GepOp(Op):
     field_index: Value[Index]
     base: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class ArrayIndexOp(Op):
-    base: Value
-    index: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class AddressOfOp(Op):
-    operand: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class DerefOp(Op):
-    ptr: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class CastOp(Op):
-    target_type: Value[dgen.TypeType]
-    operand: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class BitcastOp(Op):
-    target_type: Value[dgen.TypeType]
-    operand: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
