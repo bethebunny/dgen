@@ -17,7 +17,7 @@ from toy.parser.toy_parser import parse_toy
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
-from toy.passes.autodiff import Autodiff
+from toy.passes.autodiff import lower_grad
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
 from toy.passes.toy_to_structured import ToyToStructured
@@ -34,8 +34,6 @@ toy_compiler: Compiler[Executable] = Compiler(
     ],
     exit=LLVMCodegen(),
 )
-
-_autodiff = Autodiff()
 
 
 def _parse_arg(arg: str) -> object:
@@ -62,8 +60,10 @@ def run(source: str, *, args: Sequence[object | str] = ()) -> object:
     parsed_args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
     if parsed_args:
         _set_param_types(ir, parsed_args)
-    # Run autodiff before compilation (staging) since GradOp is not JIT-able
-    _autodiff.run(ir, toy_compiler)
+    # Expand grad(f) into synthesized gradient functions before compilation.
+    # This produces inspectable IR: grad(f) becomes a real FunctionOp.
+    func_map = {f.name: f for f in ir.functions if f.name is not None}
+    ir = lower_grad(ir, func_map)
     exe = toy_compiler.compile(ir)
     return exe.run(*parsed_args)
 

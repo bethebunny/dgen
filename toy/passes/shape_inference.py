@@ -87,6 +87,12 @@ class ShapeInference(Pass):
             op.type = toy.Tensor(shape=shape_constant([count] + shape))
         return op
 
+    @lowering_for(toy.FillLikeOp)
+    def infer_fill_like(self, op: toy.FillLikeOp) -> dgen.Value | None:
+        if shape := self._shape(op.template):
+            op.type = toy.Tensor(shape=shape_constant(shape))
+        return op
+
     @lowering_for(function.CallOp)
     def infer_call(self, op: function.CallOp) -> dgen.Value | None:
         args = (

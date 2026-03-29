@@ -1,15 +1,13 @@
-"""Autodiff pass: lower grad calls into concrete Toy IR via reverse-mode AD.
+"""Autodiff pass: lower diff.GradOp into a synthesized gradient FunctionOp.
 
-Runs before shape inference and before ToyToStructured.
-Handles CallOp nodes whose callee is a GradOp — i.e. ``grad(f)(x)`` or
-``var df = grad(f); df(x)`` — by inlining the gradient computation:
+For each GradOp referencing function ``f``, this pass:
+1. Differentiates ``f``'s body via reverse-mode AD
+2. Wraps the result in a new ``FunctionOp`` named ``f_grad``
+3. Adds it to the module
+4. Replaces the GradOp with a name reference to ``f_grad``
 
-1. Clones the target function's body, substituting block args with actual args
-2. Walks the cloned ops in reverse, accumulating adjoint (gradient) values
-3. Replaces the CallOp with the computed gradient tensor
-
-All generated ops use InferredShapeTensor types — shape inference resolves
-them in a subsequent pass.
+After this pass, ``grad(f)(x)`` is a normal ``CallOp(callee="f_grad", args)``
+that flows through shape inference, staging, and codegen like any other call.
 
 Supported ops for differentiation:
 - toy.AddOp: d_lhs += d_out, d_rhs += d_out
@@ -25,17 +23,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import dgen
+from dgen.block import BlockArgument
 from dgen.dialects.builtin import ChainOp
-from dgen.dialects.function import CallOp, FunctionOp
-from dgen.module import ConstantOp, Module, PackOp
-from dgen.passes.pass_ import Pass, lowering_for
+from dgen.dialects.function import Function as FunctionType
+from dgen.dialects.function import FunctionOp
+from dgen.module import ConstantOp, Module
 from toy.dialects import shape_constant, toy
 from toy.dialects.diff import GradOp
 
 if TYPE_CHECKING:
-    from dgen.compiler import Compiler
+    pass
 
-# Use InferredShapeTensor for all gradient ops — shape inference resolves later
 _INFERRED = toy.InferredShapeTensor
 
 
@@ -48,13 +46,13 @@ def _clone_op(op: dgen.Op, val_map: dict[int, dgen.Value]) -> dgen.Op:
     if isinstance(op, ConstantOp):
         clone = ConstantOp(value=op.value, type=op.type)
     elif isinstance(op, toy.AddOp):
-        clone = toy.AddOp(lhs=subst(op.lhs), rhs=subst(op.rhs), type=op.type)
+        clone = toy.AddOp(lhs=subst(op.lhs), rhs=subst(op.rhs), type=_INFERRED())
     elif isinstance(op, toy.MulOp):
-        clone = toy.MulOp(lhs=subst(op.lhs), rhs=subst(op.rhs), type=op.type)
+        clone = toy.MulOp(lhs=subst(op.lhs), rhs=subst(op.rhs), type=_INFERRED())
     elif isinstance(op, toy.TransposeOp):
-        clone = toy.TransposeOp(input=subst(op.input), type=op.type)
+        clone = toy.TransposeOp(input=subst(op.input), type=_INFERRED())
     elif isinstance(op, toy.ReshapeOp):
-        clone = toy.ReshapeOp(input=subst(op.input), type=op.type)
+        clone = toy.ReshapeOp(input=subst(op.input), type=_INFERRED())
     elif isinstance(op, ChainOp):
         clone = ChainOp(lhs=subst(op.lhs), rhs=subst(op.rhs), type=op.type)
     else:
@@ -63,69 +61,34 @@ def _clone_op(op: dgen.Op, val_map: dict[int, dgen.Value]) -> dgen.Op:
     return clone
 
 
-def _shape_or_none(val: dgen.Value) -> list[int] | None:
-    """Extract shape if the value has a concrete Tensor type."""
-    if isinstance(val.type, toy.Tensor):
-        result = val.type.shape.__constant__.to_json()
-        assert isinstance(result, list)
-        return result
-    return None
-
-
-def _ones_like(val: dgen.Value) -> ConstantOp:
-    """Create ones with the same shape as val, or scalar [1.0] if unknown."""
-    import math
-
-    shape = _shape_or_none(val)
-    if shape is None:
-        shape = [1]
-    return ConstantOp(
-        value=[1.0] * math.prod(shape),
-        type=toy.Tensor(shape=shape_constant(shape)),
-    )
-
-
-def _zeros_like(val: dgen.Value) -> ConstantOp:
-    """Create zeros with the same shape as val, or scalar [0.0] if unknown."""
-    import math
-
-    shape = _shape_or_none(val)
-    if shape is None:
-        shape = [1]
-    return ConstantOp(
-        value=[0.0] * math.prod(shape),
-        type=toy.Tensor(shape=shape_constant(shape)),
-    )
-
-
-def _inline_and_differentiate(
+def _build_grad_function(
+    name: str,
     func: FunctionOp,
-    args: list[dgen.Value],
-) -> tuple[list[dgen.Op], list[dgen.Value]]:
-    """Perform reverse-mode autodiff on func applied to args.
+) -> FunctionOp:
+    """Synthesize a gradient FunctionOp from a primal function.
 
-    Returns (new_ops, grad_values) where:
-    - new_ops: all new ops created (cloned forward + gradient backward)
-    - grad_values: gradient for each function parameter, same order as args
+    The gradient function has the same parameters as the primal.
+    It clones the primal's forward body, then walks in reverse to
+    accumulate adjoint values. The result is the gradient w.r.t. the
+    first parameter.
     """
     body = func.body
-    block_args = body.args
+    primal_args = body.args
 
-    # Build substitution map: block args -> actual args
+    # Create fresh block args for the gradient function
+    grad_args = [BlockArgument(name=a.name, type=_INFERRED()) for a in primal_args]
+
+    # Map primal block args → gradient block args
     val_map: dict[int, dgen.Value] = {}
-    for block_arg, actual_arg in zip(block_args, args):
-        val_map[id(block_arg)] = actual_arg
+    for primal_arg, grad_arg in zip(primal_args, grad_args):
+        val_map[id(primal_arg)] = grad_arg
 
     # Clone forward ops with substitution
-    forward_ops = body.ops
-    cloned_ops: list[dgen.Op] = []
-    for op in forward_ops:
-        cloned = _clone_op(op, val_map)
-        cloned_ops.append(cloned)
+    for op in body.ops:
+        _clone_op(op, val_map)
 
     # Find the cloned result
-    result_val = body.result
-    cloned_result = val_map.get(id(result_val), result_val)
+    cloned_result = val_map.get(id(body.result), body.result)
 
     # Strip ChainOps to find the actual computed value
     actual_result = cloned_result
@@ -134,28 +97,24 @@ def _inline_and_differentiate(
 
     # Adjoint accumulator
     adjoints: dict[int, dgen.Value] = {}
-    new_grad_ops: list[dgen.Op] = []
-
-    def get_adjoint(val: dgen.Value) -> dgen.Value | None:
-        return adjoints.get(id(val))
 
     def accumulate(val: dgen.Value, grad: dgen.Value) -> None:
         existing = adjoints.get(id(val))
         if existing is None:
             adjoints[id(val)] = grad
         else:
-            add_op = toy.AddOp(lhs=existing, rhs=grad, type=_INFERRED())
-            new_grad_ops.append(add_op)
-            adjoints[id(val)] = add_op
+            adjoints[id(val)] = toy.AddOp(lhs=existing, rhs=grad, type=_INFERRED())
 
-    # Seed: d(output)/d(output) = ones matching the output shape
-    seed = _ones_like(actual_result)
-    new_grad_ops.append(seed)
+    # Seed: d(output)/d(output) = ones matching the output shape.
+    # fill_like broadcasts a scalar to match a template tensor's shape.
+    one_scalar = ConstantOp(value=[1.0], type=toy.Tensor(shape=shape_constant([1])))
+    seed = toy.FillLikeOp(fill=one_scalar, template=actual_result, type=_INFERRED())
     accumulate(actual_result, seed)
 
-    # Reverse pass over cloned ops
+    # Reverse pass over cloned ops (topological order from block.ops)
+    cloned_ops = [val_map[id(op)] for op in body.ops if id(op) in val_map]
     for op in reversed(cloned_ops):
-        d_out = get_adjoint(op)
+        d_out = adjoints.get(id(op))
         if d_out is None:
             continue
 
@@ -167,18 +126,13 @@ def _inline_and_differentiate(
             accumulate(op.rhs, d_out)
 
         elif isinstance(op, toy.MulOp):
-            # d(a * b)/da = b * d_out, d(a * b)/db = a * d_out
             d_lhs = toy.MulOp(lhs=d_out, rhs=op.rhs, type=_INFERRED())
-            new_grad_ops.append(d_lhs)
             accumulate(op.lhs, d_lhs)
             d_rhs = toy.MulOp(lhs=d_out, rhs=op.lhs, type=_INFERRED())
-            new_grad_ops.append(d_rhs)
             accumulate(op.rhs, d_rhs)
 
         elif isinstance(op, toy.TransposeOp):
-            d_input = toy.TransposeOp(input=d_out, type=_INFERRED())
-            new_grad_ops.append(d_input)
-            accumulate(op.input, d_input)
+            accumulate(op.input, toy.TransposeOp(input=d_out, type=_INFERRED()))
 
         elif isinstance(op, toy.ReshapeOp):
             accumulate(op.input, d_out)
@@ -186,80 +140,106 @@ def _inline_and_differentiate(
         elif isinstance(op, ChainOp):
             accumulate(op.lhs, d_out)
 
-    # Collect gradient values for each actual argument
-    grad_values: list[dgen.Value] = []
-    for actual_arg in args:
-        grad = get_adjoint(actual_arg)
-        if grad is None:
-            # This parameter doesn't affect the output — gradient is zero
-            grad = _zeros_like(actual_arg)
-            new_grad_ops.append(grad)
-        grad_values.append(grad)
+    # The gradient for the first parameter is the result
+    grad_result = adjoints.get(id(grad_args[0]))
+    if grad_result is None:
+        zero_scalar = ConstantOp(
+            value=[0.0], type=toy.Tensor(shape=shape_constant([1]))
+        )
+        grad_result = toy.FillLikeOp(
+            fill=zero_scalar, template=grad_args[0], type=_INFERRED()
+        )
 
-    all_ops = cloned_ops + new_grad_ops
-    return all_ops, grad_values
+    result_type = _INFERRED()
+    return FunctionOp(
+        name=name,
+        result=result_type,
+        body=dgen.Block(result=grad_result, args=grad_args),
+        type=FunctionType(result=result_type),
+    )
 
 
-class Autodiff(Pass):
-    """Lower grad calls into concrete Toy IR via reverse-mode autodiff.
+def lower_grad(module: Module, func_map: dict[str, FunctionOp]) -> Module:
+    """Expand all GradOps in the module into synthesized gradient functions.
 
-    Handles CallOp nodes whose callee is a GradOp (the symbolic gradient
-    of a function). The GradOp itself becomes dead after the CallOp is
-    replaced and is automatically removed from the block's ops.
+    For each GradOp referencing function ``f``:
+    1. Synthesize ``f_grad`` as a new FunctionOp
+    2. Add it to the module
+    3. Replace the GradOp with ``Value(name="f_grad")``
+
+    Helper functions that are only used as grad targets (never called
+    directly) are removed from the module to avoid shape-inference
+    failures on their unresolved parameter types.
+
+    Returns a new Module with GradOps eliminated and gradient functions added.
     """
+    new_functions: list[dgen.Op] = []
+    grad_replacements: dict[int, dgen.Value] = {}
+    grad_targets: set[str] = set()  # functions used only as grad sources
 
-    allow_unregistered_ops = True
+    # First pass: find all GradOps and synthesize gradient functions
+    for func in module.functions:
+        for op in func.body.ops:
+            if not isinstance(op, GradOp):
+                continue
+            callee_name = op.callee.name
+            if callee_name is None:
+                raise RuntimeError("GradOp callee must have a name")
+            callee = func_map.get(callee_name)
+            if callee is None:
+                raise RuntimeError(f"Unknown function in grad: {callee_name}")
+            grad_targets.add(callee_name)
 
-    def __init__(self) -> None:
-        self._func_map: dict[str, FunctionOp] = {}
+            grad_name = f"{callee_name}_grad"
+            grad_func = _build_grad_function(grad_name, callee)
+            new_functions.append(grad_func)
+            # GradOp → name reference to the new function
+            grad_replacements[id(op)] = dgen.Value(name=grad_name, type=op.type)
 
-    def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        self._func_map = {f.name: f for f in module.functions if f.name is not None}
-        for func in module.functions:
-            self._run_block(func.body)
+    if not grad_replacements:
         return module
 
-    def _infer_shapes(self, func: FunctionOp) -> None:
-        """Run a quick shape inference on the function body.
+    # Second pass: replace GradOp references in all blocks
+    def _replace_in_block(block: dgen.Block) -> None:
+        for op in block.ops:
+            # Replace in parameters (e.g. CallOp.callee)
+            for param_name, param_val in op.parameters:
+                replacement = grad_replacements.get(id(param_val))
+                if replacement is not None:
+                    setattr(op, param_name, replacement)
+            # Replace in operands
+            for op_name, op_val in op.operands:
+                replacement = grad_replacements.get(id(op_val))
+                if replacement is not None:
+                    setattr(op, op_name, replacement)
+            # Recurse into child blocks
+            for _, child_block in op.blocks:
+                _replace_in_block(child_block)
+        # Replace in block result
+        replacement = grad_replacements.get(id(block.result))
+        if replacement is not None:
+            block.result = replacement
 
-        Resolves InferredShapeTensor types to concrete Tensor types so the
-        autodiff pass can create correctly-shaped gradient ops.
-        """
-        from toy.passes.shape_inference import ShapeInference
+    for func in module.functions:
+        _replace_in_block(func.body)
 
-        si = ShapeInference()
-        si._func_map = self._func_map
-        si._run_block(func.body)
+    # Collect functions called directly (not just via grad)
+    from dgen.dialects.function import CallOp
 
-    @lowering_for(CallOp)
-    def lower_grad_call(self, op: CallOp) -> dgen.Value | None:
-        """Replace CallOp(callee=GradOp(f), args) with inlined gradient."""
-        if not isinstance(op.callee, GradOp):
-            return None  # Not a gradient call — leave for other passes
+    directly_called: set[str] = set()
+    for func in module.functions:
+        for op in func.body.ops:
+            if isinstance(op, CallOp) and hasattr(op.callee, "name") and op.callee.name:
+                directly_called.add(op.callee.name)
 
-        grad_op = op.callee
-        callee_name = grad_op.callee.name
-        if callee_name is None:
-            raise RuntimeError("GradOp callee must have a name")
-        callee = self._func_map.get(callee_name)
-        if callee is None:
-            raise RuntimeError(f"Unknown function in grad: {callee_name}")
-
-        # Extract arguments from the CallOp
-        if isinstance(op.arguments, PackOp):
-            args = list(op.arguments)
-        else:
-            args = [op.arguments]
-
-        # Propagate argument types to the callee and run shape inference
-        # so the cloned ops have concrete types for correct gradient shapes
-        for block_arg, actual_arg in zip(callee.body.args, args):
-            if isinstance(actual_arg.type, toy.Tensor):
-                block_arg.type = actual_arg.type
-        self._infer_shapes(callee)
-
-        # Perform autodiff
-        _new_ops, grad_values = _inline_and_differentiate(callee, args)
-
-        # Return the gradient for the first argument
-        return grad_values[0]
+    # Keep module ops, but drop helper functions only used as grad targets
+    kept_ops = [
+        op
+        for op in module.ops
+        if not (
+            isinstance(op, FunctionOp)
+            and op.name in grad_targets
+            and op.name not in directly_called
+        )
+    ]
+    return Module(ops=kept_ops + new_functions)

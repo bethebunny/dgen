@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import dgen
 from dgen import Dialect, Op, Type, Value
 import dgen.dialects.ndbuffer as ndbuffer
-from dgen.dialects.builtin import Nil, Span, String
+from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 
@@ -67,6 +67,12 @@ class DimSizeOp(Op):
     axis: Value[Index]
     input: Value
     type: Type = Index()
+
+@dataclass(eq=False, kw_only=True)
+class FillLikeOp(Op):
+    fill: Value
+    template: Value
+    type: Type
 
 @dataclass(eq=False, kw_only=True)
 class PrintOp(Op):
