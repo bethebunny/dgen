@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import Nil, Pointer
+from dgen.dialects.index import Index
 
 memory = Dialect("memory")
 
@@ -27,6 +28,7 @@ class HeapAllocateOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class DeallocateOp(Op):
+    mem: Value
     ptr: Value
     type: Type = Nil()
 
@@ -48,3 +50,4 @@ class OffsetOp(Op):
     ptr: Value
     index: Value
     type: Type
+

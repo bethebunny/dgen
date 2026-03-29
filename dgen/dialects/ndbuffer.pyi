@@ -28,6 +28,7 @@ class AllocOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class DeallocOp(Op):
+    mem: Value
     input: Value
     type: Type = Nil()
 

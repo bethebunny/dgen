@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import llvm, memory
-from dgen.dialects.builtin import Nil, String
+from dgen.dialects.builtin import ChainOp, Nil, String
 from dgen.dialects.index import Index
 from dgen.module import ConstantOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
@@ -36,7 +36,7 @@ class MemoryToLLVM(Pass):
 
     @lowering_for(memory.DeallocateOp)
     def lower_deallocate(self, op: memory.DeallocateOp) -> dgen.Value | None:
-        return ConstantOp(value=0, type=Nil())
+        return ChainOp(lhs=ConstantOp(value=0, type=Nil()), rhs=op.mem, type=Nil())
 
     @lowering_for(memory.OffsetOp)
     def lower_offset(self, op: memory.OffsetOp) -> dgen.Value | None:

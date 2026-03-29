@@ -93,7 +93,7 @@ class NDBufferToMemory(Pass):
 
     @lowering_for(ndbuffer.DeallocOp)
     def lower_dealloc(self, op: ndbuffer.DeallocOp) -> dgen.Value | None:
-        return memory.DeallocateOp(ptr=op.input)
+        return memory.DeallocateOp(mem=op.mem, ptr=op.input)
 
     @lowering_for(ndbuffer.LoadOp)
     def lower_load(self, op: ndbuffer.LoadOp) -> dgen.Value | None:

@@ -26,7 +26,7 @@ def test_roundtrip_alloc():
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
-        |     %dealloc : Nil = ndbuffer.dealloc(%0)
+        |     %dealloc : Nil = ndbuffer.dealloc(%0, %0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -200,8 +200,7 @@ def test_ssa_shape_through_lowering():
         |     %2 : index.Index = 0
         |     %store : Nil = ndbuffer.store(%0, %1, %0, [%2, %2])
         |     %3 : number.Float64 = ndbuffer.load(%store, %0, [%2, %2])
-        |     %dealloc : Nil = ndbuffer.dealloc(%0)
-        |     %4 : Nil = chain(%dealloc, %3)
+        |     %dealloc : Nil = ndbuffer.dealloc(%3, %0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
