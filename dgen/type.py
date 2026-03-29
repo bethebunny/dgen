@@ -152,6 +152,12 @@ class Type(Value["TypeType"]):
         for name, field in self.__params__:
             yield name, getattr(self, name)
 
+    @property
+    def dependencies(self) -> Iterator[Value]:
+        """Types only depend on their parameters — skip type/operands/blocks."""
+        for _, param in self.parameters:
+            yield param
+
 
 @dataclass(eq=False, kw_only=True)
 class Constant(Value[T]):

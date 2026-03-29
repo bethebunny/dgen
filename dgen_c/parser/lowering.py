@@ -138,7 +138,8 @@ class Lowering:
         self.types = TypeResolver()
         # Per-function state
         self.scope: dict[str, dgen.Value] = {}
-        self.last_effect: dgen.Op | None = None
+        # Per-variable memory token: tracks the last store to each variable
+        self.var_mem: dict[str, dgen.Value] = {}
         # Global function declarations for call resolution
         self.func_types: dict[str, dgen.Type] = {}
         # Track all function ops for the module
@@ -146,17 +147,11 @@ class Lowering:
         # Stats
         self.stats = LoweringStats()
 
-    @property
-    def _mem(self) -> dgen.Value:
-        """Current memory token for load/store ordering."""
-        if self.last_effect is not None:
-            return self.last_effect
-        # Fallback: a nil constant (no prior effects)
-        return ConstantOp(value=None, type=Nil())
-
-    def _chain_effect(self, op: dgen.Op) -> None:
-        """Register a side-effecting op as the current memory token."""
-        self.last_effect = op
+    def _mem_for(self, name: str) -> dgen.Value:
+        """Get the memory token for a variable (its last store, or its alloca)."""
+        return self.var_mem.get(
+            name, self.scope.get(name, ConstantOp(value=None, type=Nil()))
+        )
 
     def lower_file(self, ast: c_ast.FileAST) -> Module:
         """Lower an entire C translation unit to a dgen Module."""
@@ -213,7 +208,7 @@ class Lowering:
     def _lower_func_def(self, node: c_ast.FuncDef) -> function.FunctionOp | None:
         """Lower a function definition to a FunctionOp."""
         self.scope = {}
-        self.last_effect = None
+        self.var_mem = {}
 
         func_name = node.decl.name
         ret_type = self._get_func_return_type(node.decl.type)
@@ -354,21 +349,24 @@ class Lowering:
         # Initialize if there's an initializer
         if node.init is not None:
             init_val = yield from self._lower_expr(node.init)
-            store = memory.StoreOp(mem=self._mem, value=init_val, ptr=alloca)
+            store = memory.StoreOp(mem=alloca, value=init_val, ptr=alloca)
             yield store
-            self._chain_effect(store)
+            self.var_mem[node.name] = store
 
     def _lower_assignment(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
         """Lower an assignment statement."""
+        # Extract variable name for per-variable mem tracking
+        var_name = node.lvalue.name if isinstance(node.lvalue, c_ast.ID) else None
+
         ptr = yield from self._lower_lvalue(node.lvalue)
         rhs = yield from self._lower_expr(node.rvalue)
 
         if node.op != "=":
-            # Compound assignment: load current, apply op, store
             base_op = _COMPOUND_ASSIGN.get(node.op)
             if base_op is not None:
+                mem = self._mem_for(var_name) if var_name else ptr
                 current = memory.LoadOp(
-                    mem=self._mem, ptr=ptr, type=self._expr_type(node.lvalue)
+                    mem=mem, ptr=ptr, type=self._expr_type(node.lvalue)
                 )
                 yield current
                 op_cls = _BINOP_MAP.get(base_op)
@@ -377,9 +375,11 @@ class Lowering:
                     yield combined
                     rhs = combined
 
-        store = memory.StoreOp(mem=self._mem, value=rhs, ptr=ptr)
+        mem = self._mem_for(var_name) if var_name else ptr
+        store = memory.StoreOp(mem=mem, value=rhs, ptr=ptr)
         yield store
-        self._chain_effect(store)
+        if var_name:
+            self.var_mem[var_name] = store
 
     def _lower_return(self, node: c_ast.Return) -> Iterator[dgen.Op]:
         """Lower a return statement."""
@@ -643,7 +643,9 @@ class Lowering:
             if isinstance(val.type, memory.Reference):
                 elem = val.type.element_type
                 if isinstance(elem, dgen.Type):
-                    load = memory.LoadOp(mem=self._mem, ptr=val, type=elem)
+                    load = memory.LoadOp(
+                        mem=self._mem_for(node.name), ptr=val, type=elem
+                    )
                     yield load
                     return load
             return val
@@ -695,37 +697,43 @@ class Lowering:
             # Dereference
             inner = yield from self._lower_expr(node.expr)
             pointee = self._deref_type(inner.type)
-            op = memory.LoadOp(mem=self._mem, ptr=inner, type=pointee)
+            op = memory.LoadOp(mem=inner, ptr=inner, type=pointee)
             yield op
             return op
 
         # Pre/post increment/decrement
         if node.op in ("++", "p++"):
+            var_name = node.expr.name if isinstance(node.expr, c_ast.ID) else None
             ptr = yield from self._lower_lvalue(node.expr)
             val_type = self._expr_type(node.expr)
-            load = memory.LoadOp(mem=self._mem, ptr=ptr, type=val_type)
+            mem = self._mem_for(var_name) if var_name else ptr
+            load = memory.LoadOp(mem=mem, ptr=ptr, type=val_type)
             yield load
             one = ConstantOp(value=1, type=val_type)
             yield one
             inc = algebra.AddOp(left=load, right=one, type=val_type)
             yield inc
-            store = memory.StoreOp(mem=self._mem, value=inc, ptr=ptr)
+            store = memory.StoreOp(mem=load, value=inc, ptr=ptr)
             yield store
-            self._chain_effect(store)
+            if var_name:
+                self.var_mem[var_name] = store
             return load if node.op == "p++" else inc
 
         if node.op in ("--", "p--"):
+            var_name = node.expr.name if isinstance(node.expr, c_ast.ID) else None
             ptr = yield from self._lower_lvalue(node.expr)
             val_type = self._expr_type(node.expr)
-            load = memory.LoadOp(mem=self._mem, ptr=ptr, type=val_type)
+            mem = self._mem_for(var_name) if var_name else ptr
+            load = memory.LoadOp(mem=mem, ptr=ptr, type=val_type)
             yield load
             one = ConstantOp(value=1, type=val_type)
             yield one
             dec = algebra.SubtractOp(left=load, right=one, type=val_type)
             yield dec
-            store = memory.StoreOp(mem=self._mem, value=dec, ptr=ptr)
+            store = memory.StoreOp(mem=load, value=dec, ptr=ptr)
             yield store
-            self._chain_effect(store)
+            if var_name:
+                self.var_mem[var_name] = store
             return load if node.op == "p--" else dec
 
         # Standard unary ops
@@ -774,7 +782,6 @@ class Lowering:
                 type=ret_type,
             )
             yield op
-            self._chain_effect(op)
             return op
 
         # Indirect call (function pointer)
@@ -803,7 +810,7 @@ class Lowering:
             base_op = _COMPOUND_ASSIGN.get(node.op)
             if base_op is not None:
                 current = memory.LoadOp(
-                    mem=self._mem, ptr=ptr, type=self._expr_type(node.lvalue)
+                    mem=ptr, ptr=ptr, type=self._expr_type(node.lvalue)
                 )
                 yield current
                 op_cls = _BINOP_MAP.get(base_op)
@@ -812,7 +819,7 @@ class Lowering:
                     yield combined
                     rhs = combined
 
-        store = memory.StoreOp(mem=self._mem, value=rhs, ptr=ptr)
+        store = memory.StoreOp(mem=ptr, value=rhs, ptr=ptr)
         yield store
         return rhs
 
@@ -834,7 +841,7 @@ class Lowering:
         )
         yield op
         # Load the element
-        load = memory.LoadOp(mem=self._mem, ptr=op, type=elem_type)
+        load = memory.LoadOp(mem=op, ptr=op, type=elem_type)
         yield load
         return load
 
