@@ -22,6 +22,17 @@ class NDBuffer(Type):
     dtype: Value[dgen.TypeType] = Float64()
 
 @dataclass(eq=False, kw_only=True)
+class AllocOp(Op):
+    shape: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class DeallocOp(Op):
+    mem: Value
+    input: Value
+    type: Type = Nil()
+
+@dataclass(eq=False, kw_only=True)
 class LoadOp(Op):
     mem: Value
     memref: Value
