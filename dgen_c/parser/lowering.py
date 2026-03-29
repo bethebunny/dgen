@@ -212,6 +212,7 @@ class Lowering:
 
         func_name = node.decl.name
         ret_type = self._get_func_return_type(node.decl.type)
+        self.current_ret_type = ret_type
         self.func_types[func_name] = ret_type
 
         # Create block args for function parameters
@@ -387,6 +388,11 @@ class Lowering:
             yield ReturnVoidOp()
         else:
             val = yield from self._lower_expr(node.expr)
+            # Cast if return value type doesn't match function return type
+            if not isinstance(val.type, type(self.current_ret_type)):
+                cast = algebra.CastOp(input=val, type=self.current_ret_type)
+                yield cast
+                val = cast
             yield ReturnValueOp(value=val)
 
     def _lower_if(self, node: c_ast.If) -> Iterator[dgen.Op]:
