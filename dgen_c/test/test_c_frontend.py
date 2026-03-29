@@ -489,12 +489,15 @@ class TestSqlite3:
     def test_codegen_sqlite3(self, sqlite3_ast: object) -> None:
         """Lower sqlite3.c through the full pipeline to LLVM IR.
 
-        Runs C-to-LLVM and ControlFlowToGoto passes (skipping
-        verification since C if/else lowering doesn't yet wire up
-        block captures), then emits LLVM IR per-function.
+        Emits LLVM IR per-function, then verifies each with llvmlite.
         """
         from dgen.codegen import _emit_func
         from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+
+        import llvmlite.binding as llvm_binding
+
+        llvm_binding.initialize_native_target()
+        llvm_binding.initialize_native_asmprinter()
 
         module, _ = lower(sqlite3_ast)
         pipeline = Compiler(
@@ -503,16 +506,23 @@ class TestSqlite3:
         )
         module = pipeline.run(module)
 
-        ok = 0
-        total_ir_lines = 0
+        emitted = 0
+        verified = 0
+        preamble = "declare void @print_memref(ptr, i64)\ndeclare ptr @malloc(i64)\n\n"
         for func in module.functions:
             try:
                 lines = list(_emit_func(func, []))
-                ok += 1
-                total_ir_lines += len(lines)
+            except Exception:
+                continue
+            emitted += 1
+            ir = preamble + "\n".join(lines)
+            try:
+                mod = llvm_binding.parse_assembly(ir)
+                mod.verify()
+                verified += 1
             except Exception:
                 pass
 
         total = len(module.functions)
-        assert ok > total * 0.95, f"Only {ok}/{total} functions compiled"
-        assert total_ir_lines > 10000
+        assert emitted > total * 0.95, f"Only {emitted}/{total} emitted"
+        assert verified > 500, f"Only {verified} functions produce valid LLVM IR"
