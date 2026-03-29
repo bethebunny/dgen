@@ -23,6 +23,7 @@ def test_roundtrip_gep_load_store():
     ir = strip_prefix("""
         | import function
         | import llvm
+        | import memory
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():
@@ -30,8 +31,8 @@ def test_roundtrip_gep_load_store():
         |     %1 : index.Index = 0
         |     %2 : Nil = llvm.gep(%0, %1)
         |     %3 : number.Float64 = 1.0
-        |     %4 : Nil = llvm.store(%3, %2)
-        |     %5 : Nil = llvm.load(%2)
+        |     %4 : Nil = memory.store(%2, %3, %2)
+        |     %5 : Nil = memory.load(%4, %2)
         |     %_ : Nil = chain(%5, %4)
     """)
     module = parse_module(ir)

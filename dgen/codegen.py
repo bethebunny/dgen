@@ -14,7 +14,7 @@ import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.compiler import Compiler, IdentityPass
-from dgen.dialects import builtin, control_flow, function, goto, llvm
+from dgen.dialects import builtin, control_flow, function, goto, llvm, memory
 from dgen.layout import Layout
 from dgen.module import ConstantOp, Module, PackOp, string_value
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
@@ -538,13 +538,13 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                 if isinstance(op.type, builtin.Nil)
                 else f"  %{name} = call {types[op]} @{callee}({args})"
             )
-        elif isinstance(op, llvm.StoreOp):
+        elif isinstance(op, memory.StoreOp):
             yield f"  store {typed_ref(op.value)}, {typed_ref(op.ptr)}"
         elif isinstance(op, llvm.AllocaOp):
             yield f"  %{name} = alloca double, i64 {op.elem_count.__constant__.to_json()}"
         elif isinstance(op, llvm.GepOp):
             yield f"  %{name} = getelementptr double, ptr {bare_ref(op.base)}, {typed_ref(op.index)}"
-        elif isinstance(op, llvm.LoadOp):
+        elif isinstance(op, memory.LoadOp):
             yield f"  %{name} = load {_llvm_type(dgen.type.type_constant(op.type).__layout__)}, {typed_ref(op.ptr)}"
         elif isinstance(op, llvm.ZextOp):
             yield f"  %{name} = zext i1 {bare_ref(op.input)} to i64"
