@@ -509,10 +509,6 @@ class TestSqlite3:
         assert len(module.functions) > 500
         assert elapsed < 120, f"Lowering took {elapsed:.1f}s"
 
-    @pytest.mark.skip(
-        reason="transitive_dependencies is O(n²) on memory token chains; "
-        "needs iterative graph walker"
-    )
     def test_codegen_sqlite3(self, sqlite3_ast: object) -> None:
         """Lower sqlite3.c through the full pipeline to LLVM-verified IR.
 
