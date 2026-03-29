@@ -8,7 +8,7 @@ from pycparser import c_ast
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, function
+from dgen.dialects import function
 from dgen.dialects.builtin import Nil, String
 from dgen.dialects.function import Function as FunctionType
 from dgen.module import ConstantOp, Module, pack
@@ -146,8 +146,16 @@ class Lowering:
         # Stats
         self.stats = LoweringStats()
 
+    @property
+    def _mem(self) -> dgen.Value:
+        """Current memory token for load/store ordering."""
+        if self.last_effect is not None:
+            return self.last_effect
+        # Fallback: a nil constant (no prior effects)
+        return ConstantOp(value=None, type=Nil())
+
     def _chain_effect(self, op: dgen.Op) -> None:
-        """Register a side-effecting op, chaining it through the previous one."""
+        """Register a side-effecting op as the current memory token."""
         self.last_effect = op
 
     def lower_file(self, ast: c_ast.FileAST) -> Module:
@@ -346,7 +354,7 @@ class Lowering:
         # Initialize if there's an initializer
         if node.init is not None:
             init_val = yield from self._lower_expr(node.init)
-            store = memory.StoreOp(value=init_val, ptr=alloca)
+            store = memory.StoreOp(mem=self._mem, value=init_val, ptr=alloca)
             yield store
             self._chain_effect(store)
 
@@ -359,7 +367,9 @@ class Lowering:
             # Compound assignment: load current, apply op, store
             base_op = _COMPOUND_ASSIGN.get(node.op)
             if base_op is not None:
-                current = memory.LoadOp(ptr=ptr, type=self._expr_type(node.lvalue))
+                current = memory.LoadOp(
+                    mem=self._mem, ptr=ptr, type=self._expr_type(node.lvalue)
+                )
                 yield current
                 op_cls = _BINOP_MAP.get(base_op)
                 if op_cls is not None:
@@ -367,7 +377,7 @@ class Lowering:
                     yield combined
                     rhs = combined
 
-        store = memory.StoreOp(value=rhs, ptr=ptr)
+        store = memory.StoreOp(mem=self._mem, value=rhs, ptr=ptr)
         yield store
         self._chain_effect(store)
 
@@ -633,14 +643,7 @@ class Lowering:
             if isinstance(val.type, memory.Reference):
                 elem = val.type.element_type
                 if isinstance(elem, dgen.Type):
-                    ptr = val
-                    # Chain through last_effect so stores are reachable
-                    if self.last_effect is not None:
-                        ptr = builtin.ChainOp(
-                            lhs=val, rhs=self.last_effect, type=val.type
-                        )
-                        yield ptr
-                    load = memory.LoadOp(ptr=ptr, type=elem)
+                    load = memory.LoadOp(mem=self._mem, ptr=val, type=elem)
                     yield load
                     return load
             return val
@@ -692,7 +695,7 @@ class Lowering:
             # Dereference
             inner = yield from self._lower_expr(node.expr)
             pointee = self._deref_type(inner.type)
-            op = memory.LoadOp(ptr=inner, type=pointee)
+            op = memory.LoadOp(mem=self._mem, ptr=inner, type=pointee)
             yield op
             return op
 
@@ -700,13 +703,13 @@ class Lowering:
         if node.op in ("++", "p++"):
             ptr = yield from self._lower_lvalue(node.expr)
             val_type = self._expr_type(node.expr)
-            load = memory.LoadOp(ptr=ptr, type=val_type)
+            load = memory.LoadOp(mem=self._mem, ptr=ptr, type=val_type)
             yield load
             one = ConstantOp(value=1, type=val_type)
             yield one
             inc = algebra.AddOp(left=load, right=one, type=val_type)
             yield inc
-            store = memory.StoreOp(value=inc, ptr=ptr)
+            store = memory.StoreOp(mem=self._mem, value=inc, ptr=ptr)
             yield store
             self._chain_effect(store)
             return load if node.op == "p++" else inc
@@ -714,13 +717,13 @@ class Lowering:
         if node.op in ("--", "p--"):
             ptr = yield from self._lower_lvalue(node.expr)
             val_type = self._expr_type(node.expr)
-            load = memory.LoadOp(ptr=ptr, type=val_type)
+            load = memory.LoadOp(mem=self._mem, ptr=ptr, type=val_type)
             yield load
             one = ConstantOp(value=1, type=val_type)
             yield one
             dec = algebra.SubtractOp(left=load, right=one, type=val_type)
             yield dec
-            store = memory.StoreOp(value=dec, ptr=ptr)
+            store = memory.StoreOp(mem=self._mem, value=dec, ptr=ptr)
             yield store
             self._chain_effect(store)
             return load if node.op == "p--" else dec
@@ -799,7 +802,9 @@ class Lowering:
         if node.op != "=":
             base_op = _COMPOUND_ASSIGN.get(node.op)
             if base_op is not None:
-                current = memory.LoadOp(ptr=ptr, type=self._expr_type(node.lvalue))
+                current = memory.LoadOp(
+                    mem=self._mem, ptr=ptr, type=self._expr_type(node.lvalue)
+                )
                 yield current
                 op_cls = _BINOP_MAP.get(base_op)
                 if op_cls is not None:
@@ -807,7 +812,7 @@ class Lowering:
                     yield combined
                     rhs = combined
 
-        store = memory.StoreOp(value=rhs, ptr=ptr)
+        store = memory.StoreOp(mem=self._mem, value=rhs, ptr=ptr)
         yield store
         return rhs
 
@@ -829,7 +834,7 @@ class Lowering:
         )
         yield op
         # Load the element
-        load = memory.LoadOp(ptr=op, type=elem_type)
+        load = memory.LoadOp(mem=self._mem, ptr=op, type=elem_type)
         yield load
         return load
 
