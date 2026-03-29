@@ -5,31 +5,24 @@ them, verifying that the mem operand correctly enforces ordering. Each test is
 designed so that incorrect ordering would produce the wrong result.
 """
 
-from dgen import Block, Value
-from dgen.block import BlockArgument
+from dgen.asm.parser import parse_module
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler
-from dgen.dialects import algebra, memory
-from dgen.dialects.builtin import ChainOp
-from dgen.dialects.index import Index
-from dgen.dialects.number import Float64
-from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module
+from dgen.dialects import index as _index  # noqa: F401 — register index dialect
+from dgen.dialects import memory as _memory  # noqa: F401 — register memory dialect
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.testing import strip_prefix
 
 
-def _compile(func: FunctionOp) -> Executable:
-    """Compile a single function through the memory pipeline."""
-    module = Module(ops=[func])
+def _jit(ir: str, *args: object) -> object:
+    """Parse IR, compile through memory pipeline, JIT-run, return JSON result."""
+    module = parse_module(strip_prefix(ir))
     compiler: Compiler[Executable] = Compiler(
         [ControlFlowToGoto(), MemoryToLLVM()], LLVMCodegen()
     )
-    return compiler.compile(module)
-
-
-def _ref(dtype: Value) -> memory.Reference:
-    return memory.Reference(element_type=dtype)
+    exe = compiler.compile(module)
+    return exe.run(*args).to_json()
 
 
 def test_store_then_load_sees_stored_value():
@@ -38,19 +31,20 @@ def test_store_then_load_sees_stored_value():
     Without mem ordering, the load could be scheduled before the store
     and read uninitialized memory.
     """
-    alloc = memory.StackAllocateOp(element_type=Index(), type=_ref(Index()))
-    val = ConstantOp(value=42, type=Index())
-    store = memory.StoreOp(mem=alloc, value=val, ptr=alloc)
-    load = memory.LoadOp(mem=store, ptr=alloc, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=load, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
+    assert (
+        _jit("""
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %val : index.Index = 42
+        |     %st : Nil = memory.store(%alloc, %val, %alloc)
+        |     %ld : index.Index = memory.load(%st, %alloc)
+    """)
+        == 42
     )
-    exe = _compile(func)
-    assert exe.run().to_json() == 42
 
 
 def test_two_stores_last_wins():
@@ -59,21 +53,22 @@ def test_two_stores_last_wins():
     The mem chain store1 → store2 → load ensures the second store
     overwrites the first. Without ordering, either value could appear.
     """
-    alloc = memory.StackAllocateOp(element_type=Index(), type=_ref(Index()))
-    v10 = ConstantOp(value=10, type=Index())
-    v20 = ConstantOp(value=20, type=Index())
-    store1 = memory.StoreOp(mem=alloc, value=v10, ptr=alloc)
-    store2 = memory.StoreOp(mem=store1, value=v20, ptr=alloc)
-    load = memory.LoadOp(mem=store2, ptr=alloc, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=load, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
+    assert (
+        _jit("""
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %v10 : index.Index = 10
+        |     %st1 : Nil = memory.store(%alloc, %v10, %alloc)
+        |     %v20 : index.Index = 20
+        |     %st2 : Nil = memory.store(%st1, %v20, %alloc)
+        |     %ld : index.Index = memory.load(%st2, %alloc)
+    """)
+        == 20
     )
-    exe = _compile(func)
-    assert exe.run().to_json() == 20
 
 
 def test_three_stores_last_wins():
@@ -82,20 +77,24 @@ def test_three_stores_last_wins():
     A longer chain validates that mem threading works across
     multiple sequential stores.
     """
-    alloc = memory.StackAllocateOp(element_type=Index(), type=_ref(Index()))
-    s1 = memory.StoreOp(mem=alloc, value=ConstantOp(value=1, type=Index()), ptr=alloc)
-    s2 = memory.StoreOp(mem=s1, value=ConstantOp(value=2, type=Index()), ptr=alloc)
-    s3 = memory.StoreOp(mem=s2, value=ConstantOp(value=3, type=Index()), ptr=alloc)
-    load = memory.LoadOp(mem=s3, ptr=alloc, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=load, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
+    assert (
+        _jit("""
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %v1 : index.Index = 1
+        |     %s1 : Nil = memory.store(%alloc, %v1, %alloc)
+        |     %v2 : index.Index = 2
+        |     %s2 : Nil = memory.store(%s1, %v2, %alloc)
+        |     %v3 : index.Index = 3
+        |     %s3 : Nil = memory.store(%s2, %v3, %alloc)
+        |     %ld : index.Index = memory.load(%s3, %alloc)
+    """)
+        == 3
     )
-    exe = _compile(func)
-    assert exe.run().to_json() == 3
 
 
 def test_read_modify_write():
@@ -104,22 +103,25 @@ def test_read_modify_write():
     The load→add→store→load chain requires each step to see the
     previous step's result. Misordering would yield 0 or garbage.
     """
-    alloc = memory.StackAllocateOp(element_type=Index(), type=_ref(Index()))
-    init = memory.StoreOp(mem=alloc, value=ConstantOp(value=0, type=Index()), ptr=alloc)
-    load1 = memory.LoadOp(mem=init, ptr=alloc, type=Index())
-    seven = ConstantOp(value=7, type=Index())
-    added = algebra.AddOp(left=load1, right=seven, type=Index())
-    store2 = memory.StoreOp(mem=load1, value=added, ptr=alloc)
-    load2 = memory.LoadOp(mem=store2, ptr=alloc, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=load2, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
+    assert (
+        _jit("""
+        | import algebra
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %zero : index.Index = 0
+        |     %init : Nil = memory.store(%alloc, %zero, %alloc)
+        |     %cur : index.Index = memory.load(%init, %alloc)
+        |     %seven : index.Index = 7
+        |     %sum : index.Index = algebra.add(%cur, %seven)
+        |     %st2 : Nil = memory.store(%cur, %sum, %alloc)
+        |     %result : index.Index = memory.load(%st2, %alloc)
+    """)
+        == 7
     )
-    exe = _compile(func)
-    assert exe.run().to_json() == 7
 
 
 def test_two_independent_locations():
@@ -129,43 +131,44 @@ def test_two_independent_locations():
     to loc_a and loc_b are independent, but each load depends on
     its own store.
     """
-    alloc_a = memory.StackAllocateOp(name="a", element_type=Index(), type=_ref(Index()))
-    alloc_b = memory.StackAllocateOp(name="b", element_type=Index(), type=_ref(Index()))
-    store_a = memory.StoreOp(
-        mem=alloc_a, value=ConstantOp(value=100, type=Index()), ptr=alloc_a
+    assert (
+        _jit("""
+        | import algebra
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %v100 : index.Index = 100
+        |     %sta : Nil = memory.store(%a, %v100, %a)
+        |     %la : index.Index = memory.load(%sta, %a)
+        |     %b : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %v200 : index.Index = 200
+        |     %stb : Nil = memory.store(%b, %v200, %b)
+        |     %lb : index.Index = memory.load(%stb, %b)
+        |     %result : index.Index = algebra.add(%la, %lb)
+    """)
+        == 300
     )
-    store_b = memory.StoreOp(
-        mem=alloc_b, value=ConstantOp(value=200, type=Index()), ptr=alloc_b
-    )
-    load_a = memory.LoadOp(mem=store_a, ptr=alloc_a, type=Index())
-    load_b = memory.LoadOp(mem=store_b, ptr=alloc_b, type=Index())
-    result = algebra.AddOp(left=load_a, right=load_b, type=Index())
-    # Both stores and loads must be reachable via result
-    func = FunctionOp(
-        name="main",
-        body=Block(result=result, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
-    )
-    exe = _compile(func)
-    assert exe.run().to_json() == 300
 
 
 def test_store_float_then_load():
     """Store a float, load it back — verifies non-integer types work."""
-    alloc = memory.StackAllocateOp(element_type=Float64(), type=_ref(Float64()))
-    val = ConstantOp(value=3.14, type=Float64())
-    store = memory.StoreOp(mem=alloc, value=val, ptr=alloc)
-    load = memory.LoadOp(mem=store, ptr=alloc, type=Float64())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=load, args=[]),
-        result=Float64(),
-        type=Function(result=Float64()),
+    assert (
+        _jit("""
+        | import function
+        | import memory
+        | import number
+        |
+        | %main : function.Function<number.Float64> = function.function<number.Float64>() body():
+        |     %alloc : memory.Reference<number.Float64> = memory.stack_allocate<number.Float64>()
+        |     %val : number.Float64 = 3.14
+        |     %st : Nil = memory.store(%alloc, %val, %alloc)
+        |     %ld : number.Float64 = memory.load(%st, %alloc)
+    """)
+        == 3.14
     )
-    exe = _compile(func)
-    assert exe.run().to_json() == 3.14
 
 
 def test_overwrite_with_input_arg():
@@ -174,23 +177,20 @@ def test_overwrite_with_input_arg():
     The mem chain ensures the argument store happens after the constant
     store. Returns the argument, not the constant.
     """
-    arg = BlockArgument(name="x", type=Index())
-    alloc = memory.StackAllocateOp(element_type=Index(), type=_ref(Index()))
-    store1 = memory.StoreOp(
-        mem=alloc, value=ConstantOp(value=999, type=Index()), ptr=alloc
-    )
-    store2 = memory.StoreOp(mem=store1, value=arg, ptr=alloc)
-    load = memory.LoadOp(mem=store2, ptr=alloc, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=load, args=[arg]),
-        result=Index(),
-        type=Function(result=Index()),
-    )
-    exe = _compile(func)
-    assert exe.run(42).to_json() == 42
-    assert exe.run(0).to_json() == 0
+    ir = """
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %junk : index.Index = 999
+        |     %st1 : Nil = memory.store(%alloc, %junk, %alloc)
+        |     %st2 : Nil = memory.store(%st1, %x, %alloc)
+        |     %ld : index.Index = memory.load(%st2, %alloc)
+    """
+    assert _jit(ir, 42) == 42
+    assert _jit(ir, 0) == 0
 
 
 def test_double_read_modify_write():
@@ -199,58 +199,52 @@ def test_double_read_modify_write():
     Each RMW cycle: load, add, store. The second cycle's load must see
     the first cycle's store. This would break without mem ordering.
     """
-    alloc = memory.StackAllocateOp(element_type=Index(), type=_ref(Index()))
-    init = memory.StoreOp(mem=alloc, value=ConstantOp(value=0, type=Index()), ptr=alloc)
-
-    # Cycle 1: load, +5, store
-    load1 = memory.LoadOp(mem=init, ptr=alloc, type=Index())
-    add1 = algebra.AddOp(
-        left=load1, right=ConstantOp(value=5, type=Index()), type=Index()
+    assert (
+        _jit("""
+        | import algebra
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %z : index.Index = 0
+        |     %init : Nil = memory.store(%alloc, %z, %alloc)
+        |     %l1 : index.Index = memory.load(%init, %alloc)
+        |     %five : index.Index = 5
+        |     %a1 : index.Index = algebra.add(%l1, %five)
+        |     %s1 : Nil = memory.store(%l1, %a1, %alloc)
+        |     %l2 : index.Index = memory.load(%s1, %alloc)
+        |     %three : index.Index = 3
+        |     %a2 : index.Index = algebra.add(%l2, %three)
+        |     %s2 : Nil = memory.store(%l2, %a2, %alloc)
+        |     %final : index.Index = memory.load(%s2, %alloc)
+    """)
+        == 8
     )
-    store1 = memory.StoreOp(mem=load1, value=add1, ptr=alloc)
-
-    # Cycle 2: load, +3, store
-    load2 = memory.LoadOp(mem=store1, ptr=alloc, type=Index())
-    add2 = algebra.AddOp(
-        left=load2, right=ConstantOp(value=3, type=Index()), type=Index()
-    )
-    store2 = memory.StoreOp(mem=load2, value=add2, ptr=alloc)
-
-    final = memory.LoadOp(mem=store2, ptr=alloc, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=final, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
-    )
-    exe = _compile(func)
-    assert exe.run().to_json() == 8
 
 
 def test_mem_from_chain_op():
     """The mem operand can be a ChainOp result, not just a load/store.
 
-    This tests interop: ChainOp orders a loop, then its result
+    This tests interop: ChainOp orders a side effect, then its result
     feeds as mem to a subsequent load.
     """
-    alloc = memory.StackAllocateOp(element_type=Index(), type=_ref(Index()))
-    store = memory.StoreOp(
-        mem=alloc, value=ConstantOp(value=77, type=Index()), ptr=alloc
+    assert (
+        _jit("""
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %val : index.Index = 77
+        |     %st : Nil = memory.store(%alloc, %val, %alloc)
+        |     %ch : memory.Reference<index.Index> = chain(%alloc, %st)
+        |     %ld : index.Index = memory.load(%ch, %alloc)
+    """)
+        == 77
     )
-    # ChainOp makes alloc depend on store (alloc's value, store's ordering)
-    chained = ChainOp(lhs=alloc, rhs=store, type=_ref(Index()))
-    # Load uses the chained result as mem
-    load = memory.LoadOp(mem=chained, ptr=alloc, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=load, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
-    )
-    exe = _compile(func)
-    assert exe.run().to_json() == 77
 
 
 def test_cross_location_ordering():
@@ -260,23 +254,23 @@ def test_cross_location_ordering():
     load_a's mem depends on store_a; store_b's mem depends on load_a;
     load_b's mem depends on store_b. Must return 55.
     """
-    alloc_a = memory.StackAllocateOp(name="a", element_type=Index(), type=_ref(Index()))
-    alloc_b = memory.StackAllocateOp(name="b", element_type=Index(), type=_ref(Index()))
-    store_a = memory.StoreOp(
-        mem=alloc_a, value=ConstantOp(value=55, type=Index()), ptr=alloc_a
+    assert (
+        _jit("""
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %v55 : index.Index = 55
+        |     %sta : Nil = memory.store(%a, %v55, %a)
+        |     %la : index.Index = memory.load(%sta, %a)
+        |     %b : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %stb : Nil = memory.store(%la, %la, %b)
+        |     %lb : index.Index = memory.load(%stb, %b)
+    """)
+        == 55
     )
-    load_a = memory.LoadOp(mem=store_a, ptr=alloc_a, type=Index())
-    store_b = memory.StoreOp(mem=load_a, value=load_a, ptr=alloc_b)
-    load_b = memory.LoadOp(mem=store_b, ptr=alloc_b, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=load_b, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
-    )
-    exe = _compile(func)
-    assert exe.run().to_json() == 55
 
 
 def test_swap_via_mem_ordering():
@@ -286,37 +280,31 @@ def test_swap_via_mem_ordering():
     This requires precise ordering: both loads must happen before either
     store, or the swap reads stale/overwritten data.
     """
-    alloc_a = memory.StackAllocateOp(name="a", element_type=Index(), type=_ref(Index()))
-    alloc_b = memory.StackAllocateOp(name="b", element_type=Index(), type=_ref(Index()))
-    # Initialize
-    init_a = memory.StoreOp(
-        mem=alloc_a, value=ConstantOp(value=10, type=Index()), ptr=alloc_a
+    assert (
+        _jit("""
+        | import algebra
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %b : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %v20 : index.Index = 20
+        |     %ib : Nil = memory.store(%b, %v20, %b)
+        |     %lb : index.Index = memory.load(%ib, %b)
+        |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %v10 : index.Index = 10
+        |     %ia : Nil = memory.store(%a, %v10, %a)
+        |     %la : index.Index = memory.load(%ia, %a)
+        |     %ma : index.Index = chain(%lb, %la)
+        |     %sa : Nil = memory.store(%ma, %lb, %a)
+        |     %fa : index.Index = memory.load(%sa, %a)
+        |     %mb : index.Index = chain(%la, %lb)
+        |     %sb : Nil = memory.store(%mb, %la, %b)
+        |     %fb : index.Index = memory.load(%sb, %b)
+        |     %h : index.Index = 100
+        |     %bs : index.Index = algebra.multiply(%fb, %h)
+        |     %result : index.Index = algebra.add(%fa, %bs)
+    """)
+        == 1020
     )
-    init_b = memory.StoreOp(
-        mem=alloc_b, value=ConstantOp(value=20, type=Index()), ptr=alloc_b
-    )
-    # Load both BEFORE any swap store
-    load_a = memory.LoadOp(mem=init_a, ptr=alloc_a, type=Index())
-    load_b = memory.LoadOp(mem=init_b, ptr=alloc_b, type=Index())
-    # Cross-store: a←b, b←a. Each swap store depends on BOTH loads.
-    # Use ChainOp to make swap_a depend on load_b too (it already depends on load_a via init_a's chain)
-    swap_a_mem = ChainOp(lhs=load_b, rhs=load_a, type=Index())
-    swap_a = memory.StoreOp(mem=swap_a_mem, value=load_b, ptr=alloc_a)
-    swap_b_mem = ChainOp(lhs=load_a, rhs=load_b, type=Index())
-    swap_b = memory.StoreOp(mem=swap_b_mem, value=load_a, ptr=alloc_b)
-    # Read back
-    final_a = memory.LoadOp(mem=swap_a, ptr=alloc_a, type=Index())
-    final_b = memory.LoadOp(mem=swap_b, ptr=alloc_b, type=Index())
-    # a=20, b=10. Return a + b*100 = 20 + 1000 = 1020
-    hundred = ConstantOp(value=100, type=Index())
-    b_scaled = algebra.MultiplyOp(left=final_b, right=hundred, type=Index())
-    result = algebra.AddOp(left=final_a, right=b_scaled, type=Index())
-
-    func = FunctionOp(
-        name="main",
-        body=Block(result=result, args=[]),
-        result=Index(),
-        type=Function(result=Index()),
-    )
-    exe = _compile(func)
-    assert exe.run().to_json() == 1020
