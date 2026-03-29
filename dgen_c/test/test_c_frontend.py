@@ -14,8 +14,11 @@ from dgen.codegen import compile as llvm_compile
 from dgen.compiler import Compiler, IdentityPass
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.dialects.builtin import Nil
+from dgen.dialects.memory import Reference
+from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
 from dgen_c.dialects import c_int
-from dgen_c.dialects.c import CFloat, CInt, CPtr, CStruct, CVoid
+from dgen_c.dialects.c import CStruct
 from dgen_c.parser.c_parser import parse_c_string
 from dgen_c.parser.lowering import lower
 from dgen_c.parser.type_resolver import TypeResolver
@@ -123,24 +126,26 @@ def sqlite3_ast(tmp_path_factory: pytest.TempPathFactory) -> object:
 class TestTypeResolver:
     def test_basic_int_types(self) -> None:
         r = TypeResolver()
-        assert isinstance(r._resolve_identifier_type(["int"]), CInt)
+        assert isinstance(r._resolve_identifier_type(["int"]), SignedInteger)
 
     def test_unsigned_long(self) -> None:
         r = TypeResolver()
-        assert isinstance(r._resolve_identifier_type(["unsigned", "long"]), CInt)
+        assert isinstance(
+            r._resolve_identifier_type(["unsigned", "long"]), UnsignedInteger
+        )
 
     def test_void(self) -> None:
         r = TypeResolver()
-        assert isinstance(r._resolve_identifier_type(["void"]), CVoid)
+        assert isinstance(r._resolve_identifier_type(["void"]), Nil)
 
     def test_double(self) -> None:
         r = TypeResolver()
-        assert isinstance(r._resolve_identifier_type(["double"]), CFloat)
+        assert isinstance(r._resolve_identifier_type(["double"]), Float64)
 
     def test_typedef(self) -> None:
         r = TypeResolver()
         r.register_typedef("myint", c_int(32))
-        assert isinstance(r._resolve_identifier_type(["myint"]), CInt)
+        assert isinstance(r._resolve_identifier_type(["myint"]), SignedInteger)
 
     def test_pointer(self) -> None:
         from pycparser import c_ast
@@ -155,7 +160,7 @@ class TestTypeResolver:
                 type=c_ast.IdentifierType(names=["int"]),
             ),
         )
-        assert isinstance(r.resolve(node), CPtr)
+        assert isinstance(r.resolve(node), Reference)
 
     def test_struct(self) -> None:
         from pycparser import c_ast
@@ -538,5 +543,5 @@ class TestSqlite3:
 
         # Ratchets — raise these as we fix things
         assert emitted >= 2500, f"emitted regressed: {emitted}\n{report}"
-        assert parsed >= 600, f"parsed regressed: {parsed}\n{report}"
-        assert verified >= 600, f"verified regressed: {verified}\n{report}"
+        assert parsed >= 900, f"parsed regressed: {parsed}\n{report}"
+        assert verified >= 900, f"verified regressed: {verified}\n{report}"

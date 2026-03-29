@@ -1,21 +1,8 @@
 from builtin import Index, Nil, String, Span
 
-# --- C Types (still needed for type resolution, pointer tracking, structs) ---
-
-type CInt<bits: Index, signed: Index>:
-    data: Index
-
-type CFloat<kind: Index>:
-    data: Index
-
-type CVoid:
-    data: Nil
-
-type CPtr<pointee: Type>:
-    data: Index
-
-type CArray<element: Type, count: Index>:
-    data: Index
+# --- C-specific types (struct and union only; other C types map to
+#     number.SignedInteger/UnsignedInteger, number.Float64, builtin.Nil,
+#     memory.Reference, builtin.Array, function.Function) ---
 
 type CStruct<tag_name: String, field_names: String, field_types: String>:
     data: Index
@@ -23,31 +10,26 @@ type CStruct<tag_name: String, field_names: String, field_types: String>:
 type CUnion<tag_name: String, field_names: String, field_types: String>:
     data: Index
 
-type CFuncType<return_type: Type, param_types: Type, variadic: Index>:
-    data: Nil
-
 # --- C-specific ops (no shared dialect equivalent) ---
-# Arithmetic, comparisons, bitwise, memory, and casts use
-# algebra/memory/control_flow dialects instead.
 
 op mod(lhs, rhs) -> Type
 op shl(lhs, rhs) -> Type
 op shr(lhs, rhs) -> Type
 op lognot(operand) -> Type
-op gep<field_index: Index>(base) -> CPtr
+op gep<field_index: Index>(base) -> Type
 
 op call<callee: String>(arguments: Span) -> Type
 op call_indirect(callee, arguments: Span) -> Type
-op return_void() -> CVoid
-op return_value(value) -> CVoid
+op return_void() -> Nil
+op return_value(value) -> Nil
 
-op do_while(init: Span) -> CVoid:
+op do_while(init: Span) -> Nil:
     block body
     block condition
-op switch<case_values: Span<Index>>(selector) -> CVoid:
+op switch<case_values: Span<Index>>(selector) -> Nil:
     block default_body
-op break() -> CVoid
-op continue() -> CVoid
+op break() -> Nil
+op continue() -> Nil
 
 op struct_member<field_name: String>(base) -> Type
 op struct_ptr_member<field_name: String>(base) -> Type

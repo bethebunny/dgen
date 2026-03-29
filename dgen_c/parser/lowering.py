@@ -11,7 +11,6 @@ from dgen.block import BlockArgument
 from dgen.dialects import function
 from dgen.dialects.builtin import Nil, String
 from dgen.dialects.function import Function as FunctionType
-from dgen.dialects.index import Index
 from dgen.module import ConstantOp, Module, pack
 
 from dgen.dialects import algebra, memory
@@ -21,10 +20,7 @@ from dgen_c.dialects import c_int
 from dgen_c.dialects.c import (
     BreakOp,
     CallOp,
-    CFloat,
     ContinueOp,
-    CPtr,
-    CVoid,
     LognotOp,
     ModOp,
     ReturnValueOp,
@@ -195,7 +191,7 @@ class Lowering:
         if isinstance(node, c_ast.FuncDecl):
             return self.types.resolve(node.type)
         if isinstance(node, c_ast.PtrDecl):
-            return CPtr(pointee=self._get_func_return_type(node.type))
+            return memory.Reference(element_type=self._get_func_return_type(node.type))
         return self.types.resolve(node)
 
     # -----------------------------------------------------------------------
@@ -229,7 +225,7 @@ class Lowering:
             ops.extend(self._lower_compound(node.body))
 
         # Determine result
-        is_void = isinstance(ret_type, CVoid)
+        is_void = isinstance(ret_type, Nil)
         if is_void:
             result_type: dgen.Type = Nil()
         else:
@@ -602,7 +598,7 @@ class Lowering:
         if node.type == "string":
             # String literals -> pointer to char
             # Store the string value as an integer constant (address placeholder)
-            op = ConstantOp(value=0, type=CPtr(pointee=c_int(8)))
+            op = ConstantOp(value=0, type=memory.Reference(element_type=c_int(8)))
             yield op
             return op
 
@@ -798,7 +794,9 @@ class Lowering:
         base = yield from self._lower_expr(node.name)
         idx = yield from self._lower_expr(node.subscript)
         elem_type = self._deref_type(base.type)
-        op = memory.OffsetOp(ptr=base, index=idx, type=CPtr(pointee=elem_type))
+        op = memory.OffsetOp(
+            ptr=base, index=idx, type=memory.Reference(element_type=elem_type)
+        )
         yield op
         # Load the element
         load = memory.LoadOp(ptr=op, type=elem_type)
@@ -855,7 +853,9 @@ class Lowering:
             if node.name in self.scope:
                 val = self.scope[node.name]
                 return val
-            return dgen.Value(name=node.name, type=CPtr(pointee=c_int(64)))
+            return dgen.Value(
+                name=node.name, type=memory.Reference(element_type=c_int(64))
+            )
 
         if isinstance(node, c_ast.UnaryOp) and node.op == "*":
             # *ptr — the pointer itself is the lvalue
@@ -865,7 +865,9 @@ class Lowering:
             base = yield from self._lower_expr(node.name)
             idx = yield from self._lower_expr(node.subscript)
             elem_type = self._deref_type(base.type)
-            op = memory.OffsetOp(ptr=base, index=idx, type=CPtr(pointee=elem_type))
+            op = memory.OffsetOp(
+                ptr=base, index=idx, type=memory.Reference(element_type=elem_type)
+            )
             yield op
             return op
 
@@ -876,13 +878,13 @@ class Lowering:
                 op = StructPtrMemberOp(
                     field_name=String().constant(field_name),
                     base=base,
-                    type=CPtr(pointee=c_int(64)),  # address of field
+                    type=memory.Reference(element_type=c_int(64)),  # address of field
                 )
             else:
                 op = StructMemberOp(
                     field_name=String().constant(field_name),
                     base=base,
-                    type=CPtr(pointee=c_int(64)),
+                    type=memory.Reference(element_type=c_int(64)),
                 )
             yield op
             return op
@@ -900,9 +902,9 @@ class Lowering:
             if node.type in ("int",):
                 return c_int(32)
             if node.type in ("float",):
-                return CFloat(kind=Index().constant(0))
+                return Float64()
             if node.type in ("double",):
-                return CFloat(kind=Index().constant(1))
+                return Float64()
             if node.type in ("char",):
                 return c_int(8)
             return c_int(32)
@@ -911,8 +913,8 @@ class Lowering:
             if node.name in self.scope:
                 val = self.scope[node.name]
                 # If it's an alloca, the type is the pointee
-                if isinstance(val.type, CPtr):
-                    return val.type.pointee
+                if isinstance(val.type, memory.Reference):
+                    return val.type.element_type
                 return val.type
             return c_int(32)
 
@@ -923,10 +925,6 @@ class Lowering:
 
     def _deref_type(self, ty: dgen.Type) -> dgen.Type:
         """Get the pointee type from a pointer type."""
-        if isinstance(ty, CPtr):
-            pointee = ty.pointee
-            if isinstance(pointee, dgen.Type):
-                return pointee
         if isinstance(ty, memory.Reference):
             elem = ty.element_type
             if isinstance(elem, dgen.Type):
@@ -936,15 +934,13 @@ class Lowering:
     def _promote_types(self, a: dgen.Type, b: dgen.Type) -> dgen.Type:
         """C-style type promotion (simplified)."""
         # Float wins over int
-        if isinstance(a, (CFloat, Float64)) or isinstance(b, (CFloat, Float64)):
-            if isinstance(a, (CFloat, Float64)) and isinstance(b, (CFloat, Float64)):
-                return a
-            return a if isinstance(a, (CFloat, Float64)) else b
+        if isinstance(a, Float64) or isinstance(b, Float64):
+            return Float64()
 
         # Pointer wins
-        if isinstance(a, CPtr):
+        if isinstance(a, memory.Reference):
             return a
-        if isinstance(b, CPtr):
+        if isinstance(b, memory.Reference):
             return b
 
         # Default: use left type
