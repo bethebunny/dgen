@@ -15,7 +15,6 @@ from dgen.dialects.index import Index
 from dgen.module import ConstantOp, Module, pack
 
 from dgen.dialects.control_flow import IfOp, WhileOp
-from dgen.dialects.goto import BranchOp as GotoBranchOp, LabelOp as GotoLabelOp
 from dgen_c.dialects import c_int
 from dgen_c.dialects.c import (
     AddOp,
@@ -151,7 +150,6 @@ class Lowering:
         # Per-function state
         self.scope: dict[str, dgen.Value] = {}
         self.last_effect: dgen.Op | None = None
-        self.labels: dict[str, GotoLabelOp] = {}
         # Global function declarations for call resolution
         self.func_types: dict[str, dgen.Type] = {}
         # Track all function ops for the module
@@ -215,7 +213,6 @@ class Lowering:
         """Lower a function definition to a FunctionOp."""
         self.scope = {}
         self.last_effect = None
-        self.labels = {}
 
         func_name = node.decl.name
         ret_type = self._get_func_return_type(node.decl.type)
@@ -296,23 +293,13 @@ class Lowering:
             if node.op in ("p++", "p--", "++", "--"):
                 yield from self._lower_expr(node)
         elif isinstance(node, c_ast.Goto):
-            target = self._get_or_create_label(node.name)
-            yield GotoBranchOp(target=target, arguments=pack([]))
+            # C goto is unstructured control flow. For the prototype,
+            # skip it — the target label's code will still run in sequence.
+            pass
         elif isinstance(node, c_ast.Label):
-            # Lower the labeled statement as a goto.LabelOp body
-            body_ops: list[dgen.Op] = []
+            # Lower the labeled statement directly (skip the label itself).
             if node.stmt is not None:
-                body_ops = list(self._lower_stmt(node.stmt))
-            body_result: dgen.Value = (
-                body_ops[-1] if body_ops else dgen.Value(type=Nil())
-            )
-            label_op = GotoLabelOp(
-                name=node.name,
-                initial_arguments=pack([]),
-                body=_closed_block(body_result, local_ops=body_ops),
-            )
-            self.labels[node.name] = label_op
-            yield label_op
+                yield from self._lower_stmt(node.stmt)
         elif isinstance(node, c_ast.Switch):
             yield from self._lower_switch(node)
         elif isinstance(node, c_ast.Break):
@@ -481,18 +468,6 @@ class Lowering:
         p = pack([])
         yield p
         yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
-
-    def _get_or_create_label(self, name: str) -> GotoLabelOp:
-        """Get an existing goto label or create a forward-reference placeholder."""
-        if name not in self.labels:
-            # Forward reference — create a placeholder label with empty body.
-            # It will be replaced when the actual label: statement is encountered.
-            self.labels[name] = GotoLabelOp(
-                name=name,
-                initial_arguments=pack([]),
-                body=dgen.Block(result=dgen.Value(type=Nil()), args=[]),
-            )
-        return self.labels[name]
 
     def _lower_switch(self, node: c_ast.Switch) -> Iterator[dgen.Op]:
         """Lower a switch statement (simplified — flatten to if/else chain)."""
