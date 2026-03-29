@@ -12,6 +12,7 @@ from dgen.module import ConstantOp, Module, pack
 from toy.dialects import shape_constant, toy
 from toy.dialects.diff import GradOp
 from toy.parser.ast import (
+    ApplyExpr,
     BinaryOp,
     CallExpr,
     Expression,
@@ -148,6 +149,8 @@ class Lowering:
             return (yield from self._lower_print(expr))
         if isinstance(expr, GradExpr):
             return (yield from self._lower_grad(expr))
+        if isinstance(expr, ApplyExpr):
+            return (yield from self._lower_apply(expr))
         raise RuntimeError("Unknown expression type")
 
     def _lower_index_expr(
@@ -228,11 +231,14 @@ class Lowering:
             yield op
             return op
 
-        # Generic call
+        # Generic call — check scope for first-class function values (e.g. grad result)
         args = []
         for a in call.args:
             args.append((yield from self.lower_expr(a)))
-        callee_ref = dgen.Value(name=call.callee, type=builtin.Nil())
+        if call.callee in self.scope:
+            callee_ref = self.scope[call.callee]
+        else:
+            callee_ref = dgen.Value(name=call.callee, type=builtin.Nil())
         p = pack(args)
         yield p
         op = function.CallOp(
@@ -244,15 +250,25 @@ class Lowering:
         return op
 
     def _lower_grad(self, g: GradExpr) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower grad(f, args...) to a GradOp with packed arguments."""
+        """Lower grad(f) to a GradOp — a symbolic gradient function value."""
         callee_ref = dgen.Value(name=g.callee, type=builtin.Nil())
+        op = GradOp(
+            callee=callee_ref,
+            type=FunctionType(result=toy.InferredShapeTensor()),
+        )
+        yield op
+        return op
+
+    def _lower_apply(self, apply: ApplyExpr) -> Generator[dgen.Op, None, dgen.Value]:
+        """Lower expr(args...) — call the result of an expression."""
+        callee = yield from self.lower_expr(apply.callee)
         args = []
-        for a in g.args:
+        for a in apply.args:
             args.append((yield from self.lower_expr(a)))
         p = pack(args)
         yield p
-        op = GradOp(
-            callee=callee_ref,
+        op = function.CallOp(
+            callee=callee,
             arguments=p,
             type=toy.InferredShapeTensor(),
         )

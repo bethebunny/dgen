@@ -1,11 +1,15 @@
-"""Autodiff pass: lower diff.GradOp into concrete Toy IR via reverse-mode AD.
+"""Autodiff pass: lower grad calls into concrete Toy IR via reverse-mode AD.
 
-Runs after shape inference (types are resolved) and before ToyToStructured.
-For each GradOp(callee=f, arguments=args), this pass:
-1. Looks up the function f in the module
-2. Clones the function body ops, substituting block args with actual args
-3. Walks the cloned ops in reverse to accumulate adjoint (gradient) values
-4. Replaces the GradOp with the computed gradient(s)
+Runs before shape inference and before ToyToStructured.
+Handles CallOp nodes whose callee is a GradOp — i.e. ``grad(f)(x)`` or
+``var df = grad(f); df(x)`` — by inlining the gradient computation:
+
+1. Clones the target function's body, substituting block args with actual args
+2. Walks the cloned ops in reverse, accumulating adjoint (gradient) values
+3. Replaces the CallOp with the computed gradient tensor
+
+All generated ops use InferredShapeTensor types — shape inference resolves
+them in a subsequent pass.
 
 Supported ops for differentiation:
 - toy.AddOp: d_lhs += d_out, d_rhs += d_out
@@ -18,12 +22,11 @@ Supported ops for differentiation:
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 import dgen
 from dgen.dialects.builtin import ChainOp
-from dgen.dialects.function import FunctionOp
+from dgen.dialects.function import CallOp, FunctionOp
 from dgen.module import ConstantOp, Module, PackOp
 from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import shape_constant, toy
@@ -32,31 +35,8 @@ from toy.dialects.diff import GradOp
 if TYPE_CHECKING:
     from dgen.compiler import Compiler
 
-
-def _shape(val: dgen.Value) -> list[int]:
-    """Extract concrete shape from a Tensor-typed value."""
-    assert isinstance(val.type, toy.Tensor), f"Expected Tensor, got {type(val.type)}"
-    result = val.type.shape.__constant__.to_json()
-    assert isinstance(result, list)
-    return result
-
-
-def _zeros_like(val: dgen.Value) -> ConstantOp:
-    """Create a zero constant with the same shape as val."""
-    shape = _shape(val)
-    return ConstantOp(
-        value=[0.0] * math.prod(shape),
-        type=toy.Tensor(shape=shape_constant(shape)),
-    )
-
-
-def _ones_like(val: dgen.Value) -> ConstantOp:
-    """Create a ones constant with the same shape as val."""
-    shape = _shape(val)
-    return ConstantOp(
-        value=[1.0] * math.prod(shape),
-        type=toy.Tensor(shape=shape_constant(shape)),
-    )
+# Use InferredShapeTensor for all gradient ops — shape inference resolves later
+_INFERRED = toy.InferredShapeTensor
 
 
 def _clone_op(op: dgen.Op, val_map: dict[int, dgen.Value]) -> dgen.Op:
@@ -81,6 +61,41 @@ def _clone_op(op: dgen.Op, val_map: dict[int, dgen.Value]) -> dgen.Op:
         raise RuntimeError(f"Cannot differentiate through {type(op).__name__}")
     val_map[id(op)] = clone
     return clone
+
+
+def _shape_or_none(val: dgen.Value) -> list[int] | None:
+    """Extract shape if the value has a concrete Tensor type."""
+    if isinstance(val.type, toy.Tensor):
+        result = val.type.shape.__constant__.to_json()
+        assert isinstance(result, list)
+        return result
+    return None
+
+
+def _ones_like(val: dgen.Value) -> ConstantOp:
+    """Create ones with the same shape as val, or scalar [1.0] if unknown."""
+    import math
+
+    shape = _shape_or_none(val)
+    if shape is None:
+        shape = [1]
+    return ConstantOp(
+        value=[1.0] * math.prod(shape),
+        type=toy.Tensor(shape=shape_constant(shape)),
+    )
+
+
+def _zeros_like(val: dgen.Value) -> ConstantOp:
+    """Create zeros with the same shape as val, or scalar [0.0] if unknown."""
+    import math
+
+    shape = _shape_or_none(val)
+    if shape is None:
+        shape = [1]
+    return ConstantOp(
+        value=[0.0] * math.prod(shape),
+        type=toy.Tensor(shape=shape_constant(shape)),
+    )
 
 
 def _inline_and_differentiate(
@@ -129,11 +144,11 @@ def _inline_and_differentiate(
         if existing is None:
             adjoints[id(val)] = grad
         else:
-            add_op = toy.AddOp(lhs=existing, rhs=grad, type=existing.type)
+            add_op = toy.AddOp(lhs=existing, rhs=grad, type=_INFERRED())
             new_grad_ops.append(add_op)
             adjoints[id(val)] = add_op
 
-    # Seed: d(output)/d(output) = ones
+    # Seed: d(output)/d(output) = ones matching the output shape
     seed = _ones_like(actual_result)
     new_grad_ops.append(seed)
     accumulate(actual_result, seed)
@@ -153,15 +168,15 @@ def _inline_and_differentiate(
 
         elif isinstance(op, toy.MulOp):
             # d(a * b)/da = b * d_out, d(a * b)/db = a * d_out
-            d_lhs = toy.MulOp(lhs=d_out, rhs=op.rhs, type=op.type)
+            d_lhs = toy.MulOp(lhs=d_out, rhs=op.rhs, type=_INFERRED())
             new_grad_ops.append(d_lhs)
             accumulate(op.lhs, d_lhs)
-            d_rhs = toy.MulOp(lhs=d_out, rhs=op.lhs, type=op.type)
+            d_rhs = toy.MulOp(lhs=d_out, rhs=op.lhs, type=_INFERRED())
             new_grad_ops.append(d_rhs)
             accumulate(op.rhs, d_rhs)
 
         elif isinstance(op, toy.TransposeOp):
-            d_input = toy.TransposeOp(input=d_out, type=op.input.type)
+            d_input = toy.TransposeOp(input=d_out, type=_INFERRED())
             new_grad_ops.append(d_input)
             accumulate(op.input, d_input)
 
@@ -176,6 +191,7 @@ def _inline_and_differentiate(
     for actual_arg in args:
         grad = get_adjoint(actual_arg)
         if grad is None:
+            # This parameter doesn't affect the output — gradient is zero
             grad = _zeros_like(actual_arg)
             new_grad_ops.append(grad)
         grad_values.append(grad)
@@ -185,7 +201,12 @@ def _inline_and_differentiate(
 
 
 class Autodiff(Pass):
-    """Lower diff.GradOp into concrete Toy IR via reverse-mode autodiff."""
+    """Lower grad calls into concrete Toy IR via reverse-mode autodiff.
+
+    Handles CallOp nodes whose callee is a GradOp (the symbolic gradient
+    of a function). The GradOp itself becomes dead after the CallOp is
+    replaced and is automatically removed from the block's ops.
+    """
 
     allow_unregistered_ops = True
 
@@ -198,20 +219,44 @@ class Autodiff(Pass):
             self._run_block(func.body)
         return module
 
-    @lowering_for(GradOp)
-    def lower_grad(self, op: GradOp) -> dgen.Value | None:
-        callee_name = op.callee.name
+    def _infer_shapes(self, func: FunctionOp) -> None:
+        """Run a quick shape inference on the function body.
+
+        Resolves InferredShapeTensor types to concrete Tensor types so the
+        autodiff pass can create correctly-shaped gradient ops.
+        """
+        from toy.passes.shape_inference import ShapeInference
+
+        si = ShapeInference()
+        si._func_map = self._func_map
+        si._run_block(func.body)
+
+    @lowering_for(CallOp)
+    def lower_grad_call(self, op: CallOp) -> dgen.Value | None:
+        """Replace CallOp(callee=GradOp(f), args) with inlined gradient."""
+        if not isinstance(op.callee, GradOp):
+            return None  # Not a gradient call — leave for other passes
+
+        grad_op = op.callee
+        callee_name = grad_op.callee.name
         if callee_name is None:
             raise RuntimeError("GradOp callee must have a name")
         callee = self._func_map.get(callee_name)
         if callee is None:
             raise RuntimeError(f"Unknown function in grad: {callee_name}")
 
-        # Extract arguments
+        # Extract arguments from the CallOp
         if isinstance(op.arguments, PackOp):
             args = list(op.arguments)
         else:
             args = [op.arguments]
+
+        # Propagate argument types to the callee and run shape inference
+        # so the cloned ops have concrete types for correct gradient shapes
+        for block_arg, actual_arg in zip(callee.body.args, args):
+            if isinstance(actual_arg.type, toy.Tensor):
+                block_arg.type = actual_arg.type
+        self._infer_shapes(callee)
 
         # Perform autodiff
         _new_ops, grad_values = _inline_and_differentiate(callee, args)

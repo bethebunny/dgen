@@ -7,7 +7,6 @@ from dgen.dialects import function
 from dgen.module import ConstantOp, Module, PackOp, _walk_all_ops
 from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import shape_constant, toy
-from toy.dialects.diff import GradOp
 
 from typing import TYPE_CHECKING
 
@@ -86,29 +85,6 @@ class ShapeInference(Pass):
         assert isinstance(count, int)
         if shape := self._shape(op.input):
             op.type = toy.Tensor(shape=shape_constant([count] + shape))
-        return op
-
-    @lowering_for(GradOp)
-    def infer_grad(self, op: GradOp) -> dgen.Value | None:
-        """Infer shape for grad: result has the same shape as the first argument."""
-        if isinstance(op.arguments, PackOp):
-            args = list(op.arguments)
-        else:
-            args = [op.arguments]
-        if not args:
-            return op
-        first_arg = args[0]
-        if shape := self._shape(first_arg):
-            # Also run shape inference on the callee so the autodiff pass
-            # can see concrete types
-            callee = self._func_map.get(op.callee.name)
-            if callee is not None:
-                arg_shapes = [self._shape(a) for a in args]
-                if all(s is not None for s in arg_shapes):
-                    for param, s in zip(callee.body.args, arg_shapes):
-                        param.type = toy.Tensor(shape=shape_constant(s))
-                    self._run_block(callee.body)
-            op.type = toy.Tensor(shape=shape_constant(shape))
         return op
 
     @lowering_for(function.CallOp)

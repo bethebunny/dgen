@@ -55,14 +55,28 @@ class PrintExpr:
 
 @dataclass
 class GradExpr:
-    """grad(f, args...) — evaluate the gradient of f at the given arguments."""
+    """grad(f) — symbolic gradient: returns the gradient function of f."""
 
     callee: str
+
+
+@dataclass
+class ApplyExpr:
+    """expr(args...) — call the result of an expression (e.g. grad(f)(x))."""
+
+    callee: Expression
     args: list[Expression]
 
 
 Expression = Union[
-    NumberLiteral, TensorLiteral, VarRef, BinaryOp, CallExpr, PrintExpr, GradExpr
+    NumberLiteral,
+    TensorLiteral,
+    VarRef,
+    BinaryOp,
+    CallExpr,
+    PrintExpr,
+    GradExpr,
+    ApplyExpr,
 ]
 
 

@@ -27,7 +27,6 @@ toy_compiler: Compiler[Executable] = Compiler(
     passes=[
         ToyOptimize(),
         ShapeInference(),
-        Autodiff(),
         ToyToStructured(),
         ControlFlowToGoto(),
         NDBufferToMemory(),
@@ -35,6 +34,8 @@ toy_compiler: Compiler[Executable] = Compiler(
     ],
     exit=LLVMCodegen(),
 )
+
+_autodiff = Autodiff()
 
 
 def _parse_arg(arg: str) -> object:
@@ -61,6 +62,8 @@ def run(source: str, *, args: Sequence[object | str] = ()) -> object:
     parsed_args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
     if parsed_args:
         _set_param_types(ir, parsed_args)
+    # Run autodiff before compilation (staging) since GradOp is not JIT-able
+    _autodiff.run(ir, toy_compiler)
     exe = toy_compiler.compile(ir)
     return exe.run(*parsed_args)
 

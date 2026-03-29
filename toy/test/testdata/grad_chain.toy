@@ -1,6 +1,5 @@
 def main(x) {
-  var df = grad(f, x);
-  print(df);
+  print(grad(f)(x));
   return;
 }
 
