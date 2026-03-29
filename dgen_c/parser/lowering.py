@@ -100,6 +100,49 @@ _COMPOUND_ASSIGN: dict[str, str] = {
 }
 
 
+def _closed_block(
+    result: dgen.Value,
+    args: list[BlockArgument] | None = None,
+    *,
+    local_ops: list[dgen.Op] | None = None,
+) -> dgen.Block:
+    """Build a Block with automatically computed captures.
+
+    *local_ops* is the list of ops yielded during lowering of this block's
+    body. Any value reachable from *result* that is not a local op, not a
+    block arg, and not a Type is declared as a capture.
+    """
+    if args is None:
+        args = []
+    if local_ops is None:
+        local_ops = []
+    local_ids: set[int] = {id(op) for op in local_ops}
+    local_ids |= {id(a) for a in args}
+
+    captures: list[dgen.Value] = []
+    seen: set[int] = set()
+
+    def _maybe_capture(dep: dgen.Value) -> None:
+        vid = id(dep)
+        if vid in seen or vid in local_ids:
+            return
+        if isinstance(dep, dgen.Type):
+            return
+        seen.add(vid)
+        captures.append(dep)
+
+    # Check if result itself is external
+    if id(result) not in local_ids and not isinstance(result, dgen.Type):
+        _maybe_capture(result)
+
+    # Walk all local ops and capture their external dependencies
+    for op in local_ops:
+        for dep in op.dependencies:
+            _maybe_capture(dep)
+
+    return dgen.Block(result=result, args=args, captures=captures)
+
+
 class Lowering:
     """Lower a pycparser FileAST to a dgen Module."""
 
@@ -266,7 +309,7 @@ class Lowering:
             label_op = GotoLabelOp(
                 name=node.name,
                 initial_arguments=pack([]),
-                body=dgen.Block(result=body_result, args=[]),
+                body=_closed_block(body_result, local_ops=body_ops),
             )
             self.labels[node.name] = label_op
             yield label_op
@@ -359,14 +402,14 @@ class Lowering:
         # Lower then branch
         then_ops: list[dgen.Op] = list(self._lower_stmt(node.iftrue))
         then_result: dgen.Value = then_ops[-1] if then_ops else dgen.Value(type=Nil())
-        then_block = dgen.Block(result=then_result, args=[])
+        then_block = _closed_block(then_result, local_ops=then_ops)
 
         # Lower else branch
         else_ops: list[dgen.Op] = []
         if node.iffalse is not None:
             else_ops = list(self._lower_stmt(node.iffalse))
         else_result: dgen.Value = else_ops[-1] if else_ops else dgen.Value(type=Nil())
-        else_block = dgen.Block(result=else_result, args=[])
+        else_block = _closed_block(else_result, local_ops=else_ops)
 
         empty = pack([])
         yield empty
@@ -381,11 +424,13 @@ class Lowering:
 
     def _lower_while(self, node: c_ast.While) -> Iterator[dgen.Op]:
         """Lower a while loop using control_flow.WhileOp."""
-        cond = yield from self._lower_expr(node.cond)
+        # Condition ops go inside the condition block, not the parent
+        cond_ops: list[dgen.Op] = list(self._lower_expr(node.cond))
+        cond: dgen.Value = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
         body_ops: list[dgen.Op] = list(self._lower_stmt(node.stmt))
         body_result: dgen.Value = body_ops[-1] if body_ops else dgen.Value(type=Nil())
-        cond_block = dgen.Block(result=cond, args=[])
-        body_block = dgen.Block(result=body_result, args=[])
+        cond_block = _closed_block(cond, local_ops=cond_ops)
+        body_block = _closed_block(body_result, local_ops=body_ops)
 
         p = pack([])
         yield p
@@ -395,10 +440,11 @@ class Lowering:
         """Lower a do-while loop."""
         body_ops: list[dgen.Op] = list(self._lower_stmt(node.stmt))
         body_result: dgen.Value = body_ops[-1] if body_ops else dgen.Value(type=Nil())
-        cond = yield from self._lower_expr(node.cond)
+        cond_ops: list[dgen.Op] = list(self._lower_expr(node.cond))
+        cond: dgen.Value = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
 
-        body_block = dgen.Block(result=body_result, args=[])
-        cond_block = dgen.Block(result=cond, args=[])
+        body_block = _closed_block(body_result, local_ops=body_ops)
+        cond_block = _closed_block(cond, local_ops=cond_ops)
 
         p = pack([])
         yield p
@@ -416,20 +462,21 @@ class Lowering:
             else:
                 yield from self._lower_stmt(node.init)
 
-        # Condition
+        # Condition — collected into the condition block, not yielded to parent
         if node.cond is not None:
-            cond = yield from self._lower_expr(node.cond)
+            cond_ops: list[dgen.Op] = list(self._lower_expr(node.cond))
+            cond: dgen.Value = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
         else:
             cond = ConstantOp(value=1, type=c_int(32))
-            yield cond
-        cond_block = dgen.Block(result=cond, args=[])
+            cond_ops = [cond]
+        cond_block = _closed_block(cond, local_ops=cond_ops)
 
         # Body = original body + update
         body_ops: list[dgen.Op] = list(self._lower_stmt(node.stmt))
         if node.next is not None:
             body_ops.extend(self._lower_stmt(node.next))
         body_result: dgen.Value = body_ops[-1] if body_ops else dgen.Value(type=Nil())
-        body_block = dgen.Block(result=body_result, args=[])
+        body_block = _closed_block(body_result, local_ops=body_ops)
 
         p = pack([])
         yield p

@@ -496,14 +496,8 @@ class TestSqlite3:
         from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
         module, _ = lower(sqlite3_ast)
-        # Skip verification — C if/else blocks don't capture outer
-        # values yet, which is a known limitation of the prototype.
-        token = verify_passes.set(False)
-        try:
-            pipeline = Compiler([CToLLVM(), ControlFlowToGoto()], IdentityPass())
-            module = pipeline.run(module)
-        finally:
-            verify_passes.reset(token)
+        pipeline = Compiler([CToLLVM(), ControlFlowToGoto()], IdentityPass())
+        module = pipeline.run(module)
 
         ok = 0
         total_ir_lines = 0
