@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from toy.parser.ast import (
+    ApplyExpr,
     BinaryOp,
     CallExpr,
     Expression,
     ExprStmt,
     Function,
+    GradExpr,
     NumberLiteral,
     PrintExpr,
     Prototype,
@@ -119,7 +121,15 @@ class ToyParser:
         return lhs
 
     def parse_primary(self) -> Expression:
-        """Parse primary expression."""
+        """Parse primary expression, including postfix calls: expr(args)."""
+        result = self._parse_atom()
+        # Handle postfix calls: expr(args...) — enables grad(f)(x)
+        while self.current.kind == "(":
+            result = self._parse_apply(result)
+        return result
+
+    def _parse_atom(self) -> Expression:
+        """Parse an atomic expression (no postfix)."""
         if self.current.kind == "NUMBER":
             val = float(self.current.text)
             self.advance()
@@ -153,6 +163,11 @@ class ToyParser:
             arg = self.parse_expression()
             self.expect(")")
             return PrintExpr(arg=arg)
+        # Special handling for grad: grad(func_name) — returns a function value
+        if callee == "grad":
+            func_name = self.expect("IDENT").text
+            self.expect(")")
+            return GradExpr(callee=func_name)
         args: list[Expression] = []
         if self.current.kind != ")":
             args.append(self.parse_expression())
@@ -161,6 +176,18 @@ class ToyParser:
                 args.append(self.parse_expression())
         self.expect(")")
         return CallExpr(callee=callee, args=args)
+
+    def _parse_apply(self, callee_expr: Expression) -> ApplyExpr:
+        """Parse postfix call: callee_expr(args...)."""
+        self.expect("(")
+        args: list[Expression] = []
+        if self.current.kind != ")":
+            args.append(self.parse_expression())
+            while self.current.kind == ",":
+                self.advance()
+                args.append(self.parse_expression())
+        self.expect(")")
+        return ApplyExpr(callee=callee_expr, args=args)
 
     def _parse_tensor_literal(self) -> TensorLiteral:
         """Parse nested bracket tensor literal, flatten values, infer shape."""

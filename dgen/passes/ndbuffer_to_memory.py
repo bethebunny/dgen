@@ -56,8 +56,16 @@ def _linearize(shape: list[int], indices: list[dgen.Value]) -> dgen.Value:
 
 
 def _deref(val: dgen.Value) -> dgen.Value:
-    """If val is a tensor constant, load its data pointer."""
+    """If val is a tensor constant, load its data pointer.
+
+    CallOps returning tensors already produce a raw pointer (NDBuffer
+    layout is Pointer), so no extra indirection is needed.
+    """
     if not isinstance(val.type, toy.Tensor):
+        return val
+    from dgen.dialects.function import CallOp
+
+    if isinstance(val, CallOp):
         return val
     return memory.LoadOp(ptr=val, type=memory.Reference(element_type=Float64()))
 

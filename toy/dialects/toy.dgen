@@ -18,4 +18,5 @@ op tile<count: Index>(input: Tensor) -> Tensor
 op nonzero_count(input: Tensor) -> Index
 op dim_size<axis: Index>(input: Tensor) -> Index:
     requires axis < input.shape.rank
+op fill_like(fill: Tensor, template: Tensor) -> Tensor
 op print(input: Tensor) -> Nil

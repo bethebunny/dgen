@@ -17,6 +17,7 @@ from toy.parser.toy_parser import parse_toy
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from toy.passes.autodiff import lower_grad
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
 from toy.passes.toy_to_structured import ToyToStructured
@@ -59,6 +60,10 @@ def run(source: str, *, args: Sequence[object | str] = ()) -> object:
     parsed_args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
     if parsed_args:
         _set_param_types(ir, parsed_args)
+    # Expand grad(f) into synthesized gradient functions before compilation.
+    # This produces inspectable IR: grad(f) becomes a real FunctionOp.
+    func_map = {f.name: f for f in ir.functions if f.name is not None}
+    ir = lower_grad(ir, func_map)
     exe = toy_compiler.compile(ir)
     return exe.run(*parsed_args)
 

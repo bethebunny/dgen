@@ -1,0 +1,9 @@
+def main(x) {
+  print(grad(f)(x));
+  return;
+}
+
+def f(x) {
+  var y = x * x + x;
+  return y;
+}

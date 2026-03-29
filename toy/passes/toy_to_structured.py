@@ -66,8 +66,9 @@ class ToyToStructured(Pass):
 
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self._run_block(f.body)
+        result = f.body.result.type if f.body.result.type != f.result else f.result
         return FunctionOp(
-            name=f.name, body=f.body, result=f.result, type=Function(result=f.result)
+            name=f.name, body=f.body, result=result, type=Function(result=result)
         )
 
     def _shape(self, val: dgen.Value) -> list[int]:
@@ -124,6 +125,22 @@ class ToyToStructured(Pass):
             return ndbuffer.StoreOp(value=res, memref=alloc, indices=idx)
 
         loop = _nested_for(shape, body, captures=[alloc, lhs, rhs])
+        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
+
+    @lowering_for(toy.FillLikeOp)
+    def lower_fill_like(self, op: toy.FillLikeOp) -> dgen.Value | None:
+        """fill_like(fill, template): alloc output shaped like template, fill with fill[0]."""
+        shape = self._shape(op.template)
+        alloc = self._alloc(op.type.shape)
+
+        def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
+            # Load the scalar fill value (index [0])
+            fill_val = ndbuffer.LoadOp(
+                memref=op.fill, indices=pack([ConstantOp(value=0, type=Index())])
+            )
+            return ndbuffer.StoreOp(value=fill_val, memref=alloc, indices=pack(ivars))
+
+        loop = _nested_for(shape, body, captures=[alloc, op.fill])
         return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
 
     @lowering_for(toy.ReshapeOp)
