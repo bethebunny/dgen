@@ -561,7 +561,7 @@ class Lowering:
             return op
 
         if node.type == "char":
-            ch = node.value.strip("'")
+            ch = node.value[1:-1]  # strip surrounding quotes
             if ch.startswith("\\"):
                 escapes = {
                     "n": 10,

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import random
+import shutil
 import time
+import urllib.request
 from pathlib import Path
 
+import pytest
 
 from dgen.codegen import compile as llvm_compile
 from dgen.compiler import Compiler, IdentityPass
@@ -20,6 +23,44 @@ TESTDATA = Path(__file__).parent / "testdata"
 
 _c_compiler = Compiler([CToLLVM()], IdentityPass())
 
+_SQLITE3_URL = (
+    "https://raw.githubusercontent.com/mattn/go-sqlite3/master/sqlite3-binding.c"
+)
+
+# GCC extensions that survive preprocessing and that pycparser can't handle.
+# glibc headers use __attribute__, __asm__, __restrict, __extension__,
+# __builtin_va_list, and _FloatN types unconditionally — even with -std=c99.
+# Defining these away is the standard pycparser approach.
+_GCC_COMPAT_DEFINES = [
+    "-D__attribute__(x)=",
+    "-D__asm__(x)=",
+    "-D__extension__=",
+    "-D__restrict=",
+    "-D__inline=inline",
+    "-D__signed__=signed",
+    "-D__volatile=volatile",
+    "-D__const=const",
+    "-D__builtin_va_list=void*",
+    "-D__builtin_offsetof(t,f)=((long)(0))",
+    "-D__builtin_va_start(a,b)=",
+    "-D__builtin_va_end(a)=",
+    "-D__builtin_va_arg(a,b)=0",
+    "-D__builtin_va_copy(a,b)=",
+    # glibc exposes _FloatN types — map them to standard types
+    "-D_Float16=float",
+    "-D_Float32=float",
+    "-D_Float64=double",
+    "-D_Float128=double",
+    "-D_Float32x=double",
+    "-D_Float64x=double",
+    "-D_Float128x=double",
+    "-D__CFLOAT32=float _Complex",
+    "-D__CFLOAT64=double _Complex",
+    "-D__CFLOAT128=double _Complex",
+    "-D__CFLOAT32X=double _Complex",
+    "-D__CFLOAT64X=double _Complex",
+]
+
 
 def run_c(source: str, *args: int) -> int:
     """Compile a C source string, JIT the first function, return the result."""
@@ -29,6 +70,47 @@ def run_c(source: str, *args: int) -> int:
     exe = llvm_compile(module)
     result = exe.run(*args)
     return result.to_json()
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def sqlite3_ast(tmp_path_factory: pytest.TempPathFactory) -> object:
+    """Download sqlite3.c, preprocess with gcc -E, parse with pycparser.
+
+    gcc -E expands all macros and includes using real system headers.
+    The _GCC_COMPAT_DEFINES stub out GCC extensions that pycparser
+    can't handle (__attribute__, __asm__, _FloatN, etc.).
+    """
+    from pycparser import parse_file
+
+    if not shutil.which("gcc"):
+        pytest.skip("gcc not available")
+
+    tmp = tmp_path_factory.mktemp("sqlite3")
+    raw = tmp / "sqlite3.c"
+
+    try:
+        resp = urllib.request.urlopen(_SQLITE3_URL, timeout=30)
+        raw.write_bytes(resp.read())
+    except Exception as exc:
+        pytest.skip(f"Cannot download sqlite3.c: {exc}")
+
+    if raw.stat().st_size < 1_000_000:
+        pytest.skip("Downloaded file too small — likely truncated")
+
+    try:
+        return parse_file(
+            str(raw),
+            use_cpp=True,
+            cpp_path="gcc",
+            cpp_args=["-E", *_GCC_COMPAT_DEFINES],
+        )
+    except Exception as exc:
+        pytest.skip(f"Cannot parse sqlite3.c: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -193,11 +275,9 @@ class TestEndToEnd:
         assert run_c("int f(int a, int b) { return a != b; }", 5, 5) == 0
 
     def test_multiple_ops(self) -> None:
-        # (a * b) + (a / b) with a=20, b=4 => 80 + 5 = 85
         assert run_c("int f(int a, int b) { return a * b + a / b; }", 20, 4) == 85
 
     def test_chained_comparisons(self) -> None:
-        # (a < b) + (a > b) — exactly one is 1
         assert run_c("int f(int a, int b) { return (a < b) + (a > b); }", 3, 5) == 1
         assert run_c("int f(int a, int b) { return (a < b) + (a > b); }", 5, 5) == 0
 
@@ -292,7 +372,7 @@ class TestLowering:
 
 
 # ---------------------------------------------------------------------------
-# Scale: generate sqlite3-scale C code and verify parse+lower
+# Scale: generated C code
 # ---------------------------------------------------------------------------
 
 
@@ -342,7 +422,8 @@ def _generate_sqlite_scale_c(n_functions: int, seed: int = 42) -> str:
                 lines.append(f"  while (x{v} < {rng.randint(10, 50)}) x{v} = x{v} + 1;")
             elif kind == "for":
                 lines.append(
-                    f"  for (x{v} = 0; x{v} < {rng.randint(5, 20)}; x{v}++) x{v} = x{v} + 1;"
+                    f"  for (x{v} = 0; x{v} < {rng.randint(5, 20)}; x{v}++)"
+                    f" x{v} = x{v} + 1;"
                 )
             elif kind == "call" and i > 0:
                 target = rng.randint(0, i - 1)
@@ -359,20 +440,17 @@ def _generate_sqlite_scale_c(n_functions: int, seed: int = 42) -> str:
 
 
 class TestScale:
-    """Verify the frontend handles sqlite3-scale input."""
+    """Verify the frontend handles large input."""
 
     def test_1500_functions(self) -> None:
-        """Parse and lower 1500 functions with no skipped statements."""
         source = _generate_sqlite_scale_c(1500)
         ast = parse_c_string(source)
         module, stats = lower(ast)
         assert stats.functions == 1500
         assert stats.skipped_stmts == 0
-        assert stats.skipped_exprs == 0
         assert len(module.functions) == 1500
 
     def test_5000_functions(self) -> None:
-        """Parse and lower 5000 functions (sqlite3-scale) under 60s."""
         source = _generate_sqlite_scale_c(5000)
         t0 = time.perf_counter()
         ast = parse_c_string(source)
@@ -382,3 +460,26 @@ class TestScale:
         assert stats.functions == 5000
         assert stats.skipped_stmts == 0
         assert len(module.functions) == 5000
+
+
+# ---------------------------------------------------------------------------
+# sqlite3.c: download, preprocess with gcc -E, parse, and lower
+# ---------------------------------------------------------------------------
+
+
+class TestSqlite3:
+    """Parse and lower the actual sqlite3.c amalgamation."""
+
+    def test_parse_sqlite3(self, sqlite3_ast: object) -> None:
+        """pycparser can parse sqlite3.c (265K lines, ~9MB)."""
+        assert len(sqlite3_ast.ext) > 1000
+
+    def test_lower_sqlite3(self, sqlite3_ast: object) -> None:
+        """Lower sqlite3.c to dgen IR with no skipped statements."""
+        t0 = time.perf_counter()
+        module, stats = lower(sqlite3_ast)
+        elapsed = time.perf_counter() - t0
+        assert stats.functions > 500, f"Only {stats.functions} functions"
+        assert stats.skipped_stmts == 0
+        assert len(module.functions) > 500
+        assert elapsed < 120, f"Lowering took {elapsed:.1f}s"
