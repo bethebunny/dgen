@@ -182,7 +182,7 @@ class ToyToStructured(Pass):
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             shifted = list(ivars)
             shifted[axis] = algebra.AddOp(left=ivars[axis], right=offset, type=Index())
-            load = ndbuffer.LoadOp(mem=op.rhs, memref=op.rhs, indices=pack(ivars))
+            load = ndbuffer.LoadOp(mem=lhs_loop, memref=op.rhs, indices=pack(ivars))
             return ndbuffer.StoreOp(
                 mem=load, value=load, memref=alloc, indices=pack(shifted)
             )
@@ -190,7 +190,7 @@ class ToyToStructured(Pass):
         rhs_loop = _nested_for(
             rhs_shape,
             rhs_body,
-            captures=[alloc, op.rhs, offset],
+            captures=[alloc, op.rhs, offset, lhs_loop],
         )
         after_lhs = ChainOp(lhs=alloc, rhs=lhs_loop, type=alloc.type)
         return ChainOp(lhs=after_lhs, rhs=rhs_loop, type=alloc.type)
