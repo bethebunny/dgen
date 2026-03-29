@@ -8,7 +8,7 @@ from pycparser import c_ast
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import function
+from dgen.dialects import builtin, function
 from dgen.dialects.builtin import Nil, String
 from dgen.dialects.function import Function as FunctionType
 from dgen.module import ConstantOp, Module, pack
@@ -145,6 +145,10 @@ class Lowering:
         self.functions: list[function.FunctionOp] = []
         # Stats
         self.stats = LoweringStats()
+
+    def _chain_effect(self, op: dgen.Op) -> None:
+        """Register a side-effecting op, chaining it through the previous one."""
+        self.last_effect = op
 
     def lower_file(self, ast: c_ast.FileAST) -> Module:
         """Lower an entire C translation unit to a dgen Module."""
@@ -344,7 +348,7 @@ class Lowering:
             init_val = yield from self._lower_expr(node.init)
             store = memory.StoreOp(value=init_val, ptr=alloca)
             yield store
-            self.last_effect = store
+            self._chain_effect(store)
 
     def _lower_assignment(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
         """Lower an assignment statement."""
@@ -365,7 +369,7 @@ class Lowering:
 
         store = memory.StoreOp(value=rhs, ptr=ptr)
         yield store
-        self.last_effect = store
+        self._chain_effect(store)
 
     def _lower_return(self, node: c_ast.Return) -> Iterator[dgen.Op]:
         """Lower a return statement."""
@@ -486,7 +490,7 @@ class Lowering:
             return (yield from self._lower_constant(node))
 
         if isinstance(node, c_ast.ID):
-            return self._lower_id(node)
+            return (yield from self._lower_id(node))
 
         if isinstance(node, c_ast.BinaryOp):
             return (yield from self._lower_binop(node))
@@ -609,16 +613,37 @@ class Lowering:
         yield op
         return op
 
-    def _lower_id(self, node: c_ast.ID) -> dgen.Value:
-        """Lower an identifier reference."""
+    def _lower_id(self, node: c_ast.ID) -> Iterator[dgen.Op]:
+        """Lower an identifier reference.
+
+        Local variables are allocas — reading them emits a LoadOp chained
+        through the last side effect so stores are in the use-def graph.
+        """
         # Check enum constants
         if node.name in self.types.enum_constants:
             val = self.types.enum_constants[node.name]
-            return ConstantOp(value=val, type=c_int(32))
+            op = ConstantOp(value=val, type=c_int(32))
+            yield op
+            return op
 
         # Check local scope
         if node.name in self.scope:
-            return self.scope[node.name]
+            val = self.scope[node.name]
+            # Locals are allocas (Reference type) — emit a load
+            if isinstance(val.type, memory.Reference):
+                elem = val.type.element_type
+                if isinstance(elem, dgen.Type):
+                    ptr = val
+                    # Chain through last_effect so stores are reachable
+                    if self.last_effect is not None:
+                        ptr = builtin.ChainOp(
+                            lhs=val, rhs=self.last_effect, type=val.type
+                        )
+                        yield ptr
+                    load = memory.LoadOp(ptr=ptr, type=elem)
+                    yield load
+                    return load
+            return val
 
         # Unknown — return a named placeholder value
         return dgen.Value(name=node.name, type=c_int(64))
@@ -683,6 +708,7 @@ class Lowering:
             yield inc
             store = memory.StoreOp(value=inc, ptr=ptr)
             yield store
+            self._chain_effect(store)
             return load if node.op == "p++" else inc
 
         if node.op in ("--", "p--"):
@@ -696,6 +722,7 @@ class Lowering:
             yield dec
             store = memory.StoreOp(value=dec, ptr=ptr)
             yield store
+            self._chain_effect(store)
             return load if node.op == "p--" else dec
 
         # Standard unary ops
@@ -744,6 +771,7 @@ class Lowering:
                 type=ret_type,
             )
             yield op
+            self._chain_effect(op)
             return op
 
         # Indirect call (function pointer)
