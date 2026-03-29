@@ -17,6 +17,7 @@ from toy.parser.toy_parser import parse_toy
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from toy.passes.autodiff import Autodiff
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
 from toy.passes.toy_to_structured import ToyToStructured
@@ -26,6 +27,7 @@ toy_compiler: Compiler[Executable] = Compiler(
     passes=[
         ToyOptimize(),
         ShapeInference(),
+        Autodiff(),
         ToyToStructured(),
         ControlFlowToGoto(),
         NDBufferToMemory(),

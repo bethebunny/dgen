@@ -1,0 +1,12 @@
+def main() {
+  var x = [[1, 2, 3], [4, 5, 6]];
+  var df = grad(f, x);
+  print(df);
+  return;
+}
+
+def f(x) {
+  var y = transpose(x);
+  var z = y * y;
+  return z;
+}

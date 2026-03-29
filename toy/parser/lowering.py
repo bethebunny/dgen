@@ -10,12 +10,14 @@ from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function as FunctionType
 from dgen.module import ConstantOp, Module, pack
 from toy.dialects import shape_constant, toy
+from toy.dialects.diff import GradOp
 from toy.parser.ast import (
     BinaryOp,
     CallExpr,
     Expression,
     ExprStmt,
     Function,
+    GradExpr,
     NumberLiteral,
     PrintExpr,
     ReturnStmt,
@@ -144,6 +146,8 @@ class Lowering:
             return (yield from self._lower_call(expr))
         if isinstance(expr, PrintExpr):
             return (yield from self._lower_print(expr))
+        if isinstance(expr, GradExpr):
+            return (yield from self._lower_grad(expr))
         raise RuntimeError("Unknown expression type")
 
     def _lower_index_expr(
@@ -232,6 +236,22 @@ class Lowering:
         p = pack(args)
         yield p
         op = function.CallOp(
+            callee=callee_ref,
+            arguments=p,
+            type=toy.InferredShapeTensor(),
+        )
+        yield op
+        return op
+
+    def _lower_grad(self, g: GradExpr) -> Generator[dgen.Op, None, dgen.Value]:
+        """Lower grad(f, args...) to a GradOp with packed arguments."""
+        callee_ref = dgen.Value(name=g.callee, type=builtin.Nil())
+        args = []
+        for a in g.args:
+            args.append((yield from self.lower_expr(a)))
+        p = pack(args)
+        yield p
+        op = GradOp(
             callee=callee_ref,
             arguments=p,
             type=toy.InferredShapeTensor(),

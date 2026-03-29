@@ -1,0 +1,11 @@
+def main(x) {
+  var df = grad(f, x);
+  print(df);
+  return;
+}
+
+def f(x) {
+  var a = x * x;
+  var b = a * x;
+  return b;
+}

@@ -8,6 +8,7 @@ from toy.parser.ast import (
     Expression,
     ExprStmt,
     Function,
+    GradExpr,
     NumberLiteral,
     PrintExpr,
     Prototype,
@@ -153,6 +154,15 @@ class ToyParser:
             arg = self.parse_expression()
             self.expect(")")
             return PrintExpr(arg=arg)
+        # Special handling for grad: grad(func_name, args...)
+        if callee == "grad":
+            func_name = self.expect("IDENT").text
+            args: list[Expression] = []
+            while self.current.kind == ",":
+                self.advance()
+                args.append(self.parse_expression())
+            self.expect(")")
+            return GradExpr(callee=func_name, args=args)
         args: list[Expression] = []
         if self.current.kind != ")":
             args.append(self.parse_expression())
