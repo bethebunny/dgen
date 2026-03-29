@@ -483,3 +483,38 @@ class TestSqlite3:
         assert stats.skipped_stmts == 0
         assert len(module.functions) > 500
         assert elapsed < 120, f"Lowering took {elapsed:.1f}s"
+
+    def test_codegen_sqlite3(self, sqlite3_ast: object) -> None:
+        """Lower sqlite3.c through the full pipeline to LLVM IR.
+
+        Runs C-to-LLVM and ControlFlowToGoto passes (skipping
+        verification since C if/else lowering doesn't yet wire up
+        block captures), then emits LLVM IR per-function.
+        """
+        from dgen.codegen import _emit_func
+        from dgen.compiler import verify_passes
+        from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+
+        module, _ = lower(sqlite3_ast)
+        # Skip verification — C if/else blocks don't capture outer
+        # values yet, which is a known limitation of the prototype.
+        token = verify_passes.set(False)
+        try:
+            pipeline = Compiler([CToLLVM(), ControlFlowToGoto()], IdentityPass())
+            module = pipeline.run(module)
+        finally:
+            verify_passes.reset(token)
+
+        ok = 0
+        total_ir_lines = 0
+        for func in module.functions:
+            try:
+                lines = list(_emit_func(func, []))
+                ok += 1
+                total_ir_lines += len(lines)
+            except Exception:
+                pass
+
+        total = len(module.functions)
+        assert ok > total * 0.95, f"Only {ok}/{total} functions compiled"
+        assert total_ir_lines > 10000
