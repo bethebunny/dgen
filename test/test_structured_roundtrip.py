@@ -23,13 +23,10 @@ def test_roundtrip_alloc():
     ir = strip_prefix("""
         |
         | import function
-        | import memory
-        | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %n : index.Index = 6
-        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = memory.heap_allocate<number.Float64>(%n)
-        |     %dealloc : Nil = memory.deallocate(%0, %0)
+        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
+        |     %dealloc : Nil = ndbuffer.dealloc(%0, %0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -39,12 +36,10 @@ def test_roundtrip_store_load():
     ir = strip_prefix("""
         |
         | import function
-        | import memory
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %n : index.Index = 3
-        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
         |     %1 : number.Float64 = 1.0
         |     %2 : index.Index = 0
         |     %store : Nil = ndbuffer.store(%0, %1, %0, [%2])
@@ -87,12 +82,9 @@ def test_roundtrip_print_memref():
     ir = strip_prefix("""
         |
         | import function
-        | import memory
-        | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %n : index.Index = 3
-        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
         |     %print : Nil = ndbuffer.print_memref(%0)
     """)
     module = parse_module(ir)
@@ -103,12 +95,10 @@ def test_roundtrip_for_op():
     ir = strip_prefix("""
         | import function
         | import control_flow
-        | import memory
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %n : index.Index = 3
-        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
         |     %loop : Nil = control_flow.for<0, 3>([]) body(%i0: index.Index):
         |         %1 : number.Float64 = 1.0
         |         %2 : index.Index = 0
@@ -124,12 +114,10 @@ def test_roundtrip_nested_for():
     ir = strip_prefix("""
         | import function
         | import control_flow
-        | import memory
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %n : index.Index = 6
-        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
         |     %loop : Nil = control_flow.for<0, 2>([]) body(%i0: index.Index):
         |         %_ : Nil = control_flow.for<0, 3>([]) body(%i1: index.Index):
         |             %1 : number.Float64 = 1.0
@@ -156,12 +144,10 @@ def test_roundtrip_multi_index_load_store():
     ir = strip_prefix("""
         |
         | import function
-        | import memory
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %n : index.Index = 6
-        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
         |     %1 : number.Float64 = 5.0
         |     %2 : index.Index = 0
         |     %3 : index.Index = 1
@@ -177,12 +163,10 @@ def test_roundtrip_ssa_in_op_arg():
     ir = strip_prefix("""
         |
         | import function
-        | import memory
-        | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %n : index.Index = 6
-        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        |     %shape : ndbuffer.Shape<2> = [2, 3]
+        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(%shape)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -193,13 +177,10 @@ def test_roundtrip_ssa_in_type_param():
     ir = strip_prefix("""
         |
         | import function
-        | import memory
-        | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
         |     %shape : ndbuffer.Shape<2> = [2, 3]
-        |     %n : index.Index = 6
-        |     %0 : ndbuffer.NDBuffer<%shape, number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        |     %0 : ndbuffer.NDBuffer<%shape, number.Float64> = ndbuffer.alloc(%shape)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -210,17 +191,16 @@ def test_ssa_shape_through_lowering():
     ir = strip_prefix("""
         |
         | import function
-        | import memory
         | import index
         |
         | %f : function.Function<Nil> = function.function<Nil>() body():
-        |     %n : index.Index = 6
-        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        |     %shape : ndbuffer.Shape<2> = [2, 3]
+        |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(%shape)
         |     %1 : number.Float64 = 1.0
         |     %2 : index.Index = 0
         |     %store : Nil = ndbuffer.store(%0, %1, %0, [%2, %2])
         |     %3 : number.Float64 = ndbuffer.load(%store, %0, [%2, %2])
-        |     %dealloc : Nil = memory.deallocate(%3, %0)
+        |     %dealloc : Nil = ndbuffer.dealloc(%3, %0)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
