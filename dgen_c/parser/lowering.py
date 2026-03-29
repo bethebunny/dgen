@@ -639,8 +639,10 @@ class Lowering:
         # Check local scope
         if node.name in self.scope:
             val = self.scope[node.name]
-            # Locals are allocas (Reference type) — emit a load
-            if isinstance(val.type, memory.Reference):
+            # Local variables (StackAllocateOp) need a load to read their value.
+            # Function parameters (BlockArgument) with pointer type are values,
+            # not memory locations — return them directly.
+            if isinstance(val, memory.StackAllocateOp):
                 elem = val.type.element_type
                 if isinstance(elem, dgen.Type):
                     load = memory.LoadOp(
@@ -954,8 +956,8 @@ class Lowering:
         if isinstance(node, c_ast.ID):
             if node.name in self.scope:
                 val = self.scope[node.name]
-                # If it's an alloca, the type is the pointee
-                if isinstance(val.type, memory.Reference):
+                # Local variables are allocas — their expression type is the element type
+                if isinstance(val, memory.StackAllocateOp):
                     return val.type.element_type
                 return val.type
             return c_int(32)
