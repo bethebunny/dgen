@@ -7,6 +7,7 @@ from pycparser import c_ast
 import dgen
 from dgen.dialects.index import Index
 from dgen.dialects.builtin import String
+from dgen_c.dialects import c_int, c_void
 from dgen_c.dialects.c import (
     CArray,
     CFloat,
@@ -14,8 +15,6 @@ from dgen_c.dialects.c import (
     CPtr,
     CStruct,
     CUnion,
-    c_int,
-    c_void,
 )
 
 

@@ -14,6 +14,7 @@ from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.index import Index
 from dgen.module import ConstantOp, Module, pack
 
+from dgen_c.dialects import c_int, c_void
 from dgen_c.dialects.c import (
     AddOp,
     AllocaOp,
@@ -59,8 +60,6 @@ from dgen_c.dialects.c import (
     SubOp,
     TernaryOp,
     WhileOp,
-    c_int,
-    c_void,
 )
 from dgen_c.parser.type_resolver import TypeResolver
 
