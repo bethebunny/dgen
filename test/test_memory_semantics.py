@@ -8,8 +8,6 @@ designed so that incorrect ordering would produce the wrong result.
 from dgen.asm.parser import parse_module
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler
-from dgen.dialects import index as _index  # noqa: F401 — register index dialect
-from dgen.dialects import memory as _memory  # noqa: F401 — register memory dialect
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.testing import strip_prefix
@@ -279,6 +277,9 @@ def test_swap_via_mem_ordering():
     Start: a=10, b=20. After swap: a=20, b=10. Return a+b*100 = 1020.
     This requires precise ordering: both loads must happen before either
     store, or the swap reads stale/overwritten data.
+
+    %both chains both loads into a single ordering point. Both swap stores
+    use %both as mem, ensuring they execute after both loads complete.
     """
     assert (
         _jit("""
@@ -288,23 +289,128 @@ def test_swap_via_mem_ordering():
         | import memory
         |
         | %main : function.Function<index.Index> = function.function<index.Index>() body():
-        |     %b : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-        |     %v20 : index.Index = 20
-        |     %ib : Nil = memory.store(%b, %v20, %b)
-        |     %lb : index.Index = memory.load(%ib, %b)
         |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %v10 : index.Index = 10
         |     %ia : Nil = memory.store(%a, %v10, %a)
         |     %la : index.Index = memory.load(%ia, %a)
-        |     %ma : index.Index = chain(%lb, %la)
-        |     %sa : Nil = memory.store(%ma, %lb, %a)
+        |     %b : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %v20 : index.Index = 20
+        |     %ib : Nil = memory.store(%b, %v20, %b)
+        |     %lb : index.Index = memory.load(%ib, %b)
+        |     %both : index.Index = chain(%la, %lb)
+        |     %sa : Nil = memory.store(%both, %lb, %a)
+        |     %sb : Nil = memory.store(%both, %la, %b)
         |     %fa : index.Index = memory.load(%sa, %a)
-        |     %mb : index.Index = chain(%la, %lb)
-        |     %sb : Nil = memory.store(%mb, %la, %b)
         |     %fb : index.Index = memory.load(%sb, %b)
         |     %h : index.Index = 100
         |     %bs : index.Index = algebra.multiply(%fb, %h)
         |     %result : index.Index = algebra.add(%fa, %bs)
     """)
         == 1020
+    )
+
+
+def test_for_loop_accumulator():
+    """Store 0, loop 5 times adding 1 each iteration, load — must read 5.
+
+    The for loop body loads, increments, and stores. The final load uses
+    the loop result as mem, ensuring it sees all iterations' stores.
+    Without mem ordering the final load could read 0 (before any iteration).
+    """
+    assert (
+        _jit("""
+        | import algebra
+        | import control_flow
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %zero : index.Index = 0
+        |     %init : Nil = memory.store(%alloc, %zero, %alloc)
+        |     %loop : Nil = control_flow.for<0, 5>([]) body(%iv: index.Index) captures(%alloc, %init):
+        |         %cur : index.Index = memory.load(%init, %alloc)
+        |         %one : index.Index = 1
+        |         %next : index.Index = algebra.add(%cur, %one)
+        |         %_ : Nil = memory.store(%cur, %next, %alloc)
+        |     %result : index.Index = memory.load(%loop, %alloc)
+    """)
+        == 5
+    )
+
+
+def test_for_loop_last_iv_stored():
+    """Store the loop IV each iteration; final load reads the last IV (4).
+
+    Each iteration overwrites the accumulator with the current IV.
+    The mem chain inside the loop body ensures each store sees the
+    prior iteration's state. After the loop, load via mem=%loop.
+    """
+    assert (
+        _jit("""
+        | import control_flow
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %loop : Nil = control_flow.for<0, 5>([]) body(%iv: index.Index) captures(%alloc):
+        |         %_ : Nil = memory.store(%alloc, %iv, %alloc)
+        |     %result : index.Index = memory.load(%loop, %alloc)
+    """)
+        == 4
+    )
+
+
+def test_if_else_stores_to_same_location():
+    """If/else branches store different values; load after sees the taken branch.
+
+    condition=1 (truthy) → then branch stores 42. Load after if uses
+    %if result as mem, ensuring it reads the branch's store.
+    """
+    assert (
+        _jit("""
+        | import control_flow
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %cond : index.Index = 1
+        |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
+        |         %t : index.Index = 42
+        |         %_ : Nil = memory.store(%alloc, %t, %alloc)
+        |     else_body() captures(%alloc):
+        |         %f : index.Index = 99
+        |         %_ : Nil = memory.store(%alloc, %f, %alloc)
+        |     %result : index.Index = memory.load(%if, %alloc)
+    """)
+        == 42
+    )
+
+
+def test_if_else_false_branch():
+    """Same as above but condition=0 (falsy) → else branch stores 99."""
+    assert (
+        _jit("""
+        | import control_flow
+        | import function
+        | import index
+        | import memory
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %cond : index.Index = 0
+        |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
+        |         %t : index.Index = 42
+        |         %_ : Nil = memory.store(%alloc, %t, %alloc)
+        |     else_body() captures(%alloc):
+        |         %f : index.Index = 99
+        |         %_ : Nil = memory.store(%alloc, %f, %alloc)
+        |     %result : index.Index = memory.load(%if, %alloc)
+    """)
+        == 99
     )

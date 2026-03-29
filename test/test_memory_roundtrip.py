@@ -2,8 +2,6 @@
 
 from dgen import asm
 from dgen.asm.parser import parse_module
-from dgen.dialects import index as _index  # noqa: F401 — register index dialect
-from dgen.dialects import memory as _memory  # noqa: F401 — register memory dialect
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
@@ -123,19 +121,43 @@ def test_roundtrip_offset_load_store():
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
-def test_roundtrip_mem_from_control_flow():
-    """The mem operand can come from a non-memory op (e.g. control flow result)."""
+def test_roundtrip_mem_from_for_loop():
+    """The mem operand can come from a for loop result."""
     ir = strip_prefix("""
+        | import control_flow
         | import function
         | import memory
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-        |     %zero : index.Index = 0
-        |     %st : Nil = memory.store(%alloc, %zero, %alloc)
-        |     %chained : memory.Reference<index.Index> = chain(%alloc, %st)
-        |     %ld : index.Index = memory.load(%chained, %alloc)
+        |     %loop : Nil = control_flow.for<0, 10>([]) body(%iv: index.Index) captures(%alloc):
+        |         %cur : index.Index = memory.load(%alloc, %alloc)
+        |         %_ : Nil = memory.store(%cur, %iv, %alloc)
+        |     %ld : index.Index = memory.load(%loop, %alloc)
+    """)
+    module = parse_module(ir)
+    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+
+
+def test_roundtrip_mem_from_if_else():
+    """The mem operand can come from an if/else result."""
+    ir = strip_prefix("""
+        | import control_flow
+        | import function
+        | import memory
+        | import index
+        |
+        | %f : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %cond : index.Index = 1
+        |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
+        |         %ten : index.Index = 10
+        |         %_ : Nil = memory.store(%alloc, %ten, %alloc)
+        |     else_body() captures(%alloc):
+        |         %twenty : index.Index = 20
+        |         %_ : Nil = memory.store(%alloc, %twenty, %alloc)
+        |     %ld : index.Index = memory.load(%if, %alloc)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

@@ -4,6 +4,8 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from dgen.compiler import verify_passes
+from dgen.dialects import index as _index  # noqa: F401 — register dialect for parsing
+from dgen.dialects import memory as _memory  # noqa: F401 — register dialect for parsing
 from dgen.testing.syrupy import IRSnapshotExtension
 
 
