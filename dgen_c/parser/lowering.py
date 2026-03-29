@@ -554,9 +554,9 @@ class Lowering:
         if node.type in ("float", "double"):
             s = node.value.rstrip("fFlL")
             val = float(s)
-            kind = 0 if "f" in node.value.lower() and node.type != "double" else 1
-            ty = CFloat(kind=Index().constant(kind))
-            op = ConstantOp(value=val, type=ty)
+            from dgen.dialects.number import Float64
+
+            op = ConstantOp(value=val, type=Float64())
             yield op
             return op
 
