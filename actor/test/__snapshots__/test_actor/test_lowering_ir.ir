@@ -2,12 +2,13 @@ import algebra
 import control_flow
 import function
 import index
+import memory
 import ndbuffer
 import number
 
 %main : function.Function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>> = function.function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>>() body(%0: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
-    %16 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))
-    %5 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))
+    %16 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = memory.heap_allocate<number.Float64>(4)
+    %5 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = memory.heap_allocate<number.Float64>(4)
     %6 : Nil = control_flow.for<0, 4>([%0, %5]) body(%7: index.Index, %input: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>, %out: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
         %8 : number.Float64 = ndbuffer.load(%input, %input, [%7])
         %9 : number.Float64 = 2.0

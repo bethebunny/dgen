@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from math import prod
 
 import dgen
 from dgen.block import BlockArgument
@@ -76,9 +77,14 @@ class ToyToStructured(Pass):
         assert isinstance(result, list)
         return result
 
-    def _alloc(self, shape_val: dgen.Value) -> ndbuffer.AllocOp:
-        return ndbuffer.AllocOp(
-            shape=shape_val, type=ndbuffer.NDBuffer(shape=shape_val)
+    def _alloc(self, shape_val: dgen.Value) -> memory.HeapAllocateOp:
+        shape = shape_val.__constant__.to_json()
+        assert isinstance(shape, list)
+        total = prod(shape)
+        return memory.HeapAllocateOp(
+            element_type=Float64(),
+            count=ConstantOp(value=total, type=Index()),
+            type=ndbuffer.NDBuffer(shape=shape_val),
         )
 
     @lowering_for(toy.TransposeOp)

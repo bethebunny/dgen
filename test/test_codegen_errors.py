@@ -15,10 +15,10 @@ def test_unhandled_op_raises():
         | import ndbuffer
         | import number
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %a : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([2]))
+        |     %a : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = ndbuffer.print_memref(%a)
     """)
     module = parse_module(ir)
-    # ndbuffer.alloc has no lowering in codegen (needs NDBufferToMemory first),
+    # ndbuffer.print_memref has no lowering in codegen (needs NDBufferToMemory first),
     # so it should raise, not silently drop it.
     with pytest.raises(ValueError, match="unhandled op"):
         Compiler([], LLVMCodegen()).compile(module)
