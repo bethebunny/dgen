@@ -344,6 +344,7 @@ class Lowering:
             init_val = yield from self._lower_expr(node.init)
             store = memory.StoreOp(value=init_val, ptr=alloca)
             yield store
+            self.last_effect = store
 
     def _lower_assignment(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
         """Lower an assignment statement."""
@@ -364,6 +365,7 @@ class Lowering:
 
         store = memory.StoreOp(value=rhs, ptr=ptr)
         yield store
+        self.last_effect = store
 
     def _lower_return(self, node: c_ast.Return) -> Iterator[dgen.Op]:
         """Lower a return statement."""

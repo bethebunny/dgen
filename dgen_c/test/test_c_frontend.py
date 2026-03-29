@@ -288,6 +288,17 @@ class TestEndToEnd:
         assert run_c("int f(int a, int b) { return (a < b) + (a > b); }", 3, 5) == 1
         assert run_c("int f(int a, int b) { return (a < b) + (a > b); }", 5, 5) == 0
 
+    def test_local_variable(self) -> None:
+        """Local var: alloca + store + load must be in the use-def graph."""
+        assert run_c("int f(int x) { int y = x + 1; return y; }", 5) == 6
+
+    def test_local_mutation(self) -> None:
+        """Mutating a local via assignment."""
+        assert run_c("int f(int x) { int y = x; y = y + 10; return y; }", 5) == 15
+
+    def test_multiple_locals(self) -> None:
+        assert run_c("int f(int a, int b) { int s = a + b; int d = a - b; return s * d; }", 7, 3) == 40
+
 
 # ---------------------------------------------------------------------------
 # Lowering (verify C constructs lower without crashing)
