@@ -33,7 +33,6 @@ def test_roundtrip_gep_load_store():
         |     %3 : number.Float64 = 1.0
         |     %4 : Nil = memory.store(%2, %3, %2)
         |     %5 : Nil = memory.load(%4, %2)
-        |     %_ : Nil = chain(%5, %4)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
