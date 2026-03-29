@@ -267,16 +267,6 @@ class ContinueOp(Op):
     type: Type = CVoid()
 
 @dataclass(eq=False, kw_only=True)
-class GotoOp(Op):
-    label: Value[String]
-    type: Type = CVoid()
-
-@dataclass(eq=False, kw_only=True)
-class LabelOp(Op):
-    label_name: Value[String]
-    type: Type = CVoid()
-
-@dataclass(eq=False, kw_only=True)
 class StructMemberOp(Op):
     field_name: Value[String]
     base: Value

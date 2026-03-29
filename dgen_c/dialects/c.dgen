@@ -75,7 +75,8 @@ op call_indirect(callee, arguments: Span) -> Type
 op return_void() -> CVoid
 op return_value(value) -> CVoid
 
-# --- Control flow (C-specific; if/while/for use control_flow dialect) ---
+# --- Control flow (C-specific; if/while/for use control_flow dialect,
+#     goto/label use goto dialect) ---
 
 op do_while(init: Span) -> CVoid:
     block body
@@ -84,8 +85,6 @@ op switch<case_values: Span<Index>>(selector) -> CVoid:
     block default_body
 op break() -> CVoid
 op continue() -> CVoid
-op goto<label: String>() -> CVoid
-op label<label_name: String>() -> CVoid
 
 # --- Struct/Union ops ---
 
