@@ -103,8 +103,8 @@ def test_roundtrip_for_op():
         |         %1 : number.Float64 = 1.0
         |         %2 : index.Index = 0
         |         %_ : Nil = ndbuffer.store(%0, %1, %0, [%2])
-        |     %print : Nil = ndbuffer.print_memref(%0)
-        |     %3 : Nil = chain(%print, %loop)
+        |     %3 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = chain(%0, %loop)
+        |     %print : Nil = ndbuffer.print_memref(%3)
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
