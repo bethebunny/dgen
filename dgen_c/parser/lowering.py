@@ -14,7 +14,8 @@ from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.index import Index
 from dgen.module import ConstantOp, Module, pack
 
-from dgen_c.dialects import c_int, c_void
+from dgen.dialects.control_flow import IfOp, WhileOp
+from dgen_c.dialects import c_int
 from dgen_c.dialects.c import (
     AddOp,
     AllocaOp,
@@ -33,11 +34,9 @@ from dgen_c.dialects.c import (
     DerefOp,
     DivOp,
     EqOp,
-    ForLoopOp,
     GeOp,
     GotoOp,
     GtOp,
-    IfOp,
     LabelOp,
     LeOp,
     LoadOp,
@@ -59,7 +58,6 @@ from dgen_c.dialects.c import (
     StructPtrMemberOp,
     SubOp,
     TernaryOp,
-    WhileOp,
 )
 from dgen_c.parser.type_resolver import TypeResolver
 
@@ -344,7 +342,7 @@ class Lowering:
             yield ReturnValueOp(value=val)
 
     def _lower_if(self, node: c_ast.If) -> Iterator[dgen.Op]:
-        """Lower an if statement."""
+        """Lower an if statement using control_flow.IfOp."""
         cond = yield from self._lower_expr(node.cond)
 
         # Lower then branch
@@ -359,16 +357,19 @@ class Lowering:
         else_result: dgen.Value = else_ops[-1] if else_ops else dgen.Value(type=Nil())
         else_block = dgen.Block(result=else_result, args=[])
 
-        if_op = IfOp(
+        empty = pack([])
+        yield empty
+        yield IfOp(
             condition=cond,
-            type=c_void(),
+            then_arguments=empty,
+            else_arguments=empty,
+            type=Nil(),
             then_body=then_block,
             else_body=else_block,
         )
-        yield if_op
 
     def _lower_while(self, node: c_ast.While) -> Iterator[dgen.Op]:
-        """Lower a while loop."""
+        """Lower a while loop using control_flow.WhileOp."""
         cond = yield from self._lower_expr(node.cond)
         body_ops: list[dgen.Op] = list(self._lower_stmt(node.stmt))
         body_result: dgen.Value = body_ops[-1] if body_ops else dgen.Value(type=Nil())
@@ -377,7 +378,7 @@ class Lowering:
 
         p = pack([])
         yield p
-        yield WhileOp(condition_init=p, condition=cond_block, body=body_block)
+        yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
 
     def _lower_do_while(self, node: c_ast.DoWhile) -> Iterator[dgen.Op]:
         """Lower a do-while loop."""
@@ -395,8 +396,8 @@ class Lowering:
         yield DoWhileOp(init=p, body=body_block, condition=cond_block)
 
     def _lower_for(self, node: c_ast.For) -> Iterator[dgen.Op]:
-        """Lower a for loop."""
-        # Lower init
+        """Lower a for loop as init + control_flow.WhileOp."""
+        # Emit init statements
         if node.init is not None:
             if isinstance(node.init, c_ast.DeclList):
                 for decl in node.init.decls:
@@ -412,28 +413,16 @@ class Lowering:
             yield cond
         cond_block = dgen.Block(result=cond, args=[])
 
-        # Update
-        update_ops: list[dgen.Op] = []
-        if node.next is not None:
-            update_ops = list(self._lower_stmt(node.next))
-        update_result: dgen.Value = (
-            update_ops[-1] if update_ops else dgen.Value(type=Nil())
-        )
-        update_block = dgen.Block(result=update_result, args=[])
-
-        # Body
+        # Body = original body + update
         body_ops: list[dgen.Op] = list(self._lower_stmt(node.stmt))
+        if node.next is not None:
+            body_ops.extend(self._lower_stmt(node.next))
         body_result: dgen.Value = body_ops[-1] if body_ops else dgen.Value(type=Nil())
         body_block = dgen.Block(result=body_result, args=[])
 
         p = pack([])
         yield p
-        yield ForLoopOp(
-            init=p,
-            condition=cond_block,
-            update=update_block,
-            body=body_block,
-        )
+        yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
 
     def _lower_switch(self, node: c_ast.Switch) -> Iterator[dgen.Op]:
         """Lower a switch statement (simplified — flatten to if/else chain)."""

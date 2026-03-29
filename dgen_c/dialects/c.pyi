@@ -245,28 +245,6 @@ class ReturnValueOp(Op):
     type: Type = CVoid()
 
 @dataclass(eq=False, kw_only=True)
-class IfOp(Op):
-    condition: Value
-    type: Type
-    then_body: Block
-    else_body: Block
-
-@dataclass(eq=False, kw_only=True)
-class WhileOp(Op):
-    condition_init: Value
-    type: Type = CVoid()
-    condition: Block
-    body: Block
-
-@dataclass(eq=False, kw_only=True)
-class ForLoopOp(Op):
-    init: Value
-    type: Type = CVoid()
-    condition: Block
-    update: Block
-    body: Block
-
-@dataclass(eq=False, kw_only=True)
 class DoWhileOp(Op):
     init: Value
     type: Type = CVoid()

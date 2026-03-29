@@ -75,18 +75,8 @@ op call_indirect(callee, arguments: Span) -> Type
 op return_void() -> CVoid
 op return_value(value) -> CVoid
 
-# --- Control flow ---
+# --- Control flow (C-specific; if/while/for use control_flow dialect) ---
 
-op if(condition) -> Type:
-    block then_body
-    block else_body
-op while(condition_init: Span) -> CVoid:
-    block condition
-    block body
-op for_loop(init: Span) -> CVoid:
-    block condition
-    block update
-    block body
 op do_while(init: Span) -> CVoid:
     block body
     block condition
