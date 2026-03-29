@@ -1,0 +1,109 @@
+from builtin import Index, Nil, String, Span
+
+# --- C Types ---
+
+type CInt<bits: Index, signed: Index>:
+    data: Index
+
+type CFloat<kind: Index>:
+    data: Index
+
+type CVoid:
+    data: Nil
+
+type CPtr<pointee: Type>:
+    data: Index
+
+type CArray<element: Type, count: Index>:
+    data: Index
+
+type CStruct<tag_name: String, field_names: String, field_types: String>:
+    data: Index
+
+type CUnion<tag_name: String, field_names: String, field_types: String>:
+    data: Index
+
+type CFuncType<return_type: Type, param_types: Type, variadic: Index>:
+    data: Nil
+
+# --- Arithmetic ops ---
+
+op add(lhs, rhs) -> Type
+op sub(lhs, rhs) -> Type
+op mul(lhs, rhs) -> Type
+op div(lhs, rhs) -> Type
+op mod(lhs, rhs) -> Type
+op neg(operand) -> Type
+op bitnot(operand) -> Type
+op lognot(operand) -> Type
+op bitand(lhs, rhs) -> Type
+op bitor(lhs, rhs) -> Type
+op bitxor(lhs, rhs) -> Type
+op shl(lhs, rhs) -> Type
+op shr(lhs, rhs) -> Type
+
+# --- Comparison ops ---
+
+op eq(lhs, rhs) -> Type
+op ne(lhs, rhs) -> Type
+op lt(lhs, rhs) -> Type
+op le(lhs, rhs) -> Type
+op gt(lhs, rhs) -> Type
+op ge(lhs, rhs) -> Type
+op logand(lhs, rhs) -> Type
+op logor(lhs, rhs) -> Type
+
+# --- Memory ops ---
+
+op alloca<element_type: Type>() -> CPtr
+op load(ptr) -> Type
+op store(value, ptr) -> CVoid
+op gep<field_index: Index>(base) -> CPtr
+op array_index(base, index) -> CPtr
+op address_of(operand) -> CPtr
+op deref(ptr) -> Type
+
+# --- Cast ops ---
+
+op cast<target_type: Type>(operand) -> Type
+op bitcast<target_type: Type>(operand) -> Type
+
+# --- Function ops ---
+
+op call<callee: String>(arguments: Span) -> Type
+op call_indirect(callee, arguments: Span) -> Type
+op return_void() -> CVoid
+op return_value(value) -> CVoid
+
+# --- Control flow ---
+
+op if(condition) -> Type:
+    block then_body
+    block else_body
+op while(condition_init: Span) -> CVoid:
+    block condition
+    block body
+op for_loop(init: Span) -> CVoid:
+    block condition
+    block update
+    block body
+op do_while(init: Span) -> CVoid:
+    block body
+    block condition
+op switch<case_values: Span<Index>>(selector) -> CVoid:
+    block default_body
+op break() -> CVoid
+op continue() -> CVoid
+op goto<label: String>() -> CVoid
+op label<label_name: String>() -> CVoid
+
+# --- Struct/Union ops ---
+
+op struct_member<field_name: String>(base) -> Type
+op struct_ptr_member<field_name: String>(base) -> Type
+
+# --- Misc ---
+
+op sizeof<target_type: Type>() -> Type
+op comma(lhs, rhs) -> Type
+op ternary(condition, true_val, false_val) -> Type

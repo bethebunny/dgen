@@ -9,13 +9,13 @@ import pytest
 from dgen_c.parser.c_parser import parse_c_string
 from dgen_c.parser.lowering import lower
 from dgen_c.parser.type_resolver import TypeResolver
+from dgen_c.dialects import c_int
 from dgen_c.dialects.c import (
     CFloat,
     CInt,
     CPtr,
     CStruct,
     CVoid,
-    c_int,
 )
 
 TESTDATA = Path(__file__).parent / "testdata"
