@@ -2,10 +2,10 @@
 
 memory.heap_allocate(count) → llvm.call<"malloc">(count * element_size)
 memory.stack_allocate → llvm.alloca
-memory.load(ptr) → llvm.load(ptr)
-memory.store(val, ptr) → llvm.store(val, ptr)
 memory.offset(ptr, index) → llvm.gep(ptr, index)
 memory.deallocate → no-op (leak for now)
+
+memory.load and memory.store pass through to codegen unchanged.
 """
 
 from __future__ import annotations

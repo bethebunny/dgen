@@ -221,5 +221,4 @@ class ToyToStructured(Pass):
             body,
             captures=[accumulator, initial_store, zero, op.input],
         )
-        after_loop = ChainOp(lhs=accumulator, rhs=loop, type=reference_type)
-        return memory.LoadOp(mem=after_loop, ptr=accumulator, type=Index())
+        return memory.LoadOp(mem=loop, ptr=accumulator, type=Index())
