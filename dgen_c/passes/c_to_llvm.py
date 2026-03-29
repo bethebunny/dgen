@@ -64,6 +64,18 @@ def _is_int_type(ty: dgen.Type) -> bool:
     return isinstance(ty, CInt)
 
 
+def _icmp_zext(pred: str, lhs: dgen.Value, rhs: dgen.Value) -> llvm.ZextOp:
+    """Integer comparison with zext to i64 (C semantics: comparisons return int)."""
+    cmp = llvm.IcmpOp(pred=String().constant(pred), lhs=lhs, rhs=rhs)
+    return llvm.ZextOp(input=cmp)
+
+
+def _fcmp_zext(pred: str, lhs: dgen.Value, rhs: dgen.Value) -> llvm.ZextOp:
+    """Float comparison with zext to i64."""
+    cmp = llvm.FcmpOp(pred=String().constant(pred), lhs=lhs, rhs=rhs)
+    return llvm.ZextOp(input=cmp)
+
+
 class CToLLVM(Pass):
     """Lower C dialect ops to LLVM IR ops."""
 
@@ -130,38 +142,38 @@ class CToLLVM(Pass):
     @lowering_for(EqOp)
     def lower_eq(self, op: EqOp) -> dgen.Value | None:
         if _is_float_type(op.lhs.type):
-            return llvm.FcmpOp(pred=String().constant("oeq"), lhs=op.lhs, rhs=op.rhs)
-        return llvm.IcmpOp(pred=String().constant("eq"), lhs=op.lhs, rhs=op.rhs)
+            return _fcmp_zext("oeq", op.lhs, op.rhs)
+        return _icmp_zext("eq", op.lhs, op.rhs)
 
     @lowering_for(NeOp)
     def lower_ne(self, op: NeOp) -> dgen.Value | None:
         if _is_float_type(op.lhs.type):
-            return llvm.FcmpOp(pred=String().constant("one"), lhs=op.lhs, rhs=op.rhs)
-        return llvm.IcmpOp(pred=String().constant("ne"), lhs=op.lhs, rhs=op.rhs)
+            return _fcmp_zext("one", op.lhs, op.rhs)
+        return _icmp_zext("ne", op.lhs, op.rhs)
 
     @lowering_for(LtOp)
     def lower_lt(self, op: LtOp) -> dgen.Value | None:
         if _is_float_type(op.lhs.type):
-            return llvm.FcmpOp(pred=String().constant("olt"), lhs=op.lhs, rhs=op.rhs)
-        return llvm.IcmpOp(pred=String().constant("slt"), lhs=op.lhs, rhs=op.rhs)
+            return _fcmp_zext("olt", op.lhs, op.rhs)
+        return _icmp_zext("slt", op.lhs, op.rhs)
 
     @lowering_for(LeOp)
     def lower_le(self, op: LeOp) -> dgen.Value | None:
         if _is_float_type(op.lhs.type):
-            return llvm.FcmpOp(pred=String().constant("ole"), lhs=op.lhs, rhs=op.rhs)
-        return llvm.IcmpOp(pred=String().constant("sle"), lhs=op.lhs, rhs=op.rhs)
+            return _fcmp_zext("ole", op.lhs, op.rhs)
+        return _icmp_zext("sle", op.lhs, op.rhs)
 
     @lowering_for(GtOp)
     def lower_gt(self, op: GtOp) -> dgen.Value | None:
         if _is_float_type(op.lhs.type):
-            return llvm.FcmpOp(pred=String().constant("ogt"), lhs=op.lhs, rhs=op.rhs)
-        return llvm.IcmpOp(pred=String().constant("sgt"), lhs=op.lhs, rhs=op.rhs)
+            return _fcmp_zext("ogt", op.lhs, op.rhs)
+        return _icmp_zext("sgt", op.lhs, op.rhs)
 
     @lowering_for(GeOp)
     def lower_ge(self, op: GeOp) -> dgen.Value | None:
         if _is_float_type(op.lhs.type):
-            return llvm.FcmpOp(pred=String().constant("oge"), lhs=op.lhs, rhs=op.rhs)
-        return llvm.IcmpOp(pred=String().constant("sge"), lhs=op.lhs, rhs=op.rhs)
+            return _fcmp_zext("oge", op.lhs, op.rhs)
+        return _icmp_zext("sge", op.lhs, op.rhs)
 
     # --- Memory ---
 
@@ -215,7 +227,7 @@ class CToLLVM(Pass):
     @lowering_for(LognotOp)
     def lower_lognot(self, op: LognotOp) -> dgen.Value | None:
         zero = ConstantOp(value=0, type=op.operand.type)
-        return llvm.IcmpOp(pred=String().constant("eq"), lhs=op.operand, rhs=zero)
+        return _icmp_zext("eq", op.operand, zero)
 
     @lowering_for(LogandOp)
     def lower_logand(self, op: LogandOp) -> dgen.Value | None:
