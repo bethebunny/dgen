@@ -4,8 +4,8 @@ Converts shaped N-dimensional buffer ops to flat pointer ops with
 index linearization.
 
     ndbuffer.alloc(shape) → memory.heap_allocate(total)
-    ndbuffer.load(buf, [i, j]) → memory.load(memory.offset(buf, i*stride+j))
-    ndbuffer.store(val, buf, [i, j]) → memory.store(val, memory.offset(buf, ...))
+    ndbuffer.load(mem, buf, [i, j]) → memory.load(mem, memory.offset(buf, i*stride+j))
+    ndbuffer.store(mem, val, buf, [i, j]) → memory.store(mem, val, memory.offset(buf, ...))
     ndbuffer.dealloc → memory.deallocate
     ndbuffer.print_memref → llvm.call<"print_memref">
 """
@@ -107,7 +107,7 @@ class NDBufferToMemory(Pass):
             else memory.Reference(element_type=Float64())
         )
         offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ref_type)
-        return memory.LoadOp(mem=offset_ptr, ptr=offset_ptr, type=op.type)
+        return memory.LoadOp(mem=op.mem, ptr=offset_ptr, type=op.type)
 
     @lowering_for(ndbuffer.StoreOp)
     def lower_store(self, op: ndbuffer.StoreOp) -> dgen.Value | None:
@@ -121,7 +121,7 @@ class NDBufferToMemory(Pass):
             else memory.Reference(element_type=Float64())
         )
         offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ref_type)
-        return memory.StoreOp(mem=offset_ptr, value=op.value, ptr=offset_ptr)
+        return memory.StoreOp(mem=op.mem, value=op.value, ptr=offset_ptr)
 
     @lowering_for(ndbuffer.PrintMemrefOp)
     def lower_print(self, op: ndbuffer.PrintMemrefOp) -> dgen.Value | None:
