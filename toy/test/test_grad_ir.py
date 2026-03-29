@@ -15,7 +15,7 @@ from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.autodiff import lower_grad
+from toy.passes.autodiff import Autodiff
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
 from toy.passes.toy_to_structured import ToyToStructured
@@ -23,29 +23,29 @@ from toy.test.helpers import strip_prefix
 
 
 def _lower_and_grad(source: str) -> Module:
-    """Parse → lower → expand grad. No shape inference, no optimization."""
+    """Parse → lower → Autodiff. No shape inference, no optimization."""
     ir = lower(parse_toy(source))
-    func_map = {f.name: f for f in ir.functions if f.name is not None}
-    return lower_grad(ir, func_map)
+    return Compiler(passes=[Autodiff()], exit=IdentityPass()).run(ir)
 
 
 def _lower_grad_and_infer(
     source: str, *, arg_shapes: list[list[int]] | None = None
 ) -> Module:
-    """Parse → lower → expand grad → optimize → shape inference."""
+    """Parse → lower → Autodiff → optimize → shape inference."""
     ir = lower(parse_toy(source))
     if arg_shapes:
         main = ir.functions[0]
         for param, shape in zip(main.body.args, arg_shapes):
             param.type = Tensor(shape=shape_constant(shape))
-    func_map = {f.name: f for f in ir.functions if f.name is not None}
-    ir = lower_grad(ir, func_map)
-    compiler = Compiler(passes=[ToyOptimize(), ShapeInference()], exit=IdentityPass())
+    compiler = Compiler(
+        passes=[Autodiff(), ToyOptimize(), ShapeInference()], exit=IdentityPass()
+    )
     return compiler.run(ir)
 
 
 _full_compiler = Compiler(
     passes=[
+        Autodiff(),
         ToyOptimize(),
         ShapeInference(),
         ToyToStructured(),
@@ -58,14 +58,12 @@ _full_compiler = Compiler(
 
 
 def _compile_grad(source: str, *, arg_shapes: list[list[int]] | None = None) -> Module:
-    """Parse → lower → expand grad → full pipeline (through to LLVM IR)."""
+    """Parse → lower → full pipeline with Autodiff."""
     ir = lower(parse_toy(source))
     if arg_shapes:
         main = ir.functions[0]
         for param, shape in zip(main.body.args, arg_shapes):
             param.type = Tensor(shape=shape_constant(shape))
-    func_map = {f.name: f for f in ir.functions if f.name is not None}
-    ir = lower_grad(ir, func_map)
     return _full_compiler.run(ir)
 
 

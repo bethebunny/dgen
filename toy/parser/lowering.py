@@ -38,8 +38,18 @@ class Lowering:
         self.return_value: dgen.Value | None = None
 
     def lower_module(self, tm: ToyModule) -> Module:
-        functions = [self.lower_function(f) for f in tm.functions]
-        return Module(ops=functions)
+        # Two passes: first lower all non-main functions so that grad(f) can
+        # reference the FunctionOp for f. Then lower main.
+        self.function_map: dict[str, function.FunctionOp] = {}
+        non_main = [f for f in tm.functions if f.proto.name != "main"]
+        main_funcs = [f for f in tm.functions if f.proto.name == "main"]
+        for f in non_main:
+            func_op = self.lower_function(f)
+            self.function_map[f.proto.name] = func_op
+        for f in main_funcs:
+            func_op = self.lower_function(f)
+            self.function_map[f.proto.name] = func_op
+        return Module(ops=list(self.function_map.values()))
 
     def lower_function(self, f: Function) -> function.FunctionOp:
         self.scope = {}
@@ -250,10 +260,10 @@ class Lowering:
         return op
 
     def _lower_grad(self, g: GradExpr) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower grad(f) to a GradOp — a symbolic gradient function value."""
-        callee_ref = dgen.Value(name=g.callee, type=builtin.Nil())
+        """Lower grad(f) to a GradOp whose operand is the FunctionOp for f."""
+        func_op = self.function_map[g.callee]
         op = GradOp(
-            callee=callee_ref,
+            function=func_op,
             type=FunctionType(result=toy.InferredShapeTensor()),
         )
         yield op

@@ -7,9 +7,11 @@ The Autodiff pass synthesizes the gradient function body.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from dgen import Dialect, Op, Type, Value
 from dgen.dialects.function import Function
+from dgen.type import Fields
 
 diff = Dialect("diff")
 
@@ -21,3 +23,5 @@ class GradOp(Op):
 
     function: Value
     type: Type
+
+    __operands__: ClassVar[Fields] = (("function", Function),)

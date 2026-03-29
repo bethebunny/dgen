@@ -1,13 +1,10 @@
 """Autodiff pass: lower diff.GradOp into a synthesized gradient FunctionOp.
 
-For each GradOp referencing function ``f``, this pass:
-1. Differentiates ``f``'s body via reverse-mode AD
-2. Wraps the result in a new ``FunctionOp`` named ``f_grad``
-3. Adds it to the module
-4. Replaces the GradOp with a name reference to ``f_grad``
-
-After this pass, ``grad(f)(x)`` is a normal ``CallOp(callee="f_grad", args)``
-that flows through shape inference, staging, and codegen like any other call.
+For each GradOp in the module, this pass:
+1. Reads the FunctionOp operand
+2. Differentiates its body via reverse-mode AD
+3. Wraps the result in a new FunctionOp
+4. Replaces the GradOp with the new FunctionOp
 
 Supported ops for differentiation:
 - toy.AddOp: d_lhs += d_out, d_rhs += d_out
@@ -28,11 +25,12 @@ from dgen.dialects.builtin import ChainOp
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.function import FunctionOp
 from dgen.module import ConstantOp, Module
+from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import shape_constant, toy
 from toy.dialects.diff import GradOp
 
 if TYPE_CHECKING:
-    pass
+    from dgen.compiler import Compiler
 
 _INFERRED = toy.InferredShapeTensor
 
@@ -159,87 +157,56 @@ def _build_grad_function(
     )
 
 
-def lower_grad(module: Module, func_map: dict[str, FunctionOp]) -> Module:
-    """Expand all GradOps in the module into synthesized gradient functions.
+class Autodiff(Pass):
+    """Expand GradOps into synthesized gradient FunctionOps.
 
-    For each GradOp referencing function ``f``:
-    1. Synthesize ``f_grad`` as a new FunctionOp
-    2. Add it to the module
-    3. Replace the GradOp with ``Value(name="f_grad")``
-
-    Helper functions that are only used as grad targets (never called
-    directly) are removed from the module to avoid shape-inference
-    failures on their unresolved parameter types.
-
-    Returns a new Module with GradOps eliminated and gradient functions added.
+    Each GradOp takes a FunctionOp and produces a FunctionOp. This pass
+    synthesizes the gradient function body and replaces the GradOp with
+    the new FunctionOp. The new functions are added to the module.
     """
-    new_functions: list[dgen.Op] = []
-    grad_replacements: dict[int, dgen.Value] = {}
-    grad_targets: set[str] = set()  # functions used only as grad sources
 
-    # First pass: find all GradOps and synthesize gradient functions
-    for func in module.functions:
-        for op in func.body.ops:
-            if not isinstance(op, GradOp):
-                continue
-            callee_name = op.callee.name
-            if callee_name is None:
-                raise RuntimeError("GradOp callee must have a name")
-            callee = func_map.get(callee_name)
-            if callee is None:
-                raise RuntimeError(f"Unknown function in grad: {callee_name}")
-            grad_targets.add(callee_name)
+    allow_unregistered_ops = True
 
-            grad_name = f"{callee_name}_grad"
-            grad_func = _build_grad_function(grad_name, callee)
-            new_functions.append(grad_func)
-            # GradOp → name reference to the new function
-            grad_replacements[id(op)] = dgen.Value(name=grad_name, type=op.type)
+    def __init__(self) -> None:
+        self._new_functions: list[FunctionOp] = []
 
-    if not grad_replacements:
-        return module
+    def run(self, module: Module, compiler: Compiler[object]) -> Module:
+        self._new_functions = []
+        self._grad_targets: set[str] = set()
+        for func in module.functions:
+            self._run_block(func.body)
+        if not self._new_functions:
+            return module
 
-    # Second pass: replace GradOp references in all blocks
-    def _replace_in_block(block: dgen.Block) -> None:
-        for op in block.ops:
-            # Replace in parameters (e.g. CallOp.callee)
-            for param_name, param_val in op.parameters:
-                replacement = grad_replacements.get(id(param_val))
-                if replacement is not None:
-                    setattr(op, param_name, replacement)
-            # Replace in operands
-            for op_name, op_val in op.operands:
-                replacement = grad_replacements.get(id(op_val))
-                if replacement is not None:
-                    setattr(op, op_name, replacement)
-            # Recurse into child blocks
-            for _, child_block in op.blocks:
-                _replace_in_block(child_block)
-        # Replace in block result
-        replacement = grad_replacements.get(id(block.result))
-        if replacement is not None:
-            block.result = replacement
+        # Find functions called directly (not only as grad targets)
+        from dgen.dialects.function import CallOp
 
-    for func in module.functions:
-        _replace_in_block(func.body)
+        directly_called: set[str] = set()
+        for func in module.functions:
+            for op in func.body.ops:
+                if isinstance(op, CallOp) and hasattr(op.callee, "name"):
+                    directly_called.add(op.callee.name)
 
-    # Collect functions called directly (not just via grad)
-    from dgen.dialects.function import CallOp
+        # Prune functions only used as grad targets
+        kept = [
+            op
+            for op in module.ops
+            if not (
+                isinstance(op, FunctionOp)
+                and op.name in self._grad_targets
+                and op.name not in directly_called
+            )
+        ]
+        return Module(ops=kept + self._new_functions)
 
-    directly_called: set[str] = set()
-    for func in module.functions:
-        for op in func.body.ops:
-            if isinstance(op, CallOp) and hasattr(op.callee, "name") and op.callee.name:
-                directly_called.add(op.callee.name)
-
-    # Keep module ops, but drop helper functions only used as grad targets
-    kept_ops = [
-        op
-        for op in module.ops
-        if not (
-            isinstance(op, FunctionOp)
-            and op.name in grad_targets
-            and op.name not in directly_called
-        )
-    ]
-    return Module(ops=kept_ops + new_functions)
+    @lowering_for(GradOp)
+    def lower_grad(self, op: GradOp) -> dgen.Value | None:
+        func = op.function
+        assert isinstance(func, FunctionOp)
+        grad_name = f"{func.name}_grad"
+        grad_func = _build_grad_function(grad_name, func)
+        self._new_functions.append(grad_func)
+        self._grad_targets.add(func.name)
+        # Return a name reference — the FunctionOp itself lives at module level,
+        # not inline in the caller's block.
+        return dgen.Value(name=grad_name, type=grad_func.type)

@@ -17,11 +17,13 @@ from toy.parser.toy_parser import parse_toy
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
-from toy.passes.autodiff import lower_grad
+from toy.passes.autodiff import Autodiff
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
 from toy.passes.toy_to_structured import ToyToStructured
 
+
+_autodiff = Autodiff()
 
 toy_compiler: Compiler[Executable] = Compiler(
     passes=[
@@ -47,7 +49,7 @@ def _set_param_types(ir: Module, args: Sequence[object]) -> None:
     For list arguments, sets the parameter type to a 1-D Tensor
     with the list's length as the shape dimension.
     """
-    func = ir.functions[0]
+    func = next(f for f in ir.functions if f.name == "main")
     for arg, param in zip(args, func.body.args):
         if isinstance(arg, list):
             param.type = Tensor(shape=shape_constant([len(arg)]))
@@ -60,10 +62,7 @@ def run(source: str, *, args: Sequence[object | str] = ()) -> object:
     parsed_args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
     if parsed_args:
         _set_param_types(ir, parsed_args)
-    # Expand grad(f) into synthesized gradient functions before compilation.
-    # This produces inspectable IR: grad(f) becomes a real FunctionOp.
-    func_map = {f.name: f for f in ir.functions if f.name is not None}
-    ir = lower_grad(ir, func_map)
+    ir = _autodiff.run(ir, toy_compiler)
     exe = toy_compiler.compile(ir)
     return exe.run(*parsed_args)
 
