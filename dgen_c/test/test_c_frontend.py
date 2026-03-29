@@ -306,6 +306,17 @@ class TestEndToEnd:
             == 40
         )
 
+    def test_function_call_e2e(self) -> None:
+        """Cross-function calls."""
+        assert (
+            run_c("int g(int x) { return x + 1; }\nint f(int x) { return g(x); }", 5)
+            == 6
+        )
+
+    def test_assign_then_return(self) -> None:
+        """Assignment followed by return."""
+        assert run_c("int f(int x) { int y = 0; y = x + 1; return y; }", 5) == 6
+
 
 # ---------------------------------------------------------------------------
 # Lowering (verify C constructs lower without crashing)
@@ -574,5 +585,5 @@ class TestSqlite3:
         sys.setrecursionlimit(old_limit)
 
         assert emitted >= 2500, f"emitted regressed: {emitted}\n{report}"
-        assert parsed >= 600, f"parsed regressed: {parsed}\n{report}"
-        assert verified >= 600, f"verified regressed: {verified}\n{report}"
+        assert parsed >= 900, f"parsed regressed: {parsed}\n{report}"
+        assert verified >= 900, f"verified regressed: {verified}\n{report}"
