@@ -12,6 +12,8 @@ import pytest
 
 from dgen.codegen import compile as llvm_compile
 from dgen.compiler import Compiler, IdentityPass
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen_c.dialects import c_int
 from dgen_c.dialects.c import CFloat, CInt, CPtr, CStruct, CVoid
 from dgen_c.parser.c_parser import parse_c_string
@@ -21,7 +23,7 @@ from dgen_c.passes.c_to_llvm import CToLLVM
 
 TESTDATA = Path(__file__).parent / "testdata"
 
-_c_compiler = Compiler([CToLLVM()], IdentityPass())
+_c_compiler = Compiler([CToLLVM(), AlgebraToLLVM(), MemoryToLLVM()], IdentityPass())
 
 _SQLITE3_URL = (
     "https://raw.githubusercontent.com/mattn/go-sqlite3/master/sqlite3-binding.c"
@@ -492,11 +494,13 @@ class TestSqlite3:
         block captures), then emits LLVM IR per-function.
         """
         from dgen.codegen import _emit_func
-        from dgen.compiler import verify_passes
         from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
         module, _ = lower(sqlite3_ast)
-        pipeline = Compiler([CToLLVM(), ControlFlowToGoto()], IdentityPass())
+        pipeline = Compiler(
+            [CToLLVM(), AlgebraToLLVM(), MemoryToLLVM(), ControlFlowToGoto()],
+            IdentityPass(),
+        )
         module = pipeline.run(module)
 
         ok = 0
