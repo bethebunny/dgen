@@ -25,6 +25,7 @@ from dgen.module import ConstantOp, Module, pack
 from dgen.dialects import function
 
 from dcc.dialects import c_int
+from dcc.parser.c_literals import parse_c_char, parse_c_int
 from dcc.dialects.c import (
     AddressOfOp,
     AssignOp,
@@ -263,30 +264,25 @@ class Parser:
             for item in node.block_items:
                 yield from self._stmt(item, child)
 
+    _STMT_DISPATCH: dict[type, str] = {
+        c_ast.Decl: "_decl",
+        c_ast.Assignment: "_assign",
+        c_ast.Return: "_ret",
+        c_ast.If: "_if",
+        c_ast.While: "_while",
+        c_ast.DoWhile: "_do_while",
+        c_ast.For: "_for",
+        c_ast.Compound: "_compound",
+    }
+
     def _stmt(self, node: c_ast.Node, scope: Scope) -> Iterator[dgen.Op]:
         self.stats.statements += 1
-        if isinstance(node, c_ast.Decl):
-            yield from self._decl(node, scope)
-        elif isinstance(node, c_ast.Assignment):
-            yield from self._assign(node, scope)
-        elif isinstance(node, c_ast.Return):
-            yield from self._ret(node, scope)
-        elif isinstance(node, c_ast.If):
-            yield from self._if(node, scope)
-        elif isinstance(node, c_ast.While):
-            yield from self._while(node, scope)
-        elif isinstance(node, c_ast.DoWhile):
-            yield from self._do_while(node, scope)
-        elif isinstance(node, c_ast.For):
-            yield from self._for(node, scope)
-        elif isinstance(node, c_ast.Compound):
-            yield from self._compound(node, scope)
-        elif isinstance(node, c_ast.FuncCall):
+        handler = self._STMT_DISPATCH.get(type(node))
+        if handler is not None:
+            yield from getattr(self, handler)(node, scope)
+            return
+        if isinstance(node, (c_ast.FuncCall, c_ast.UnaryOp)):
             yield from self._expr(node, scope)
-        elif isinstance(node, c_ast.UnaryOp) and node.op in _INCREMENTS:
-            yield from self._expr(node, scope)
-        elif isinstance(node, c_ast.Goto):
-            pass
         elif isinstance(node, c_ast.Label):
             if node.stmt:
                 yield from self._stmt(node.stmt, scope)
@@ -298,26 +294,17 @@ class Parser:
             yield BreakOp()
         elif isinstance(node, c_ast.Continue):
             yield ContinueOp()
-        elif isinstance(node, c_ast.Case):
-            if node.stmts:
-                for s in node.stmts:
-                    yield from self._stmt(s, scope)
-        elif isinstance(node, c_ast.Default):
-            if node.stmts:
-                for s in node.stmts:
-                    yield from self._stmt(s, scope)
-        elif isinstance(node, c_ast.EmptyStatement):
-            pass
+        elif isinstance(node, (c_ast.Case, c_ast.Default)):
+            for s in node.stmts or []:
+                yield from self._stmt(s, scope)
         elif isinstance(node, c_ast.Typedef):
             if node.name:
                 self.types.register_typedef(node.name, self.types.resolve(node.type))
                 self.stats.typedefs += 1
-        elif isinstance(node, c_ast.Pragma):
-            pass
         elif isinstance(node, c_ast.DeclList):
             for decl in node.decls:
                 yield from self._decl(decl, scope)
-        else:
+        elif not isinstance(node, (c_ast.EmptyStatement, c_ast.Goto, c_ast.Pragma)):
             yield from self._expr(node, scope)
 
     def _decl(self, node: c_ast.Decl, scope: Scope) -> Iterator[dgen.Op]:
@@ -476,55 +463,15 @@ class Parser:
         if isinstance(node, c_ast.FuncCall):
             return (yield from self._call(node, scope))
         if isinstance(node, c_ast.Assignment):
-            yield from self._assign(node, scope)
-            name = node.lvalue.name if isinstance(node.lvalue, c_ast.ID) else None
-            if name and scope.has(name):
-                val = scope.lookup(name)
-                read = ReadVariableOp(
-                    variable_name=String().constant(name),
-                    source=val,
-                    type=val.type,
-                )
-                yield read
-                return read
-            raise LoweringError("assign-as-expression on non-variable")
+            return (yield from self._assign_expr(node, scope))
         if isinstance(node, c_ast.Cast):
-            inner = yield from self._expr(node.expr, scope)
-            target = self.types.resolve(node.to_type)
-            op = algebra.CastOp(input=inner, type=target)
-            yield op
-            return op
+            return (yield from self._cast(node, scope))
         if isinstance(node, c_ast.ArrayRef):
-            base = yield from self._expr(node.name, scope)
-            idx = yield from self._expr(node.subscript, scope)
-            pointee = self._pointee(base.type)
-            op = SubscriptOp(base=base, index=idx, type=pointee)
-            yield op
-            return op
+            return (yield from self._subscript(node, scope))
         if isinstance(node, c_ast.StructRef):
             return (yield from self._struct(node, scope))
         if isinstance(node, c_ast.TernaryOp):
-            cond = yield from self._expr(node.cond, scope)
-            then_scope = scope.child()
-            then_block = self._block_from(
-                self._expr(node.iftrue, then_scope), then_scope
-            )
-            else_scope = scope.child()
-            else_block = self._block_from(
-                self._expr(node.iffalse, else_scope), else_scope
-            )
-            empty = pack([])
-            yield empty
-            op = IfOp(
-                condition=cond,
-                then_arguments=empty,
-                else_arguments=empty,
-                type=then_block.result.type,
-                then_body=then_block,
-                else_body=else_block,
-            )
-            yield op
-            return op
+            return (yield from self._ternary(node, scope))
         if isinstance(node, c_ast.ExprList):
             result = dgen.Value(type=Nil())
             for expr in node.exprs:
@@ -538,26 +485,60 @@ class Parser:
             raise LoweringError("empty initializer list")
         raise LoweringError(f"unsupported expression: {type(node).__name__}")
 
-    # --- Expression helpers ---
+    def _assign_expr(self, node: c_ast.Assignment, scope: Scope) -> Iterator[dgen.Op]:
+        """Assignment used as an expression — returns the assigned value."""
+        yield from self._assign(node, scope)
+        if not isinstance(node.lvalue, c_ast.ID):
+            raise LoweringError("assign-as-expression on non-variable")
+        name = node.lvalue.name
+        val = scope.lookup(name)
+        read = ReadVariableOp(
+            variable_name=String().constant(name), source=val, type=val.type
+        )
+        yield read
+        return read
+
+    def _cast(self, node: c_ast.Cast, scope: Scope) -> Iterator[dgen.Op]:
+        inner = yield from self._expr(node.expr, scope)
+        target = self.types.resolve(node.to_type)
+        op = algebra.CastOp(input=inner, type=target)
+        yield op
+        return op
+
+    def _subscript(self, node: c_ast.ArrayRef, scope: Scope) -> Iterator[dgen.Op]:
+        base = yield from self._expr(node.name, scope)
+        idx = yield from self._expr(node.subscript, scope)
+        op = SubscriptOp(base=base, index=idx, type=self._pointee(base.type))
+        yield op
+        return op
+
+    def _ternary(self, node: c_ast.TernaryOp, scope: Scope) -> Iterator[dgen.Op]:
+        cond = yield from self._expr(node.cond, scope)
+        then_scope = scope.child()
+        then_block = self._block_from(self._expr(node.iftrue, then_scope), then_scope)
+        else_scope = scope.child()
+        else_block = self._block_from(self._expr(node.iffalse, else_scope), else_scope)
+        empty = pack([])
+        yield empty
+        op = IfOp(
+            condition=cond,
+            then_arguments=empty,
+            else_arguments=empty,
+            type=then_block.result.type,
+            then_body=then_block,
+            else_body=else_block,
+        )
+        yield op
+        return op
+
+    # --- Literal and identifier helpers ---
 
     def _constant(
         self, node: c_ast.Constant, target_type: dgen.Type | None = None
     ) -> Iterator[dgen.Op]:
         if node.type == "int":
-            s = node.value.rstrip("uUlL")
-            # C octal: 0644 → Python needs 0o644
-            if len(s) > 1 and s[0] == "0" and s[1:].isdigit():
-                val = int(s, 8)
-            else:
-                val = int(s, 0)
-            if target_type is not None:
-                ty = target_type
-            elif any(c in node.value[len(s) :].lower() for c in ("ll", "l")):
-                ty = c_int(64, signed="u" not in node.value[len(s) :].lower())
-            elif "u" in node.value[len(s) :].lower():
-                ty = c_int(32, signed=False)
-            else:
-                ty = c_int(32)
+            val = parse_c_int(node.value)
+            ty = target_type or self._int_type_from_suffix(node.value)
             op = ConstantOp(value=val, type=ty)
             yield op
             return op
@@ -566,24 +547,7 @@ class Parser:
             yield op
             return op
         if node.type == "char":
-            ch = node.value[1:-1]
-            if ch.startswith("\\"):
-                escapes = {
-                    "n": 10,
-                    "t": 9,
-                    "r": 13,
-                    "0": 0,
-                    "\\": 92,
-                    "'": 39,
-                    '"': 34,
-                    "a": 7,
-                    "b": 8,
-                    "f": 12,
-                }
-                val = escapes.get(ch[1], ord(ch[1]))
-            else:
-                val = ord(ch)
-            op = ConstantOp(value=val, type=c_int(8))
+            op = ConstantOp(value=parse_c_char(node.value), type=c_int(8))
             yield op
             return op
         if node.type == "string":
@@ -591,6 +555,15 @@ class Parser:
             yield op
             return op
         raise LoweringError(f"unsupported constant type: {node.type}")
+
+    @staticmethod
+    def _int_type_from_suffix(text: str) -> dgen.Type:
+        suffix = text[len(text.rstrip("uUlL")) :].lower()
+        if "ll" in suffix or "l" in suffix:
+            return c_int(64, signed="u" not in suffix)
+        if "u" in suffix:
+            return c_int(32, signed=False)
+        return c_int(32)
 
     def _id(self, node: c_ast.ID, scope: Scope) -> Iterator[dgen.Op]:
         if node.name in self.types.enum_constants:
