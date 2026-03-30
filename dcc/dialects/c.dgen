@@ -18,6 +18,12 @@ op post_increment<variable_name: String>(target) -> Type
 op pre_decrement<variable_name: String>(target) -> Type
 op post_decrement<variable_name: String>(target) -> Type
 
+# --- Pointer and array ops (lowered to memory ops by CToMemory) ---
+
+op dereference(pointer) -> Type
+op address_of(operand) -> Type
+op subscript(base, index) -> Type
+
 # --- Struct/union member access (lowered to GEP + load by CToMemory) ---
 
 op member_access<field_name: String>(base) -> Type

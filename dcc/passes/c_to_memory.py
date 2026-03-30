@@ -22,7 +22,9 @@ from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
 
 from dcc.dialects.c import (
+    AddressOfOp,
     AssignOp,
+    DereferenceOp,
     MemberAccessOp,
     PointerMemberAccessOp,
     PostDecrementOp,
@@ -30,6 +32,7 @@ from dcc.dialects.c import (
     PreDecrementOp,
     PreIncrementOp,
     ReadVariableOp,
+    SubscriptOp,
     VariableDeclarationOp,
 )
 
@@ -152,3 +155,19 @@ class CToMemory(Pass):
         zero = ConstantOp(value=0, type=llvm.Int(bits=Index().constant(64)))
         gep = llvm.GepOp(base=op.base, index=zero)
         return memory.LoadOp(mem=gep, ptr=gep, type=op.type)
+
+    # --- Pointer/array ops ---
+
+    @lowering_for(DereferenceOp)
+    def lower_dereference(self, op: DereferenceOp) -> dgen.Value | None:
+        return memory.LoadOp(mem=op.pointer, ptr=op.pointer, type=op.type)
+
+    @lowering_for(AddressOfOp)
+    def lower_address_of(self, op: AddressOfOp) -> dgen.Value | None:
+        return op.operand  # the operand is already a pointer/reference
+
+    @lowering_for(SubscriptOp)
+    def lower_subscript(self, op: SubscriptOp) -> dgen.Value | None:
+        ref_type = memory.Reference(element_type=op.type)
+        offset = memory.OffsetOp(ptr=op.base, index=op.index, type=ref_type)
+        return memory.LoadOp(mem=offset, ptr=offset, type=op.type)

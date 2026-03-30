@@ -67,6 +67,22 @@ class PostDecrementOp(Op):
     type: Type
 
 @dataclass(eq=False, kw_only=True)
+class DereferenceOp(Op):
+    pointer: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class AddressOfOp(Op):
+    operand: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class SubscriptOp(Op):
+    base: Value
+    index: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
 class MemberAccessOp(Op):
     field_name: Value[String]
     base: Value
