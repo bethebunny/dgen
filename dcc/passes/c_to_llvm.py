@@ -21,14 +21,11 @@ from dcc.dialects.c import (
     BreakOp,
     CallOp,
     DoWhileOp,
-    GepOp,
     ModuloOp,
     ReturnOp,
     ShiftLeftOp,
     ShiftRightOp,
     SizeofOp,
-    StructMemberOp,
-    StructPtrMemberOp,
 )
 
 
@@ -64,22 +61,6 @@ class CToLLVM(Pass):
     @lowering_for(ReturnOp)
     def lower_return(self, op: ReturnOp) -> dgen.Value | None:
         return op.value
-
-    # --- Struct access ---
-
-    @lowering_for(StructPtrMemberOp)
-    def lower_struct_ptr_member(self, op: StructPtrMemberOp) -> dgen.Value | None:
-        zero = ConstantOp(value=0, type=llvm.Int(bits=Index().constant(64)))
-        return llvm.GepOp(base=op.base, index=zero)
-
-    @lowering_for(StructMemberOp)
-    def lower_struct_member(self, op: StructMemberOp) -> dgen.Value | None:
-        return op.base
-
-    @lowering_for(GepOp)
-    def lower_gep(self, op: GepOp) -> dgen.Value | None:
-        zero = ConstantOp(value=0, type=llvm.Int(bits=Index().constant(64)))
-        return llvm.GepOp(base=op.base, index=zero)
 
     # --- Misc ---
 

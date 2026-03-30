@@ -1,8 +1,6 @@
 from builtin import Index, Nil, String, Span
 
-# --- C-specific types (struct and union only; other C types map to
-#     number.SignedInteger/UnsignedInteger, number.Float64, builtin.Nil,
-#     memory.Reference, builtin.Array, function.Function) ---
+# --- C-specific types ---
 
 type CStruct<tag_name: String, field_names: String, field_types: String>:
     data: Index
@@ -10,17 +8,33 @@ type CStruct<tag_name: String, field_names: String, field_types: String>:
 type CUnion<tag_name: String, field_names: String, field_types: String>:
     data: Index
 
-# --- C-specific ops ---
-# Arithmetic, comparisons, bitwise, memory, and casts use shared dialects.
-# control_flow.if replaces ternary. algebra.equal replaces logical_not.
+# --- Variable ops (lowered to memory.stack_allocate/load/store by CToMemory) ---
+
+op variable_declaration<variable_name: String, variable_type: Type>(initializer) -> Type
+op read_variable<variable_name: String>(source) -> Type
+op assign<variable_name: String>(target, value) -> Type
+op pre_increment<variable_name: String>(target) -> Type
+op post_increment<variable_name: String>(target) -> Type
+op pre_decrement<variable_name: String>(target) -> Type
+op post_decrement<variable_name: String>(target) -> Type
+
+# --- Struct/union member access (lowered to GEP + load by CToMemory) ---
+
+op member_access<field_name: String>(base) -> Type
+op pointer_member_access<field_name: String>(base) -> Type
+
+# --- Function ops ---
+
+op call<callee: String>(arguments: Span) -> Type
+op return(value) -> Nil
+
+# --- C-specific arithmetic (pending upstream algebra additions) ---
 
 op modulo(lhs, rhs) -> Type
 op shift_left(lhs, rhs) -> Type
 op shift_right(lhs, rhs) -> Type
-op gep<field_index: Index>(base) -> Type
 
-op call<callee: String>(arguments: Span) -> Type
-op return(value) -> Nil
+# --- C-specific control flow ---
 
 op do_while(initial: Span) -> Nil:
     block body
@@ -30,8 +44,7 @@ op switch<case_values: Span<Index>>(selector) -> Nil:
 op break() -> Nil
 op continue() -> Nil
 
-op struct_member<field_name: String>(base) -> Type
-op struct_ptr_member<field_name: String>(base) -> Type
+# --- Misc ---
 
 op sizeof<target_type: Type>() -> Type
 op comma(lhs, rhs) -> Type

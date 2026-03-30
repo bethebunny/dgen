@@ -23,10 +23,13 @@ from dcc.parser.c_parser import parse_c_string
 from dcc.parser.lowering import lower
 from dcc.parser.type_resolver import TypeResolver
 from dcc.passes.c_to_llvm import CToLLVM
+from dcc.passes.c_to_memory import CToMemory
 
 TESTDATA = Path(__file__).parent / "testdata"
 
-_c_compiler = Compiler([CToLLVM(), AlgebraToLLVM(), MemoryToLLVM()], IdentityPass())
+_c_compiler = Compiler(
+    [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM()], IdentityPass()
+)
 
 _SQLITE3_URL = (
     "https://raw.githubusercontent.com/mattn/go-sqlite3/master/sqlite3-binding.c"
@@ -549,7 +552,13 @@ class TestSqlite3:
 
         module, _ = lower(sqlite3_ast)
         pipeline = Compiler(
-            [CToLLVM(), AlgebraToLLVM(), MemoryToLLVM(), ControlFlowToGoto()],
+            [
+                CToMemory(),
+                CToLLVM(),
+                AlgebraToLLVM(),
+                MemoryToLLVM(),
+                ControlFlowToGoto(),
+            ],
             IdentityPass(),
         )
         # TODO: ChainOps inside if-bodies pull parent-scope ops into block.ops.

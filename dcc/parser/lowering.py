@@ -18,16 +18,23 @@ from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.number import Float64
 from dcc.dialects import c_int
 from dcc.dialects.c import (
+    AssignOp,
     BreakOp,
     CallOp,
     ContinueOp,
+    MemberAccessOp,
     ModuloOp,
+    PointerMemberAccessOp,
+    PostDecrementOp,
+    PostIncrementOp,
+    PreDecrementOp,
+    PreIncrementOp,
+    ReadVariableOp,
     ReturnOp,
     ShiftLeftOp,
     ShiftRightOp,
     SizeofOp,
-    StructMemberOp,
-    StructPtrMemberOp,
+    VariableDeclarationOp,
 )
 from dcc.parser.type_resolver import TypeResolver
 
@@ -140,19 +147,12 @@ class Lowering:
         # Per-function state
         self.scope: dict[str, dgen.Value] = {}
         # Per-variable memory token: tracks the last store to each variable
-        self.var_mem: dict[str, dgen.Value] = {}
         # Global function declarations for call resolution
         self.func_types: dict[str, dgen.Type] = {}
         # Track all function ops for the module
         self.functions: list[function.FunctionOp] = []
         # Stats
         self.stats = LoweringStats()
-
-    def _mem_for(self, name: str) -> dgen.Value:
-        """Get the memory token for a variable (its last store, or its alloca)."""
-        return self.var_mem.get(
-            name, self.scope.get(name, ConstantOp(value=None, type=Nil()))
-        )
 
     def lower_file(self, ast: c_ast.FileAST) -> Module:
         """Lower an entire C translation unit to a dgen Module."""
@@ -213,7 +213,6 @@ class Lowering:
     def _lower_func_def(self, node: c_ast.FuncDef) -> function.FunctionOp | None:
         """Lower a function definition to a FunctionOp."""
         self.scope = {}
-        self.var_mem = {}
 
         func_name = node.decl.name
         ret_type = self._get_func_return_type(node.decl.type)
@@ -342,35 +341,41 @@ class Lowering:
             self.func_types[node.name] = self._get_func_return_type(node.type)
             return
 
-        # Allocate stack space
-        alloca = memory.StackAllocateOp(
-            element_type=var_type, type=memory.Reference(element_type=var_type)
-        )
-        yield alloca
-        self.scope[node.name] = alloca
-
-        # Initialize if there's an initializer
+        # Emit initializer (default to 0 if none)
         if node.init is not None:
             init_val = yield from self._lower_expr(node.init, target_type=var_type)
-            store = memory.StoreOp(mem=alloca, value=init_val, ptr=alloca)
-            yield store
-            self.var_mem[node.name] = store
+        else:
+            init_val = ConstantOp(value=0, type=var_type)
+            yield init_val
+
+        decl = VariableDeclarationOp(
+            variable_name=String().constant(node.name),
+            variable_type=var_type,
+            initializer=init_val,
+            type=var_type,
+        )
+        yield decl
+        self.scope[node.name] = decl
 
     def _lower_assignment(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
         """Lower an assignment statement."""
-        # Extract variable name for per-variable mem tracking
-        var_name = node.lvalue.name if isinstance(node.lvalue, c_ast.ID) else None
+        if not isinstance(node.lvalue, c_ast.ID):
+            raise LoweringError(f"unsupported lvalue: {type(node.lvalue).__name__}")
+        var_name = node.lvalue.name
+        if var_name not in self.scope:
+            raise LoweringError(f"undefined variable: {var_name}")
 
-        ptr = yield from self._lower_lvalue(node.lvalue)
-        lvalue_type = self._expr_type(node.lvalue)
-        rhs = yield from self._lower_expr(node.rvalue, target_type=lvalue_type)
+        target = self.scope[var_name]
+        rhs = yield from self._lower_expr(node.rvalue)
 
         if node.op != "=":
+            # Compound assignment: read current, apply op, assign result
             base_op = _COMPOUND_ASSIGN.get(node.op)
             if base_op is not None:
-                mem = self._mem_for(var_name) if var_name else ptr
-                current = memory.LoadOp(
-                    mem=mem, ptr=ptr, type=self._expr_type(node.lvalue)
+                current = ReadVariableOp(
+                    variable_name=String().constant(var_name),
+                    source=target,
+                    type=target.type,
                 )
                 yield current
                 op_cls = _BINOP_MAP.get(base_op)
@@ -379,11 +384,14 @@ class Lowering:
                     yield combined
                     rhs = combined
 
-        mem = self._mem_for(var_name) if var_name else ptr
-        store = memory.StoreOp(mem=mem, value=rhs, ptr=ptr)
-        yield store
-        if var_name:
-            self.var_mem[var_name] = store
+        assign = AssignOp(
+            variable_name=String().constant(var_name),
+            target=target,
+            value=rhs,
+            type=target.type,
+        )
+        yield assign
+        self.scope[var_name] = assign
 
     def _lower_return(self, node: c_ast.Return) -> Iterator[dgen.Op]:
         """Lower a return statement."""
@@ -640,11 +648,7 @@ class Lowering:
         raise LoweringError(f"unsupported constant type: {node.type}")
 
     def _lower_id(self, node: c_ast.ID) -> Iterator[dgen.Op]:
-        """Lower an identifier reference.
-
-        Local variables are allocas — reading them emits a LoadOp chained
-        through the last side effect so stores are in the use-def graph.
-        """
+        """Lower an identifier reference."""
         # Check enum constants
         if node.name in self.types.enum_constants:
             val = self.types.enum_constants[node.name]
@@ -655,17 +659,16 @@ class Lowering:
         # Check local scope
         if node.name in self.scope:
             val = self.scope[node.name]
-            # Local variables (StackAllocateOp) need a load to read their value.
-            # Function parameters (BlockArgument) with pointer type are values,
-            # not memory locations — return them directly.
-            if isinstance(val, memory.StackAllocateOp):
-                elem = val.type.element_type
-                if isinstance(elem, dgen.Type):
-                    load = memory.LoadOp(
-                        mem=self._mem_for(node.name), ptr=val, type=elem
-                    )
-                    yield load
-                    return load
+            # Local variables (VariableDeclarationOp or AssignOp) → read_variable
+            if isinstance(val, (VariableDeclarationOp, AssignOp)):
+                read = ReadVariableOp(
+                    variable_name=String().constant(node.name),
+                    source=val,
+                    type=val.type,
+                )
+                yield read
+                return read
+            # Function parameters (BlockArgument) → return directly
             return val
 
         raise LoweringError(f"undefined identifier: {node.name}")
@@ -734,39 +737,27 @@ class Lowering:
             return op
 
         # Pre/post increment/decrement
-        if node.op in ("++", "p++"):
-            var_name = node.expr.name if isinstance(node.expr, c_ast.ID) else None
-            ptr = yield from self._lower_lvalue(node.expr)
-            val_type = self._expr_type(node.expr)
-            mem = self._mem_for(var_name) if var_name else ptr
-            load = memory.LoadOp(mem=mem, ptr=ptr, type=val_type)
-            yield load
-            one = ConstantOp(value=1, type=val_type)
-            yield one
-            inc = algebra.AddOp(left=load, right=one, type=val_type)
-            yield inc
-            store = memory.StoreOp(mem=load, value=inc, ptr=ptr)
-            yield store
-            if var_name:
-                self.var_mem[var_name] = store
-            return load if node.op == "p++" else inc
-
-        if node.op in ("--", "p--"):
-            var_name = node.expr.name if isinstance(node.expr, c_ast.ID) else None
-            ptr = yield from self._lower_lvalue(node.expr)
-            val_type = self._expr_type(node.expr)
-            mem = self._mem_for(var_name) if var_name else ptr
-            load = memory.LoadOp(mem=mem, ptr=ptr, type=val_type)
-            yield load
-            one = ConstantOp(value=1, type=val_type)
-            yield one
-            dec = algebra.SubtractOp(left=load, right=one, type=val_type)
-            yield dec
-            store = memory.StoreOp(mem=load, value=dec, ptr=ptr)
-            yield store
-            if var_name:
-                self.var_mem[var_name] = store
-            return load if node.op == "p--" else dec
+        if node.op in ("++", "p++", "--", "p--"):
+            if not isinstance(node.expr, c_ast.ID):
+                raise LoweringError("increment/decrement on non-variable")
+            var_name = node.expr.name
+            if var_name not in self.scope:
+                raise LoweringError(f"undefined variable: {var_name}")
+            target = self.scope[var_name]
+            var_type = target.type
+            op_map = {
+                "++": PreIncrementOp,
+                "p++": PostIncrementOp,
+                "--": PreDecrementOp,
+                "p--": PostDecrementOp,
+            }
+            op = op_map[node.op](
+                variable_name=String().constant(var_name),
+                target=target,
+                type=var_type,
+            )
+            yield op
+            return op
 
         # Standard unary ops
         inner = yield from self._lower_expr(node.expr)
@@ -867,11 +858,7 @@ class Lowering:
         return load
 
     def _lower_struct_ref(self, node: c_ast.StructRef) -> Iterator[dgen.Op]:
-        """Lower struct member access: s.field or s->field.
-
-        p->field = GEP (get pointer to field) + load (read field value).
-        s.field  = same, but base is already a struct value.
-        """
+        """Lower struct member access: s.field or s->field."""
         base = yield from self._lower_expr(node.name)
         field_name = node.field.name
 
@@ -879,29 +866,20 @@ class Lowering:
             field_type = self.types.get_struct_field_type(
                 self._deref_type(base.type), field_name
             )
+            op = PointerMemberAccessOp(
+                field_name=String().constant(field_name),
+                base=base,
+                type=field_type,
+            )
         else:
             field_type = self.types.get_struct_field_type(base.type, field_name)
-
-        # GEP to get pointer to the field
-        field_ref_type = memory.Reference(element_type=field_type)
-        if node.type == "->":
-            gep = StructPtrMemberOp(
+            op = MemberAccessOp(
                 field_name=String().constant(field_name),
                 base=base,
-                type=field_ref_type,
+                type=field_type,
             )
-        else:
-            gep = StructMemberOp(
-                field_name=String().constant(field_name),
-                base=base,
-                type=field_ref_type,
-            )
-        yield gep
-
-        # Load the field value
-        load = memory.LoadOp(mem=gep, ptr=gep, type=field_type)
-        yield load
-        return load
+        yield op
+        return op
 
     def _lower_ternary(self, node: c_ast.TernaryOp) -> Iterator[dgen.Op]:
         """Lower a ternary expression: cond ? a : b → control_flow.if."""
@@ -956,14 +934,14 @@ class Lowering:
                 field_type = self.types.get_struct_field_type(
                     self._deref_type(base.type), field_name
                 )
-                op = StructPtrMemberOp(
+                op = PointerMemberAccessOp(
                     field_name=String().constant(field_name),
                     base=base,
                     type=memory.Reference(element_type=field_type),
                 )
             else:
                 field_type = self.types.get_struct_field_type(base.type, field_name)
-                op = StructMemberOp(
+                op = MemberAccessOp(
                     field_name=String().constant(field_name),
                     base=base,
                     type=memory.Reference(element_type=field_type),
@@ -994,9 +972,8 @@ class Lowering:
         if isinstance(node, c_ast.ID):
             if node.name in self.scope:
                 val = self.scope[node.name]
-                # Local variables are allocas — their expression type is the element type
-                if isinstance(val, memory.StackAllocateOp):
-                    return val.type.element_type
+                if isinstance(val, VariableDeclarationOp):
+                    return val.type
                 return val.type
             raise LoweringError(f"undefined identifier in type inference: {node.name}")
 
