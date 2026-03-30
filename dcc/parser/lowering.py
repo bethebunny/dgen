@@ -545,7 +545,11 @@ class Parser:
     ) -> Iterator[dgen.Op]:
         if node.type == "int":
             s = node.value.rstrip("uUlL")
-            val = int(s, 0)
+            # C octal: 0644 → Python needs 0o644
+            if len(s) > 1 and s[0] == "0" and s[1:].isdigit():
+                val = int(s, 8)
+            else:
+                val = int(s, 0)
             if target_type is not None:
                 ty = target_type
             elif any(c in node.value[len(s) :].lower() for c in ("ll", "l")):
