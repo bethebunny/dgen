@@ -18,10 +18,12 @@ from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.number import Float64
 from dcc.dialects import c_int
 from dcc.dialects.c import (
+    AddressOfOp,
     AssignOp,
     BreakOp,
     CallOp,
     ContinueOp,
+    DereferenceOp,
     MemberAccessOp,
     ModuloOp,
     PointerMemberAccessOp,
@@ -34,6 +36,7 @@ from dcc.dialects.c import (
     ShiftLeftOp,
     ShiftRightOp,
     SizeofOp,
+    SubscriptOp,
     VariableDeclarationOp,
 )
 from dcc.parser.type_resolver import TypeResolver
@@ -724,15 +727,18 @@ class Lowering:
             return op
 
         if node.op == "&":
-            # Address-of
-            ptr = yield from self._lower_lvalue(node.expr)
-            return ptr
+            operand = yield from self._lower_expr(node.expr)
+            op = AddressOfOp(
+                operand=operand,
+                type=memory.Reference(element_type=operand.type),
+            )
+            yield op
+            return op
 
         if node.op == "*":
-            # Dereference
             inner = yield from self._lower_expr(node.expr)
             pointee = self._deref_type(inner.type)
-            op = memory.LoadOp(mem=inner, ptr=inner, type=pointee)
+            op = DereferenceOp(pointer=inner, type=pointee)
             yield op
             return op
 
@@ -814,26 +820,20 @@ class Lowering:
         raise LoweringError("indirect function calls not yet supported")
 
     def _lower_assign_expr(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
-        """Lower an assignment used as an expression (returns the assigned value)."""
-        ptr = yield from self._lower_lvalue(node.lvalue)
-        rhs = yield from self._lower_expr(node.rvalue)
-
-        if node.op != "=":
-            base_op = _COMPOUND_ASSIGN.get(node.op)
-            if base_op is not None:
-                current = memory.LoadOp(
-                    mem=ptr, ptr=ptr, type=self._expr_type(node.lvalue)
-                )
-                yield current
-                op_cls = _BINOP_MAP.get(base_op)
-                if op_cls is not None:
-                    combined = _binop(op_cls, current, rhs, current.type)
-                    yield combined
-                    rhs = combined
-
-        store = memory.StoreOp(mem=ptr, value=rhs, ptr=ptr)
-        yield store
-        return rhs
+        """Lower an assignment used as an expression (returns the value)."""
+        # Delegate to _lower_assignment which emits AssignOp
+        yield from self._lower_assignment(node)
+        # The assigned value is the rhs — re-read the variable
+        if isinstance(node.lvalue, c_ast.ID) and node.lvalue.name in self.scope:
+            val = self.scope[node.lvalue.name]
+            read = ReadVariableOp(
+                variable_name=String().constant(node.lvalue.name),
+                source=val,
+                type=val.type,
+            )
+            yield read
+            return read
+        raise LoweringError("assign-as-expression on non-variable lvalue")
 
     def _lower_cast(self, node: c_ast.Cast) -> Iterator[dgen.Op]:
         """Lower a type cast."""
@@ -848,14 +848,9 @@ class Lowering:
         base = yield from self._lower_expr(node.name)
         idx = yield from self._lower_expr(node.subscript)
         elem_type = self._deref_type(base.type)
-        op = memory.OffsetOp(
-            ptr=base, index=idx, type=memory.Reference(element_type=elem_type)
-        )
+        op = SubscriptOp(base=base, index=idx, type=elem_type)
         yield op
-        # Load the element
-        load = memory.LoadOp(mem=op, ptr=op, type=elem_type)
-        yield load
-        return load
+        return op
 
     def _lower_struct_ref(self, node: c_ast.StructRef) -> Iterator[dgen.Op]:
         """Lower struct member access: s.field or s->field."""
@@ -901,56 +896,6 @@ class Lowering:
         )
         yield op
         return op
-
-    # -----------------------------------------------------------------------
-    # L-value lowering (produces a pointer to the target)
-    # -----------------------------------------------------------------------
-
-    def _lower_lvalue(self, node: c_ast.Node) -> Iterator[dgen.Op]:
-        """Lower an lvalue expression, returning a pointer to the target."""
-        if isinstance(node, c_ast.ID):
-            if node.name in self.scope:
-                return self.scope[node.name]
-            raise LoweringError(f"undefined lvalue: {node.name}")
-
-        if isinstance(node, c_ast.UnaryOp) and node.op == "*":
-            # *ptr — the pointer itself is the lvalue
-            return (yield from self._lower_expr(node.expr))
-
-        if isinstance(node, c_ast.ArrayRef):
-            base = yield from self._lower_expr(node.name)
-            idx = yield from self._lower_expr(node.subscript)
-            elem_type = self._deref_type(base.type)
-            op = memory.OffsetOp(
-                ptr=base, index=idx, type=memory.Reference(element_type=elem_type)
-            )
-            yield op
-            return op
-
-        if isinstance(node, c_ast.StructRef):
-            base = yield from self._lower_expr(node.name)
-            field_name = node.field.name
-            if node.type == "->":
-                field_type = self.types.get_struct_field_type(
-                    self._deref_type(base.type), field_name
-                )
-                op = PointerMemberAccessOp(
-                    field_name=String().constant(field_name),
-                    base=base,
-                    type=memory.Reference(element_type=field_type),
-                )
-            else:
-                field_type = self.types.get_struct_field_type(base.type, field_name)
-                op = MemberAccessOp(
-                    field_name=String().constant(field_name),
-                    base=base,
-                    type=memory.Reference(element_type=field_type),
-                )
-            yield op
-            return op
-
-        # Fallback: lower as expression
-        return (yield from self._lower_expr(node))
 
     # -----------------------------------------------------------------------
     # Type helpers
