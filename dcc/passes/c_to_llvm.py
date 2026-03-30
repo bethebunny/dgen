@@ -1,17 +1,13 @@
 """Lower C-specific ops to LLVM dialect ops.
 
 Handles ops that have no shared dialect equivalent: modulo, shifts,
-calls, return, struct access, sizeof, do_while, break.
-
-Arithmetic, comparisons, bitwise, and memory ops are handled by
-AlgebraToLLVM and MemoryToLLVM. Ternary uses control_flow.if.
-Logical not uses algebra.equal.
+logical not, calls, return, sizeof, do_while, break, comma.
 """
 
 from __future__ import annotations
 
 import dgen
-from dgen.dialects import llvm
+from dgen.dialects import algebra, llvm
 from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
 from dgen.module import ConstantOp
@@ -20,7 +16,9 @@ from dgen.passes.pass_ import Pass, lowering_for
 from dcc.dialects.c import (
     BreakOp,
     CallOp,
+    CommaOp,
     DoWhileOp,
+    LogicalNotOp,
     ModuloOp,
     ReturnOp,
     ShiftLeftOp,
@@ -33,8 +31,6 @@ class CToLLVM(Pass):
     """Lower C-specific ops that have no shared dialect equivalent."""
 
     allow_unregistered_ops = True
-
-    # --- Modulo, shifts ---
 
     @lowering_for(ModuloOp)
     def lower_modulo(self, op: ModuloOp) -> dgen.Value | None:
@@ -50,19 +46,23 @@ class CToLLVM(Pass):
     def lower_shift_right(self, op: ShiftRightOp) -> dgen.Value | None:
         return llvm.SdivOp(lhs=op.lhs, rhs=op.rhs)  # simplified
 
-    # --- Calls ---
+    @lowering_for(LogicalNotOp)
+    def lower_logical_not(self, op: LogicalNotOp) -> dgen.Value | None:
+        zero = ConstantOp(value=0, type=op.operand.type)
+        eq = algebra.EqualOp(left=op.operand, right=zero, type=op.operand.type)
+        return algebra.CastOp(input=eq, type=op.type)
 
     @lowering_for(CallOp)
     def lower_call(self, op: CallOp) -> dgen.Value | None:
         return llvm.CallOp(callee=op.callee, args=op.arguments, type=op.type)
 
-    # --- Return ---
-
     @lowering_for(ReturnOp)
     def lower_return(self, op: ReturnOp) -> dgen.Value | None:
         return op.value
 
-    # --- Misc ---
+    @lowering_for(CommaOp)
+    def lower_comma(self, op: CommaOp) -> dgen.Value | None:
+        return op.rhs
 
     @lowering_for(SizeofOp)
     def lower_sizeof(self, op: SizeofOp) -> dgen.Value | None:
