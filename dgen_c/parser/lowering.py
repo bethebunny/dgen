@@ -147,19 +147,6 @@ class Lowering:
         # Stats
         self.stats = LoweringStats()
 
-    def _coerce(self, val: dgen.Value, target: dgen.Type) -> Iterator[dgen.Op]:
-        """Insert a cast if *val*'s type doesn't match *target*.
-
-        Handles C implicit conversions: int↔pointer, int↔float,
-        width changes. Yields the cast op if needed, returns the
-        (possibly new) value.
-        """
-        if isinstance(val.type, type(target)):
-            return val
-        cast = algebra.CastOp(input=val, type=target)
-        yield cast
-        return cast
-
     def _mem_for(self, name: str) -> dgen.Value:
         """Get the memory token for a variable (its last store, or its alloca)."""
         return self.var_mem.get(
@@ -362,7 +349,7 @@ class Lowering:
 
         # Initialize if there's an initializer
         if node.init is not None:
-            init_val = yield from self._lower_expr(node.init)
+            init_val = yield from self._lower_expr(node.init, target_type=var_type)
             store = memory.StoreOp(mem=alloca, value=init_val, ptr=alloca)
             yield store
             self.var_mem[node.name] = store
@@ -373,7 +360,8 @@ class Lowering:
         var_name = node.lvalue.name if isinstance(node.lvalue, c_ast.ID) else None
 
         ptr = yield from self._lower_lvalue(node.lvalue)
-        rhs = yield from self._lower_expr(node.rvalue)
+        lvalue_type = self._expr_type(node.lvalue)
+        rhs = yield from self._lower_expr(node.rvalue, target_type=lvalue_type)
 
         if node.op != "=":
             base_op = _COMPOUND_ASSIGN.get(node.op)
@@ -400,8 +388,9 @@ class Lowering:
         if node.expr is None:
             yield ReturnVoidOp()
         else:
-            val = yield from self._lower_expr(node.expr)
-            val = yield from self._coerce(val, self.current_ret_type)
+            val = yield from self._lower_expr(
+                node.expr, target_type=self.current_ret_type
+            )
             yield ReturnValueOp(value=val)
 
     def _lower_if(self, node: c_ast.If) -> Iterator[dgen.Op]:
@@ -503,16 +492,18 @@ class Lowering:
     # Expressions
     # -----------------------------------------------------------------------
 
-    def _lower_expr(self, node: c_ast.Node) -> Iterator[dgen.Op]:
+    def _lower_expr(
+        self, node: c_ast.Node, target_type: dgen.Type | None = None
+    ) -> Iterator[dgen.Op]:
         """Lower an expression, yielding ops and returning the result Value.
 
-        This is a generator that yields intermediate ops and returns
-        (via StopIteration.value) the final dgen.Value for the expression.
+        *target_type* is the type the caller expects (e.g. function return
+        type, variable type). Constants use it to emit the right type directly.
         """
         self.stats.expressions += 1
 
         if isinstance(node, c_ast.Constant):
-            return (yield from self._lower_constant(node))
+            return (yield from self._lower_constant(node, target_type))
 
         if isinstance(node, c_ast.ID):
             return (yield from self._lower_id(node))
@@ -571,8 +562,14 @@ class Lowering:
         yield op
         return op
 
-    def _lower_constant(self, node: c_ast.Constant) -> Iterator[dgen.Op]:
-        """Lower a literal constant."""
+    def _lower_constant(
+        self, node: c_ast.Constant, target_type: dgen.Type | None = None
+    ) -> Iterator[dgen.Op]:
+        """Lower a literal constant.
+
+        If *target_type* is provided, the constant is emitted with that type
+        (C implicit conversion). Otherwise the type is inferred from the literal.
+        """
         if node.type == "int":
             s = node.value.rstrip("uUlL")
             if s.startswith(("0x", "0X")):
@@ -581,7 +578,15 @@ class Lowering:
                 val = int(s, 8)
             else:
                 val = int(s)
-            # Determine type from suffix
+            # Use target type for numeric conversions (not pointer types —
+            # int 0 as a null pointer needs special handling in codegen)
+            if target_type is not None and not isinstance(
+                target_type, memory.Reference
+            ):
+                op = ConstantOp(value=val, type=target_type)
+                yield op
+                return op
+            # Otherwise infer from suffix
             suffix = node.value[len(s) :]
             if "ll" in suffix.lower() or "LL" in suffix:
                 ty = c_int(64, signed="u" not in suffix.lower())
