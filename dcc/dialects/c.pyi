@@ -24,26 +24,21 @@ class CUnion(Type):
     field_types: Value[String]
 
 @dataclass(eq=False, kw_only=True)
-class ModOp(Op):
+class ModuloOp(Op):
     lhs: Value
     rhs: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class ShlOp(Op):
+class ShiftLeftOp(Op):
     lhs: Value
     rhs: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class ShrOp(Op):
+class ShiftRightOp(Op):
     lhs: Value
     rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class LognotOp(Op):
-    operand: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
@@ -59,23 +54,13 @@ class CallOp(Op):
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class CallIndirectOp(Op):
-    callee: Value
-    arguments: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class ReturnVoidOp(Op):
-    type: Type = Nil()
-
-@dataclass(eq=False, kw_only=True)
-class ReturnValueOp(Op):
+class ReturnOp(Op):
     value: Value
     type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class DoWhileOp(Op):
-    init: Value
+    initial: Value
     type: Type = Nil()
     body: Block
     condition: Block
@@ -116,11 +101,4 @@ class SizeofOp(Op):
 class CommaOp(Op):
     lhs: Value
     rhs: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class TernaryOp(Op):
-    condition: Value
-    true_val: Value
-    false_val: Value
     type: Type

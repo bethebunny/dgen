@@ -21,16 +21,13 @@ from dcc.dialects.c import (
     BreakOp,
     CallOp,
     ContinueOp,
-    LognotOp,
-    ModOp,
-    ReturnValueOp,
-    ReturnVoidOp,
-    ShlOp,
-    ShrOp,
+    ModuloOp,
+    ReturnOp,
+    ShiftLeftOp,
+    ShiftRightOp,
     SizeofOp,
     StructMemberOp,
     StructPtrMemberOp,
-    TernaryOp,
 )
 from dcc.parser.type_resolver import TypeResolver
 
@@ -61,12 +58,12 @@ _BINOP_MAP: dict[str, type[dgen.Op]] = {
     "-": algebra.SubtractOp,
     "*": algebra.MultiplyOp,
     "/": algebra.DivideOp,
-    "%": ModOp,
+    "%": ModuloOp,
     "&": algebra.MeetOp,
     "|": algebra.JoinOp,
     "^": algebra.SymmetricDifferenceOp,
-    "<<": ShlOp,
-    ">>": ShrOp,
+    "<<": ShiftLeftOp,
+    ">>": ShiftRightOp,
     "==": algebra.EqualOp,
     "!=": algebra.NotEqualOp,
     "<": algebra.LessThanOp,
@@ -391,12 +388,14 @@ class Lowering:
     def _lower_return(self, node: c_ast.Return) -> Iterator[dgen.Op]:
         """Lower a return statement."""
         if node.expr is None:
-            yield ReturnVoidOp()
+            nil = ConstantOp(value=None, type=Nil())
+            yield nil
+            yield ReturnOp(value=nil)
         else:
             val = yield from self._lower_expr(
                 node.expr, target_type=self.current_ret_type
             )
-            yield ReturnValueOp(value=val)
+            yield ReturnOp(value=val)
 
     def _lower_if(self, node: c_ast.If) -> Iterator[dgen.Op]:
         """Lower an if statement using control_flow.IfOp."""
@@ -783,9 +782,13 @@ class Lowering:
             return op
 
         if node.op == "!":
-            op = LognotOp(operand=inner, type=c_int(32))
-            yield op
-            return op
+            zero = ConstantOp(value=0, type=inner.type)
+            yield zero
+            eq = algebra.EqualOp(left=inner, right=zero, type=inner.type)
+            yield eq
+            cast = algebra.CastOp(input=eq, type=c_int(32))
+            yield cast
+            return cast
 
         if node.op == "+":
             return inner
@@ -901,13 +904,22 @@ class Lowering:
         return load
 
     def _lower_ternary(self, node: c_ast.TernaryOp) -> Iterator[dgen.Op]:
-        """Lower a ternary expression: cond ? a : b."""
+        """Lower a ternary expression: cond ? a : b → control_flow.if."""
         cond = yield from self._lower_expr(node.cond)
-        true_val = yield from self._lower_expr(node.iftrue)
-        false_val = yield from self._lower_expr(node.iffalse)
+        true_ops: list[dgen.Op] = list(self._lower_expr(node.iftrue))
+        true_val: dgen.Value = true_ops[-1] if true_ops else dgen.Value(type=Nil())
+        false_ops: list[dgen.Op] = list(self._lower_expr(node.iffalse))
+        false_val: dgen.Value = false_ops[-1] if false_ops else dgen.Value(type=Nil())
         result_type = self._promote_types(true_val.type, false_val.type)
-        op = TernaryOp(
-            condition=cond, true_val=true_val, false_val=false_val, type=result_type
+        empty = pack([])
+        yield empty
+        op = IfOp(
+            condition=cond,
+            then_arguments=empty,
+            else_arguments=empty,
+            type=result_type,
+            then_body=_closed_block(true_val, local_ops=true_ops),
+            else_body=_closed_block(false_val, local_ops=false_ops),
         )
         yield op
         return op

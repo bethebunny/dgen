@@ -10,20 +10,19 @@ type CStruct<tag_name: String, field_names: String, field_types: String>:
 type CUnion<tag_name: String, field_names: String, field_types: String>:
     data: Index
 
-# --- C-specific ops (no shared dialect equivalent) ---
+# --- C-specific ops ---
+# Arithmetic, comparisons, bitwise, memory, and casts use shared dialects.
+# control_flow.if replaces ternary. algebra.equal replaces logical_not.
 
-op mod(lhs, rhs) -> Type
-op shl(lhs, rhs) -> Type
-op shr(lhs, rhs) -> Type
-op lognot(operand) -> Type
+op modulo(lhs, rhs) -> Type
+op shift_left(lhs, rhs) -> Type
+op shift_right(lhs, rhs) -> Type
 op gep<field_index: Index>(base) -> Type
 
 op call<callee: String>(arguments: Span) -> Type
-op call_indirect(callee, arguments: Span) -> Type
-op return_void() -> Nil
-op return_value(value) -> Nil
+op return(value) -> Nil
 
-op do_while(init: Span) -> Nil:
+op do_while(initial: Span) -> Nil:
     block body
     block condition
 op switch<case_values: Span<Index>>(selector) -> Nil:
@@ -36,4 +35,3 @@ op struct_ptr_member<field_name: String>(base) -> Type
 
 op sizeof<target_type: Type>() -> Type
 op comma(lhs, rhs) -> Type
-op ternary(condition, true_val, false_val) -> Type
