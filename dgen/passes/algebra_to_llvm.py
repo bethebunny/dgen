@@ -9,7 +9,8 @@ from __future__ import annotations
 import dgen
 from dgen.dialects import algebra, llvm
 from dgen.dialects.builtin import String
-from dgen.dialects.number import Float64
+from dgen.dialects.memory import Reference
+from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
 from dgen.passes.pass_ import Pass, lowering_for
 
 
@@ -120,14 +121,38 @@ class AlgebraToLLVM(Pass):
 
     @lowering_for(algebra.CastOp)
     def lower_cast(self, op: algebra.CastOp) -> dgen.Value:
-        # i1 → i64: comparison widening
+        src = op.input.type
+        dst = op.type
+
+        # i1 → integer: comparison widening (zero-extend)
         if isinstance(op.input, (llvm.IcmpOp, llvm.FcmpOp)):
             return llvm.ZextOp(input=op.input)
-        # int → ptr: null pointer (constant 0 cast to pointer type)
-        from dgen.dialects.memory import Reference
 
-        if isinstance(op.type, Reference) and isinstance(
-            op.input, dgen.module.ConstantOp
-        ):
+        # int → ptr: null pointer constant
+        if isinstance(dst, Reference) and isinstance(op.input, dgen.module.ConstantOp):
             return dgen.module.ConstantOp(value=0, type=llvm.Ptr())
+
+        # ptr → ptr: passthrough (different pointee types)
+        if isinstance(src, Reference) and isinstance(dst, Reference):
+            return op.input
+
+        # int → float / float → int: passthrough at LLVM level
+        # (both map to 64-bit register-passable values)
+        if _is_float_type(src) != _is_float_type(dst):
+            return op.input
+
+        # int → int (different widths/signedness): passthrough
+        # (all integers use the same i64 layout currently)
+        if _is_int_type(src) and _is_int_type(dst):
+            return op.input
+
+        # Default: passthrough
         return op.input
+
+
+def _is_float_type(ty: dgen.Type) -> bool:
+    return isinstance(ty, Float64)
+
+
+def _is_int_type(ty: dgen.Type) -> bool:
+    return isinstance(ty, (SignedInteger, UnsignedInteger))

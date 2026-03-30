@@ -25,6 +25,7 @@ from dgen.module import ConstantOp, Module, pack
 from dgen.dialects import function
 
 from dcc.dialects import c_int
+from dcc.dialects.c import Unresolved
 from dcc.parser.c_literals import parse_c_char, parse_c_int
 from dcc.dialects.c import (
     AddressOfOp,
@@ -127,7 +128,15 @@ _C_BINOPS: dict[str, type[dgen.Op]] = {
 
 _ALL_BINOPS = {**_ALGEBRA, **_C_BINOPS}
 
-_COMPARISONS = {"==", "!=", "<", "<=", ">", ">="}
+# pycparser reports integer constant types with these names
+_INT_CONSTANT_TYPES = {
+    "int",
+    "long int",
+    "unsigned int",
+    "long long int",
+    "unsigned long int",
+    "unsigned long long int",
+}
 
 _COMPOUND_OPS = {
     "+=": "+",
@@ -162,7 +171,9 @@ def _make_unary(op: str, inner: dgen.Value) -> dgen.Op:
     if entry is None:
         raise LoweringError(f"unsupported unary operator: {op}")
     cls, field = entry
-    return cls(**{field: inner, "type": inner.type if field == "input" else c_int(32)})
+    return cls(
+        **{field: inner, "type": inner.type if field == "input" else Unresolved()}
+    )
 
 
 def _binop(cls: type[dgen.Op], a: dgen.Value, b: dgen.Value, ty: dgen.Type) -> dgen.Op:
@@ -551,13 +562,13 @@ class Parser:
     def _constant(
         self, node: c_ast.Constant, target_type: dgen.Type | None = None
     ) -> Iterator[dgen.Op]:
-        if node.type == "int":
+        if node.type in _INT_CONSTANT_TYPES:
             val = parse_c_int(node.value)
             ty = target_type or self._int_type_from_suffix(node.value)
             op = ConstantOp(value=val, type=ty)
             yield op
             return op
-        if node.type in ("float", "double"):
+        if node.type in ("float", "double", "long double"):
             op = ConstantOp(value=float(node.value.rstrip("fFlL")), type=Float64())
             yield op
             return op
@@ -602,15 +613,8 @@ class Parser:
         cls = _ALL_BINOPS.get(node.op)
         if cls is None:
             raise LoweringError(f"unsupported binary operator: {node.op}")
-        ty = self._promote(left.type, right.type)
-        op = _binop(cls, left, right, ty)
+        op = _binop(cls, left, right, Unresolved())
         yield op
-        # TODO: move to an implicit-cast pass. C comparisons return int,
-        # but algebra comparisons lower to i1. Cast to widen.
-        if node.op in _COMPARISONS:
-            cast = algebra.CastOp(input=op, type=c_int(32))
-            yield cast
-            return cast
         return op
 
     def _unary(self, node: c_ast.UnaryOp, scope: Scope) -> Iterator[dgen.Op]:
@@ -691,15 +695,6 @@ class Parser:
             if isinstance(elem, dgen.Type):
                 return elem
         raise LoweringError(f"cannot dereference non-pointer type: {ty}")
-
-    def _promote(self, a: dgen.Type, b: dgen.Type) -> dgen.Type:
-        if isinstance(a, Float64) or isinstance(b, Float64):
-            return Float64()
-        if isinstance(a, Reference):
-            return a
-        if isinstance(b, Reference):
-            return b
-        return a
 
 
 # ---------------------------------------------------------------------------

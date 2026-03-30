@@ -11,6 +11,9 @@ from dgen.dialects.builtin import Nil, Span, String
 c = Dialect("c")
 
 @dataclass(frozen=True, eq=False)
+class Unresolved(Type): ...
+
+@dataclass(frozen=True, eq=False)
 class CStruct(Type):
     tag_name: Value[String]
     field_names: Value[String]

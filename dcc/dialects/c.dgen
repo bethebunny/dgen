@@ -2,6 +2,9 @@ from builtin import Index, Nil, String, Span
 
 # --- C-specific types ---
 
+type Unresolved:
+    data: Nil
+
 type CStruct<tag_name: String, field_names: String, field_types: String>:
     data: Index
 

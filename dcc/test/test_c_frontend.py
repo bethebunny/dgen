@@ -24,11 +24,13 @@ from dcc.parser.lowering import lower
 from dcc.parser.type_resolver import TypeResolver
 from dcc.passes.c_to_llvm import CToLLVM
 from dcc.passes.c_to_memory import CToMemory
+from dcc.passes.implicit_conversion import ImplicitConversion
 
 TESTDATA = Path(__file__).parent / "testdata"
 
 _c_compiler = Compiler(
-    [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM()], IdentityPass()
+    [ImplicitConversion(), CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM()],
+    IdentityPass(),
 )
 
 _SQLITE3_URL = (
@@ -322,6 +324,28 @@ class TestEndToEnd:
 
 
 # ---------------------------------------------------------------------------
+# Implicit conversion: mixed-type tests
+# ---------------------------------------------------------------------------
+
+
+class TestImplicitConversion:
+    """Verify implicit conversions produce correct results."""
+
+    def test_int_plus_constant_comparison(self) -> None:
+        """Comparison result (i1) used in arithmetic (i32)."""
+        assert run_c("int f(int x) { return (x > 0) + 1; }", 5) == 2
+        assert run_c("int f(int x) { return (x > 0) + 1; }", -1) == 1
+
+    def test_mixed_width_constant(self) -> None:
+        """Integer constant with suffix in expression."""
+        assert run_c("int f(int x) { return x + 1L; }", 5) == 6
+
+    def test_negation_preserves_type(self) -> None:
+        """Unary negation keeps operand type."""
+        assert run_c("int f(int x) { return -x + 10; }", 3) == 7
+
+
+# ---------------------------------------------------------------------------
 # Lowering (verify C constructs lower without crashing)
 # ---------------------------------------------------------------------------
 
@@ -395,6 +419,17 @@ class TestLowering:
         """)
         module, _ = lower(ast)
         assert len(module.functions) == 2
+
+    def test_mixed_types(self) -> None:
+        """Mixed integer types lower through the implicit conversion pass."""
+        ast = parse_c_string("""
+            int f(unsigned int a, long b, char c) {
+                return a + b + c;
+            }
+        """)
+        module, _ = lower(ast)
+        module = _c_compiler.run(module)
+        assert len(module.functions) == 1
 
     def test_goto_label(self) -> None:
         ast = parse_c_string("""
@@ -553,6 +588,7 @@ class TestSqlite3:
         module, _ = lower(sqlite3_ast)
         pipeline = Compiler(
             [
+                ImplicitConversion(),
                 CToMemory(),
                 CToLLVM(),
                 AlgebraToLLVM(),
