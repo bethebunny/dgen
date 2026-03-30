@@ -486,6 +486,7 @@ class TestScale:
         assert stats.skipped_functions == 0
         assert len(module.functions) == 1500
 
+    @pytest.mark.slow
     def test_5000_functions(self) -> None:
         source = _generate_sqlite_scale_c(5000)
         t0 = time.perf_counter()
@@ -503,6 +504,7 @@ class TestScale:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 class TestSqlite3:
     """Parse and lower the actual sqlite3.c amalgamation."""
 

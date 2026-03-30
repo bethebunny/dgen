@@ -5,6 +5,10 @@ extend-select = ["ANN"]
 "toy/test/**" = ["ANN"]
 "test/**" = ["ANN"]
 
+[tool.pytest.ini_options]
+markers = ["slow: marks tests as slow (deselected by default, run with --slow)"]
+addopts = "-m 'not slow'"
+
 [project]
 name = "dgen"
 version = "0.1.0"
