@@ -885,32 +885,41 @@ class Lowering:
         return load
 
     def _lower_struct_ref(self, node: c_ast.StructRef) -> Iterator[dgen.Op]:
-        """Lower struct member access: s.field or s->field."""
+        """Lower struct member access: s.field or s->field.
+
+        p->field = GEP (get pointer to field) + load (read field value).
+        s.field  = same, but base is already a struct value.
+        """
         base = yield from self._lower_expr(node.name)
         field_name = node.field.name
 
         if node.type == "->":
-            # Pointer dereference + member access
             field_type = self.types.get_struct_field_type(
                 self._deref_type(base.type), field_name
             )
-            op = StructPtrMemberOp(
+        else:
+            field_type = self.types.get_struct_field_type(base.type, field_name)
+
+        # GEP to get pointer to the field
+        field_ref_type = memory.Reference(element_type=field_type)
+        if node.type == "->":
+            gep = StructPtrMemberOp(
                 field_name=String().constant(field_name),
                 base=base,
-                type=field_type,
+                type=field_ref_type,
             )
-            yield op
-            return op
+        else:
+            gep = StructMemberOp(
+                field_name=String().constant(field_name),
+                base=base,
+                type=field_ref_type,
+            )
+        yield gep
 
-        # Direct member access
-        field_type = self.types.get_struct_field_type(base.type, field_name)
-        op = StructMemberOp(
-            field_name=String().constant(field_name),
-            base=base,
-            type=field_type,
-        )
-        yield op
-        return op
+        # Load the field value
+        load = memory.LoadOp(mem=gep, ptr=gep, type=field_type)
+        yield load
+        return load
 
     def _lower_ternary(self, node: c_ast.TernaryOp) -> Iterator[dgen.Op]:
         """Lower a ternary expression: cond ? a : b."""

@@ -585,5 +585,5 @@ class TestSqlite3:
         sys.setrecursionlimit(old_limit)
 
         assert emitted >= 2500, f"emitted regressed: {emitted}\n{report}"
-        assert parsed >= 925, f"parsed regressed: {parsed}\n{report}"
-        assert verified >= 925, f"verified regressed: {verified}\n{report}"
+        assert parsed >= 1000, f"parsed regressed: {parsed}\n{report}"
+        assert verified >= 1000, f"verified regressed: {verified}\n{report}"
