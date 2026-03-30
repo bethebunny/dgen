@@ -43,6 +43,14 @@ class AssignOp(Op):
     type: Type
 
 @dataclass(eq=False, kw_only=True)
+class CompoundAssignOp(Op):
+    variable_name: Value[String]
+    operator: Value[String]
+    target: Value
+    operand: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
 class PreIncrementOp(Op):
     variable_name: Value[String]
     target: Value
@@ -122,6 +130,19 @@ class ShiftRightOp(Op):
     lhs: Value
     rhs: Value
     type: Type
+
+@dataclass(eq=False, kw_only=True)
+class LogicalNotOp(Op):
+    operand: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class ForLoopOp(Op):
+    type: Type = Nil()
+    initializer: Block
+    condition: Block
+    update: Block
+    body: Block
 
 @dataclass(eq=False, kw_only=True)
 class DoWhileOp(Op):

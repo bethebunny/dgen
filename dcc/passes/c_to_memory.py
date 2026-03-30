@@ -24,6 +24,7 @@ from dgen.passes.pass_ import Pass, lowering_for
 from dcc.dialects.c import (
     AddressOfOp,
     AssignOp,
+    CompoundAssignOp,
     DereferenceOp,
     MemberAccessOp,
     PointerMemberAccessOp,
@@ -35,6 +36,22 @@ from dcc.dialects.c import (
     SubscriptOp,
     VariableDeclarationOp,
 )
+
+
+from dcc.dialects.c import ModuloOp, ShiftLeftOp, ShiftRightOp
+
+_BINOP_TABLE: dict[str, type[dgen.Op]] = {
+    "+": algebra.AddOp,
+    "-": algebra.SubtractOp,
+    "*": algebra.MultiplyOp,
+    "/": algebra.DivideOp,
+    "%": ModuloOp,
+    "&": algebra.MeetOp,
+    "|": algebra.JoinOp,
+    "^": algebra.SymmetricDifferenceOp,
+    "<<": ShiftLeftOp,
+    ">>": ShiftRightOp,
+}
 
 
 def _variable_name(op: dgen.Op) -> str:
@@ -106,6 +123,31 @@ class CToMemory(Pass):
             return op.value
         mem = self._get_mem(name)
         store = memory.StoreOp(mem=mem, value=op.value, ptr=alloca)
+        self._mem[name] = store
+        return store
+
+    # --- Compound assign ---
+
+    @lowering_for(CompoundAssignOp)
+    def lower_compound_assign(self, op: CompoundAssignOp) -> dgen.Value | None:
+        from dgen.module import string_value
+
+        name = _variable_name(op)
+        alloca = self._alloca.get(name)
+        if alloca is None:
+            return op.operand
+        mem = self._get_mem(name)
+        elem_type = op.type
+        load = memory.LoadOp(mem=mem, ptr=alloca, type=elem_type)
+        operator = string_value(op.operator)
+        binop_cls = _BINOP_TABLE.get(operator)
+        if binop_cls is None:
+            return op.operand
+        if "left" in binop_cls.__dataclass_fields__:
+            result = binop_cls(left=load, right=op.operand, type=elem_type)
+        else:
+            result = binop_cls(lhs=load, rhs=op.operand, type=elem_type)
+        store = memory.StoreOp(mem=load, value=result, ptr=alloca)
         self._mem[name] = store
         return store
 
