@@ -54,3 +54,8 @@
 
 ## Misc
 - test_peano's `test_call_jit` _should not_ call the jit, let's verify that it doesn't and put it somewhere more sensible
+
+## C compiler requests
+- Add `mod`, `shift_left`, `shift_right` to the algebra dialect — these are universal integer operations, not C-specific. Every language with integers needs them; currently the C frontend keeps a separate pass just for three ops.
+- Module-level declarations: global variables (`module.global_variable`) and external function declarations (`module.extern`). The C frontend can't reference file-scope variables or forward-declare functions. 1644 of 2569 sqlite3 functions skip because they reference globals.
+- Make `transitive_dependencies` iterative (explicit stack instead of recursion). Memory token chains create O(n)-depth recursion for n memory ops in a function. Python's default recursion limit (1000) is too shallow for large functions; the C frontend needs `sys.setrecursionlimit(50000)` for sqlite3.
