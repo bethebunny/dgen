@@ -7,8 +7,8 @@ from pathlib import Path
 
 import click
 
-from dgen_c.parser.c_parser import parse_c_file
-from dgen_c.parser.lowering import lower
+from dcc.parser.c_parser import parse_c_file
+from dcc.parser.lowering import lower
 
 
 @click.command()

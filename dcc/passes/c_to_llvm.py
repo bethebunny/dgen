@@ -15,7 +15,7 @@ from dgen.dialects.index import Index
 from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
 
-from dgen_c.dialects.c import (
+from dcc.dialects.c import (
     BreakOp,
     CallIndirectOp,
     CallOp,
