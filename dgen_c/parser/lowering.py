@@ -675,6 +675,17 @@ class Lowering:
         # Unknown — return a named placeholder value
         return dgen.Value(name=node.name, type=c_int(64))
 
+    @staticmethod
+    def _match_ptr_int(
+        lhs: dgen.Value, rhs: dgen.Value
+    ) -> tuple[dgen.Value, dgen.Value]:
+        """If one operand is a pointer and the other is int 0, promote to null."""
+        if isinstance(lhs.type, memory.Reference) and isinstance(rhs, ConstantOp):
+            return lhs, ConstantOp(value=0, type=lhs.type)
+        if isinstance(rhs.type, memory.Reference) and isinstance(lhs, ConstantOp):
+            return ConstantOp(value=0, type=rhs.type), rhs
+        return lhs, rhs
+
     _COMPARISON_OPS: set[str] = {"==", "!=", "<", "<=", ">", ">="}
 
     def _lower_binop(self, node: c_ast.BinaryOp) -> Iterator[dgen.Op]:
@@ -685,6 +696,10 @@ class Lowering:
         op_cls = _BINOP_MAP.get(node.op)
         if op_cls is None:
             return lhs
+
+        # Implicit pointer/int conversion: if one side is a pointer and the
+        # other is integer 0, promote the 0 to a null pointer constant.
+        lhs, rhs = self._match_ptr_int(lhs, rhs)
 
         result_type = self._promote_types(lhs.type, rhs.type)
         op = _binop(op_cls, lhs, rhs, result_type)
