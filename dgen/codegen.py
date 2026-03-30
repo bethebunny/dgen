@@ -599,7 +599,8 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         elif isinstance(op, llvm.FnegOp):
             yield f"  %{name} = fneg double {bare_ref(op.input)}"
         elif isinstance(op, llvm.IcmpOp):
-            yield f"  %{name} = icmp {string_value(op.pred)} i64 {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
+            cmp_type = types.get(op.lhs, "i64")
+            yield f"  %{name} = icmp {string_value(op.pred)} {cmp_type} {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(op, llvm.FcmpOp):
             yield f"  %{name} = fcmp {string_value(op.pred)} double {bare_ref(op.lhs)}, {bare_ref(op.rhs)}"
         elif isinstance(

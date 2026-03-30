@@ -661,4 +661,4 @@ class TestSqlite3:
 
         # Ratchets — raise as we fix things
         assert emitted >= total - 20, f"emitted regressed: {emitted}/{total}\n{report}"
-        assert verified >= 400, f"verified regressed: {verified}\n{report}"
+        assert verified >= 440, f"verified regressed: {verified}\n{report}"
