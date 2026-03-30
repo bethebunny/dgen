@@ -497,8 +497,10 @@ class Lowering:
     ) -> Iterator[dgen.Op]:
         """Lower an expression, yielding ops and returning the result Value.
 
-        *target_type* is the type the caller expects (e.g. function return
-        type, variable type). Constants use it to emit the right type directly.
+        *target_type* flows to literal constants only — it tells a bare `0`
+        or `1` what type to take from context (e.g. `double x = 0`).
+        Non-literal expressions ignore it; any needed casts are a separate
+        lowering pass concern.
         """
         self.stats.expressions += 1
 
