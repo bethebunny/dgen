@@ -49,4 +49,3 @@ class OffsetOp(Op):
     ptr: Value
     index: Value
     type: Type
-
