@@ -149,6 +149,21 @@ _INCREMENTS = {
     "p--": PostDecrementOp,
 }
 
+# Unary ops that take an evaluated inner operand
+_UNARY_OPS: dict[str, tuple[type[dgen.Op], str]] = {
+    "-": (algebra.NegateOp, "input"),
+    "~": (algebra.ComplementOp, "input"),
+    "!": (LogicalNotOp, "operand"),
+}
+
+
+def _make_unary(op: str, inner: dgen.Value) -> dgen.Op:
+    entry = _UNARY_OPS.get(op)
+    if entry is None:
+        raise LoweringError(f"unsupported unary operator: {op}")
+    cls, field = entry
+    return cls(**{field: inner, "type": inner.type if field == "input" else c_int(32)})
+
 
 def _binop(cls: type[dgen.Op], a: dgen.Value, b: dgen.Value, ty: dgen.Type) -> dgen.Op:
     if "left" in cls.__dataclass_fields__:
@@ -630,16 +645,9 @@ class Parser:
             yield op
             return op
         inner = yield from self._expr(node.expr, scope)
-        if node.op == "-":
-            op = algebra.NegateOp(input=inner, type=inner.type)
-        elif node.op == "~":
-            op = algebra.ComplementOp(input=inner, type=inner.type)
-        elif node.op == "!":
-            op = LogicalNotOp(operand=inner, type=c_int(32))
-        elif node.op == "+":
+        if node.op == "+":
             return inner
-        else:
-            raise LoweringError(f"unsupported unary operator: {node.op}")
+        op = _make_unary(node.op, inner)
         yield op
         return op
 
