@@ -123,6 +123,25 @@ _BINOP: dict[type[dgen.Op], str] = {
 # ---------------------------------------------------------------------------
 
 
+def _collect_callees(module: Module) -> set[str]:
+    """Collect all function names called but not defined in the module."""
+    defined = {func.name for func in module.functions}
+    called: set[str] = set()
+
+    def _walk_ops(ops: Sequence[dgen.Op]) -> None:
+        for op in ops:
+            if isinstance(op, llvm.CallOp):
+                callee = string_value(op.callee)
+                if callee not in defined:
+                    called.add(callee)
+            for _, block in op.blocks:
+                _walk_ops(block.ops)
+
+    for func in module.functions:
+        _walk_ops(func.body.ops)
+    return called
+
+
 def emit_llvm_ir(module: Module, *, externs: Sequence[str] = ()) -> tuple[str, list]:
     """Emit LLVM IR text for a module.
 
@@ -130,11 +149,21 @@ def emit_llvm_ir(module: Module, *, externs: Sequence[str] = ()) -> tuple[str, l
     alive for the lifetime of the JIT engine.
     """
     host_buffers: list = []
+    external = _collect_callees(module)
 
     def _lines() -> Iterator[str]:
         yield "declare void @print_memref(ptr, i64)"
         yield "declare ptr @malloc(i64)"
         yield from externs
+        # Declare external callees not already declared or defined
+        already_declared = {"print_memref", "malloc"}
+        for ext in externs:
+            # Extract name from "declare ... @name(...)"
+            if "@" in ext:
+                name_part = ext.split("@", 1)[1].split("(", 1)[0]
+                already_declared.add(name_part)
+        for callee in sorted(external - already_declared):
+            yield f"declare ptr @{callee}(...)"
         yield ""
         for func in module.functions:
             yield from _emit_func(func, host_buffers)
@@ -201,10 +230,22 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             types[val] = "ptr"
         else:
             lt = _llvm_type(mem.layout)
-            raw = mem.unpack()[0]
-            constants[val] = (
-                f"{lt} {format_float(raw) if isinstance(raw, float) else raw}"
-            )
+            if lt == "ptr":
+                # Pointer layout stores a heap address of the backing
+                # buffer, never the semantic value.  Use to_json() to
+                # recover the original value.
+                json_val = mem.to_json()
+                if not json_val and json_val is not False:
+                    constants[val] = "ptr null"
+                else:
+                    host_buffers.append(mem)
+                    constants[val] = f"ptr inttoptr (i64 {mem.address} to ptr)"
+            else:
+                raw = mem.unpack()[0]
+                if isinstance(raw, float):
+                    constants[val] = f"{lt} {format_float(raw)}"
+                else:
+                    constants[val] = f"{lt} {raw}"
             types[val] = lt
 
     def _register(val: dgen.Value) -> None:
@@ -512,10 +553,17 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     # Phase 3: Emit — walk the LinearBlocks and produce LLVM IR text.
     # -----------------------------------------------------------------------
 
+    _emitted_ops: set[int] = set()
+
     def _emit_op(op: dgen.Op) -> Iterator[str]:
         name = tracker.track_name(op)
         if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, control_flow.IfOp)):
             return
+        # Skip ops already emitted in a parent block (shared via captures)
+        op_id = id(op)
+        if op_id in _emitted_ops:
+            return
+        _emitted_ops.add(op_id)
         if isinstance(op, goto.BranchOp):
             yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
         elif isinstance(op, goto.ConditionalBranchOp):

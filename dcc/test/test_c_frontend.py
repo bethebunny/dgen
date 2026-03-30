@@ -619,7 +619,19 @@ class TestSqlite3:
         emitted = 0
         parsed = 0
         verified = 0
-        preamble = "declare void @print_memref(ptr, i64)\ndeclare ptr @malloc(i64)\n\n"
+
+        # Build extern declarations for cross-function calls
+        from dgen.codegen import _collect_callees
+
+        external = _collect_callees(module)
+        preamble_lines = [
+            "declare void @print_memref(ptr, i64)",
+            "declare ptr @malloc(i64)",
+        ]
+        for callee in sorted(external):
+            preamble_lines.append(f"declare ptr @{callee}(...)")
+        preamble = "\n".join(preamble_lines) + "\n\n"
+
         for func in module.functions:
             try:
                 lines = list(_emit_func(func, []))
@@ -649,7 +661,4 @@ class TestSqlite3:
 
         # Ratchets — raise as we fix things
         assert emitted >= total - 20, f"emitted regressed: {emitted}/{total}\n{report}"
-        # Verified dropped from 250→156 when control flow chaining made
-        # IfOps/WhileOps reachable (previously dead code). The codegen
-        # for nested blocks has naming collisions — fix will raise this.
-        assert verified >= 150, f"verified regressed: {verified}\n{report}"
+        assert verified >= 400, f"verified regressed: {verified}\n{report}"
