@@ -632,17 +632,11 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             elif i + 1 < len(blocks):
                 yield f"  br label %{blocks[i + 1].name}"
             else:
-                if llvm_ret == "void":
-                    yield "  ret void"
-                else:
-                    ret_val = typed_ref(f.body.result)
-                    # Fix type mismatch: integer 0 returned as pointer → null
-                    if llvm_ret == "ptr" and ret_val.endswith(" 0"):
-                        ret_val = "ptr null"
-                    # Fix type mismatch: ptr returned as i64
-                    elif llvm_ret == "i64" and ret_val.startswith("ptr "):
-                        ret_val = ret_val  # pass through — codegen limitation
-                    yield f"  ret {ret_val}"
+                yield (
+                    "  ret void"
+                    if llvm_ret == "void"
+                    else f"  ret {typed_ref(f.body.result)}"
+                )
 
     yield "}"
 

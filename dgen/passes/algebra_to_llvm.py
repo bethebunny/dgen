@@ -120,8 +120,14 @@ class AlgebraToLLVM(Pass):
 
     @lowering_for(algebra.CastOp)
     def lower_cast(self, op: algebra.CastOp) -> dgen.Value:
-        # After comparison lowering, input may be IcmpOp/FcmpOp (i1) or
-        # ZextOp. If input is i1 and output is i64, emit zext.
+        # i1 → i64: comparison widening
         if isinstance(op.input, (llvm.IcmpOp, llvm.FcmpOp)):
             return llvm.ZextOp(input=op.input)
+        # int → ptr: null pointer (constant 0 cast to pointer type)
+        from dgen.dialects.memory import Reference
+
+        if isinstance(op.type, Reference) and isinstance(
+            op.input, dgen.module.ConstantOp
+        ):
+            return dgen.module.ConstantOp(value=0, type=llvm.Ptr())
         return op.input

@@ -147,6 +147,19 @@ class Lowering:
         # Stats
         self.stats = LoweringStats()
 
+    def _coerce(self, val: dgen.Value, target: dgen.Type) -> Iterator[dgen.Op]:
+        """Insert a cast if *val*'s type doesn't match *target*.
+
+        Handles C implicit conversions: int↔pointer, int↔float,
+        width changes. Yields the cast op if needed, returns the
+        (possibly new) value.
+        """
+        if isinstance(val.type, type(target)):
+            return val
+        cast = algebra.CastOp(input=val, type=target)
+        yield cast
+        return cast
+
     def _mem_for(self, name: str) -> dgen.Value:
         """Get the memory token for a variable (its last store, or its alloca)."""
         return self.var_mem.get(
@@ -388,11 +401,7 @@ class Lowering:
             yield ReturnVoidOp()
         else:
             val = yield from self._lower_expr(node.expr)
-            # Cast if return value type doesn't match function return type
-            if not isinstance(val.type, type(self.current_ret_type)):
-                cast = algebra.CastOp(input=val, type=self.current_ret_type)
-                yield cast
-                val = cast
+            val = yield from self._coerce(val, self.current_ret_type)
             yield ReturnValueOp(value=val)
 
     def _lower_if(self, node: c_ast.If) -> Iterator[dgen.Op]:
