@@ -1,21 +1,27 @@
-"""Lower pycparser AST to dgen IR using the C dialect."""
+"""Lower pycparser AST to dgen IR using the C dialect.
+
+Thin, mechanical translation. Each pycparser node maps to C-dialect ops.
+No memory ops, no type inference beyond what the C type resolver provides.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 from pycparser import c_ast
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import function
+from dgen.dialects import algebra
 from dgen.dialects.builtin import Nil, String
-from dgen.dialects.function import Function as FunctionType
-from dgen.module import ConstantOp, Module, pack
-
-from dgen.dialects import algebra, memory
 from dgen.dialects.control_flow import IfOp, WhileOp
+from dgen.dialects.function import Function as FunctionType
+from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64
+from dgen.module import ConstantOp, Module, pack
+from dgen.dialects import function
+
 from dcc.dialects import c_int
 from dcc.dialects.c import (
     AddressOfOp,
@@ -47,33 +53,17 @@ class LoweringError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Binary op dispatch — algebra ops use left/right, C ops use lhs/rhs
+# Binary op table
 # ---------------------------------------------------------------------------
 
-
-def _binop(
-    op_cls: type[dgen.Op], a: dgen.Value, b: dgen.Value, ty: dgen.Type
-) -> dgen.Op:
-    """Construct a binary op, handling algebra (left/right) vs C (lhs/rhs)."""
-    if (
-        hasattr(op_cls, "__dataclass_fields__")
-        and "left" in op_cls.__dataclass_fields__
-    ):
-        return op_cls(left=a, right=b, type=ty)
-    return op_cls(lhs=a, rhs=b, type=ty)
-
-
-_BINOP_MAP: dict[str, type[dgen.Op]] = {
+_ALGEBRA_OPS: dict[str, type[dgen.Op]] = {
     "+": algebra.AddOp,
     "-": algebra.SubtractOp,
     "*": algebra.MultiplyOp,
     "/": algebra.DivideOp,
-    "%": ModuloOp,
     "&": algebra.MeetOp,
     "|": algebra.JoinOp,
     "^": algebra.SymmetricDifferenceOp,
-    "<<": ShiftLeftOp,
-    ">>": ShiftRightOp,
     "==": algebra.EqualOp,
     "!=": algebra.NotEqualOp,
     "<": algebra.LessThanOp,
@@ -84,7 +74,14 @@ _BINOP_MAP: dict[str, type[dgen.Op]] = {
     "||": algebra.JoinOp,
 }
 
-# Compound assignment: +=, -=, etc. -> base operator
+_C_OPS: dict[str, type[dgen.Op]] = {
+    "%": ModuloOp,
+    "<<": ShiftLeftOp,
+    ">>": ShiftRightOp,
+}
+
+_COMPARISONS: set[str] = {"==", "!=", "<", "<=", ">", ">="}
+
 _COMPOUND_ASSIGN: dict[str, str] = {
     "+=": "+",
     "-=": "-",
@@ -99,47 +96,69 @@ _COMPOUND_ASSIGN: dict[str, str] = {
 }
 
 
+def _make_binop(
+    op_cls: type[dgen.Op], left: dgen.Value, right: dgen.Value, result_type: dgen.Type
+) -> dgen.Op:
+    """Construct a binary op — algebra uses left/right, C ops use lhs/rhs."""
+    if "left" in op_cls.__dataclass_fields__:
+        return op_cls(left=left, right=right, type=result_type)
+    return op_cls(lhs=left, rhs=right, type=result_type)
+
+
+# ---------------------------------------------------------------------------
+# Block builder
+# ---------------------------------------------------------------------------
+
+
 def _closed_block(
     result: dgen.Value,
     args: list[BlockArgument] | None = None,
     *,
     local_ops: list[dgen.Op] | None = None,
 ) -> dgen.Block:
-    """Build a Block with automatically computed captures.
-
-    *local_ops* is the list of ops yielded during lowering of this block's
-    body. Any value reachable from *result* that is not a local op, not a
-    block arg, and not a Type is declared as a capture.
-    """
+    """Build a Block, computing captures from local_ops."""
     if args is None:
         args = []
     if local_ops is None:
         local_ops = []
-    local_ids: set[int] = {id(op) for op in local_ops}
-    local_ids |= {id(a) for a in args}
-
+    local_ids: set[int] = {id(op) for op in local_ops} | {id(a) for a in args}
     captures: list[dgen.Value] = []
     seen: set[int] = set()
 
     def _maybe_capture(dep: dgen.Value) -> None:
         vid = id(dep)
-        if vid in seen or vid in local_ids:
-            return
-        if isinstance(dep, dgen.Type):
+        if vid in seen or vid in local_ids or isinstance(dep, dgen.Type):
             return
         seen.add(vid)
         captures.append(dep)
 
-    # Check if result itself is external
     if id(result) not in local_ids and not isinstance(result, dgen.Type):
         _maybe_capture(result)
-
-    # Walk all local ops and capture their external dependencies
     for op in local_ops:
         for dep in op.dependencies:
             _maybe_capture(dep)
-
     return dgen.Block(result=result, args=args, captures=captures)
+
+
+# ---------------------------------------------------------------------------
+# Lowering
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LoweringStats:
+    functions: int = 0
+    typedefs: int = 0
+    statements: int = 0
+    expressions: int = 0
+    skipped_functions: int = 0
+
+    def summary(self) -> str:
+        return (
+            f"Functions: {self.functions}, Typedefs: {self.typedefs}, "
+            f"Statements: {self.statements}, Expressions: {self.expressions}, "
+            f"Skipped functions: {self.skipped_functions}"
+        )
 
 
 class Lowering:
@@ -147,283 +166,222 @@ class Lowering:
 
     def __init__(self) -> None:
         self.types = TypeResolver()
-        # Per-function state
         self.scope: dict[str, dgen.Value] = {}
-        # Per-variable memory token: tracks the last store to each variable
-        # Global function declarations for call resolution
         self.func_types: dict[str, dgen.Type] = {}
-        # Track all function ops for the module
+        self.current_return_type: dgen.Type = Nil()
         self.functions: list[function.FunctionOp] = []
-        # Stats
         self.stats = LoweringStats()
 
+    # --- Top level ---
+
     def lower_file(self, ast: c_ast.FileAST) -> Module:
-        """Lower an entire C translation unit to a dgen Module."""
-        # First pass: collect type definitions and function declarations
         for ext in ast.ext:
             if isinstance(ext, c_ast.Typedef):
-                self._process_typedef(ext)
+                self._register_typedef(ext)
             elif isinstance(ext, c_ast.Decl):
                 if isinstance(ext.type, c_ast.FuncDecl):
-                    self._process_func_decl(ext)
+                    self._register_function(ext)
                 elif isinstance(ext.type, (c_ast.Struct, c_ast.Union, c_ast.Enum)):
                     self.types.resolve(ext.type)
-                # Global variable declarations — skip for now
 
-        # Second pass: lower function definitions
         for ext in ast.ext:
             if isinstance(ext, c_ast.FuncDef):
                 self.stats.functions += 1
                 try:
-                    func_op = self._lower_func_def(ext)
+                    self.functions.append(self._lower_function(ext))
                 except LoweringError:
                     self.stats.skipped_functions += 1
-                    continue
-                if func_op is not None:
-                    self.functions.append(func_op)
 
         return Module(ops=list(self.functions))
 
-    # -----------------------------------------------------------------------
-    # Top-level declarations
-    # -----------------------------------------------------------------------
-
-    def _process_typedef(self, node: c_ast.Typedef) -> None:
-        """Register a typedef."""
+    def _register_typedef(self, node: c_ast.Typedef) -> None:
         if node.name is not None:
-            resolved = self.types.resolve(node.type)
-            self.types.register_typedef(node.name, resolved)
+            self.types.register_typedef(node.name, self.types.resolve(node.type))
             self.stats.typedefs += 1
 
-    def _process_func_decl(self, node: c_ast.Decl) -> None:
-        """Register a function declaration (prototype)."""
+    def _register_function(self, node: c_ast.Decl) -> None:
         if node.name is not None:
-            ret_type = self._get_func_return_type(node.type)
-            self.func_types[node.name] = ret_type
+            self.func_types[node.name] = self._return_type(node.type)
 
-    def _get_func_return_type(self, node: c_ast.Node) -> dgen.Type:
-        """Extract the return type from a function declaration."""
+    def _return_type(self, node: c_ast.Node) -> dgen.Type:
         if isinstance(node, c_ast.FuncDecl):
             return self.types.resolve(node.type)
         if isinstance(node, c_ast.PtrDecl):
-            return memory.Reference(element_type=self._get_func_return_type(node.type))
+            return Reference(element_type=self._return_type(node.type))
         return self.types.resolve(node)
 
-    # -----------------------------------------------------------------------
-    # Function definitions
-    # -----------------------------------------------------------------------
+    # --- Functions ---
 
-    def _lower_func_def(self, node: c_ast.FuncDef) -> function.FunctionOp | None:
-        """Lower a function definition to a FunctionOp."""
+    def _lower_function(self, node: c_ast.FuncDef) -> function.FunctionOp:
         self.scope = {}
+        name = node.decl.name
+        return_type = self._return_type(node.decl.type)
+        self.func_types[name] = return_type
+        self.current_return_type = return_type
 
-        func_name = node.decl.name
-        ret_type = self._get_func_return_type(node.decl.type)
-        self.current_ret_type = ret_type
-        self.func_types[func_name] = ret_type
-
-        # Create block args for function parameters
         args: list[BlockArgument] = []
         if isinstance(node.decl.type, c_ast.FuncDecl) and node.decl.type.args:
             for param in node.decl.type.args.params:
                 if isinstance(param, c_ast.EllipsisParam):
                     continue
                 if isinstance(param, c_ast.Decl) and param.name:
-                    param_type = self.types.resolve(param.type)
-                    arg = BlockArgument(name=param.name, type=param_type)
+                    arg = BlockArgument(
+                        name=param.name, type=self.types.resolve(param.type)
+                    )
                     self.scope[param.name] = arg
                     args.append(arg)
 
-        # Lower the body
-        ops: list[dgen.Op] = []
-        if node.body is not None:
-            ops.extend(self._lower_compound(node.body))
-
-        # Determine result
-        is_void = isinstance(ret_type, Nil)
-        if is_void:
-            result_type: dgen.Type = Nil()
-        else:
-            result_type = ret_type
-
-        # Find the block result
-        if ops:
-            block_result: dgen.Value = ops[-1]
-        else:
-            block_result = dgen.Value(type=Nil())
+        ops = list(self._compound(node.body)) if node.body else []
+        result = ops[-1] if ops else dgen.Value(type=Nil())
+        is_void = isinstance(return_type, Nil)
 
         return function.FunctionOp(
-            name=func_name,
-            result=result_type,
-            body=dgen.Block(result=block_result, args=args),
-            type=FunctionType(result=result_type),
+            name=name,
+            result=Nil() if is_void else return_type,
+            body=dgen.Block(result=result, args=args),
+            type=FunctionType(result=Nil() if is_void else return_type),
         )
 
-    # -----------------------------------------------------------------------
-    # Statements
-    # -----------------------------------------------------------------------
+    # --- Statements ---
 
-    def _lower_compound(self, node: c_ast.Compound) -> Iterator[dgen.Op]:
-        """Lower a compound statement (block)."""
+    def _compound(self, node: c_ast.Compound) -> Iterator[dgen.Op]:
         if node.block_items is None:
             return
         for item in node.block_items:
-            yield from self._lower_stmt(item)
+            yield from self._statement(item)
 
-    def _lower_stmt(self, node: c_ast.Node) -> Iterator[dgen.Op]:
-        """Lower a single statement."""
+    def _statement(self, node: c_ast.Node) -> Iterator[dgen.Op]:
         self.stats.statements += 1
 
         if isinstance(node, c_ast.Decl):
-            yield from self._lower_decl(node)
+            yield from self._declaration(node)
         elif isinstance(node, c_ast.Assignment):
-            yield from self._lower_assignment(node)
+            yield from self._assignment(node)
         elif isinstance(node, c_ast.Return):
-            yield from self._lower_return(node)
+            yield from self._return(node)
         elif isinstance(node, c_ast.If):
-            yield from self._lower_if(node)
+            yield from self._if(node)
         elif isinstance(node, c_ast.While):
-            yield from self._lower_while(node)
+            yield from self._while(node)
         elif isinstance(node, c_ast.DoWhile):
-            yield from self._lower_do_while(node)
+            yield from self._do_while(node)
         elif isinstance(node, c_ast.For):
-            yield from self._lower_for(node)
+            yield from self._for(node)
         elif isinstance(node, c_ast.Compound):
-            yield from self._lower_compound(node)
+            yield from self._compound(node)
         elif isinstance(node, c_ast.FuncCall):
-            yield from self._lower_expr(node)
-            # discard result — statement-level call
-        elif isinstance(node, c_ast.UnaryOp):
-            if node.op in ("p++", "p--", "++", "--"):
-                yield from self._lower_expr(node)
+            yield from self._expression(node)
+        elif isinstance(node, c_ast.UnaryOp) and node.op in ("p++", "p--", "++", "--"):
+            yield from self._expression(node)
         elif isinstance(node, c_ast.Goto):
-            # C goto is unstructured control flow. For the prototype,
-            # skip it — the target label's code will still run in sequence.
-            pass
+            pass  # C goto: skip (unstructured control flow)
         elif isinstance(node, c_ast.Label):
-            # Lower the labeled statement directly (skip the label itself).
             if node.stmt is not None:
-                yield from self._lower_stmt(node.stmt)
+                yield from self._statement(node.stmt)
         elif isinstance(node, c_ast.Switch):
-            yield from self._lower_switch(node)
+            yield from self._expression(node.cond)
+            if node.stmt is not None:
+                yield from self._statement(node.stmt)
         elif isinstance(node, c_ast.Break):
             yield BreakOp()
         elif isinstance(node, c_ast.Continue):
             yield ContinueOp()
-        elif isinstance(node, c_ast.EmptyStatement):
-            pass  # no-op
-        elif isinstance(node, c_ast.Typedef):
-            self._process_typedef(node)
-        elif isinstance(node, c_ast.Pragma):
-            pass  # ignore pragmas
         elif isinstance(node, c_ast.Case):
-            # Case labels inside switch — lower stmts
-            if node.stmts is not None:
+            if node.stmts:
                 for s in node.stmts:
-                    yield from self._lower_stmt(s)
+                    yield from self._statement(s)
         elif isinstance(node, c_ast.Default):
-            if node.stmts is not None:
+            if node.stmts:
                 for s in node.stmts:
-                    yield from self._lower_stmt(s)
+                    yield from self._statement(s)
+        elif isinstance(node, c_ast.EmptyStatement):
+            pass
+        elif isinstance(node, c_ast.Typedef):
+            self._register_typedef(node)
+        elif isinstance(node, c_ast.Pragma):
+            pass
+        elif isinstance(node, c_ast.DeclList):
+            for decl in node.decls:
+                yield from self._declaration(decl)
         else:
-            # Try to lower as expression
-            yield from self._lower_expr(node)
+            yield from self._expression(node)
 
-    def _lower_decl(self, node: c_ast.Decl) -> Iterator[dgen.Op]:
-        """Lower a local variable declaration."""
+    def _declaration(self, node: c_ast.Decl) -> Iterator[dgen.Op]:
         if node.name is None:
-            # Anonymous struct/union/enum definition
             if isinstance(node.type, (c_ast.Struct, c_ast.Union, c_ast.Enum)):
                 self.types.resolve(node.type)
             return
-
         var_type = self.types.resolve(node.type)
-
-        # Function declarations inside a function body
         if isinstance(node.type, c_ast.FuncDecl):
-            self.func_types[node.name] = self._get_func_return_type(node.type)
+            self.func_types[node.name] = self._return_type(node.type)
             return
 
-        # Emit initializer (default to 0 if none)
         if node.init is not None:
-            init_val = yield from self._lower_expr(node.init, target_type=var_type)
+            init = yield from self._expression(node.init, target_type=var_type)
         else:
-            init_val = ConstantOp(value=0, type=var_type)
-            yield init_val
+            init = ConstantOp(value=0, type=var_type)
+            yield init
 
         decl = VariableDeclarationOp(
             variable_name=String().constant(node.name),
             variable_type=var_type,
-            initializer=init_val,
+            initializer=init,
             type=var_type,
         )
         yield decl
         self.scope[node.name] = decl
 
-    def _lower_assignment(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
-        """Lower an assignment statement."""
+    def _assignment(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
         if not isinstance(node.lvalue, c_ast.ID):
             raise LoweringError(f"unsupported lvalue: {type(node.lvalue).__name__}")
-        var_name = node.lvalue.name
-        if var_name not in self.scope:
-            raise LoweringError(f"undefined variable: {var_name}")
-
-        target = self.scope[var_name]
-        rhs = yield from self._lower_expr(node.rvalue)
+        name = node.lvalue.name
+        if name not in self.scope:
+            raise LoweringError(f"undefined variable: {name}")
+        target = self.scope[name]
+        rhs = yield from self._expression(node.rvalue)
 
         if node.op != "=":
-            # Compound assignment: read current, apply op, assign result
             base_op = _COMPOUND_ASSIGN.get(node.op)
             if base_op is not None:
                 current = ReadVariableOp(
-                    variable_name=String().constant(var_name),
+                    variable_name=String().constant(name),
                     source=target,
                     type=target.type,
                 )
                 yield current
-                op_cls = _BINOP_MAP.get(base_op)
+                op_cls = _ALGEBRA_OPS.get(base_op) or _C_OPS.get(base_op)
                 if op_cls is not None:
-                    combined = _binop(op_cls, current, rhs, current.type)
-                    yield combined
-                    rhs = combined
+                    rhs = _make_binop(op_cls, current, rhs, current.type)
+                    yield rhs
 
         assign = AssignOp(
-            variable_name=String().constant(var_name),
+            variable_name=String().constant(name),
             target=target,
             value=rhs,
             type=target.type,
         )
         yield assign
-        self.scope[var_name] = assign
+        self.scope[name] = assign
 
-    def _lower_return(self, node: c_ast.Return) -> Iterator[dgen.Op]:
-        """Lower a return statement."""
+    def _return(self, node: c_ast.Return) -> Iterator[dgen.Op]:
         if node.expr is None:
             nil = ConstantOp(value=None, type=Nil())
             yield nil
             yield ReturnOp(value=nil)
         else:
-            val = yield from self._lower_expr(
-                node.expr, target_type=self.current_ret_type
+            val = yield from self._expression(
+                node.expr, target_type=self.current_return_type
             )
             yield ReturnOp(value=val)
 
-    def _lower_if(self, node: c_ast.If) -> Iterator[dgen.Op]:
-        """Lower an if statement using control_flow.IfOp."""
-        cond = yield from self._lower_expr(node.cond)
+    # --- Control flow ---
 
-        # Lower then branch
-        then_ops: list[dgen.Op] = list(self._lower_stmt(node.iftrue))
-        then_result: dgen.Value = then_ops[-1] if then_ops else dgen.Value(type=Nil())
-        then_block = _closed_block(then_result, local_ops=then_ops)
-
-        # Lower else branch
-        else_ops: list[dgen.Op] = []
-        if node.iffalse is not None:
-            else_ops = list(self._lower_stmt(node.iffalse))
-        else_result: dgen.Value = else_ops[-1] if else_ops else dgen.Value(type=Nil())
-        else_block = _closed_block(else_result, local_ops=else_ops)
-
+    def _if(self, node: c_ast.If) -> Iterator[dgen.Op]:
+        cond = yield from self._expression(node.cond)
+        then_ops = list(self._statement(node.iftrue))
+        then_result = then_ops[-1] if then_ops else dgen.Value(type=Nil())
+        else_ops = list(self._statement(node.iffalse)) if node.iffalse else []
+        else_result = else_ops[-1] if else_ops else dgen.Value(type=Nil())
         empty = pack([])
         yield empty
         yield IfOp(
@@ -431,196 +389,165 @@ class Lowering:
             then_arguments=empty,
             else_arguments=empty,
             type=Nil(),
-            then_body=then_block,
-            else_body=else_block,
+            then_body=_closed_block(then_result, local_ops=then_ops),
+            else_body=_closed_block(else_result, local_ops=else_ops),
         )
 
-    def _lower_while(self, node: c_ast.While) -> Iterator[dgen.Op]:
-        """Lower a while loop using control_flow.WhileOp."""
-        # Condition ops go inside the condition block, not the parent
-        cond_ops: list[dgen.Op] = list(self._lower_expr(node.cond))
-        cond: dgen.Value = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
-        body_ops: list[dgen.Op] = list(self._lower_stmt(node.stmt))
-        body_result: dgen.Value = body_ops[-1] if body_ops else dgen.Value(type=Nil())
-        cond_block = _closed_block(cond, local_ops=cond_ops)
-        body_block = _closed_block(body_result, local_ops=body_ops)
-
+    def _while(self, node: c_ast.While) -> Iterator[dgen.Op]:
+        cond_ops = list(self._expression(node.cond))
+        cond = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
+        body_ops = list(self._statement(node.stmt))
+        body_result = body_ops[-1] if body_ops else dgen.Value(type=Nil())
         p = pack([])
         yield p
-        yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
+        yield WhileOp(
+            initial_arguments=p,
+            condition=_closed_block(cond, local_ops=cond_ops),
+            body=_closed_block(body_result, local_ops=body_ops),
+        )
 
-    def _lower_do_while(self, node: c_ast.DoWhile) -> Iterator[dgen.Op]:
-        """Lower a do-while loop."""
-        body_ops: list[dgen.Op] = list(self._lower_stmt(node.stmt))
-        body_result: dgen.Value = body_ops[-1] if body_ops else dgen.Value(type=Nil())
-        cond_ops: list[dgen.Op] = list(self._lower_expr(node.cond))
-        cond: dgen.Value = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
-
-        body_block = _closed_block(body_result, local_ops=body_ops)
-        cond_block = _closed_block(cond, local_ops=cond_ops)
-
-        p = pack([])
-        yield p
+    def _do_while(self, node: c_ast.DoWhile) -> Iterator[dgen.Op]:
+        body_ops = list(self._statement(node.stmt))
+        body_result = body_ops[-1] if body_ops else dgen.Value(type=Nil())
+        cond_ops = list(self._expression(node.cond))
+        cond = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
         from dcc.dialects.c import DoWhileOp
 
-        yield DoWhileOp(init=p, body=body_block, condition=cond_block)
+        p = pack([])
+        yield p
+        yield DoWhileOp(
+            initial=p,
+            body=_closed_block(body_result, local_ops=body_ops),
+            condition=_closed_block(cond, local_ops=cond_ops),
+        )
 
-    def _lower_for(self, node: c_ast.For) -> Iterator[dgen.Op]:
-        """Lower a for loop as init + control_flow.WhileOp."""
-        # Emit init statements
+    def _for(self, node: c_ast.For) -> Iterator[dgen.Op]:
         if node.init is not None:
             if isinstance(node.init, c_ast.DeclList):
                 for decl in node.init.decls:
-                    yield from self._lower_decl(decl)
+                    yield from self._declaration(decl)
             else:
-                yield from self._lower_stmt(node.init)
-
-        # Condition — collected into the condition block, not yielded to parent
+                yield from self._statement(node.init)
         if node.cond is not None:
-            cond_ops: list[dgen.Op] = list(self._lower_expr(node.cond))
-            cond: dgen.Value = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
+            cond_ops = list(self._expression(node.cond))
+            cond = cond_ops[-1] if cond_ops else dgen.Value(type=Nil())
         else:
             cond = ConstantOp(value=1, type=c_int(32))
             cond_ops = [cond]
-        cond_block = _closed_block(cond, local_ops=cond_ops)
-
-        # Body = original body + update
-        body_ops: list[dgen.Op] = list(self._lower_stmt(node.stmt))
+        body_ops = list(self._statement(node.stmt))
         if node.next is not None:
-            body_ops.extend(self._lower_stmt(node.next))
-        body_result: dgen.Value = body_ops[-1] if body_ops else dgen.Value(type=Nil())
-        body_block = _closed_block(body_result, local_ops=body_ops)
-
+            body_ops.extend(self._statement(node.next))
+        body_result = body_ops[-1] if body_ops else dgen.Value(type=Nil())
         p = pack([])
         yield p
-        yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
+        yield WhileOp(
+            initial_arguments=p,
+            condition=_closed_block(cond, local_ops=cond_ops),
+            body=_closed_block(body_result, local_ops=body_ops),
+        )
 
-    def _lower_switch(self, node: c_ast.Switch) -> Iterator[dgen.Op]:
-        """Lower a switch statement (simplified — flatten to if/else chain)."""
-        yield from self._lower_expr(node.cond)
+    # --- Expressions ---
 
-        # Just lower the body — cases become labels effectively
-        if node.stmt is not None:
-            yield from self._lower_stmt(node.stmt)
-
-    # -----------------------------------------------------------------------
-    # Expressions
-    # -----------------------------------------------------------------------
-
-    def _lower_expr(
+    def _expression(
         self, node: c_ast.Node, target_type: dgen.Type | None = None
     ) -> Iterator[dgen.Op]:
-        """Lower an expression, yielding ops and returning the result Value.
-
-        *target_type* flows to literal constants only — it tells a bare `0`
-        or `1` what type to take from context (e.g. `double x = 0`).
-        Non-literal expressions ignore it; any needed casts are a separate
-        lowering pass concern.
-        """
+        """Lower an expression. target_type only affects literal constants."""
         self.stats.expressions += 1
 
         if isinstance(node, c_ast.Constant):
-            return (yield from self._lower_constant(node, target_type))
-
+            return (yield from self._constant(node, target_type))
         if isinstance(node, c_ast.ID):
-            return (yield from self._lower_id(node))
-
+            return (yield from self._identifier(node))
         if isinstance(node, c_ast.BinaryOp):
-            return (yield from self._lower_binop(node))
-
+            return (yield from self._binary(node))
         if isinstance(node, c_ast.UnaryOp):
-            return (yield from self._lower_unaryop(node))
-
+            return (yield from self._unary(node))
         if isinstance(node, c_ast.FuncCall):
-            return (yield from self._lower_func_call(node))
-
+            return (yield from self._call(node))
         if isinstance(node, c_ast.Assignment):
-            return (yield from self._lower_assign_expr(node))
-
+            yield from self._assignment(node)
+            name = node.lvalue.name if isinstance(node.lvalue, c_ast.ID) else None
+            if name and name in self.scope:
+                val = self.scope[name]
+                read = ReadVariableOp(
+                    variable_name=String().constant(name), source=val, type=val.type
+                )
+                yield read
+                return read
+            raise LoweringError("assign-as-expression on non-variable")
         if isinstance(node, c_ast.Cast):
-            return (yield from self._lower_cast(node))
-
+            inner = yield from self._expression(node.expr)
+            target = self.types.resolve(node.to_type)
+            op = algebra.CastOp(input=inner, type=target)
+            yield op
+            return op
         if isinstance(node, c_ast.ArrayRef):
-            return (yield from self._lower_array_ref(node))
-
+            base = yield from self._expression(node.name)
+            idx = yield from self._expression(node.subscript)
+            pointee = self._pointee_type(base.type)
+            op = SubscriptOp(base=base, index=idx, type=pointee)
+            yield op
+            return op
         if isinstance(node, c_ast.StructRef):
-            return (yield from self._lower_struct_ref(node))
-
+            return (yield from self._struct_access(node))
         if isinstance(node, c_ast.TernaryOp):
-            return (yield from self._lower_ternary(node))
-
+            cond = yield from self._expression(node.cond)
+            true_ops = list(self._expression(node.iftrue))
+            true_val = true_ops[-1] if true_ops else dgen.Value(type=Nil())
+            false_ops = list(self._expression(node.iffalse))
+            false_val = false_ops[-1] if false_ops else dgen.Value(type=Nil())
+            empty = pack([])
+            yield empty
+            op = IfOp(
+                condition=cond,
+                then_arguments=empty,
+                else_arguments=empty,
+                type=true_val.type,
+                then_body=_closed_block(true_val, local_ops=true_ops),
+                else_body=_closed_block(false_val, local_ops=false_ops),
+            )
+            yield op
+            return op
         if isinstance(node, c_ast.ExprList):
-            # Comma expression — evaluate all, return last
-            result: dgen.Value = dgen.Value(type=Nil())
+            result = dgen.Value(type=Nil())
             for expr in node.exprs:
-                result = yield from self._lower_expr(expr)
+                result = yield from self._expression(expr)
             return result
-
-        if isinstance(node, c_ast.Compound):
-            # GCC statement expression — lower body, return last
-            ops = list(self._lower_compound(node))
-            return ops[-1] if ops else dgen.Value(type=Nil())
-
         if isinstance(node, c_ast.CompoundLiteral):
-            # (type){init} — lower init expression
-            return (yield from self._lower_expr(node.init))
-
+            return (yield from self._expression(node.init))
         if isinstance(node, c_ast.InitList):
             if node.exprs:
-                return (yield from self._lower_expr(node.exprs[0]))
+                return (yield from self._expression(node.exprs[0]))
             raise LoweringError("empty initializer list")
 
         raise LoweringError(f"unsupported expression: {type(node).__name__}")
 
-    def _lower_constant(
+    # --- Expression helpers ---
+
+    def _constant(
         self, node: c_ast.Constant, target_type: dgen.Type | None = None
     ) -> Iterator[dgen.Op]:
-        """Lower a literal constant.
-
-        If *target_type* is provided, the constant is emitted with that type
-        (C implicit conversion). Otherwise the type is inferred from the literal.
-        """
         if node.type == "int":
             s = node.value.rstrip("uUlL")
-            if s.startswith(("0x", "0X")):
-                val = int(s, 16)
-            elif len(s) > 1 and s.startswith("0") and s[1:].isdigit():
-                val = int(s, 8)
-            else:
-                val = int(s)
-            # Use target type for numeric conversions (not pointer types —
-            # int 0 as a null pointer needs special handling in codegen)
-            if target_type is not None and not isinstance(
-                target_type, memory.Reference
-            ):
-                op = ConstantOp(value=val, type=target_type)
-                yield op
-                return op
-            # Otherwise infer from suffix
-            suffix = node.value[len(s) :]
-            if "ll" in suffix.lower() or "LL" in suffix:
-                ty = c_int(64, signed="u" not in suffix.lower())
-            elif "l" in suffix.lower():
-                ty = c_int(64, signed="u" not in suffix.lower())
-            elif "u" in suffix.lower():
+            val = int(s, 0)  # handles 0x, 0o, decimal
+            if target_type is not None:
+                ty = target_type
+            elif any(c in node.value[len(s) :].lower() for c in ("ll", "l")):
+                ty = c_int(64, signed="u" not in node.value[len(s) :].lower())
+            elif "u" in node.value[len(s) :].lower():
                 ty = c_int(32, signed=False)
             else:
                 ty = c_int(32)
             op = ConstantOp(value=val, type=ty)
             yield op
             return op
-
         if node.type in ("float", "double"):
-            s = node.value.rstrip("fFlL")
-            val = float(s)
-            from dgen.dialects.number import Float64
-
+            val = float(node.value.rstrip("fFlL"))
             op = ConstantOp(value=val, type=Float64())
             yield op
             return op
-
         if node.type == "char":
-            ch = node.value[1:-1]  # strip surrounding quotes
+            ch = node.value[1:-1]
             if ch.startswith("\\"):
                 escapes = {
                     "n": 10,
@@ -640,29 +567,19 @@ class Lowering:
             op = ConstantOp(value=val, type=c_int(8))
             yield op
             return op
-
         if node.type == "string":
-            # String literals -> pointer to char
-            # Store the string value as an integer constant (address placeholder)
-            op = ConstantOp(value=0, type=memory.Reference(element_type=c_int(8)))
+            op = ConstantOp(value=0, type=Reference(element_type=c_int(8)))
             yield op
             return op
-
         raise LoweringError(f"unsupported constant type: {node.type}")
 
-    def _lower_id(self, node: c_ast.ID) -> Iterator[dgen.Op]:
-        """Lower an identifier reference."""
-        # Check enum constants
+    def _identifier(self, node: c_ast.ID) -> Iterator[dgen.Op]:
         if node.name in self.types.enum_constants:
-            val = self.types.enum_constants[node.name]
-            op = ConstantOp(value=val, type=c_int(32))
+            op = ConstantOp(value=self.types.enum_constants[node.name], type=c_int(32))
             yield op
             return op
-
-        # Check local scope
         if node.name in self.scope:
             val = self.scope[node.name]
-            # Local variables (VariableDeclarationOp or AssignOp) → read_variable
             if isinstance(val, (VariableDeclarationOp, AssignOp)):
                 read = ReadVariableOp(
                     variable_name=String().constant(node.name),
@@ -671,86 +588,57 @@ class Lowering:
                 )
                 yield read
                 return read
-            # Function parameters (BlockArgument) → return directly
             return val
-
         raise LoweringError(f"undefined identifier: {node.name}")
 
-    @staticmethod
-    def _match_ptr_int(
-        lhs: dgen.Value, rhs: dgen.Value
-    ) -> tuple[dgen.Value, dgen.Value]:
-        """If one operand is a pointer and the other is int 0, promote to null."""
-        if isinstance(lhs.type, memory.Reference) and isinstance(rhs, ConstantOp):
-            return lhs, ConstantOp(value=0, type=lhs.type)
-        if isinstance(rhs.type, memory.Reference) and isinstance(lhs, ConstantOp):
-            return ConstantOp(value=0, type=rhs.type), rhs
-        return lhs, rhs
-
-    _COMPARISON_OPS: set[str] = {"==", "!=", "<", "<=", ">", ">="}
-
-    def _lower_binop(self, node: c_ast.BinaryOp) -> Iterator[dgen.Op]:
-        """Lower a binary operation."""
-        lhs = yield from self._lower_expr(node.left)
-        rhs = yield from self._lower_expr(node.right)
-
-        op_cls = _BINOP_MAP.get(node.op)
+    def _binary(self, node: c_ast.BinaryOp) -> Iterator[dgen.Op]:
+        left = yield from self._expression(node.left)
+        right = yield from self._expression(node.right)
+        # Null pointer matching: ptr == 0 → ptr == null
+        if isinstance(left.type, Reference) and isinstance(right, ConstantOp):
+            right = ConstantOp(value=0, type=left.type)
+            yield right
+        elif isinstance(right.type, Reference) and isinstance(left, ConstantOp):
+            left = ConstantOp(value=0, type=right.type)
+            yield left
+        op_cls = _ALGEBRA_OPS.get(node.op) or _C_OPS.get(node.op)
         if op_cls is None:
-            return lhs
-
-        # Implicit pointer/int conversion: if one side is a pointer and the
-        # other is integer 0, promote the 0 to a null pointer constant.
-        lhs, rhs = self._match_ptr_int(lhs, rhs)
-
-        result_type = self._promote_types(lhs.type, rhs.type)
-        op = _binop(op_cls, lhs, rhs, result_type)
+            raise LoweringError(f"unsupported binary operator: {node.op}")
+        result_type = self._promote(left.type, right.type)
+        op = _make_binop(op_cls, left, right, result_type)
         yield op
-
-        # Comparisons produce i1 in LLVM; cast to C int
-        if node.op in self._COMPARISON_OPS:
+        if node.op in _COMPARISONS:
             cast = algebra.CastOp(input=op, type=c_int(32))
             yield cast
             return cast
-
         return op
 
-    def _lower_unaryop(self, node: c_ast.UnaryOp) -> Iterator[dgen.Op]:
-        """Lower a unary operation."""
+    def _unary(self, node: c_ast.UnaryOp) -> Iterator[dgen.Op]:
         if node.op == "sizeof":
-            # sizeof(expr) or sizeof(type)
             if isinstance(node.expr, c_ast.Typename):
                 target = self.types.resolve(node.expr)
             else:
-                target = self._expr_type(node.expr)
+                target = c_int(32)  # simplified
             op = SizeofOp(target_type=target, type=c_int(64, signed=False))
             yield op
             return op
-
         if node.op == "&":
-            operand = yield from self._lower_expr(node.expr)
-            op = AddressOfOp(
-                operand=operand,
-                type=memory.Reference(element_type=operand.type),
-            )
+            operand = yield from self._expression(node.expr)
+            op = AddressOfOp(operand=operand, type=Reference(element_type=operand.type))
             yield op
             return op
-
         if node.op == "*":
-            inner = yield from self._lower_expr(node.expr)
-            pointee = self._deref_type(inner.type)
-            op = DereferenceOp(pointer=inner, type=pointee)
+            inner = yield from self._expression(node.expr)
+            op = DereferenceOp(pointer=inner, type=self._pointee_type(inner.type))
             yield op
             return op
-
-        # Pre/post increment/decrement
         if node.op in ("++", "p++", "--", "p--"):
             if not isinstance(node.expr, c_ast.ID):
                 raise LoweringError("increment/decrement on non-variable")
-            var_name = node.expr.name
-            if var_name not in self.scope:
-                raise LoweringError(f"undefined variable: {var_name}")
-            target = self.scope[var_name]
-            var_type = target.type
+            name = node.expr.name
+            if name not in self.scope:
+                raise LoweringError(f"undefined variable: {name}")
+            target = self.scope[name]
             op_map = {
                 "++": PreIncrementOp,
                 "p++": PostIncrementOp,
@@ -758,220 +646,78 @@ class Lowering:
                 "p--": PostDecrementOp,
             }
             op = op_map[node.op](
-                variable_name=String().constant(var_name),
-                target=target,
-                type=var_type,
+                variable_name=String().constant(name), target=target, type=target.type
             )
             yield op
             return op
-
-        # Standard unary ops
-        inner = yield from self._lower_expr(node.expr)
-
+        inner = yield from self._expression(node.expr)
         if node.op == "-":
             op = algebra.NegateOp(input=inner, type=inner.type)
-            yield op
-            return op
-
-        if node.op == "~":
+        elif node.op == "~":
             op = algebra.ComplementOp(input=inner, type=inner.type)
-            yield op
-            return op
-
-        if node.op == "!":
+        elif node.op == "!":
             zero = ConstantOp(value=0, type=inner.type)
             yield zero
             eq = algebra.EqualOp(left=inner, right=zero, type=inner.type)
             yield eq
-            cast = algebra.CastOp(input=eq, type=c_int(32))
-            yield cast
-            return cast
-
-        if node.op == "+":
+            op = algebra.CastOp(input=eq, type=c_int(32))
+        elif node.op == "+":
             return inner
-
-        return inner
-
-    def _lower_func_call(self, node: c_ast.FuncCall) -> Iterator[dgen.Op]:
-        """Lower a function call."""
-        # Determine callee name
-        if isinstance(node.name, c_ast.ID):
-            callee_name = node.name.name
-            ret_type = self.func_types.get(callee_name, c_int(32))
-
-            # Lower arguments
-            arg_vals: list[dgen.Value] = []
-            if node.args is not None:
-                for arg in node.args.exprs:
-                    val = yield from self._lower_expr(arg)
-                    arg_vals.append(val)
-
-            p = pack(arg_vals) if arg_vals else pack([])
-            yield p
-
-            op = CallOp(
-                callee=String().constant(callee_name),
-                arguments=p,
-                type=ret_type,
-            )
-            yield op
-            return op
-
-        raise LoweringError("indirect function calls not yet supported")
-
-    def _lower_assign_expr(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
-        """Lower an assignment used as an expression (returns the value)."""
-        # Delegate to _lower_assignment which emits AssignOp
-        yield from self._lower_assignment(node)
-        # The assigned value is the rhs — re-read the variable
-        if isinstance(node.lvalue, c_ast.ID) and node.lvalue.name in self.scope:
-            val = self.scope[node.lvalue.name]
-            read = ReadVariableOp(
-                variable_name=String().constant(node.lvalue.name),
-                source=val,
-                type=val.type,
-            )
-            yield read
-            return read
-        raise LoweringError("assign-as-expression on non-variable lvalue")
-
-    def _lower_cast(self, node: c_ast.Cast) -> Iterator[dgen.Op]:
-        """Lower a type cast."""
-        inner = yield from self._lower_expr(node.expr)
-        target = self.types.resolve(node.to_type)
-        op = algebra.CastOp(input=inner, type=target)
+        else:
+            raise LoweringError(f"unsupported unary operator: {node.op}")
         yield op
         return op
 
-    def _lower_array_ref(self, node: c_ast.ArrayRef) -> Iterator[dgen.Op]:
-        """Lower an array subscript: a[i]."""
-        base = yield from self._lower_expr(node.name)
-        idx = yield from self._lower_expr(node.subscript)
-        elem_type = self._deref_type(base.type)
-        op = SubscriptOp(base=base, index=idx, type=elem_type)
+    def _call(self, node: c_ast.FuncCall) -> Iterator[dgen.Op]:
+        if not isinstance(node.name, c_ast.ID):
+            raise LoweringError("indirect function calls not yet supported")
+        callee = node.name.name
+        return_type = self.func_types.get(callee, c_int(32))
+        args: list[dgen.Value] = []
+        if node.args is not None:
+            for arg in node.args.exprs:
+                args.append((yield from self._expression(arg)))
+        p = pack(args) if args else pack([])
+        yield p
+        op = CallOp(callee=String().constant(callee), arguments=p, type=return_type)
         yield op
         return op
 
-    def _lower_struct_ref(self, node: c_ast.StructRef) -> Iterator[dgen.Op]:
-        """Lower struct member access: s.field or s->field."""
-        base = yield from self._lower_expr(node.name)
+    def _struct_access(self, node: c_ast.StructRef) -> Iterator[dgen.Op]:
+        base = yield from self._expression(node.name)
         field_name = node.field.name
-
         if node.type == "->":
             field_type = self.types.get_struct_field_type(
-                self._deref_type(base.type), field_name
+                self._pointee_type(base.type), field_name
             )
             op = PointerMemberAccessOp(
-                field_name=String().constant(field_name),
-                base=base,
-                type=field_type,
+                field_name=String().constant(field_name), base=base, type=field_type
             )
         else:
             field_type = self.types.get_struct_field_type(base.type, field_name)
             op = MemberAccessOp(
-                field_name=String().constant(field_name),
-                base=base,
-                type=field_type,
+                field_name=String().constant(field_name), base=base, type=field_type
             )
         yield op
         return op
 
-    def _lower_ternary(self, node: c_ast.TernaryOp) -> Iterator[dgen.Op]:
-        """Lower a ternary expression: cond ? a : b → control_flow.if."""
-        cond = yield from self._lower_expr(node.cond)
-        true_ops: list[dgen.Op] = list(self._lower_expr(node.iftrue))
-        true_val: dgen.Value = true_ops[-1] if true_ops else dgen.Value(type=Nil())
-        false_ops: list[dgen.Op] = list(self._lower_expr(node.iffalse))
-        false_val: dgen.Value = false_ops[-1] if false_ops else dgen.Value(type=Nil())
-        result_type = self._promote_types(true_val.type, false_val.type)
-        empty = pack([])
-        yield empty
-        op = IfOp(
-            condition=cond,
-            then_arguments=empty,
-            else_arguments=empty,
-            type=result_type,
-            then_body=_closed_block(true_val, local_ops=true_ops),
-            else_body=_closed_block(false_val, local_ops=false_ops),
-        )
-        yield op
-        return op
+    # --- Type helpers (minimal) ---
 
-    # -----------------------------------------------------------------------
-    # Type helpers
-    # -----------------------------------------------------------------------
-
-    def _expr_type(self, node: c_ast.Node) -> dgen.Type:
-        """Infer the type of a C expression (best-effort)."""
-        if isinstance(node, c_ast.Constant):
-            if node.type in ("int",):
-                return c_int(32)
-            if node.type in ("float",):
-                return Float64()
-            if node.type in ("double",):
-                return Float64()
-            if node.type in ("char",):
-                return c_int(8)
-            return c_int(32)
-
-        if isinstance(node, c_ast.ID):
-            if node.name in self.scope:
-                val = self.scope[node.name]
-                if isinstance(val, VariableDeclarationOp):
-                    return val.type
-                return val.type
-            raise LoweringError(f"undefined identifier in type inference: {node.name}")
-
-        if isinstance(node, c_ast.Cast):
-            return self.types.resolve(node.to_type)
-
-        raise LoweringError(f"cannot infer type of: {type(node).__name__}")
-
-    def _deref_type(self, ty: dgen.Type) -> dgen.Type:
-        """Get the pointee type from a pointer type."""
-        if isinstance(ty, memory.Reference):
+    def _pointee_type(self, ty: dgen.Type) -> dgen.Type:
+        if isinstance(ty, Reference):
             elem = ty.element_type
             if isinstance(elem, dgen.Type):
                 return elem
         raise LoweringError(f"cannot dereference non-pointer type: {ty}")
 
-    def _promote_types(self, a: dgen.Type, b: dgen.Type) -> dgen.Type:
-        """C-style type promotion (simplified)."""
-        # Float wins over int
+    def _promote(self, a: dgen.Type, b: dgen.Type) -> dgen.Type:
         if isinstance(a, Float64) or isinstance(b, Float64):
             return Float64()
-
-        # Pointer wins
-        if isinstance(a, memory.Reference):
+        if isinstance(a, Reference):
             return a
-        if isinstance(b, memory.Reference):
+        if isinstance(b, Reference):
             return b
-
-        # Default: use left type
         return a
-
-
-# ---------------------------------------------------------------------------
-# Stats
-# ---------------------------------------------------------------------------
-
-
-class LoweringStats:
-    """Track lowering statistics."""
-
-    def __init__(self) -> None:
-        self.functions: int = 0
-        self.typedefs: int = 0
-        self.statements: int = 0
-        self.expressions: int = 0
-        self.skipped_functions: int = 0
-
-    def summary(self) -> str:
-        return (
-            f"Functions: {self.functions}, Typedefs: {self.typedefs}, "
-            f"Statements: {self.statements}, Expressions: {self.expressions}, "
-            f"Skipped functions: {self.skipped_functions}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -980,7 +726,6 @@ class LoweringStats:
 
 
 def lower(ast: c_ast.FileAST) -> tuple[Module, LoweringStats]:
-    """Lower a pycparser FileAST to a dgen Module."""
     lowering = Lowering()
     module = lowering.lower_file(ast)
     return module, lowering.stats
