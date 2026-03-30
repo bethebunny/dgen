@@ -10,8 +10,8 @@ from dgen.dialects.builtin import String
 from dgen.dialects.builtin import Array
 from dgen.dialects.function import Function
 from dgen.dialects.number import Float64
-from dgen_c.dialects import c_int, c_ptr, c_void
-from dgen_c.dialects.c import CStruct, CUnion
+from dcc.dialects import c_int, c_ptr, c_void
+from dcc.dialects.c import CStruct, CUnion
 
 
 # Standard C integer type widths (LP64 model)

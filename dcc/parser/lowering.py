@@ -16,8 +16,8 @@ from dgen.module import ConstantOp, Module, pack
 from dgen.dialects import algebra, memory
 from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.number import Float64
-from dgen_c.dialects import c_int
-from dgen_c.dialects.c import (
+from dcc.dialects import c_int
+from dcc.dialects.c import (
     BreakOp,
     CallOp,
     ContinueOp,
@@ -32,7 +32,7 @@ from dgen_c.dialects.c import (
     StructPtrMemberOp,
     TernaryOp,
 )
-from dgen_c.parser.type_resolver import TypeResolver
+from dcc.parser.type_resolver import TypeResolver
 
 
 class LoweringError(Exception):
@@ -451,7 +451,7 @@ class Lowering:
 
         p = pack([])
         yield p
-        from dgen_c.dialects.c import DoWhileOp
+        from dcc.dialects.c import DoWhileOp
 
         yield DoWhileOp(init=p, body=body_block, condition=cond_block)
 

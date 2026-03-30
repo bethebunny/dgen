@@ -17,12 +17,12 @@ from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.dialects.builtin import Nil
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
-from dgen_c.dialects import c_int
-from dgen_c.dialects.c import CStruct
-from dgen_c.parser.c_parser import parse_c_string
-from dgen_c.parser.lowering import lower
-from dgen_c.parser.type_resolver import TypeResolver
-from dgen_c.passes.c_to_llvm import CToLLVM
+from dcc.dialects import c_int
+from dcc.dialects.c import CStruct
+from dcc.parser.c_parser import parse_c_string
+from dcc.parser.lowering import lower
+from dcc.parser.type_resolver import TypeResolver
+from dcc.passes.c_to_llvm import CToLLVM
 
 TESTDATA = Path(__file__).parent / "testdata"
 
@@ -522,8 +522,7 @@ class TestSqlite3:
         skipped = stats.skipped_functions
         total = stats.functions
         print(
-            f"\nsqlite3 lowering: {lowered} lowered, "
-            f"{skipped} skipped, {total} total"
+            f"\nsqlite3 lowering: {lowered} lowered, {skipped} skipped, {total} total"
         )
 
         assert lowered >= 900, f"lowered regressed: {lowered}"
