@@ -35,6 +35,10 @@ from dgen_c.dialects.c import (
 from dgen_c.parser.type_resolver import TypeResolver
 
 
+class LoweringError(Exception):
+    """Raised when the lowering encounters a C construct it cannot translate."""
+
+
 # ---------------------------------------------------------------------------
 # Binary op dispatch — algebra ops use left/right, C ops use lhs/rhs
 # ---------------------------------------------------------------------------
@@ -170,7 +174,11 @@ class Lowering:
         for ext in ast.ext:
             if isinstance(ext, c_ast.FuncDef):
                 self.stats.functions += 1
-                func_op = self._lower_func_def(ext)
+                try:
+                    func_op = self._lower_func_def(ext)
+                except LoweringError:
+                    self.stats.skipped_functions += 1
+                    continue
                 if func_op is not None:
                     self.functions.append(func_op)
 
@@ -320,10 +328,7 @@ class Lowering:
                     yield from self._lower_stmt(s)
         else:
             # Try to lower as expression
-            try:
-                yield from self._lower_expr(node)
-            except Exception:
-                self.stats.skipped_stmts += 1
+            yield from self._lower_expr(node)
 
     def _lower_decl(self, node: c_ast.Decl) -> Iterator[dgen.Op]:
         """Lower a local variable declaration."""
@@ -551,18 +556,11 @@ class Lowering:
             return (yield from self._lower_expr(node.init))
 
         if isinstance(node, c_ast.InitList):
-            # {a, b, c} — lower first element for now
             if node.exprs:
                 return (yield from self._lower_expr(node.exprs[0]))
-            op = ConstantOp(value=0, type=c_int(32))
-            yield op
-            return op
+            raise LoweringError("empty initializer list")
 
-        # Fallback: constant 0
-        self.stats.skipped_exprs += 1
-        op = ConstantOp(value=0, type=c_int(32))
-        yield op
-        return op
+        raise LoweringError(f"unsupported expression: {type(node).__name__}")
 
     def _lower_constant(
         self, node: c_ast.Constant, target_type: dgen.Type | None = None
@@ -640,10 +638,7 @@ class Lowering:
             yield op
             return op
 
-        # Fallback
-        op = ConstantOp(value=0, type=c_int(32))
-        yield op
-        return op
+        raise LoweringError(f"unsupported constant type: {node.type}")
 
     def _lower_id(self, node: c_ast.ID) -> Iterator[dgen.Op]:
         """Lower an identifier reference.
@@ -674,8 +669,7 @@ class Lowering:
                     return load
             return val
 
-        # Unknown — return a named placeholder value
-        return dgen.Value(name=node.name, type=c_int(64))
+        raise LoweringError(f"undefined identifier: {node.name}")
 
     @staticmethod
     def _match_ptr_int(
@@ -823,22 +817,7 @@ class Lowering:
             yield op
             return op
 
-        # Indirect call (function pointer)
-        callee = yield from self._lower_expr(node.name)
-        arg_vals = []
-        if node.args is not None:
-            for arg in node.args.exprs:
-                val = yield from self._lower_expr(arg)
-                arg_vals.append(val)
-
-        p = pack(arg_vals) if arg_vals else pack([])
-        yield p
-
-        from dgen_c.dialects.c import CallIndirectOp
-
-        op = CallIndirectOp(callee=callee, arguments=p, type=c_int(64))
-        yield op
-        return op
+        raise LoweringError("indirect function calls not yet supported")
 
     def _lower_assign_expr(self, node: c_ast.Assignment) -> Iterator[dgen.Op]:
         """Lower an assignment used as an expression (returns the assigned value)."""
@@ -941,11 +920,8 @@ class Lowering:
         """Lower an lvalue expression, returning a pointer to the target."""
         if isinstance(node, c_ast.ID):
             if node.name in self.scope:
-                val = self.scope[node.name]
-                return val
-            return dgen.Value(
-                name=node.name, type=memory.Reference(element_type=c_int(64))
-            )
+                return self.scope[node.name]
+            raise LoweringError(f"undefined lvalue: {node.name}")
 
         if isinstance(node, c_ast.UnaryOp) and node.op == "*":
             # *ptr — the pointer itself is the lvalue
@@ -965,16 +941,20 @@ class Lowering:
             base = yield from self._lower_expr(node.name)
             field_name = node.field.name
             if node.type == "->":
+                field_type = self.types.get_struct_field_type(
+                    self._deref_type(base.type), field_name
+                )
                 op = StructPtrMemberOp(
                     field_name=String().constant(field_name),
                     base=base,
-                    type=memory.Reference(element_type=c_int(64)),  # address of field
+                    type=memory.Reference(element_type=field_type),
                 )
             else:
+                field_type = self.types.get_struct_field_type(base.type, field_name)
                 op = StructMemberOp(
                     field_name=String().constant(field_name),
                     base=base,
-                    type=memory.Reference(element_type=c_int(64)),
+                    type=memory.Reference(element_type=field_type),
                 )
             yield op
             return op
@@ -1006,12 +986,12 @@ class Lowering:
                 if isinstance(val, memory.StackAllocateOp):
                     return val.type.element_type
                 return val.type
-            return c_int(32)
+            raise LoweringError(f"undefined identifier in type inference: {node.name}")
 
         if isinstance(node, c_ast.Cast):
             return self.types.resolve(node.to_type)
 
-        return c_int(32)
+        raise LoweringError(f"cannot infer type of: {type(node).__name__}")
 
     def _deref_type(self, ty: dgen.Type) -> dgen.Type:
         """Get the pointee type from a pointer type."""
@@ -1019,7 +999,7 @@ class Lowering:
             elem = ty.element_type
             if isinstance(elem, dgen.Type):
                 return elem
-        return c_int(64)
+        raise LoweringError(f"cannot dereference non-pointer type: {ty}")
 
     def _promote_types(self, a: dgen.Type, b: dgen.Type) -> dgen.Type:
         """C-style type promotion (simplified)."""
@@ -1050,14 +1030,13 @@ class LoweringStats:
         self.typedefs: int = 0
         self.statements: int = 0
         self.expressions: int = 0
-        self.skipped_stmts: int = 0
-        self.skipped_exprs: int = 0
+        self.skipped_functions: int = 0
 
     def summary(self) -> str:
         return (
             f"Functions: {self.functions}, Typedefs: {self.typedefs}, "
             f"Statements: {self.statements}, Expressions: {self.expressions}, "
-            f"Skipped stmts: {self.skipped_stmts}, Skipped exprs: {self.skipped_exprs}"
+            f"Skipped functions: {self.skipped_functions}"
         )
 
 
