@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.dialects.builtin import Nil, Span, String
-from dgen.dialects.index import Index
 
 c = Dialect("c")
 
@@ -22,6 +21,73 @@ class CUnion(Type):
     tag_name: Value[String]
     field_names: Value[String]
     field_types: Value[String]
+
+@dataclass(eq=False, kw_only=True)
+class VariableDeclarationOp(Op):
+    variable_name: Value[String]
+    variable_type: Value[dgen.TypeType]
+    initializer: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class ReadVariableOp(Op):
+    variable_name: Value[String]
+    source: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class AssignOp(Op):
+    variable_name: Value[String]
+    target: Value
+    value: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class PreIncrementOp(Op):
+    variable_name: Value[String]
+    target: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class PostIncrementOp(Op):
+    variable_name: Value[String]
+    target: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class PreDecrementOp(Op):
+    variable_name: Value[String]
+    target: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class PostDecrementOp(Op):
+    variable_name: Value[String]
+    target: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class MemberAccessOp(Op):
+    field_name: Value[String]
+    base: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class PointerMemberAccessOp(Op):
+    field_name: Value[String]
+    base: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class CallOp(Op):
+    callee: Value[String]
+    arguments: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class ReturnOp(Op):
+    value: Value
+    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class ModuloOp(Op):
@@ -40,23 +106,6 @@ class ShiftRightOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-
-@dataclass(eq=False, kw_only=True)
-class GepOp(Op):
-    field_index: Value[Index]
-    base: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class CallOp(Op):
-    callee: Value[String]
-    arguments: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class ReturnOp(Op):
-    value: Value
-    type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
 class DoWhileOp(Op):
@@ -79,18 +128,6 @@ class BreakOp(Op):
 @dataclass(eq=False, kw_only=True)
 class ContinueOp(Op):
     type: Type = Nil()
-
-@dataclass(eq=False, kw_only=True)
-class StructMemberOp(Op):
-    field_name: Value[String]
-    base: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class StructPtrMemberOp(Op):
-    field_name: Value[String]
-    base: Value
-    type: Type
 
 @dataclass(eq=False, kw_only=True)
 class SizeofOp(Op):
