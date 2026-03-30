@@ -49,5 +49,12 @@ def parse_c_char(text: str) -> int:
     """Parse a C character literal ('a', '\\n', etc.) to its integer value."""
     ch = text[1:-1]
     if ch.startswith("\\"):
-        return _CHAR_ESCAPES.get(ch[1], ord(ch[1]))
+        esc = ch[1]
+        if esc in _CHAR_ESCAPES:
+            return _CHAR_ESCAPES[esc]
+        if esc == "x":
+            return int(ch[2:], 16)
+        if esc.isdigit():
+            return int(ch[1:], 8)
+        raise ValueError(f"unknown escape sequence: {ch}")
     return ord(ch)

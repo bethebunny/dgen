@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import algebra, llvm, memory
-from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
 from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
@@ -78,10 +77,16 @@ class CToMemory(Pass):
         return module
 
     def _get_mem(self, name: str) -> dgen.Value:
-        """Get the current memory token for a variable."""
-        return self._mem.get(
-            name, self._alloca.get(name, ConstantOp(value=None, type=Nil()))
-        )
+        """Get the current memory token for a variable.
+
+        Returns the most recent store token, or the alloca if no store yet.
+        Raises KeyError if the variable has no allocation at all.
+        """
+        if name in self._mem:
+            return self._mem[name]
+        if name in self._alloca:
+            return self._alloca[name]
+        raise KeyError(f"variable '{name}' has no allocation")
 
     # --- Variable declaration ---
 
@@ -142,7 +147,7 @@ class CToMemory(Pass):
         operator = string_value(op.operator)
         binop_cls = _BINOP_TABLE.get(operator)
         if binop_cls is None:
-            return op.operand
+            raise ValueError(f"unsupported compound assign operator: {operator}")
         if "left" in binop_cls.__dataclass_fields__:
             result = binop_cls(left=load, right=op.operand, type=elem_type)
         else:
@@ -171,7 +176,17 @@ class CToMemory(Pass):
 
     def _lower_increment(self, op: dgen.Op, *, post: bool, negate: bool) -> dgen.Value:
         name = _variable_name(op)
-        alloca = self._alloca[name]
+        alloca = self._alloca.get(name)
+        if alloca is None:
+            # Function parameter — allocate on the fly
+            var_type = op.type
+            alloca = memory.StackAllocateOp(
+                element_type=var_type,
+                type=memory.Reference(element_type=var_type),
+            )
+            store = memory.StoreOp(mem=alloca, value=op.target, ptr=alloca)
+            self._alloca[name] = alloca
+            self._mem[name] = store
         mem = self._get_mem(name)
         elem_type = op.type
         load = memory.LoadOp(mem=mem, ptr=alloca, type=elem_type)

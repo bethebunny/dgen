@@ -9,14 +9,14 @@ compound assignment expansion) belong in passes, not here.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 
 from pycparser import c_ast
 
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra
-from dgen.dialects.builtin import Nil, String
+from dgen.dialects.builtin import ChainOp, Nil, String
 from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
@@ -35,6 +35,7 @@ from dcc.dialects.c import (
     CompoundAssignOp,
     ContinueOp,
     DereferenceOp,
+    DoWhileOp,
     LogicalNotOp,
     MemberAccessOp,
     ModuloOp,
@@ -69,12 +70,15 @@ class Scope:
     Each compound statement ({}) creates a child scope. Variable
     declarations bind in the current scope. Lookups walk the parent
     chain. Captures track cross-scope references for block construction.
+    ``last_effect`` tracks the most recent side-effecting op so that
+    block results can be chained through it.
     """
 
     def __init__(self, parent: Scope | None = None) -> None:
         self._bindings: dict[str, dgen.Value] = {}
         self._parent = parent
         self.captures: list[dgen.Value] = []
+        self.last_effect: dgen.Value | None = None
 
     def bind(self, name: str, value: dgen.Value) -> None:
         self._bindings[name] = value
@@ -194,6 +198,7 @@ class LoweringStats:
     statements: int = 0
     expressions: int = 0
     skipped_functions: int = 0
+    skip_reasons: list[tuple[str, str]] = dataclass_field(default_factory=list)
 
     def summary(self) -> str:
         return (
@@ -219,18 +224,23 @@ class Parser:
     def parse(self, ast: c_ast.FileAST) -> Module:
         # First pass: register types and function declarations
         for ext in ast.ext:
-            if isinstance(ext, c_ast.Typedef):
-                if ext.name is not None:
-                    self.types.register_typedef(ext.name, self.types.resolve(ext.type))
-                    self.stats.typedefs += 1
-            elif isinstance(ext, c_ast.Decl):
-                if isinstance(ext.type, c_ast.FuncDecl) and ext.name:
-                    self.file_scope.bind(
-                        ext.name,
-                        dgen.Value(name=ext.name, type=self._return_type(ext.type)),
-                    )
-                elif isinstance(ext.type, (c_ast.Struct, c_ast.Union, c_ast.Enum)):
-                    self.types.resolve(ext.type)
+            try:
+                if isinstance(ext, c_ast.Typedef):
+                    if ext.name is not None:
+                        self.types.register_typedef(
+                            ext.name, self.types.resolve(ext.type)
+                        )
+                        self.stats.typedefs += 1
+                elif isinstance(ext, c_ast.Decl):
+                    if isinstance(ext.type, c_ast.FuncDecl) and ext.name:
+                        self.file_scope.bind(
+                            ext.name,
+                            dgen.Value(name=ext.name, type=self._return_type(ext.type)),
+                        )
+                    elif isinstance(ext.type, (c_ast.Struct, c_ast.Union, c_ast.Enum)):
+                        self.types.resolve(ext.type)
+            except (LookupError, ValueError):
+                pass  # unknown types in declarations are non-fatal
 
         # Second pass: lower function definitions
         functions: list[function.FunctionOp] = []
@@ -239,8 +249,10 @@ class Parser:
                 self.stats.functions += 1
                 try:
                     functions.append(self._function(ext))
-                except LoweringError:
+                except (LoweringError, LookupError, ValueError) as exc:
                     self.stats.skipped_functions += 1
+                    name = ext.decl.name if ext.decl else "<unknown>"
+                    self.stats.skip_reasons.append((name, str(exc)))
 
         return Module(ops=functions)
 
@@ -272,7 +284,11 @@ class Parser:
                     args.append(arg)
 
         ops = list(self._compound(node.body, scope)) if node.body else []
-        result = ops[-1] if ops else dgen.Value(type=Nil())
+        result: dgen.Value = ops[-1] if ops else dgen.Value(type=Nil())
+        # Chain result through any side effects (if/while/for)
+        if scope.last_effect is not None and scope.last_effect is not result:
+            chain = ChainOp(lhs=result, rhs=scope.last_effect, type=result.type)
+            result = chain
         is_void = isinstance(ret, Nil)
 
         return function.FunctionOp(
@@ -289,6 +305,9 @@ class Parser:
         if node.block_items:
             for item in node.block_items:
                 yield from self._stmt(item, child)
+        # Propagate side effects to the parent scope
+        if child.last_effect is not None:
+            scope.last_effect = child.last_effect
 
     _STMT_DISPATCH: dict[type, str] = {
         c_ast.Decl: "_decl",
@@ -399,7 +418,11 @@ class Parser:
 
     def _block_from(self, stmts: Iterator[dgen.Op], scope: Scope) -> dgen.Block:
         ops = list(stmts)
-        result = ops[-1] if ops else dgen.Value(type=Nil())
+        result: dgen.Value = ops[-1] if ops else dgen.Value(type=Nil())
+        # Chain result through any accumulated side effects
+        if scope.last_effect is not None and scope.last_effect is not result:
+            chain = ChainOp(lhs=result, rhs=scope.last_effect, type=result.type)
+            result = chain
         return dgen.Block(result=result, captures=list(scope.captures))
 
     def _if(self, node: c_ast.If, scope: Scope) -> Iterator[dgen.Op]:
@@ -415,7 +438,7 @@ class Parser:
             else_block = dgen.Block(result=dgen.Value(type=Nil()))
         empty = pack([])
         yield empty
-        yield IfOp(
+        if_op = IfOp(
             condition=cond,
             then_arguments=empty,
             else_arguments=empty,
@@ -423,6 +446,8 @@ class Parser:
             then_body=then_block,
             else_body=else_block,
         )
+        yield if_op
+        scope.last_effect = if_op
 
     def _while(self, node: c_ast.While, scope: Scope) -> Iterator[dgen.Op]:
         cond_scope = scope.child()
@@ -431,18 +456,20 @@ class Parser:
         body_block = self._block_from(self._stmt(node.stmt, body_scope), body_scope)
         p = pack([])
         yield p
-        yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
+        while_op = WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
+        yield while_op
+        scope.last_effect = while_op
 
     def _do_while(self, node: c_ast.DoWhile, scope: Scope) -> Iterator[dgen.Op]:
-        from dcc.dialects.c import DoWhileOp
-
         body_scope = scope.child()
         body_block = self._block_from(self._stmt(node.stmt, body_scope), body_scope)
         cond_scope = scope.child()
         cond_block = self._block_from(self._expr(node.cond, cond_scope), cond_scope)
         p = pack([])
         yield p
-        yield DoWhileOp(initial=p, body=body_block, condition=cond_block)
+        do_while_op = DoWhileOp(initial=p, body=body_block, condition=cond_block)
+        yield do_while_op
+        scope.last_effect = do_while_op
 
     def _for(self, node: c_ast.For, scope: Scope) -> Iterator[dgen.Op]:
         # init runs in the parent scope
@@ -467,7 +494,9 @@ class Parser:
         body_block = dgen.Block(result=body_result, captures=list(body_scope.captures))
         p = pack([])
         yield p
-        yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
+        while_op = WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
+        yield while_op
+        scope.last_effect = while_op
 
     # --- Expressions ---
 

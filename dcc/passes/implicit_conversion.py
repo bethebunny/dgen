@@ -26,10 +26,14 @@ from dcc.dialects.c import LogicalNotOp, ModuloOp, ShiftLeftOp, ShiftRightOp, Un
 
 
 def _int_bits(ty: dgen.Type) -> int:
-    """Get bit width from SignedInteger or UnsignedInteger."""
-    if isinstance(ty, (SignedInteger, UnsignedInteger)):
-        return ty.bits.__constant__.to_json()
-    return 0
+    """Get bit width from SignedInteger or UnsignedInteger.
+
+    Caller must verify _is_integer(ty) first.
+    """
+    assert isinstance(ty, (SignedInteger, UnsignedInteger)), (
+        f"not an integer type: {ty}"
+    )
+    return ty.bits.__constant__.to_json()
 
 
 def _is_integer(ty: dgen.Type) -> bool:
@@ -49,8 +53,11 @@ def _is_pointer(ty: dgen.Type) -> bool:
 
 
 def _promote_integer(ty: dgen.Type) -> dgen.Type:
-    """C integer promotion: types narrower than int promote to int."""
-    if _is_integer(ty) and _int_bits(ty) < 32:
+    """C integer promotion: types narrower than int promote to int.
+
+    Caller must verify _is_integer(ty) first.
+    """
+    if _int_bits(ty) < 32:
         return c_int(32, signed=True)
     return ty
 

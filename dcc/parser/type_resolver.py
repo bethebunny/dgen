@@ -22,19 +22,38 @@ _INT_WIDTHS: dict[str, tuple[int, bool]] = {
     "signed char": (8, True),
     "unsigned char": (8, False),
     "short": (16, True),
+    "short int": (16, True),
     "signed short": (16, True),
+    "signed short int": (16, True),
     "unsigned short": (16, False),
+    "unsigned short int": (16, False),
     "int": (32, True),
     "signed int": (32, True),
     "unsigned int": (32, False),
     "long": (64, True),
+    "long int": (64, True),
     "signed long": (64, True),
+    "signed long int": (64, True),
     "unsigned long": (64, False),
+    "unsigned long int": (64, False),
     "long long": (64, True),
+    "long long int": (64, True),
     "signed long long": (64, True),
+    "signed long long int": (64, True),
     "unsigned long long": (64, False),
+    "unsigned long long int": (64, False),
     "signed": (32, True),
     "unsigned": (32, False),
+}
+
+# pycparser constant type strings for integer constants
+_INT_CONST_TYPES = {
+    "int",
+    "long int",
+    "unsigned int",
+    "long long int",
+    "unsigned long int",
+    "unsigned long long int",
 }
 
 _FLOAT_KINDS: dict[str, int] = {
@@ -91,7 +110,7 @@ class TypeResolver:
         if isinstance(node, c_ast.Typename):
             return self.resolve(node.type)
 
-        return c_void()
+        raise LookupError(f"cannot resolve type node: {type(node).__name__}")
 
     def _resolve_identifier_type(self, names: list[str]) -> dgen.Type:
         """Resolve an IdentifierType (e.g. ['unsigned', 'int'])."""
@@ -123,8 +142,7 @@ class TypeResolver:
                 if joined == f"{prefix}{bits}_t":
                     return c_int(bits, s)
 
-        # Unknown — treat as opaque i64
-        return c_int(64, signed=True)
+        raise LookupError(f"unknown type: {joined}")
 
     def _resolve_func_decl(self, node: c_ast.FuncDecl) -> dgen.Type:
         """Resolve a FuncDecl to a Function type."""
@@ -192,11 +210,15 @@ class TypeResolver:
         if isinstance(struct_type, CStruct):
             tag = struct_type.tag_name.__constant__.to_json()
             assert isinstance(tag, str)
-            fields = self.struct_fields.get(tag, [])
-            for fname, ftype in fields:
+            if tag not in self.struct_fields:
+                raise LookupError(f"unknown struct tag: {tag}")
+            for fname, ftype in self.struct_fields[tag]:
                 if fname == field_name:
                     return ftype
-        return c_int(64, signed=True)
+            raise LookupError(f"struct '{tag}' has no field '{field_name}'")
+        raise LookupError(
+            f"cannot look up field '{field_name}' on non-struct type: {struct_type}"
+        )
 
     def _eval_array_dim(self, dim: c_ast.Node | None) -> int:
         if dim is None:
@@ -206,26 +228,30 @@ class TypeResolver:
     def _eval_const_expr(self, node: c_ast.Node) -> int:
         """Evaluate a compile-time constant expression to int."""
         if isinstance(node, c_ast.Constant):
-            if node.type == "int":
+            if node.type in _INT_CONST_TYPES:
                 return parse_c_int(node.value)
             if node.type == "char":
                 return parse_c_char(node.value)
-            return 0
+            raise ValueError(f"unsupported constant type in const expr: {node.type}")
         if isinstance(node, c_ast.UnaryOp):
             fn = _CONST_UNARY.get(node.op)
-            return fn(self._eval_const_expr(node.expr)) if fn else 0
+            if fn is None:
+                raise ValueError(f"unsupported unary op in const expr: {node.op}")
+            return fn(self._eval_const_expr(node.expr))
         if isinstance(node, c_ast.BinaryOp):
             fn = _CONST_BINOPS.get(node.op)
-            if fn is not None:
-                return fn(
-                    self._eval_const_expr(node.left), self._eval_const_expr(node.right)
-                )
-            return 0
+            if fn is None:
+                raise ValueError(f"unsupported binary op in const expr: {node.op}")
+            return fn(
+                self._eval_const_expr(node.left), self._eval_const_expr(node.right)
+            )
         if isinstance(node, c_ast.Cast):
             return self._eval_const_expr(node.expr)
         if isinstance(node, c_ast.ID):
-            return self.enum_constants.get(node.name, 0)
+            if node.name not in self.enum_constants:
+                raise ValueError(f"undefined identifier in const expr: {node.name}")
+            return self.enum_constants[node.name]
         if isinstance(node, c_ast.TernaryOp):
             cond = self._eval_const_expr(node.cond)
             return self._eval_const_expr(node.iftrue if cond else node.iffalse)
-        return 0
+        raise ValueError(f"unsupported node in const expr: {type(node).__name__}")
