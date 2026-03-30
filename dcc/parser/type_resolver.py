@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pycparser import c_ast
 
+from dcc.parser.c_literals import _CONST_BINOPS, _CONST_UNARY, parse_c_char, parse_c_int
+
 import dgen
 from dgen.dialects.index import Index
 from dgen.dialects.builtin import String
@@ -205,64 +207,25 @@ class TypeResolver:
         """Evaluate a compile-time constant expression to int."""
         if isinstance(node, c_ast.Constant):
             if node.type == "int":
-                s = node.value.rstrip("uUlL")
-                if s.startswith(("0x", "0X")):
-                    return int(s, 16)
-                if len(s) > 1 and s.startswith("0") and s[1:].isdigit():
-                    return int(s, 8)
-                return int(s)
+                return parse_c_int(node.value)
             if node.type == "char":
-                ch = node.value.strip("'")
-                if ch.startswith("\\"):
-                    escapes = {"n": 10, "t": 9, "r": 13, "0": 0, "\\": 92, "'": 39}
-                    return escapes.get(ch[1], ord(ch[1]))
-                return ord(ch)
+                return parse_c_char(node.value)
             return 0
-
         if isinstance(node, c_ast.UnaryOp):
-            val = self._eval_const_expr(node.expr)
-            if node.op == "-":
-                return -val
-            if node.op == "+":
-                return val
-            if node.op == "~":
-                return ~val
-            if node.op == "!":
-                return int(not val)
-            return val
-
+            fn = _CONST_UNARY.get(node.op)
+            return fn(self._eval_const_expr(node.expr)) if fn else 0
         if isinstance(node, c_ast.BinaryOp):
-            left = self._eval_const_expr(node.left)
-            right = self._eval_const_expr(node.right)
-            ops: dict[str, object] = {
-                "+": lambda a, b: a + b,
-                "-": lambda a, b: a - b,
-                "*": lambda a, b: a * b,
-                "/": lambda a, b: a // b if b else 0,
-                "%": lambda a, b: a % b if b else 0,
-                "<<": lambda a, b: a << b,
-                ">>": lambda a, b: a >> b,
-                "&": lambda a, b: a & b,
-                "|": lambda a, b: a | b,
-                "^": lambda a, b: a ^ b,
-            }
-            fn = ops.get(node.op)
+            fn = _CONST_BINOPS.get(node.op)
             if fn is not None:
-                return fn(left, right)
+                return fn(
+                    self._eval_const_expr(node.left), self._eval_const_expr(node.right)
+                )
             return 0
-
         if isinstance(node, c_ast.Cast):
             return self._eval_const_expr(node.expr)
-
         if isinstance(node, c_ast.ID):
             return self.enum_constants.get(node.name, 0)
-
         if isinstance(node, c_ast.TernaryOp):
             cond = self._eval_const_expr(node.cond)
-            return (
-                self._eval_const_expr(node.iftrue)
-                if cond
-                else self._eval_const_expr(node.iffalse)
-            )
-
+            return self._eval_const_expr(node.iftrue if cond else node.iffalse)
         return 0
