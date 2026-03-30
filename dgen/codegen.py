@@ -620,7 +620,8 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             cond_type = types.get(if_op.condition, "i64")
             if cond_type != "i1":
                 tmp = f"_cond_{then_lbl}"
-                yield f"  %{tmp} = icmp ne {cond_type} {cond}, 0"
+                zero = "null" if cond_type == "ptr" else "0"
+                yield f"  %{tmp} = icmp ne {cond_type} {cond}, {zero}"
                 cond = f"%{tmp}"
             yield f"  br i1 {cond}, label %{then_lbl}, label %{else_lbl}"
             has_term = True
