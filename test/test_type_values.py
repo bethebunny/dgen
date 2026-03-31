@@ -18,7 +18,7 @@ from dgen.dialects.function import Function, FunctionOp
 from dgen.layout import TypeValue
 from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass
-from dgen.type import Memory, TypeType, type_constant
+from dgen.type import Memory, Type, TypeType, type_constant
 from dgen.testing import strip_prefix
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
@@ -101,6 +101,31 @@ def test_typetype_memory_roundtrip():
     # Round-trip: dict → Memory → dict
     mem2 = Memory.from_json(idx.type, data)
     assert mem2.to_json() == data
+
+
+@pytest.mark.xfail(reason="params are flattened alongside 'tag' key — collision")
+def test_type_param_named_tag_roundtrips():
+    """A type with a parameter named 'tag' must not collide with the serialization tag."""
+    from dataclasses import dataclass
+    from typing import ClassVar
+
+    from dgen import Dialect, Value
+    from dgen.type import Fields, _type_from_dict
+
+    d = Dialect("test_tag_collision")
+
+    @d.type("Tagged")
+    @dataclass(frozen=True, eq=False)
+    class Tagged(Type):
+        tag: Value[Index]
+        __params__: ClassVar[Fields] = (("tag", Index),)
+        __layout__ = layout.Void()
+
+    t = Tagged(tag=Index().constant(7))
+    data = t.__constant__.to_json()
+    reconstructed = _type_from_dict(data)
+    assert isinstance(reconstructed, Tagged)
+    assert reconstructed.tag.__constant__.to_json() == 7
 
 
 def test_parameterized_typetype_constant_roundtrip():
