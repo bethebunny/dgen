@@ -71,6 +71,18 @@ def type_constant(value: Value[TypeType]) -> Type:
     return _type_from_dict(data)
 
 
+def _param_from_json(field_type: type[Type], value: object) -> Value:
+    """Deserialize a single param value using the field's type metadata."""
+    if isinstance(value, dict):
+        return _type_from_dict(value)
+    if isinstance(value, list):
+        # Circular import: module.py imports from type.py.
+        from dgen.module import pack
+
+        return pack([_param_from_json(field_type, v) for v in value])
+    return field_type().constant(value)
+
+
 def _type_from_dict(data: dict[str, object]) -> Type:
     """Reconstruct a Type from its serialized TypeType dict."""
     tag = data["tag"]
@@ -78,29 +90,12 @@ def _type_from_dict(data: dict[str, object]) -> Type:
     dialect_name, type_name = tag.split(".")
     dialect = Dialect.get(dialect_name)
     cls = dialect.types[type_name]
-    params = {k: v for k, v in data.items() if k != "tag"}
-    if not params:
-        return cls()
-    kwargs: dict[str, object] = {}
-    for param_name, param_value in params.items():
-        for field_name, field_type in cls.__params__:
-            if field_name == param_name:
-                if isinstance(param_value, list):
-                    from dgen.module import pack
-
-                    kwargs[param_name] = pack(
-                        [
-                            _type_from_dict(v)
-                            if isinstance(v, dict)
-                            else field_type().constant(v)
-                            for v in param_value
-                        ]
-                    )
-                elif isinstance(param_value, dict):
-                    kwargs[param_name] = _type_from_dict(param_value)
-                else:
-                    kwargs[param_name] = field_type().constant(param_value)
-                break
+    param_types = dict(cls.__params__)
+    kwargs = {
+        name: _param_from_json(param_types[name], value)
+        for name, value in data.items()
+        if name != "tag"
+    }
     return cls(**kwargs)
 
 
