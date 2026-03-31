@@ -1,5 +1,3 @@
-"""Emit valid LLVM IR text from a Module and JIT-compile via llvmlite."""
-
 from __future__ import annotations
 
 import _ctypes
@@ -12,7 +10,7 @@ import llvmlite.binding as llvmlite
 
 import dgen
 from dgen import Type
-from dgen.assign_to_blocks import assign_to_blocks
+from dgen.codegen.assign_to_blocks import Segment, assign_to_blocks
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import builtin, control_flow, function, goto, llvm, memory
@@ -239,84 +237,16 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     # -----------------------------------------------------------------------
     # Phase 1: Separate — assign ops to basic-block groups by label dep.
     #
-    # assign_to_blocks computes a GroupKey (frozenset of transitive LabelOp
-    # dependencies) per op in O(V+E).  _separate converts the grouping into
-    # an ordered segment list for _linearize.
+    # Delegated to dgen.codegen.assign_to_blocks.  The only local state is
+    # the synthetic-block counter that persists across recursive calls.
     # -----------------------------------------------------------------------
 
     _synth_n = 0
 
-    @dataclass
-    class _Seg:
-        """One separated segment for _linearize to consume.
-
-        label:      real LabelOp to recurse into (ops must be empty).
-        ops:        inline ops for synthetic or anonymous segments.
-        synth_name: LLVM block name when label is None and ops are non-empty.
-                    If both label and synth_name are None, fold ops into the
-                    current block (anonymous segment).
-        """
-
-        label: goto.LabelOp | None
-        ops: list[dgen.Op]
-        synth_name: str | None = None
-
-    def _separate(block: dgen.Block) -> list[_Seg]:
-        """Split a block's ops into segments by label-dependency.
-
-        Ordering: no-dep group first, then each label followed by its
-        single-dep ops, then any remaining labels, then multi-dep groups.
-        """
+    def _separate(block: dgen.Block) -> list[Segment]:
         nonlocal _synth_n
-        groups = assign_to_blocks(block)
-
-        # Single group with no labels → anonymous segment.
-        if len(groups) == 1:
-            _, ops = next(iter(groups.items()))
-            if not any(isinstance(op, goto.LabelOp) for op in ops):
-                return [_Seg(None, ops)]
-
-        def synth(ops_list: list[dgen.Op]) -> _Seg:
-            nonlocal _synth_n
-            name, _synth_n = f"_blk{_synth_n}", _synth_n + 1
-            return _Seg(None, ops_list, synth_name=name)
-
-        # Extract labels from all groups (they may have non-empty keys
-        # when their body captures other labels) and collect non-label
-        # ops into their own groups.
-        labels: list[goto.LabelOp] = []
-        non_label_groups: dict[frozenset[goto.LabelOp], list[dgen.Op]] = {}
-        for key, ops in groups.items():
-            for op in ops:
-                if isinstance(op, goto.LabelOp):
-                    labels.append(op)
-                else:
-                    non_label_groups.setdefault(key, []).append(op)
-
-        if not labels:
-            return [_Seg(None, block.ops)]
-
-        result: list[_Seg] = []
-        no_dep = non_label_groups.pop(frozenset(), None)
-        if no_dep:
-            result.append(synth(no_dep))
-
-        emitted: set[goto.LabelOp] = set()
-        for label in labels:
-            dep_ops = non_label_groups.pop(frozenset({label}), None)
-            if dep_ops is not None:
-                result.append(_Seg(label, []))
-                result.append(synth(dep_ops))
-                emitted.add(label)
-
-        for label in labels:
-            if label not in emitted:
-                result.append(_Seg(label, []))
-
-        for dep_ops in non_label_groups.values():
-            result.append(synth(dep_ops))
-
-        return result
+        segs, _synth_n = assign_to_blocks(block, _synth_n)
+        return segs
 
     # -----------------------------------------------------------------------
     # Phase 2: Linearize — flatten the label tree into a list of LinearBlocks.
