@@ -12,6 +12,7 @@ import llvmlite.binding as llvmlite
 
 import dgen
 from dgen import Type
+from dgen.assign_to_blocks import assign_to_blocks
 from dgen.asm.formatting import SlotTracker, format_float
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import builtin, control_flow, function, goto, llvm, memory
@@ -236,41 +237,14 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             types[arg] = _llvm_type(dgen.type.type_constant(arg.type).__layout__)
 
     # -----------------------------------------------------------------------
-    # Phase 1: Separate — split mixed blocks into label / non-label groups.
+    # Phase 1: Separate — assign ops to basic-block groups by label dep.
     #
-    # A dgen block may contain both LabelOps (which become LLVM basic blocks)
-    # and regular ops (which belong inside those blocks). _separate assigns
-    # each non-label op to the label it data-depends on, or to a synthetic
-    # block if it has no label dependency.
+    # assign_to_blocks computes a GroupKey (frozenset of transitive LabelOp
+    # dependencies) per op in O(V+E).  _separate converts the grouping into
+    # an ordered segment list for _linearize.
     # -----------------------------------------------------------------------
 
     _synth_n = 0
-
-    def _label_deps(op: dgen.Op, block_ops: list[dgen.Op]) -> frozenset[goto.LabelOp]:
-        """Label ops this op transitively depends on (operand edges only).
-
-        Branch targets are parameters, not operands — they don't appear here.
-        That's why cond_br groups with the no-dep ops: its target is a parameter.
-        """
-        labels: set[goto.LabelOp] = {
-            o for o in block_ops if isinstance(o, goto.LabelOp)
-        }
-        deps: set[goto.LabelOp] = set()
-        seen: set[dgen.Value] = set()
-
-        def walk(v: dgen.Value) -> None:
-            if not isinstance(v, dgen.Op) or v in seen:
-                return
-            seen.add(v)
-            if v in labels:
-                assert isinstance(v, goto.LabelOp)
-                deps.add(v)
-                return
-            for _, operand in v.operands:
-                walk(operand)
-
-        walk(op)
-        return frozenset(deps)
 
     @dataclass
     class _Seg:
@@ -294,33 +268,42 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         single-dep ops, then any remaining labels, then multi-dep groups.
         """
         nonlocal _synth_n
-        ops = block.ops
-        labels = [op for op in ops if isinstance(op, goto.LabelOp)]
-        if not labels:
-            return [_Seg(None, ops)]
+        groups = assign_to_blocks(block)
 
-        non_label = [op for op in ops if not isinstance(op, goto.LabelOp)]
-        if not non_label:
-            return [_Seg(label, []) for label in labels]
-
-        groups: dict[frozenset[goto.LabelOp], list[dgen.Op]] = {}
-        for op in non_label:
-            groups.setdefault(_label_deps(op, ops), []).append(op)
+        # Single group with no labels → anonymous segment.
+        if len(groups) == 1:
+            _, ops = next(iter(groups.items()))
+            if not any(isinstance(op, goto.LabelOp) for op in ops):
+                return [_Seg(None, ops)]
 
         def synth(ops_list: list[dgen.Op]) -> _Seg:
             nonlocal _synth_n
             name, _synth_n = f"_blk{_synth_n}", _synth_n + 1
             return _Seg(None, ops_list, synth_name=name)
 
-        result: list[_Seg] = []
-        emitted: set[goto.LabelOp] = set()
+        # Extract labels from all groups (they may have non-empty keys
+        # when their body captures other labels) and collect non-label
+        # ops into their own groups.
+        labels: list[goto.LabelOp] = []
+        non_label_groups: dict[frozenset[goto.LabelOp], list[dgen.Op]] = {}
+        for key, ops in groups.items():
+            for op in ops:
+                if isinstance(op, goto.LabelOp):
+                    labels.append(op)
+                else:
+                    non_label_groups.setdefault(key, []).append(op)
 
-        no_dep = groups.pop(frozenset(), None)
+        if not labels:
+            return [_Seg(None, block.ops)]
+
+        result: list[_Seg] = []
+        no_dep = non_label_groups.pop(frozenset(), None)
         if no_dep:
             result.append(synth(no_dep))
 
+        emitted: set[goto.LabelOp] = set()
         for label in labels:
-            dep_ops = groups.pop(frozenset({label}), None)
+            dep_ops = non_label_groups.pop(frozenset({label}), None)
             if dep_ops is not None:
                 result.append(_Seg(label, []))
                 result.append(synth(dep_ops))
@@ -330,7 +313,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             if label not in emitted:
                 result.append(_Seg(label, []))
 
-        for dep_ops in groups.values():
+        for dep_ops in non_label_groups.values():
             result.append(synth(dep_ops))
 
         return result
