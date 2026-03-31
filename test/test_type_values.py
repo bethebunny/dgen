@@ -103,7 +103,6 @@ def test_typetype_memory_roundtrip():
     assert mem2.to_json() == data
 
 
-@pytest.mark.xfail(reason="params are flattened alongside 'tag' key — collision")
 def test_type_param_named_tag_roundtrips():
     """A type with a parameter named 'tag' must not collide with the serialization tag."""
     from dataclasses import dataclass
@@ -138,8 +137,7 @@ def test_parameterized_typetype_constant_roundtrip():
     data = mem.to_json()
     assert data == {
         "tag": "builtin.Array",
-        "element_type": {"tag": "index.Index"},
-        "n": 4,
+        "params": {"element_type": {"tag": "index.Index"}, "n": 4},
     }
 
     # ASM round-trip with the parameterized TypeType
@@ -148,7 +146,7 @@ def test_parameterized_typetype_constant_roundtrip():
         | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
+        |     %t : Type = {"tag": "builtin.Array", "params": {"element_type": {"tag": "index.Index"}, "n": 4}}
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -542,7 +540,7 @@ def test_parse_typetype_block_arg_constant_materializes():
         | import index
         |
         | %main : function.Function<()> = function.function<Nil>() body(%arr_ty: Type):
-        |     %tt : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
+        |     %tt : Type = {"tag": "builtin.Array", "params": {"element_type": {"tag": "index.Index"}, "n": 4}}
     """)
     module = parse_module(ir)
     tt_op = module.functions[0].body.ops[0]
@@ -552,8 +550,7 @@ def test_parse_typetype_block_arg_constant_materializes():
     mem = tt_op.memory
     assert mem.to_json() == {
         "tag": "builtin.Array",
-        "element_type": {"tag": "index.Index"},
-        "n": 4,
+        "params": {"element_type": {"tag": "index.Index"}, "n": 4},
     }
 
 

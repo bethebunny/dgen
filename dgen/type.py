@@ -90,11 +90,14 @@ def _type_from_dict(data: dict[str, object]) -> Type:
     dialect_name, type_name = tag.split(".")
     dialect = Dialect.get(dialect_name)
     cls = dialect.types[type_name]
+    params = data.get("params")
+    if not params:
+        return cls()
+    assert isinstance(params, dict)
     param_types = dict(cls.__params__)
     kwargs = {
         name: _param_from_json(param_types[name], value)
-        for name, value in data.items()
-        if name != "tag"
+        for name, value in params.items()
     }
     return cls(**kwargs)
 
@@ -134,8 +137,9 @@ class Type(Value["TypeType"]):
     @cached_property
     def __constant__(self) -> Memory[TypeType]:
         data: dict[str, object] = {"tag": self.qualified_name}
-        for name, param in self.parameters:
-            data[name] = param.__constant__.to_json()
+        params = {name: param.__constant__.to_json() for name, param in self.parameters}
+        if params:
+            data["params"] = params
         return Memory.from_json(self.type, data)
 
     @cached_property

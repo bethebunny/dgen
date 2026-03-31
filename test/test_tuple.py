@@ -65,7 +65,7 @@ def test_tuple_type_constant_serialization():
     data = t.__constant__.to_json()
     assert data == {
         "tag": "builtin.Tuple",
-        "types": [{"tag": "index.Index"}, {"tag": "builtin.String"}],
+        "params": {"types": [{"tag": "index.Index"}, {"tag": "builtin.String"}]},
     }
 
 

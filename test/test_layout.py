@@ -205,7 +205,7 @@ def test_type_value_memory_non_parametric():
 def test_type_value_memory_parametric():
     """Pack and unpack Span<index.Index> as a type value through Memory."""
     metatype = TypeType()
-    data = {"tag": "builtin.Span", "pointee": {"tag": "index.Index"}}
+    data = {"tag": "builtin.Span", "params": {"pointee": {"tag": "index.Index"}}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
 
@@ -213,7 +213,7 @@ def test_type_value_memory_parametric():
 def test_type_value_memory_pointer():
     """Pack and unpack Pointer<number.Float64> as a type value through Memory."""
     metatype = TypeType()
-    data = {"tag": "builtin.Pointer", "pointee": {"tag": "number.Float64"}}
+    data = {"tag": "builtin.Pointer", "params": {"pointee": {"tag": "number.Float64"}}}
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
 
@@ -230,9 +230,11 @@ def test_type_value_memory_nested():
     metatype = TypeType()
     data = {
         "tag": "builtin.Span",
-        "pointee": {
-            "tag": "builtin.Span",
-            "pointee": {"tag": "number.Float64"},
+        "params": {
+            "pointee": {
+                "tag": "builtin.Span",
+                "params": {"pointee": {"tag": "number.Float64"}},
+            },
         },
     }
     mem = Memory.from_json(metatype, data)
@@ -283,7 +285,7 @@ def test_type_constant_parametric():
     """Parametric type's __constant__ includes param values."""
     ty = builtin.Span(pointee=builtin.Index())
     data = ty.__constant__.to_json()
-    expected = {"tag": "builtin.Span", "pointee": {"tag": "index.Index"}}
+    expected = {"tag": "builtin.Span", "params": {"pointee": {"tag": "index.Index"}}}
     assert data == expected
 
 

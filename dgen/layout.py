@@ -262,7 +262,7 @@ class TypeValue(Layout):
         dialect_name, type_name = tag.split(".")
         dialect = Dialect.get(dialect_name)
         cls = dialect.types[type_name]
-        fields: list[tuple[str, Layout]] = [("tag", String())]
+        fields: list[tuple[str, Layout]] = [("__tag__", String())]
         for param_name, param_type in cls.__params__:
             if self._is_type_kinded(param_type):
                 # Type-kinded param: its layout is itself a TypeValue pointer
@@ -284,9 +284,14 @@ class TypeValue(Layout):
         tag = value["tag"]
         assert isinstance(tag, str)
         pointee_layout = self._resolve_layout(tag)
+        # Unnest "params" into the flat Record form for binary layout.
+        flat: dict[str, object] = {"__tag__": tag}
+        params = value.get("params")
+        if isinstance(params, dict):
+            flat.update(params)
         origin = bytearray(pointee_layout.byte_size)
         origins.append(origin)
-        pointee_layout.from_json(origin, 0, value, origins)
+        pointee_layout.from_json(origin, 0, flat, origins)
         self.struct.pack_into(buf, offset, _bytearray_address(origin))
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
@@ -299,7 +304,14 @@ class TypeValue(Layout):
         # Now resolve full layout and read entire buffer
         pointee_layout = self._resolve_layout(tag)
         data = bytes((ctypes.c_char * pointee_layout.byte_size).from_address(ptr))
-        return pointee_layout.to_json(data, 0)
+        flat = pointee_layout.to_json(data, 0)
+        assert isinstance(flat, dict)
+        # Nest params under "params" to avoid key collision with "tag".
+        result: dict[str, object] = {"tag": tag}
+        params = {k: v for k, v in flat.items() if k != "__tag__"}
+        if params:
+            result["params"] = params
+        return result
 
 
 class String(Span):
