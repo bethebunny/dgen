@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
-from dgen import Dialect, Op, Trait, Type, Value, has_trait, layout
+import pytest
+
+from dgen import Block, Dialect, Op, Trait, Type, TypeType, Value, has_trait, layout
+from dgen.dialects.function import Function, FunctionOp
 from dgen.gen.ast import TraitConstraint
 from dgen.gen.parser import parse
+from dgen.module import Module
 from dgen.trait import Trait as TraitBase
+from dgen.type import Fields
+from dgen.verify import ConstraintError, verify_constraints
 
 
 # -- Fixtures: a tiny dialect with traits, types, and ops --------------------
@@ -43,24 +50,91 @@ class AddNumsOp(Numeric, Op):
     lhs: Value
     rhs: Value
     type: Type = MyInt()
-    __operands__ = (("lhs", Type), ("rhs", Type))
+    __operands__: ClassVar[Fields] = (("lhs", Type), ("rhs", Type))
+
+
+@_test.op("requires_numeric")
+@dataclass(eq=False, kw_only=True)
+class RequiresNumericOp(Op):
+    """An op with a trait constraint: operand 'input' must have Numeric trait."""
+
+    input: Value
+    type: Type = MyInt()
+    __operands__: ClassVar[Fields] = (("input", Type),)
+    __constraints__ = (TraitConstraint(lhs="input", trait="Numeric"),)
+
+
+@_test.op("requires_ordered")
+@dataclass(eq=False, kw_only=True)
+class RequiresOrderedOp(Op):
+    """An op with a trait constraint: operand 'input' must have Ordered trait."""
+
+    input: Value
+    type: Type = MyInt()
+    __operands__: ClassVar[Fields] = (("input", Type),)
+    __constraints__ = (TraitConstraint(lhs="input", trait="Ordered"),)
+
+
+@_test.op("requires_both")
+@dataclass(eq=False, kw_only=True)
+class RequiresBothOp(Op):
+    """An op requiring both Numeric and Ordered traits on its operand."""
+
+    input: Value
+    type: Type = MyInt()
+    __operands__: ClassVar[Fields] = (("input", Type),)
+    __constraints__ = (
+        TraitConstraint(lhs="input", trait="Numeric"),
+        TraitConstraint(lhs="input", trait="Ordered"),
+    )
+
+
+@_test.op("requires_param_trait")
+@dataclass(eq=False, kw_only=True)
+class RequiresParamTraitOp(Op):
+    """An op with a trait constraint on a compile-time parameter."""
+
+    kind: Value[TypeType]
+    type: Type = MyInt()
+    __params__: ClassVar[Fields] = (("kind", TypeType),)
+    __constraints__ = (TraitConstraint(lhs="kind", trait="Numeric"),)
+
+
+@_test.op("no_constraints")
+@dataclass(eq=False, kw_only=True)
+class NoConstraintsOp(Op):
+    input: Value
+    type: Type = MyInt()
+    __operands__: ClassVar[Fields] = (("input", Type),)
+
+
+def _make_module(*body_ops: Op) -> Module:
+    """Build a minimal Module wrapping ops inside a function body."""
+    result = body_ops[-1] if body_ops else MyInt().constant(0)
+    func = FunctionOp(
+        name="test_fn",
+        body=Block(result=result, args=[]),
+        result=MyInt(),
+        type=Function(result=MyInt()),
+    )
+    return Module(ops=[func])
 
 
 # -- Trait base class --------------------------------------------------------
 
 
-def test_trait_inherits_from_base():
+def test_trait_inherits_from_base() -> None:
     assert issubclass(Numeric, TraitBase)
     assert issubclass(Ordered, TraitBase)
 
 
-def test_trait_registered_in_dialect_traits():
+def test_trait_registered_in_dialect_traits() -> None:
     assert "Numeric" in _test.traits
     assert _test.traits["Numeric"] is Numeric
     assert "Ordered" in _test.traits
 
 
-def test_trait_not_in_dialect_types():
+def test_trait_not_in_dialect_types() -> None:
     assert "Numeric" not in _test.types
     assert "Ordered" not in _test.types
 
@@ -68,12 +142,12 @@ def test_trait_not_in_dialect_types():
 # -- has_trait() on types ----------------------------------------------------
 
 
-def test_has_trait_type_positive():
+def test_has_trait_type_positive() -> None:
     assert has_trait(MyInt(), Numeric)
     assert has_trait(MyInt(), Ordered)
 
 
-def test_has_trait_type_negative():
+def test_has_trait_type_negative() -> None:
     assert not has_trait(MyStr(), Numeric)
     assert not has_trait(MyStr(), Ordered)
 
@@ -81,12 +155,12 @@ def test_has_trait_type_negative():
 # -- has_trait() on ops ------------------------------------------------------
 
 
-def test_has_trait_op_positive():
+def test_has_trait_op_positive() -> None:
     op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
     assert has_trait(op, Numeric)
 
 
-def test_has_trait_op_negative():
+def test_has_trait_op_negative() -> None:
     op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
     assert not has_trait(op, Ordered)
 
@@ -94,7 +168,7 @@ def test_has_trait_op_negative():
 # -- .dgen built traits inherit from Trait -----------------------------------
 
 
-def test_dgen_built_trait_inherits():
+def test_dgen_built_trait_inherits() -> None:
     """Traits built from .dgen files inherit from Trait."""
     from dgen.dialects import algebra
 
@@ -103,7 +177,7 @@ def test_dgen_built_trait_inherits():
     assert issubclass(algebra.TotalOrder, TraitBase)
 
 
-def test_dgen_built_trait_in_dialect_traits():
+def test_dgen_built_trait_in_dialect_traits() -> None:
     """Traits built from .dgen are in dialect.traits, not dialect.types."""
     from dgen.dialects import algebra
 
@@ -114,7 +188,7 @@ def test_dgen_built_trait_in_dialect_traits():
 # -- Parser: has trait / has type constraints --------------------------------
 
 
-def test_parse_has_trait_constraint():
+def test_parse_has_trait_constraint() -> None:
     src = "op foo(x) -> Type:\n    requires x has trait Numeric\n"
     op = parse(src).ops[0]
     assert len(op.constraints) == 1
@@ -124,7 +198,7 @@ def test_parse_has_trait_constraint():
     assert c.trait == "Numeric"
 
 
-def test_parse_type_body_requires():
+def test_parse_type_body_requires() -> None:
     src = "type Foo<t: Type>:\n    requires t has trait Numeric\n"
     td = parse(src).types[0]
     assert len(td.constraints) == 1
@@ -132,3 +206,151 @@ def test_parse_type_body_requires():
     assert isinstance(c, TraitConstraint)
     assert c.lhs == "t"
     assert c.trait == "Numeric"
+
+
+# -- verify_constraints: satisfied constraints -------------------------------
+
+
+def test_verify_operand_trait_satisfied() -> None:
+    """Constraint passes when operand type implements the required trait."""
+    c = MyInt().constant(42)
+    op = RequiresNumericOp(input=c)
+    module = _make_module(op)
+    verify_constraints(module)  # should not raise
+
+
+def test_verify_both_traits_satisfied() -> None:
+    """Both trait constraints pass when operand type implements both."""
+    c = MyInt().constant(42)
+    op = RequiresBothOp(input=c)
+    module = _make_module(op)
+    verify_constraints(module)  # should not raise
+
+
+def test_verify_no_constraints_passes() -> None:
+    """Ops without constraints pass verification."""
+    c = MyStr().constant("hello")
+    op = NoConstraintsOp(input=c)
+    module = _make_module(op)
+    verify_constraints(module)  # should not raise
+
+
+def test_verify_param_trait_satisfied() -> None:
+    """Constraint passes when a compile-time parameter's type has the trait."""
+    op = RequiresParamTraitOp(kind=MyInt())
+    module = _make_module(op)
+    verify_constraints(module)  # should not raise
+
+
+# -- verify_constraints: violated constraints --------------------------------
+
+
+def test_verify_operand_trait_violated() -> None:
+    """Constraint fails when operand type does not implement the required trait."""
+    c = MyStr().constant("hello")
+    op = RequiresNumericOp(input=c)
+    module = _make_module(op)
+    with pytest.raises(ConstraintError, match="does not implement trait Numeric"):
+        verify_constraints(module)
+
+
+def test_verify_ordered_trait_violated() -> None:
+    """MyStr does not implement Ordered — constraint fails."""
+    c = MyStr().constant("hello")
+    op = RequiresOrderedOp(input=c)
+    module = _make_module(op)
+    with pytest.raises(ConstraintError, match="does not implement trait Ordered"):
+        verify_constraints(module)
+
+
+def test_verify_one_of_two_traits_violated() -> None:
+    """When one of two constraints fails, verification raises."""
+    # MyStr lacks both Numeric and Ordered — first failure is Numeric
+    c = MyStr().constant("hello")
+    op = RequiresBothOp(input=c)
+    module = _make_module(op)
+    with pytest.raises(ConstraintError, match="does not implement trait Numeric"):
+        verify_constraints(module)
+
+
+def test_verify_param_trait_violated() -> None:
+    """Constraint fails when parameter type does not have the trait."""
+    op = RequiresParamTraitOp(kind=MyStr())
+    module = _make_module(op)
+    with pytest.raises(ConstraintError, match="does not implement trait Numeric"):
+        verify_constraints(module)
+
+
+def test_verify_error_names_op() -> None:
+    """Error message includes the op class name and op name."""
+    c = MyStr().constant("hello")
+    op = RequiresNumericOp(input=c, name="bad_op")
+    module = _make_module(op)
+    with pytest.raises(ConstraintError, match="RequiresNumericOp %bad_op"):
+        verify_constraints(module)
+
+
+def test_verify_error_names_operand_and_type() -> None:
+    """Error message includes the operand name and actual type."""
+    c = MyStr().constant("hello")
+    op = RequiresNumericOp(input=c, name="v0")
+    module = _make_module(op)
+    with pytest.raises(ConstraintError, match="operand 'input' has type MyStr"):
+        verify_constraints(module)
+
+
+# -- verify_constraints: unknown subject / trait -----------------------------
+
+
+def test_verify_unknown_subject_raises() -> None:
+    """Constraint referencing a non-existent operand name raises."""
+
+    @dataclass(eq=False, kw_only=True)
+    class BadSubjectOp(Op):
+        input: Value
+        type: Type = MyInt()
+        __operands__: ClassVar[Fields] = (("input", Type),)
+        __constraints__ = (TraitConstraint(lhs="nonexistent", trait="Numeric"),)
+
+    _test.op("bad_subject")(BadSubjectOp)
+
+    c = MyInt().constant(42)
+    op = BadSubjectOp(input=c)
+    module = _make_module(op)
+    with pytest.raises(ConstraintError, match="unknown subject 'nonexistent'"):
+        verify_constraints(module)
+
+
+def test_verify_unknown_trait_raises() -> None:
+    """Constraint referencing a non-existent trait name raises."""
+
+    @dataclass(eq=False, kw_only=True)
+    class BadTraitOp(Op):
+        input: Value
+        type: Type = MyInt()
+        __operands__: ClassVar[Fields] = (("input", Type),)
+        __constraints__ = (TraitConstraint(lhs="input", trait="NoSuchTrait"),)
+
+    _test.op("bad_trait")(BadTraitOp)
+
+    c = MyInt().constant(42)
+    op = BadTraitOp(input=c)
+    module = _make_module(op)
+    with pytest.raises(ConstraintError, match="unknown trait 'NoSuchTrait'"):
+        verify_constraints(module)
+
+
+# -- verify_constraints: mixed ops in a module -------------------------------
+
+
+def test_verify_mixed_ops_first_bad() -> None:
+    """Module with one good op and one bad op: verification catches the bad one."""
+    good = RequiresNumericOp(input=MyInt().constant(1), name="good")
+    bad = RequiresNumericOp(input=MyStr().constant("x"), name="bad")
+    # Both ops in the same function body — result is the last one
+    from dgen.dialects.builtin import ChainOp
+
+    chain = ChainOp(lhs=bad, rhs=good, type=MyInt())
+    module = _make_module(chain)
+    with pytest.raises(ConstraintError, match="RequiresNumericOp %bad"):
+        verify_constraints(module)
