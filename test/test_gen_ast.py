@@ -4,7 +4,7 @@ from dgen.gen.ast import (
     DataField,
     DgenFile,
     EqConstraint,
-    ExprConstraint,
+    ExpressionConstraint,
     MatchConstraint,
     OpDecl,
     TraitConstraint,
@@ -58,7 +58,7 @@ def test_constraint_eq():
 
 
 def test_constraint_expr():
-    c = ExprConstraint(expr="axis < X.rank")
+    c = ExpressionConstraint(expr="axis < X.rank")
     assert c.expr == "axis < X.rank"
 
 

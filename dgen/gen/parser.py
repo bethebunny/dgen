@@ -7,7 +7,7 @@ from dgen.gen.ast import (
     DataField,
     DgenFile,
     EqConstraint,
-    ExprConstraint,
+    ExpressionConstraint,
     ImportDecl,
     MatchConstraint,
     OpDecl,
@@ -307,7 +307,7 @@ def _parse_constraint(line: str) -> Constraint:
         lhs_s, rhs_s = _strip_sigil(lhs.strip()), _strip_sigil(rhs.strip())
         if "." not in lhs_s and "." not in rhs_s:
             return EqConstraint(lhs=lhs_s, rhs=rhs_s)
-    return ExprConstraint(expr=rest.strip())
+    return ExpressionConstraint(expr=rest.strip())
 
 
 def _parse_decl_parts(
