@@ -12,10 +12,10 @@ import dataclasses
 from collections.abc import Iterator
 from types import ModuleType
 
-from dgen import Block, Dialect, Op, Type, TypeType, Value
+from dgen import Block, Dialect, Op, Trait, Type, TypeType, Value
 from dgen.type import Constant
 
-_DGEN_CORE: frozenset[type] = frozenset({Type, Op, Value, Block, TypeType})
+_DGEN_CORE: frozenset[type] = frozenset({Type, Op, Value, Block, TypeType, Trait})
 
 
 # ---------------------------------------------------------------------------
@@ -156,9 +156,12 @@ def generate_pyi(module: ModuleType, dialect_name: str) -> str:
         for cls in dialect.ops.values()
         if dataclasses.is_dataclass(cls)
     )
+    needs_trait = bool(dialect.traits)
 
     dgen_imports = sorted(
-        {"Dialect", "Op", "Type", "Value"} | ({"Block"} if needs_block else set())
+        {"Dialect", "Op", "Type", "Value"}
+        | ({"Block"} if needs_block else set())
+        | ({"Trait"} if needs_trait else set())
     )
 
     lines: list[str] = [
@@ -180,39 +183,31 @@ def generate_pyi(module: ModuleType, dialect_name: str) -> str:
     lines += ["", f'{dialect_name} = Dialect("{dialect_name}")', ""]
 
     # Traits
-    for name, val in ns.items():
-        if (
-            isinstance(val, type)
-            and not name.startswith("_")
-            and not issubclass(val, (Type, Op))
-            and val not in _DGEN_CORE
-            and getattr(val, "__module__", None) == current_module
-        ):
-            trait_annotations = getattr(val, "__annotations__", {})
-            trait_body: list[str] = []
-            for attr_name in trait_annotations:
-                attr_val = getattr(val, attr_name, dataclasses.MISSING)
-                if attr_val is not dataclasses.MISSING:
-                    trait_body.append(f"    {attr_name} = {attr_val!r}")
-                else:
-                    trait_body.append(
-                        f"    {attr_name}: {trait_annotations[attr_name]}"
-                    )
-            # Also include class-level defaults that aren't annotations
-            for attr_name, attr_val in vars(val).items():
-                if (
-                    attr_name not in trait_annotations
-                    and not attr_name.startswith("_")
-                    and attr_name != "__module__"
-                ):
-                    trait_body.append(f"    {attr_name} = {attr_val!r}")
-
-            lines.append(f"class {name}:")
-            if trait_body:
-                lines.extend(trait_body)
+    for name, val in dialect.traits.items():
+        trait_annotations = getattr(val, "__annotations__", {})
+        trait_body: list[str] = []
+        for attr_name in trait_annotations:
+            attr_val = getattr(val, attr_name, dataclasses.MISSING)
+            if attr_val is not dataclasses.MISSING:
+                trait_body.append(f"    {attr_name} = {attr_val!r}")
             else:
-                lines.append("    ...")
-            lines.append("")
+                trait_body.append(f"    {attr_name}: {trait_annotations[attr_name]}")
+        # Also include class-level defaults that aren't annotations
+        _TRAIT_INTERNAL = {"__module__", "asm_name", "dialect"}
+        for attr_name, attr_val in vars(val).items():
+            if (
+                attr_name not in trait_annotations
+                and not attr_name.startswith("_")
+                and attr_name not in _TRAIT_INTERNAL
+            ):
+                trait_body.append(f"    {attr_name} = {attr_val!r}")
+
+        lines.append(f"class {name}(Trait):")
+        if trait_body:
+            lines.extend(trait_body)
+        else:
+            lines.append("    ...")
+        lines.append("")
 
     # Types
     for cls in dialect.types.values():

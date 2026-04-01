@@ -14,10 +14,15 @@ from types import ModuleType
 
 import dgen
 from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
+from dgen.trait import Trait
 from dgen.gen.ast import (
     Constraint,
     DgenFile,
+    EqConstraint,
+    ExprConstraint,
+    MatchConstraint,
     OpDecl,
+    TraitConstraint,
     TraitDecl,
     TypeDecl,
     TypeRef,
@@ -115,11 +120,13 @@ def _as_layout_or_property(fn: _LayoutFn, parametric: bool) -> layout.Layout | p
 
 
 def _fmt_constraint(c: Constraint) -> str:
-    if c.kind == "match":
-        return f"{c.lhs} ~= {c.pattern}"
-    if c.kind == "eq":
+    if isinstance(c, MatchConstraint):
+        return f"{c.lhs} has type {c.pattern}"
+    if isinstance(c, EqConstraint):
         return f"{c.lhs} == {c.rhs}"
-    assert c.expr is not None
+    if isinstance(c, TraitConstraint):
+        return f"{c.lhs} has trait {c.trait}"
+    assert isinstance(c, ExprConstraint)
     return c.expr
 
 
@@ -207,7 +214,7 @@ def _make_type_default(
         return None
 
 
-def _build_trait(td: TraitDecl, ns: dict[str, object]) -> type:
+def _build_trait(td: TraitDecl, dialect: Dialect, ns: dict[str, object]) -> type:
     trait_ns: dict[str, object] = {"__module__": ns.get("__name__", "")}
     annotations = {sf.name: sf.type.name for sf in td.statics if sf.default is None}
     trait_ns.update(
@@ -219,7 +226,9 @@ def _build_trait(td: TraitDecl, ns: dict[str, object]) -> type:
     )
     if annotations:
         trait_ns["__annotations__"] = annotations
-    return type(td.name, (), trait_ns)
+    cls = type(td.name, (Trait,), trait_ns)
+    dialect.trait(td.name)(cls)
+    return cls
 
 
 def _build_type(td: TypeDecl, dialect: Dialect, ns: dict[str, object]) -> type:
@@ -257,6 +266,9 @@ def _build_type(td: TypeDecl, dialect: Dialect, ns: dict[str, object]) -> type:
             if sf.default is not None
         }
     )
+    if td.constraints:
+        type_ns["__constraints__"] = tuple(td.constraints)
+
     if annotations:
         type_ns["__annotations__"] = annotations
 
@@ -311,7 +323,7 @@ def _build_op(
     if od.blocks:
         op_ns["__blocks__"] = tuple(od.blocks)
     if od.constraints:
-        op_ns["__constraints__"] = tuple(_fmt_constraint(c) for c in od.constraints)
+        op_ns["__constraints__"] = tuple(od.constraints)
 
     op_ns["__annotations__"] = annotations
     bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in od.traits) + (Op,)
@@ -350,7 +362,7 @@ def build(
                 ns[imp.module] = mod
 
     for td in ast.traits:
-        ns[td.name] = _build_trait(td, ns)
+        ns[td.name] = _build_trait(td, d, ns)
 
     type_map = {td.name: td for td in ast.types}
     known_names = set(type_map) | {name for imp in ast.imports for name in imp.names}

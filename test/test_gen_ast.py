@@ -1,10 +1,13 @@
 """Tests for .dgen AST types."""
 
 from dgen.gen.ast import (
-    Constraint,
     DataField,
     DgenFile,
+    EqConstraint,
+    ExprConstraint,
+    MatchConstraint,
     OpDecl,
+    TraitConstraint,
     TypeDecl,
     TypeRef,
 )
@@ -43,20 +46,26 @@ def test_data_field_with_compound_type():
 
 
 def test_constraint_match():
-    c = Constraint(kind="match", lhs="$X", pattern="Tensor")
-    assert c.kind == "match"
-    assert c.lhs == "$X"
+    c = MatchConstraint(lhs="X", pattern="Tensor")
+    assert c.lhs == "X"
     assert c.pattern == "Tensor"
 
 
 def test_constraint_eq():
-    c = Constraint(kind="eq", lhs="$X", rhs="$Result")
-    assert c.kind == "eq"
+    c = EqConstraint(lhs="X", rhs="Result")
+    assert c.lhs == "X"
+    assert c.rhs == "Result"
 
 
 def test_constraint_expr():
-    c = Constraint(kind="expr", expr="axis < $X.rank")
-    assert c.kind == "expr"
+    c = ExprConstraint(expr="axis < X.rank")
+    assert c.expr == "axis < X.rank"
+
+
+def test_constraint_trait():
+    c = TraitConstraint(lhs="lhs", trait="AddMagma")
+    assert c.lhs == "lhs"
+    assert c.trait == "AddMagma"
 
 
 def test_op_with_constraints():
@@ -64,7 +73,8 @@ def test_op_with_constraints():
         name="tile",
         return_type=TypeRef("Type"),
         constraints=[
-            Constraint(kind="match", lhs="$X", pattern="Tensor"),
+            MatchConstraint(lhs="X", pattern="Tensor"),
         ],
     )
     assert len(op.constraints) == 1
+    assert isinstance(op.constraints[0], MatchConstraint)

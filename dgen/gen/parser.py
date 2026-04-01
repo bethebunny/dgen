@@ -6,11 +6,15 @@ from dgen.gen.ast import (
     Constraint,
     DataField,
     DgenFile,
+    EqConstraint,
+    ExprConstraint,
     ImportDecl,
+    MatchConstraint,
     OpDecl,
     OperandDecl,
     ParamDecl,
     StaticField,
+    TraitConstraint,
     TraitDecl,
     TypeDecl,
     TypeRef,
@@ -110,8 +114,9 @@ class _Parser:
         layout: str | None = None
         traits: list[str] = []
         statics: list[StaticField] = []
+        constraints: list[Constraint] = []
         if has_body:
-            data, layout, traits, statics = self._parse_type_body()
+            data, layout, traits, statics, constraints = self._parse_type_body()
         return TypeDecl(
             name=name,
             params=params,
@@ -119,16 +124,20 @@ class _Parser:
             layout=layout,
             traits=traits,
             statics=statics,
+            constraints=constraints,
         )
 
     def _parse_type_body(
         self,
-    ) -> tuple[list[DataField], str | None, list[str], list[StaticField]]:
-        """Parse indented type body lines, return (data fields, layout name, traits, statics)."""
+    ) -> tuple[
+        list[DataField], str | None, list[str], list[StaticField], list[Constraint]
+    ]:
+        """Parse indented type body lines, return (data fields, layout name, traits, statics, constraints)."""
         data: list[DataField] = []
         layout = None
         traits: list[str] = []
         statics: list[StaticField] = []
+        constraints: list[Constraint] = []
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
             # Skip blank lines but only if a subsequent indented line follows
@@ -155,13 +164,17 @@ class _Parser:
             if stripped.startswith("static "):
                 statics.append(_parse_static_field(stripped))
                 continue
+            # Constraint: requires ...
+            if stripped.startswith("requires "):
+                constraints.append(_parse_constraint(stripped))
+                continue
             # Field declaration: name: TypeExpr
             if ":" in stripped:
                 colon = stripped.index(":")
                 field_name = stripped[:colon].strip()
                 type_str = stripped[colon + 1 :].strip()
                 data.append(DataField(name=field_name, type=_parse_type_ref(type_str)))
-        return data, layout, traits, statics
+        return data, layout, traits, statics, constraints
 
     def _has_more_body(self, pos: int) -> bool:
         """Check if there's a subsequent indented line after blank lines at pos."""
@@ -268,24 +281,33 @@ def _parse_static_field(line: str) -> StaticField:
     )
 
 
+def _strip_sigil(name: str) -> str:
+    """Strip legacy $ prefix from a name."""
+    return name[1:] if name.startswith("$") else name
+
+
 def _parse_constraint(line: str) -> Constraint:
     """Parse a 'requires ...' line into a Constraint."""
     rest = line[9:]  # strip "requires "
+    # has trait: requires X has trait TraitName
+    if " has trait " in rest:
+        lhs, trait = rest.split(" has trait ", 1)
+        return TraitConstraint(lhs=_strip_sigil(lhs.strip()), trait=trait.strip())
+    # has type: requires X has type TypeName
+    if " has type " in rest:
+        lhs, pattern = rest.split(" has type ", 1)
+        return MatchConstraint(lhs=_strip_sigil(lhs.strip()), pattern=pattern.strip())
+    # ~= (backward compat alias for has type)
     if " ~= " in rest:
         lhs, pattern = rest.split(" ~= ", 1)
-        return Constraint(kind="match", lhs=lhs.strip(), pattern=pattern.strip())
+        return MatchConstraint(lhs=_strip_sigil(lhs.strip()), pattern=pattern.strip())
+    # == between two simple names (no dots)
     if " == " in rest:
         lhs, rhs = rest.split(" == ", 1)
-        lhs_s, rhs_s = lhs.strip(), rhs.strip()
-        # Only "eq" if both sides are simple metavariables ($Var, no dots)
-        if (
-            lhs_s.startswith("$")
-            and "." not in lhs_s
-            and rhs_s.startswith("$")
-            and "." not in rhs_s
-        ):
-            return Constraint(kind="eq", lhs=lhs_s, rhs=rhs_s)
-    return Constraint(kind="expr", expr=rest.strip())
+        lhs_s, rhs_s = _strip_sigil(lhs.strip()), _strip_sigil(rhs.strip())
+        if "." not in lhs_s and "." not in rhs_s:
+            return EqConstraint(lhs=lhs_s, rhs=rhs_s)
+    return ExprConstraint(expr=rest.strip())
 
 
 def _parse_decl_parts(

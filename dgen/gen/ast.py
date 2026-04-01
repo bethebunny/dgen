@@ -60,21 +60,39 @@ class StaticField:
     default: str | None = None
 
 
-@dataclass
 class Constraint:
-    """A requires clause on an op.
+    """Base class for requires clauses on ops and types."""
 
-    Kinds:
-    - "match": requires $Var ~= TypePattern  (lhs, pattern)
-    - "eq":    requires $Var == $Var          (lhs, rhs)
-    - "expr":  requires <expression>          (expr)
-    """
 
-    kind: str  # "match", "eq", or "expr"
-    lhs: str | None = None
-    pattern: str | None = None
-    rhs: str | None = None
-    expr: str | None = None
+@dataclass
+class MatchConstraint(Constraint):
+    """requires X has type Tensor"""
+
+    lhs: str
+    pattern: str
+
+
+@dataclass
+class EqConstraint(Constraint):
+    """requires X == Result"""
+
+    lhs: str
+    rhs: str
+
+
+@dataclass
+class ExprConstraint(Constraint):
+    """requires axis < X.rank"""
+
+    expr: str
+
+
+@dataclass
+class TraitConstraint(Constraint):
+    """requires lhs has trait AddMagma"""
+
+    lhs: str
+    trait: str
 
 
 @dataclass
@@ -95,6 +113,7 @@ class TypeDecl:
     layout: str | None = None
     traits: list[str] = field(default_factory=list)
     statics: list[StaticField] = field(default_factory=list)
+    constraints: list[Constraint] = field(default_factory=list)
 
 
 @dataclass

@@ -5,11 +5,17 @@ from __future__ import annotations
 import dgen
 from dgen import asm
 from dgen.block import Block, BlockArgument, BlockParameter
+from dgen.gen.ast import TraitConstraint
 from dgen.module import Module, _walk_all_ops
+from dgen.trait import Trait
 
 
 class VerificationError(Exception):
     """Base class for IR verification errors."""
+
+
+class ConstraintError(VerificationError):
+    """An op or type violates a declared constraint."""
 
 
 class ClosedBlockError(VerificationError):
@@ -196,3 +202,61 @@ def verify_all_ready(module: Module) -> None:
                     f"(has unresolved parameter dependencies)\n\n"
                     + _annotated_module(module, op)
                 )
+
+
+# ---------------------------------------------------------------------------
+# verify_constraints
+# ---------------------------------------------------------------------------
+
+
+def _resolve_trait(trait_name: str, op: dgen.Op) -> type[Trait]:
+    """Look up a trait class by name from the op's dialect registry."""
+    from dgen.dialect import Dialect
+
+    for d in Dialect._registry.values():
+        if trait_name in d.traits:
+            return d.traits[trait_name]
+    raise ConstraintError(
+        f"unknown trait {trait_name!r} referenced in constraint on "
+        f"{type(op).__name__} %{op.name}"
+    )
+
+
+def _resolve_subject_type(subject: str, op: dgen.Op) -> dgen.Type:
+    """Resolve a constraint subject name to the type of that operand/param."""
+    from dgen.type import type_constant
+
+    for name, operand in op.operands:
+        if name == subject:
+            return type_constant(operand.type)
+    for name, param in op.parameters:
+        if name == subject:
+            return type_constant(param)
+    raise ConstraintError(
+        f"constraint references unknown subject {subject!r} on "
+        f"{type(op).__name__} %{op.name}"
+    )
+
+
+def verify_constraints(module: Module) -> None:
+    """Check trait constraints on all ops in the module.
+
+    For each op with ``__constraints__``, verifies that trait constraints
+    are satisfied: the subject's type must be an instance of the trait class.
+    Other constraint kinds (match, eq, expr) are not yet verified.
+    """
+    for func in module.functions:
+        for op in _walk_all_ops(func):
+            constraints: tuple[object, ...] = getattr(type(op), "__constraints__", ())
+            for c in constraints:
+                if not isinstance(c, TraitConstraint):
+                    continue
+                subject_type = _resolve_subject_type(c.lhs, op)
+                trait_cls = _resolve_trait(c.trait, op)
+                if not isinstance(subject_type, trait_cls):
+                    raise ConstraintError(
+                        f"{type(op).__name__} %{op.name}: "
+                        f"operand {c.lhs!r} has type {type(subject_type).__name__} "
+                        f"which does not implement trait {c.trait}\n\n"
+                        + _annotated_module(module, op)
+                    )

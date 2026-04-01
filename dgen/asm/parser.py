@@ -125,7 +125,7 @@ def _lookup_op(name: str) -> type[Op]:
 def _lookup_type(name: str) -> type[Type]:
     """Look up a type by name, splitting on '.' for qualified names."""
     dialect, local = _resolve_name(name)
-    type_cls = dialect.types.get(local)
+    type_cls = dialect.types.get(local) or dialect.traits.get(local)
     if type_cls is None:
         raise ParseError(f"Unknown type: {name}")
     return type_cls
