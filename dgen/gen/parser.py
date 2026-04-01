@@ -6,7 +6,6 @@ from dgen.gen.ast import (
     Constraint,
     DataField,
     DgenFile,
-    EqConstraint,
     ExpressionConstraint,
     ImportDecl,
     MatchConstraint,
@@ -301,12 +300,6 @@ def _parse_constraint(line: str) -> Constraint:
     if " ~= " in rest:
         lhs, pattern = rest.split(" ~= ", 1)
         return MatchConstraint(lhs=_strip_sigil(lhs.strip()), pattern=pattern.strip())
-    # == between two simple names (no dots)
-    if " == " in rest:
-        lhs, rhs = rest.split(" == ", 1)
-        lhs_s, rhs_s = _strip_sigil(lhs.strip()), _strip_sigil(rhs.strip())
-        if "." not in lhs_s and "." not in rhs_s:
-            return EqConstraint(lhs=lhs_s, rhs=rhs_s)
     return ExpressionConstraint(expr=rest.strip())
 
 

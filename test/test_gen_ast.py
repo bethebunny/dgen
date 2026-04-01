@@ -3,7 +3,6 @@
 from dgen.gen.ast import (
     DataField,
     DgenFile,
-    EqConstraint,
     ExpressionConstraint,
     MatchConstraint,
     OpDecl,
@@ -49,12 +48,6 @@ def test_constraint_match():
     c = MatchConstraint(lhs="X", pattern="Tensor")
     assert c.lhs == "X"
     assert c.pattern == "Tensor"
-
-
-def test_constraint_eq():
-    c = EqConstraint(lhs="X", rhs="Result")
-    assert c.lhs == "X"
-    assert c.rhs == "Result"
 
 
 def test_constraint_expr():

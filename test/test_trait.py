@@ -9,7 +9,7 @@ import pytest
 
 from dgen import Block, Dialect, Op, Trait, Type, TypeType, Value, has_trait, layout
 from dgen.dialects.function import Function, FunctionOp
-from dgen.gen.ast import TraitConstraint
+from dgen.gen.ast import ExpressionConstraint, MatchConstraint, TraitConstraint
 from dgen.gen.parser import parse
 from dgen.module import Module
 from dgen.trait import Trait as TraitBase
@@ -353,4 +353,74 @@ def test_verify_mixed_ops_first_bad() -> None:
     chain = ChainOp(lhs=bad, rhs=good, type=MyInt())
     module = _make_module(chain)
     with pytest.raises(ConstraintError, match="RequiresNumericOp %bad"):
+        verify_constraints(module)
+
+
+# -- verify_constraints: expression constraints (not yet implemented) --------
+
+
+@_test.op("requires_positive")
+@dataclass(eq=False, kw_only=True)
+class RequiresPositiveOp(Op):
+    """Op with an expression constraint: requires value > 0."""
+
+    input: Value
+    type: Type = MyInt()
+    __operands__: ClassVar[Fields] = (("input", Type),)
+    __constraints__ = (ExpressionConstraint(expr="input > 0"),)
+
+
+@_test.op("requires_equal_types")
+@dataclass(eq=False, kw_only=True)
+class RequiresEqualTypesOp(Op):
+    """Op with an expression constraint: requires lhs type == rhs type."""
+
+    lhs: Value
+    rhs: Value
+    type: Type = MyInt()
+    __operands__: ClassVar[Fields] = (("lhs", Type), ("rhs", Type))
+    __constraints__ = (ExpressionConstraint(expr="$lhs == $rhs"),)
+
+
+@_test.op("requires_match")
+@dataclass(eq=False, kw_only=True)
+class RequiresMatchOp(Op):
+    """Op with a match constraint: requires input has type MyInt."""
+
+    input: Value
+    type: Type = MyInt()
+    __operands__: ClassVar[Fields] = (("input", Type),)
+    __constraints__ = (MatchConstraint(lhs="input", pattern="MyInt"),)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="expression constraint verification not yet implemented"
+)
+def test_verify_expression_constraint_violated() -> None:
+    """Expression constraint should fail when condition is false."""
+    op = RequiresPositiveOp(input=MyInt().constant(-1))
+    module = _make_module(op)
+    with pytest.raises(ConstraintError):
+        verify_constraints(module)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="expression constraint verification not yet implemented"
+)
+def test_verify_type_equality_expression_violated() -> None:
+    """Type equality expression should fail when operand types differ."""
+    op = RequiresEqualTypesOp(lhs=MyInt().constant(1), rhs=MyStr().constant("x"))
+    module = _make_module(op)
+    with pytest.raises(ConstraintError):
+        verify_constraints(module)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="match constraint verification not yet implemented"
+)
+def test_verify_match_constraint_violated() -> None:
+    """Match constraint should fail when operand type doesn't match."""
+    op = RequiresMatchOp(input=MyStr().constant("x"))
+    module = _make_module(op)
+    with pytest.raises(ConstraintError):
         verify_constraints(module)

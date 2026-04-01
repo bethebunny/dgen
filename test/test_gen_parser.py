@@ -1,7 +1,6 @@
 """Tests for .dgen file parser."""
 
 from dgen.gen.ast import (
-    EqConstraint,
     ExpressionConstraint,
     MatchConstraint,
     TraitConstraint,
@@ -381,13 +380,13 @@ def test_parse_requires_has_trait():
 
 
 def test_parse_requires_eq():
+    """Equality between metavars parses as an ExpressionConstraint."""
     src = "op sqrt(x: $X) -> $Result:\n    requires $X == $Result\n"
     op = parse(src).ops[0]
     assert len(op.constraints) == 1
     c = op.constraints[0]
-    assert isinstance(c, EqConstraint)
-    assert c.lhs == "X"
-    assert c.rhs == "Result"
+    assert isinstance(c, ExpressionConstraint)
+    assert c.expr == "$X == $Result"
 
 
 def test_parse_requires_expr():
