@@ -2,6 +2,10 @@
 - Remove any "if stage0/stage1" logic
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 
+## Constraint verification
+- Implement expression constraint evaluation in `verify_constraints`. Requires an evaluator that can resolve metavar references (`$X`), attribute access on resolved types (`$X.dtype`, `input.shape.rank`), comparisons, and arithmetic. Currently only `TraitConstraint` is verified; `ExpressionConstraint` and `MatchConstraint` are stored but silently skipped. See xfail tests in `test/test_trait.py`.
+- Implement `MatchConstraint` verification (`requires X has type Tensor`): resolve subject to its type, look up the pattern name in the dialect type registry, check `isinstance`.
+
 ## General pass infrastructure
 - Passes should guarantee they can lower all ops in their input dialect — add validation that no un-lowered ops survive a pass
 - Canonicalization

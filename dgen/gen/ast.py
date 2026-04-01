@@ -73,14 +73,6 @@ class MatchConstraint(Constraint):
 
 
 @dataclass
-class EqConstraint(Constraint):
-    """requires X == Result"""
-
-    lhs: str
-    rhs: str
-
-
-@dataclass
 class ExpressionConstraint(Constraint):
     """requires axis < X.rank"""
 
