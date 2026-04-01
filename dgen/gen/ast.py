@@ -81,7 +81,7 @@ class EqConstraint(Constraint):
 
 
 @dataclass
-class ExprConstraint(Constraint):
+class ExpressionConstraint(Constraint):
     """requires axis < X.rank"""
 
     expr: str

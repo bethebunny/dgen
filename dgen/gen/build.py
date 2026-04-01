@@ -16,13 +16,8 @@ import dgen
 from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
 from dgen.trait import Trait
 from dgen.gen.ast import (
-    Constraint,
     DgenFile,
-    EqConstraint,
-    ExprConstraint,
-    MatchConstraint,
     OpDecl,
-    TraitConstraint,
     TraitDecl,
     TypeDecl,
     TypeRef,
@@ -117,17 +112,6 @@ def _layout_fn(
 def _as_layout_or_property(fn: _LayoutFn, parametric: bool) -> layout.Layout | property:
     """Evaluate *fn* statically (``fn(None)``) or wrap as a property."""
     return property(fn) if parametric else fn(None)  # type: ignore[return-value]
-
-
-def _fmt_constraint(c: Constraint) -> str:
-    if isinstance(c, MatchConstraint):
-        return f"{c.lhs} has type {c.pattern}"
-    if isinstance(c, EqConstraint):
-        return f"{c.lhs} == {c.rhs}"
-    if isinstance(c, TraitConstraint):
-        return f"{c.lhs} has trait {c.trait}"
-    assert isinstance(c, ExprConstraint)
-    return c.expr
 
 
 def _make_layout(

@@ -2,7 +2,7 @@
 
 from dgen.gen.ast import (
     EqConstraint,
-    ExprConstraint,
+    ExpressionConstraint,
     MatchConstraint,
     TraitConstraint,
 )
@@ -395,7 +395,7 @@ def test_parse_requires_expr():
     op = parse(src).ops[0]
     assert len(op.constraints) == 1
     c = op.constraints[0]
-    assert isinstance(c, ExprConstraint)
+    assert isinstance(c, ExpressionConstraint)
     assert c.expr == "axis < $X.rank"
 
 
@@ -410,7 +410,7 @@ op tile<axis: Index>(x: $X) -> $Result:
     assert len(op.constraints) == 3
     assert isinstance(op.constraints[0], MatchConstraint)
     assert isinstance(op.constraints[1], MatchConstraint)
-    assert isinstance(op.constraints[2], ExprConstraint)
+    assert isinstance(op.constraints[2], ExpressionConstraint)
 
 
 def test_parse_requires_with_block():
