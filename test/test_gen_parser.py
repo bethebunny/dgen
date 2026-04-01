@@ -1,5 +1,11 @@
 """Tests for .dgen file parser."""
 
+from dgen.gen.ast import (
+    EqConstraint,
+    ExprConstraint,
+    MatchConstraint,
+    TraitConstraint,
+)
 from dgen.gen.parser import parse
 
 
@@ -349,9 +355,29 @@ def test_parse_requires_match():
     op = parse(src).ops[0]
     assert len(op.constraints) == 1
     c = op.constraints[0]
-    assert c.kind == "match"
-    assert c.lhs == "$X"
+    assert isinstance(c, MatchConstraint)
+    assert c.lhs == "X"
     assert c.pattern == "Tensor"
+
+
+def test_parse_requires_has_type():
+    src = "op tile(x: X) -> Result:\n    requires X has type Tensor\n"
+    op = parse(src).ops[0]
+    assert len(op.constraints) == 1
+    c = op.constraints[0]
+    assert isinstance(c, MatchConstraint)
+    assert c.lhs == "X"
+    assert c.pattern == "Tensor"
+
+
+def test_parse_requires_has_trait():
+    src = "op add(lhs, rhs) -> Type:\n    requires lhs has trait AddMagma\n"
+    op = parse(src).ops[0]
+    assert len(op.constraints) == 1
+    c = op.constraints[0]
+    assert isinstance(c, TraitConstraint)
+    assert c.lhs == "lhs"
+    assert c.trait == "AddMagma"
 
 
 def test_parse_requires_eq():
@@ -359,9 +385,9 @@ def test_parse_requires_eq():
     op = parse(src).ops[0]
     assert len(op.constraints) == 1
     c = op.constraints[0]
-    assert c.kind == "eq"
-    assert c.lhs == "$X"
-    assert c.rhs == "$Result"
+    assert isinstance(c, EqConstraint)
+    assert c.lhs == "X"
+    assert c.rhs == "Result"
 
 
 def test_parse_requires_expr():
@@ -369,7 +395,7 @@ def test_parse_requires_expr():
     op = parse(src).ops[0]
     assert len(op.constraints) == 1
     c = op.constraints[0]
-    assert c.kind == "expr"
+    assert isinstance(c, ExprConstraint)
     assert c.expr == "axis < $X.rank"
 
 
@@ -382,9 +408,9 @@ op tile<axis: Index>(x: $X) -> $Result:
 """
     op = parse(src).ops[0]
     assert len(op.constraints) == 3
-    assert op.constraints[0].kind == "match"
-    assert op.constraints[1].kind == "match"
-    assert op.constraints[2].kind == "expr"
+    assert isinstance(op.constraints[0], MatchConstraint)
+    assert isinstance(op.constraints[1], MatchConstraint)
+    assert isinstance(op.constraints[2], ExprConstraint)
 
 
 def test_parse_requires_with_block():
@@ -392,3 +418,14 @@ def test_parse_requires_with_block():
     op = parse(src).ops[0]
     assert op.blocks == ["body"]
     assert len(op.constraints) == 1
+    assert isinstance(op.constraints[0], MatchConstraint)
+
+
+def test_parse_type_requires():
+    src = "type Number<dtype: Type>:\n    requires dtype has trait DType\n"
+    td = parse(src).types[0]
+    assert len(td.constraints) == 1
+    c = td.constraints[0]
+    assert isinstance(c, TraitConstraint)
+    assert c.lhs == "dtype"
+    assert c.trait == "DType"

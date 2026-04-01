@@ -21,6 +21,7 @@ class Dialect:
         self.name = name
         self.ops: dict[str, builtins.type[Op]] = {}
         self.types: dict[str, builtins.type[Type]] = {}
+        self.traits: dict[str, builtins.type] = {}
         Dialect._registry[name] = self
 
     @classmethod
@@ -45,11 +46,11 @@ class Dialect:
 
         return decorator
 
-    def trait(self, name: str) -> Callable[[builtins.type[_T]], builtins.type[_T]]:
-        def decorator(cls: builtins.type[_T]) -> builtins.type[_T]:
+    def trait(self, name: str) -> Callable[[builtins.type], builtins.type]:
+        def decorator(cls: builtins.type) -> builtins.type:
             cls.asm_name = name
             cls.dialect = self
-            self.types[name] = cls
+            self.traits[name] = cls
             return cls
 
         return decorator

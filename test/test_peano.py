@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 import dgen
-from dgen import Dialect, Op, Type, Value, layout
+from dgen import Dialect, Op, Trait, Type, Value, has_trait, layout
 from dgen import codegen
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
@@ -41,26 +41,23 @@ peano = Dialect("peano")
 
 
 @peano.trait("Natural")
-@dataclass(frozen=True, eq=False)
-class Natural(TypeType):
-    """A TypeType constrained to Zero or Successor."""
+class Natural(Trait):
+    """A trait for Peano number types (Zero, Successor)."""
 
     pass
 
 
 @peano.type("Zero")
 @dataclass(frozen=True, eq=False)
-class Zero(Type):
-    __traits__: ClassVar[tuple[type, ...]] = (Natural,)
+class Zero(Natural, Type):
     __layout__ = layout.Void()
 
 
 @peano.type("Successor")
 @dataclass(frozen=True, eq=False)
-class Successor(Type):
+class Successor(Natural, Type):
     pred: Value[TypeType]
     __params__: ClassVar[Fields] = (("pred", TypeType),)
-    __traits__: ClassVar[tuple[type, ...]] = (Natural,)
     __layout__ = layout.Void()
 
 
@@ -194,30 +191,26 @@ peano_compiler: Compiler[codegen.Executable] = Compiler(
 
 
 def test_natural_trait_is_registered():
-    """Natural trait is a TypeType subclass registered in peano dialect."""
-    assert issubclass(Natural, TypeType)
-    assert "Natural" in peano.types
-    assert peano.types["Natural"] is Natural
-
-
-def test_natural_is_typetype():
-    """Natural() is a TypeType subclass."""
-    nat = Natural()
-    assert isinstance(nat, TypeType)
+    """Natural trait is registered in peano dialect."""
+    assert issubclass(Natural, Trait)
+    assert "Natural" in peano.traits
+    assert peano.traits["Natural"] is Natural
 
 
 def test_zero_has_natural_trait():
-    """Zero declares Natural in its __traits__."""
-    assert Natural in Zero.__traits__
+    """Zero implements Natural via MRO inheritance."""
+    assert has_trait(Zero(), Natural)
+    assert isinstance(Zero(), Natural)
 
 
 def test_successor_has_natural_trait():
-    """Successor declares Natural in its __traits__."""
-    assert Natural in Successor.__traits__
+    """Successor implements Natural via MRO inheritance."""
+    assert has_trait(Successor(pred=Zero()), Natural)
+    assert isinstance(Successor(pred=Zero()), Natural)
 
 
-def test_natural_in_asm():
-    """peano.Natural parses as a type annotation."""
+def test_zero_type_has_natural_trait_via_asm():
+    """Zero type parsed from ASM implements the Natural trait."""
     ir = strip_prefix("""
         | import algebra
         | import number
@@ -227,12 +220,12 @@ def test_natural_in_asm():
         | import index
         |
         | %main : function.Function<index.Index> = function.function<index.Index>() body():
-        |     %z : peano.Natural = peano.zero()
+        |     %z : Type = peano.zero()
     """)
     module = parse_module(ir)
     func = module.functions[0]
     zero_op = func.body.ops[0]
-    assert isinstance(zero_op.type, Natural)
+    assert isinstance(zero_op, ZeroOp)
 
 
 def test_recursive_type_roundtrip():
