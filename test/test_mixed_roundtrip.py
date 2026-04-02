@@ -12,6 +12,7 @@ def test_llvm_via_imports():
         | import function
         | import llvm
         | import memory
+        | import number
         | import index
         |
         | %f : function.Function<()> = function.function<Nil>() body():

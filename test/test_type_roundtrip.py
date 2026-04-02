@@ -13,7 +13,7 @@ import pytest
 
 from dgen import Block, asm
 from dgen.asm.formatting import type_asm
-from dgen.asm.parser import ASMParser, parse_module, value_expression
+from dgen.asm.parser import ASMParser, _build_scope, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
@@ -122,6 +122,7 @@ ALL_TYPES = BUILTIN_TYPES + LLVM_TYPES + TOY_TYPES + MEMORY_TYPES
 def _parse_type(text: str) -> object:
     """Parse a type from ASM text, with all dialects registered."""
     parser = ASMParser(text)
+    parser.scope = _build_scope(["index", "llvm", "ndbuffer", "number", "toy"])
     return value_expression(parser)
 
 
@@ -349,6 +350,7 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
     ir_input = strip_prefix("""
         | import function
         | import index
+        | import ndbuffer
         |
         | %main : function.Function<()> = function.function<Nil>() body(%x: index.Index):
         |     %store : Nil = ndbuffer.store(%x, %x, %x, [3, %x, 5])

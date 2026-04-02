@@ -10,6 +10,8 @@ from dgen.testing import strip_prefix
 def test_diff_empty_when_identical():
     ir = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -23,6 +25,8 @@ def test_diff_empty_when_ssa_names_differ():
     """Same computation with different SSA names → no diff."""
     a = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -31,6 +35,8 @@ def test_diff_empty_when_ssa_names_differ():
     """)
     b = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -44,6 +50,8 @@ def test_diff_empty_when_function_order_differs():
     """Same functions listed in different module order → no diff."""
     a = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %func_a : function.Function<()> = function.function<Nil>() body():
@@ -52,6 +60,8 @@ def test_diff_empty_when_function_order_differs():
     """)
     b = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %func_b : function.Function<()> = function.function<Nil>() body():
@@ -69,6 +79,8 @@ def test_diff_empty_when_op_order_differs():
     """Independent ops in a different block order → no diff (same graph)."""
     a = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
@@ -78,6 +90,8 @@ def test_diff_empty_when_op_order_differs():
     """)
     b = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
@@ -92,6 +106,8 @@ def test_diff_format_semantic_change():
     """A changed constant produces a proper unified-diff output."""
     expected = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -100,6 +116,8 @@ def test_diff_format_semantic_change():
     """)
     actual = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -125,6 +143,8 @@ def test_diff_format_missing_function():
     """A function present only in expected shows as all-deleted lines."""
     expected = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -143,6 +163,8 @@ def test_diff_format_extra_function():
     """A function present only in actual shows as all-added lines."""
     actual = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():

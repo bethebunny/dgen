@@ -6,6 +6,7 @@ file to keep it purely generated.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import cached_property
@@ -127,22 +128,43 @@ def _walk_all_ops(op: Op, _visited: set[int] | None = None) -> Iterable[Op]:
             yield from _walk_all_ops(child, _visited)
 
 
+_DIALECT_REF = re.compile(r"\b([a-z_][a-z0-9_]*)\.\w")
+
+
+def _dialects_from_text(lines: Iterable[str]) -> set[str]:
+    """Scan formatted ASM lines for dialect-qualified names (e.g. ``number.Float64``)."""
+    registered = Dialect._registry
+    result: set[str] = set()
+    for line in lines:
+        for m in _DIALECT_REF.finditer(line):
+            name = m.group(1)
+            if name in registered and name != "builtin":
+                result.add(name)
+    return result
+
+
 def _collect_dialects(op: Op, dialects: set[Dialect]) -> None:
     """Collect all non-builtin dialects referenced by ops and types."""
 
-    def _check_type(t: object) -> None:
-        if isinstance(t, Type) and t.dialect.name != "builtin":
-            dialects.add(t.dialect)
+    def _check_value(v: object) -> None:
+        """Collect dialects from a value and its type, recursively."""
+        if isinstance(v, Type):
+            if v.dialect.name != "builtin":
+                dialects.add(v.dialect)
+            for _, param in v.parameters:
+                _check_value(param)
+        elif isinstance(v, Value):
+            _check_value(v.type)
 
     for child_op in _walk_all_ops(op):
         if child_op.dialect.name != "builtin":
             dialects.add(child_op.dialect)
-        _check_type(child_op.type)
+        _check_value(child_op.type)
         for _, param in child_op.parameters:
-            _check_type(param)
+            _check_value(param)
         for _, block in child_op.blocks:
             for arg in block.args:
-                _check_type(arg.type)
+                _check_value(arg.type)
 
 
 @dataclass
@@ -157,14 +179,11 @@ class Module:
     def asm(self) -> Iterable[str]:
         from .asm.formatting import op_asm
 
-        dialects: set[Dialect] = set()
-        for op in self.ops:
-            _collect_dialects(op, dialects)
-
-        for d in sorted(dialects, key=lambda d: d.name):
-            yield f"import {d.name}"
-        if dialects:
-            yield ""
+        # Format ops first, then scan for dialect references to emit imports.
+        # This is more robust than walking the IR data structure, because
+        # formatted text may embed dialect-qualified names in places that
+        # _collect_dialects cannot easily reach (e.g. type-valued constants
+        # inside Tuple or Span<TypeType> parameters).
 
         # The _formatted set is shared across all top-level ops so that each
         # op is printed at most once.  Ambient ops (no block-argument
@@ -179,9 +198,19 @@ class Module:
         # TODO: formalize scheduling as an explicit pass that assigns each op
         # to exactly one block, rather than relying on first-encounter dedup.
         formatted: set[int] = set()
+        op_lines: list[str] = []
         for op in self.ops:
-            yield from op_asm(op, _formatted=formatted)
+            op_lines.extend(op_asm(op, _formatted=formatted))
+            op_lines.append("")
+
+        dialects = _dialects_from_text(op_lines)
+
+        for d in sorted(dialects):
+            yield f"import {d}"
+        if dialects:
             yield ""
+
+        yield from op_lines
 
 
 # ===----------------------------------------------------------------------=== #

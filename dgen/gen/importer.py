@@ -18,15 +18,6 @@ from dgen.gen.ast import DgenFile
 from dgen.gen.build import build
 from dgen.gen.parser import parse
 
-# Hardcoded fallback: if relative discovery fails, try this mapping.
-_DEFAULT_MAP: dict[str, str] = {
-    "builtin": "dgen.dialects.builtin",
-    "index": "dgen.dialects.index",
-    "memory": "dgen.dialects.memory",
-    "ndbuffer": "dgen.dialects.ndbuffer",
-    "number": "dgen.dialects.number",
-}
-
 
 def _path_to_module(dgen_path: Path) -> str | None:
     """Convert an absolute .dgen file path to a dotted Python module name.
@@ -46,25 +37,53 @@ def _path_to_module(dgen_path: Path) -> str | None:
     return None
 
 
-def _resolve_imports(dgen_path: Path, ast: DgenFile) -> dict[str, str]:
-    """Build an import map for the generator from a parsed .dgen file.
+def find_dgen(module_name: str, extra_dirs: list[Path] | None = None) -> Path | None:
+    """Find a ``.dgen`` file on ``sys.path`` for a (possibly dotted) module name.
 
-    For each import declaration in *ast*, look for a sibling ``<module>.dgen``
-    file in the same directory.  If found, derive the Python module path from
-    ``sys.path``.  Fall back to :data:`_DEFAULT_MAP` for unresolved names.
+    Converts dots to directory separators: ``foo.bar`` → ``foo/bar.dgen``.
+    *extra_dirs* are searched before ``sys.path`` (e.g. the directory containing
+    the importing ``.dgen`` file, so sibling imports work).
+    Returns the first match found, or ``None``.
     """
-    result: dict[str, str] = {}
-    dgen_dir = dgen_path.parent
-    for decl in ast.imports:
-        candidate = dgen_dir / f"{decl.module}.dgen"
+    relative = Path(*module_name.split(".")).with_suffix(".dgen")
+    search: list[Path] = list(extra_dirs or [])
+    search.extend(Path(entry) if entry else Path.cwd() for entry in sys.path)
+    for base in search:
+        candidate = base / relative
         if candidate.exists():
-            py_path = _path_to_module(candidate)
-            if py_path is not None:
-                result[decl.module] = py_path
-                continue
-        fallback = _DEFAULT_MAP.get(decl.module)
-        if fallback is not None:
-            result[decl.module] = fallback
+            return candidate
+    return None
+
+
+def _resolve_import(module_name: str, dgen_dir: Path) -> str | None:
+    """Resolve a single import to a Python module path.
+
+    Searches the *dgen_dir* (sibling files) and ``sys.path`` for a ``.dgen``
+    file.  If found, derives the dotted Python module name.  Otherwise, checks
+    whether the module is already loadable via Python's import system (which
+    includes the DgenFinder hook for ``.dgen`` files in packages).
+    """
+    dgen_file = find_dgen(module_name, extra_dirs=[dgen_dir])
+    if dgen_file is not None:
+        py_path = _path_to_module(dgen_file)
+        if py_path is not None:
+            return py_path
+    # The module may be importable via Python packages (e.g. "ndbuffer" is
+    # dgen.dialects.ndbuffer).  Check sys.modules first, then try find_spec.
+    for mod_name in sys.modules:
+        if mod_name == module_name or mod_name.endswith(f".{module_name}"):
+            return mod_name
+    return None
+
+
+def _resolve_imports(dgen_path: Path, ast: DgenFile) -> dict[str, str]:
+    """Build an import map for the generator from a parsed .dgen file."""
+    dgen_dir = dgen_path.parent
+    result: dict[str, str] = {}
+    for decl in ast.imports:
+        py_path = _resolve_import(decl.module, dgen_dir)
+        if py_path is not None:
+            result[decl.module] = py_path
     return result
 
 
@@ -101,8 +120,14 @@ class DgenFinder(importlib.abc.MetaPathFinder):
         path: list[str] | None,
         target: ModuleType | None = None,
     ) -> importlib.machinery.ModuleSpec | None:
-        name = fullname.rsplit(".", 1)[-1]
-        search_dirs: list[str] = list(path) if path is not None else sys.path
+        if path is not None:
+            # Sub-package import: path is the parent's __path__, use last component
+            name = fullname.rsplit(".", 1)[-1]
+            search_dirs = list(path)
+        else:
+            # Top-level import: convert dots to directory separators
+            name = str(Path(*fullname.split(".")))
+            search_dirs = sys.path
         for search_dir in search_dirs:
             dgen_file = (
                 Path(search_dir) if search_dir else Path.cwd()

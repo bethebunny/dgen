@@ -5,8 +5,10 @@ read/try_read dispatch to reader functions — like lisp reader macros.
 
 from __future__ import annotations
 
+import importlib
 import re
 from collections.abc import Callable
+from functools import reduce
 from typing import Any
 
 import dgen.type
@@ -28,10 +30,43 @@ _NUMBER = re.compile(r"-?\d+\.\d*|-?\d*\.\d+|-?\d+")
 _LITERAL_START = set('-0123456789{["(')
 
 
+def _get_dialect(name: str) -> Dialect:
+    """Get a dialect by name, auto-importing it if not yet registered."""
+    try:
+        return Dialect.get(name)
+    except KeyError:
+        pass
+    # Try importing from the dgen.dialects package (covers core dialects
+    # whose Python module hasn't been imported yet in this process).
+    try:
+        importlib.import_module(f"dgen.dialects.{name}")
+        return Dialect.get(name)
+    except (ModuleNotFoundError, KeyError):
+        raise KeyError(name) from None
+
+
+def _build_scope(imports: list[str]) -> dict[str, object]:
+    """Build a name-resolution scope from import declarations.
+
+    Builtin types and ops are always available unqualified.  Each ``import X``
+    adds the dialect ``X`` under its name so that ``X.Foo`` resolves.
+    """
+    scope: dict[str, object] = {}
+    b = Dialect.get("builtin")
+    scope.update(b.types)
+    scope.update(b.ops)
+    scope["builtin"] = b
+    for name in imports:
+        scope[name] = _get_dialect(name)
+    return scope
+
+
 def parse_module(text: str) -> Module:
     parser = ASMParser(text)
-    while parser.try_read(_import_line) is not None:
-        pass
+    imports: list[str] = []
+    while (name := parser.try_read(_import_line)) is not None:
+        imports.append(name)
+    parser.scope = _build_scope(imports)
     ops: list[Op] = []
     while not parser.done:
         ops.append(parser.read(op_statement))
@@ -44,6 +79,7 @@ class ASMParser:
         self.pos: int = 0
         self.name_table: dict[str, Value] = {}
         self.pending_ops: list[Op] = []
+        self.scope: dict[str, object] = {}
 
     @property
     def done(self) -> bool:
@@ -113,33 +149,26 @@ class ASMParser:
 # -- Lookup ----------------------------------------------------------------
 
 
-def _lookup_op(name: str) -> type[Op]:
-    """Look up an op by name, splitting on '.' for qualified names."""
-    dialect, local = _resolve_name(name)
-    op_cls = dialect.ops.get(local)
-    if op_cls is None:
-        raise ParseError(f"Unknown op: {name}")
-    return op_cls
+def _resolve(name: str, scope: dict[str, object]) -> object:
+    """Resolve a qualified name by walking the scope via ``Dialect.lookup``."""
+    try:
+        return reduce(Dialect.lookup, name.split("."), scope)
+    except KeyError:
+        raise ParseError(f"Unknown name: {name}") from None
 
 
-def _lookup_type(name: str) -> type[Type]:
-    """Look up a type by name, splitting on '.' for qualified names."""
-    dialect, local = _resolve_name(name)
-    type_cls = dialect.types.get(local)
-    if type_cls is None:
-        raise ParseError(f"Unknown type: {name}")
-    return type_cls
+def _lookup_op(name: str, scope: dict[str, object]) -> type[Op]:
+    result = _resolve(name, scope)
+    if isinstance(result, type) and issubclass(result, Op):
+        return result
+    raise ParseError(f"Unknown op: {name}")
 
 
-def _resolve_name(name: str) -> tuple[Dialect, str]:
-    """Split 'dialect.name' into (Dialect, local_name). Unqualified → builtin."""
-    if "." in name:
-        dialect_name, local = name.split(".", 1)
-        try:
-            return Dialect.get(dialect_name), local
-        except KeyError:
-            raise ParseError(f"Unknown dialect: {dialect_name}") from None
-    return Dialect.get("builtin"), name
+def _lookup_type(name: str, scope: dict[str, object]) -> type[Type]:
+    result = _resolve(name, scope)
+    if isinstance(result, type) and issubclass(result, Type):
+        return result
+    raise ParseError(f"Unknown type: {name}")
 
 
 # -- Reader functions -------------------------------------------------------
@@ -154,12 +183,12 @@ def qualified_name(parser: ASMParser) -> str:
 
 
 def _import_line(parser: ASMParser) -> str:
-    """Skip an import line (dialects are registered externally). Returns dialect name."""
+    """Parse an import line. Returns dialect name (may be dotted)."""
     parser._skip_all()
     keyword = parser.expect_token(_IDENT, "keyword")
     if keyword != "import":
         raise ParseError(f"Expected 'import', got '{keyword}'")
-    dialect_name = parser.expect_token(_IDENT, "dialect name")
+    dialect_name = parser.expect_token(_QUALIFIED, "dialect name")
     newline(parser)
     return dialect_name
 
@@ -226,7 +255,7 @@ def value_expression(parser: ASMParser) -> object:
 
 def _named_type(parser: ASMParser) -> Type:
     name = parser.read(qualified_name)
-    type_cls = _lookup_type(name)
+    type_cls = _lookup_type(name, parser.scope)
     if not type_cls.__params__ or parser.try_read("<") is None:
         return type_cls()
     values = parser.read_list(value_expression)
@@ -241,7 +270,7 @@ def op_expression(
     parser: ASMParser,
 ) -> tuple[type[Op], list[object], list[object], list[Block]]:
     name = parser.read(qualified_name)
-    op_cls = _lookup_op(name)
+    op_cls = _lookup_op(name, parser.scope)
     parameters: list[object] = []
     if op_cls.__params__:
         parser.read("<")

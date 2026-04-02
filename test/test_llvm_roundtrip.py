@@ -9,8 +9,8 @@ from dgen.testing import assert_ir_equivalent, strip_prefix
 def test_roundtrip_alloca():
     ir = strip_prefix("""
         | import function
-        | import llvm
         | import index
+        | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
@@ -22,9 +22,10 @@ def test_roundtrip_alloca():
 def test_roundtrip_gep_load_store():
     ir = strip_prefix("""
         | import function
+        | import index
         | import llvm
         | import memory
-        | import index
+        | import number
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
@@ -41,8 +42,9 @@ def test_roundtrip_gep_load_store():
 def test_roundtrip_fadd_fmul():
     ir = strip_prefix("""
         | import function
-        | import llvm
         | import index
+        | import llvm
+        | import number
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : number.Float64 = 1.0
@@ -58,8 +60,8 @@ def test_roundtrip_fadd_fmul():
 def test_roundtrip_add_mul_int():
     ir = strip_prefix("""
         | import function
-        | import llvm
         | import index
+        | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : index.Index = 3
@@ -111,8 +113,8 @@ def test_roundtrip_label_br():
 def test_roundtrip_call_with_result():
     ir = strip_prefix("""
         | import function
-        | import llvm
         | import index
+        | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%a: index.Index, %b: index.Index):
         |     %0 : Nil = llvm.call<"foo">([%a, %b])
@@ -124,8 +126,8 @@ def test_roundtrip_call_with_result():
 def test_roundtrip_call_void():
     ir = strip_prefix("""
         | import function
-        | import llvm
         | import index
+        | import llvm
         |
         | %f : function.Function<()> = function.function<Nil>() body(%ptr: index.Index, %size: index.Index):
         |     %0 : Nil = llvm.call<"print_memref">([%ptr, %size])
@@ -137,6 +139,7 @@ def test_roundtrip_call_void():
 def test_roundtrip_return_value():
     ir = strip_prefix("""
         | import function
+        | import number
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %0 : number.Float64 = 42.0

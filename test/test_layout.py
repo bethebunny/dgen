@@ -359,6 +359,7 @@ def test_parse_type_with_pointer_array_param():
 
     ir = strip_prefix("""
         | import function
+        | import number
         | import _test_pa
         |
         | %f : function.Function<_test_pa.Wrapper<Pointer<Array<number.Float64, 3>>([10, 20, 30])>> = function.function<_test_pa.Wrapper<Pointer<Array<number.Float64, 3>>([10, 20, 30])>>() body():

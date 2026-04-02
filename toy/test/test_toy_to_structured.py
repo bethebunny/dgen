@@ -17,6 +17,8 @@ def test_simple_constant(ir_snapshot):
     """Tensor constant passes through as-is (no alloc/store expansion)."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
@@ -31,6 +33,8 @@ def test_transpose(ir_snapshot):
     """Transpose lowers to alloc + transposed loop nest."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
@@ -46,6 +50,8 @@ def test_mul(ir_snapshot):
     """Mul lowers to alloc + element-wise loop."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
@@ -62,6 +68,8 @@ def test_add(ir_snapshot):
     """Add lowers to alloc + element-wise loop."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
@@ -78,6 +86,8 @@ def test_print(ir_snapshot):
     """Print maps to print_memref."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
@@ -92,6 +102,8 @@ def test_3d_constant(ir_snapshot):
     """3D tensor constant passes through as-is."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
@@ -106,6 +118,8 @@ def test_3d_add(ir_snapshot):
     """3D add lowers to alloc + element-wise nested loops."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
@@ -122,6 +136,8 @@ def test_3d_mul(ir_snapshot):
     """3D mul lowers to alloc + element-wise nested loops."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
@@ -138,6 +154,8 @@ def test_full_example(ir_snapshot):
     """Full pipeline: constant + reshape + transpose + mul + print."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<Nil> = function.function<Nil>() body():
