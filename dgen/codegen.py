@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import _ctypes
+import collections
 import ctypes
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from itertools import chain
 from typing import Any
 
 import llvmlite.binding as llvmlite
@@ -13,14 +15,24 @@ import llvmlite.binding as llvmlite
 import dgen
 from dgen import Type
 from dgen.asm.formatting import SlotTracker
-from dgen.type import _format_float as format_float
 from dgen.compiler import Compiler, IdentityPass
-from dgen.dialects import builtin, control_flow, function, goto, llvm, memory
+from dgen.dialects import (
+    algebra,
+    builtin,
+    control_flow,
+    function,
+    goto,
+    index,
+    llvm,
+    memory,
+    number,
+)
 from dgen.layout import Layout
 from dgen.module import ConstantOp, Module, PackOp, pack, string_value
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.type import Constant, Memory, Value
+from dgen.type import _format_float as format_float
 
 # ---------------------------------------------------------------------------
 # Layout → LLVM / ctypes mapping
@@ -42,6 +54,28 @@ def _ctype(layout: Layout) -> type[ctypes._CData]:
         return ctypes.c_void_p
     fmt = layout.struct.format.lstrip("=@<>!")
     return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
+
+
+def llvm_type(t: dgen.Type) -> str:
+    match t:
+        case memory.Reference():
+            return "ptr"
+        case index.Index():
+            return "i64"
+        case number.SignedInteger(bits):
+            return f"i{bits}"
+        case number.UnsignedInteger(bits):
+            return f"u{bits}"
+        case number.Boolean():
+            return "i1"
+        case number.Float64():
+            return "double"
+        case builtin.Nil():
+            return "void"
+        case goto.Label():
+            return "label"
+        case _:
+            raise TypeError(f"Unhandled type lowered to llvm: {t.asm}")
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +239,157 @@ def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
     return _llvm_type(resolved.__layout__)
 
 
+def unpack(val: Value) -> list[Value]:
+    return list(val) if isinstance(val, PackOp) else [val]
+
+
+# XXX: this is wrong. We need to emit _all_ dependencies,
+# but topo sort based on the runtime dependency graph.
+# Is that right? What's the right formalism? We definitely can't
+# just emit label blocks in normal dependency order, _unless_
+# it occurs in the runtime dependencies, eg. loop lowering.
+# Shoot, I thought I had this figured out.
+#
+# Okay, invariant: if a label op occurs in the dependency graph but
+# _not_ in the runtime dependencies, it can't be reached from the entrypoint.
+# Why? Normal DCE, that's the dead code condition.
+# Therefore we don't need to schedule _its_ (the label op's) dependencies.
+# That's nuanced, because dependencies can be side effects. I want
+# to convince myself that's always correct.
+# ... it's almost certainly not, because blocks have captures, and
+# we need to schedule them before the branch call that jumps to the label.
+#
+# It feels like there's a semantic difference between "expression blocks",
+# ones that expect to be executed inline when they're reached, and "jump blocks",
+# which are branched to.
+# I don't actually understand whether a "jump block" will always have a normal
+# branch terminator. If a "jump block" were to never fall through, we'd have a
+# lot of flexibility in scheduling the block body.
+def runtime_dependencies(value: dgen.Value) -> Iterator[dgen.Value]:
+    seen = set()
+
+    def visit(v: dgen.Value) -> Iterator[dgen.Value]:
+        dependencies = chain(
+            (operand for _, operand in v.operands),
+            (capture for _, block in v.blocks for capture in block.captures),
+        )
+        for dependency in dependencies:
+            if dependency not in seen:
+                seen.add(dependency)
+                yield from visit(dependency)
+                yield dependency
+
+    yield from visit(value)
+
+
+def new_synthetic_label() -> str:
+    return "synthetic:"
+
+
+def emit_linearized(value: dgen.Value) -> Iterator[str]:
+    for dep in runtime_dependencies(value):
+        if (yield from emit_linearized(dep)):
+            # XXX: I'm not sure this is right. If the next op is
+            # a label for instance we don't need this.
+            yield new_synthetic_label()
+
+    return (yield from emit(value))
+
+
+EMITTERS = {}
+
+
+def emitter_for(ValueType: type[dgen.Value]):
+    def decorator(f):
+        EMITTERS[ValueType] = f
+        return f
+
+    return decorator
+
+
+def emit(value: dgen.Value):
+    if not isinstance(value, dgen.Op):
+        return
+    print("Emitting", value)
+    return (yield from EMITTERS[type(value)](value))
+
+
+@emitter_for(goto.LabelOp)
+def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
+    breakpoint()
+    yield f"{op.name}:"
+    # XXX: need to emit phi ops
+    # XXX: need to stop at captures
+    result = op.body.result
+    yield from emit_linearized(result)
+    if is_block_terminator(result):
+        return True
+    # XXX: emit exit label
+
+
+@emitter_for(function.FunctionOp)
+def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
+    ret_type = _result_type_str(op.result) or "void"
+    arguments = ", ".join(
+        f"{_result_type_str(arg.type) or 'i64'} %{arg.name}" for arg in op.body.args
+    )
+    yield f"define {ret_type} @{op.name}({arguments}) {{"
+    yield from emit_linearized(op.body.result)
+    # XXX: body result might be a label for instance
+    yield f"  ret {typed_reference(op.body.result)}"
+    yield "}"
+
+
+@emitter_for(PackOp)
+@emitter_for(ConstantOp)
+@emitter_for(builtin.ChainOp)
+def noop(op: dgen.Op) -> Iterator[str]:
+    return ()
+
+
+def value_reference(v: dgen.Value) -> str:
+    if isinstance(v, Constant):
+        return f"{v.__constant__.to_json()}"
+    return f"%{v.name}"
+
+
+vr = value_reference
+
+
+def typed_reference(*vs: dgen.Value) -> str:
+    first, *_ = vs
+    vrs = ", ".join(map(value_reference, vs))
+    return f"{llvm_type(first.type)} {vrs}"
+
+
+def typed_references(*vs: dgen.Value) -> str:
+    return ", ".join(typed_reference(v) for v in vs)
+
+
+@emitter_for(algebra.LessThanOp)
+def emit_less_than(op: algebra.LessThanOp) -> Iterator[str]:
+    # XXX: types aren't comparable yet
+    # if op.left.type != op.right.type:
+    #     raise TypeError("codegen algebra must have the same type")
+    vtype = op.left.type
+    llvm_op, optype = {
+        number.Float64: ("fcmp", "olt"),
+        number.SignedInteger: ("icmp", "slt"),
+        index.Index: ("icmp", "slt"),
+        number.UnsignedInteger: ("icmp", "ult"),
+    }[type(vtype)]
+    yield f"  {llvm_op} {optype} {typed_reference(op.left, op.right)}"
+
+
+@emitter_for(goto.ConditionalBranchOp)
+def emit_conditional_branch(op: goto.ConditionalBranchOp) -> Iterator[str]:
+    yield f"  br {typed_references(op.condition, op.true_target, op.false_target)}"
+
+
+def is_block_terminator(value: dgen.Value) -> bool:
+    return isinstance(value.type, (goto.BranchOp, goto.ConditionalBranchOp))
+
+
 def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     """Three-phase LLVM IR emission for one function.
 
@@ -232,20 +417,6 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         if isinstance(target, goto.LabelOp):
             return target
         return param_to_label.get(target, target)
-
-    def typed_ref(val: dgen.Value) -> str:
-        return (
-            constants[val]
-            if val in constants
-            else f"{types.get(val, 'i64')} %{tracker.track_name(val)}"
-        )
-
-    def bare_ref(val: dgen.Value) -> str:
-        return (
-            constants[val].split(" ", 1)[1]
-            if val in constants
-            else f"%{tracker.track_name(val)}"
-        )
 
     def _register_constant(val: dgen.Value, mem: Memory) -> None:
         if not mem.layout.register_passable:
@@ -566,6 +737,20 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     # -----------------------------------------------------------------------
 
     def _emit_op(op: dgen.Op) -> Iterator[str]:
+        def typed_ref(val: dgen.Value) -> str:
+            return (
+                constants[val]
+                if val in constants
+                else f"{types.get(val, 'i64')} %{tracker.track_name(val)}"
+            )
+
+        def bare_ref(val: dgen.Value) -> str:
+            return (
+                constants[val].split(" ", 1)[1]
+                if val in constants
+                else f"%{tracker.track_name(val)}"
+            )
+
         name = tracker.track_name(op)
         if isinstance(
             op,

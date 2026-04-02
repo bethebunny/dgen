@@ -1,0 +1,299 @@
+"""Unit tests for codegen internals: emitter_for, runtime_dependencies, emit_label."""
+
+from dataclasses import dataclass, field
+
+import dgen
+from dgen import asm
+from dgen.codegen import EMITTERS, emitter_for, runtime_dependencies, emit_linearized
+from dgen.dialects import builtin, goto, llvm
+from dgen.testing import strip_prefix
+
+# ---------------------------------------------------------------------------
+# emitter_for
+# ---------------------------------------------------------------------------
+
+
+def test_emitter_for_registers_handler():
+    """emitter_for(T) registers the decorated function in EMITTERS[T]."""
+
+    class _Dummy:
+        pass
+
+    @emitter_for(_Dummy)
+    def handle_dummy(op):
+        yield "dummy"
+
+    assert EMITTERS[_Dummy] is handle_dummy
+    # Clean up so we don't pollute global state for other tests.
+    del EMITTERS[_Dummy]
+
+
+def test_emitter_for_label_registered():
+    """goto.LabelOp has a registered emitter (from the @emitter_for decorator at module level)."""
+    assert goto.LabelOp in EMITTERS
+
+
+# ---------------------------------------------------------------------------
+# runtime_dependencies
+# ---------------------------------------------------------------------------
+
+
+def _parse(text: str):
+    """Parse IR and return the first function's body block."""
+    module = asm.parse(strip_prefix(text))
+    return module.functions[0].body
+
+
+def test_runtime_dependencies_follows_operands():
+    """runtime_dependencies yields operand dependencies in topo order."""
+    block = _parse("""
+        | import function
+        | import llvm
+        | import number
+        |
+        | %f : function.Function<()> = function.function<Nil>() body():
+        |     %a : number.Float64 = 1.0
+        |     %b : number.Float64 = 2.0
+        |     %c : Nil = llvm.fadd(%a, %b)
+    """)
+    fadd = next(op for op in block.ops if isinstance(op, llvm.FaddOp))
+    deps = list(runtime_dependencies(fadd))
+    # fadd depends on %a and %b — both should appear
+    dep_names = [v.name for v in deps if v.name is not None]
+    assert "a" in dep_names
+    assert "b" in dep_names
+
+
+def test_runtime_dependencies_excludes_type_deps():
+    """runtime_dependencies does NOT follow type edges (only operands + captures)."""
+    block = _parse("""
+        | import function
+        | import llvm
+        | import number
+        |
+        | %f : function.Function<()> = function.function<Nil>() body():
+        |     %a : number.Float64 = 1.0
+        |     %b : number.Float64 = 2.0
+        |     %c : Nil = llvm.fadd(%a, %b)
+    """)
+    fadd = next(op for op in block.ops if isinstance(op, llvm.FaddOp))
+    deps = list(runtime_dependencies(fadd))
+    # Type values (Float64, Nil) should NOT appear in runtime deps
+    from dgen import Type
+
+    type_deps = [v for v in deps if isinstance(v, Type)]
+    assert type_deps == []
+
+
+def test_runtime_dependencies_follows_captures():
+    """runtime_dependencies follows block captures as runtime edges."""
+    block = _parse("""
+        | import function
+        | import goto
+        | import index
+        |
+        | %f : function.Function<()> = function.function<Nil>() body():
+        |     %x : index.Index = 42
+        |     %lbl : goto.Label = goto.label([]) body() captures(%x):
+        |         %_ : Nil = ()
+    """)
+    label = next(op for op in block.ops if isinstance(op, goto.LabelOp))
+    deps = list(runtime_dependencies(label))
+    dep_names = [v.name for v in deps if v.name is not None]
+    assert "x" in dep_names
+
+
+def test_runtime_dependencies_no_duplicates():
+    """Each value appears at most once even when referenced by multiple ops."""
+    block = _parse("""
+        | import function
+        | import llvm
+        | import number
+        |
+        | %f : function.Function<()> = function.function<Nil>() body():
+        |     %a : number.Float64 = 1.0
+        |     %b : Nil = llvm.fadd(%a, %a)
+    """)
+    fadd = next(op for op in block.ops if isinstance(op, llvm.FaddOp))
+    deps = list(runtime_dependencies(fadd))
+    assert len(deps) == len(set(deps))
+
+
+def test_runtime_dependencies_empty_for_constant():
+    """A constant has no runtime dependencies."""
+    block = _parse("""
+        | import function
+        | import number
+        |
+        | %f : function.Function<()> = function.function<Nil>() body():
+        |     %a : number.Float64 = 42.0
+    """)
+    from dgen import Constant
+
+    const = next(op for op in block.ops if isinstance(op, Constant))
+    deps = list(runtime_dependencies(const))
+    assert deps == []
+
+
+def test_runtime_dependencies_transitive():
+    """Dependencies are transitive: a -> b -> c yields [a, b]."""
+    block = _parse("""
+        | import function
+        | import llvm
+        | import number
+        |
+        | %f : function.Function<()> = function.function<Nil>() body():
+        |     %a : number.Float64 = 1.0
+        |     %b : number.Float64 = 2.0
+        |     %c : Nil = llvm.fadd(%a, %b)
+        |     %d : Nil = llvm.fmul(%c, %a)
+    """)
+    fmul = next(op for op in block.ops if isinstance(op, llvm.FmulOp))
+    deps = list(runtime_dependencies(fmul))
+    dep_names = [v.name for v in deps if v.name is not None]
+    # %d depends on %c which depends on %a, %b — all three should appear
+    assert "a" in dep_names
+    assert "b" in dep_names
+    assert "c" in dep_names
+
+
+def test_runtime_dependencies_topological_order():
+    """Dependencies are yielded before the values that depend on them."""
+    block = _parse("""
+        | import function
+        | import llvm
+        | import number
+        |
+        | %f : function.Function<()> = function.function<Nil>() body():
+        |     %a : number.Float64 = 1.0
+        |     %b : number.Float64 = 2.0
+        |     %c : Nil = llvm.fadd(%a, %b)
+        |     %d : Nil = llvm.fmul(%c, %a)
+    """)
+    fmul = next(op for op in block.ops if isinstance(op, llvm.FmulOp))
+    deps = list(runtime_dependencies(fmul))
+    idx = {v: i for i, v in enumerate(deps)}
+    # %a and %b must appear before %c (fadd uses them)
+    fadd = next(v for v in deps if v.name == "c")
+    a = next(v for v in deps if v.name == "a")
+    b = next(v for v in deps if v.name == "b")
+    assert idx[a] < idx[fadd]
+    assert idx[b] < idx[fadd]
+    # %c must appear before %d (fmul uses it) — %d itself is not in deps
+    # since runtime_dependencies yields deps OF the value, not the value itself
+
+
+# ---------------------------------------------------------------------------
+# emit_label (structural — the function has known WIP syntax issues,
+# so these test the shape of what it should produce)
+# ---------------------------------------------------------------------------
+
+
+def test_emit_label_registered_for_label_op():
+    """The emitter for goto.LabelOp is the emit_label_op function."""
+    from dgen.codegen import emit_label_op
+
+    assert EMITTERS[goto.LabelOp] is emit_label_op
+
+
+def test_emit_dispatches_by_value_class():
+    """emit() dispatches to the emitter registered for type(value)."""
+    from dgen.codegen import emit
+
+    @dataclass(eq=False, kw_only=True)
+    class _Sentinel(dgen.Op):
+        type: dgen.Value = field(default_factory=builtin.Nil)
+
+    @emitter_for(_Sentinel)
+    def handle_sentinel(value):
+        yield "sentinel_output"
+
+    dummy = _Sentinel()
+    lines = list(emit(dummy))
+    assert lines == ["sentinel_output"]
+
+    del EMITTERS[_Sentinel]
+
+
+def test_emit_linearized_emits_deps_before_value():
+    """emit_linearized emits runtime dependencies before the value itself."""
+    from dgen.module import ConstantOp
+
+    block = _parse("""
+        | import function
+        | import llvm
+        | import number
+        |
+        | %f : function.Function<()> = function.function<Nil>() body():
+        |     %a : number.Float64 = 1.0
+        |     %b : number.Float64 = 2.0
+        |     %c : Nil = llvm.fadd(%a, %b)
+    """)
+    fadd = next(op for op in block.ops if isinstance(op, llvm.FaddOp))
+
+    # Register emitters keyed by op class so emit() can dispatch.
+    emitted_order: list[str] = []
+    saved = dict(EMITTERS)
+
+    @emitter_for(ConstantOp)
+    def handle_constant(value):
+        emitted_order.append(value.name or type(value).__name__)
+        yield f"emit:{value.name or type(value).__name__}"
+
+    @emitter_for(llvm.FaddOp)
+    def handle_fadd(value):
+        emitted_order.append(value.name or type(value).__name__)
+        yield f"emit:{value.name or type(value).__name__}"
+
+    lines = list(emit_linearized(fadd))
+    # deps (%a, %b) should be emitted before fadd (%c)
+    assert len(emitted_order) >= 3
+    fadd_idx = next(i for i, n in enumerate(emitted_order) if n == "c")
+    a_idx = next(i for i, n in enumerate(emitted_order) if n == "a")
+    b_idx = next(i for i, n in enumerate(emitted_order) if n == "b")
+    assert a_idx < fadd_idx
+    assert b_idx < fadd_idx
+
+    # Restore EMITTERS
+    EMITTERS.clear()
+    EMITTERS.update(saved)
+
+
+def test_emit_linearized_nested_loop():
+    """emit_linearized handles nested loop IR without crashing."""
+    module = asm.parse(strip_prefix("""
+        | import algebra
+        | import function
+        | import goto
+        | import index
+        | import number
+        |
+        | %test : function.Function<()> = function.function<Nil>() body():
+        |     %0 : index.Index = 0
+        |     %loop_header0 : goto.Label = goto.label([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
+        |         %1 : index.Index = 2
+        |         %2 : number.Boolean = algebra.less_than(%i0, %1)
+        |         %loop_body0 : goto.Label = goto.label([]) body(%j0: index.Index) captures(%self):
+        |             %3 : index.Index = 1
+        |             %4 : index.Index = algebra.add(%j0, %3)
+        |             %5 : index.Index = 0
+        |             %loop_header1 : goto.Label = goto.label([%5]) body<%6: goto.Label, %exit1: goto.Label>(%i1: index.Index):
+        |                 %7 : index.Index = 2
+        |                 %8 : number.Boolean = algebra.less_than(%i1, %7)
+        |                 %loop_body1 : goto.Label = goto.label([]) body(%j1: index.Index) captures(%6):
+        |                     %9 : index.Index = 1
+        |                     %10 : index.Index = algebra.add(%j1, %9)
+        |                     %11 : index.Index = 0
+        |                     %12 : Nil = chain(%11, %11)
+        |                     %13 : index.Index = chain(%10, %12)
+        |                     %14 : Nil = goto.branch<%6>([%13])
+        |                 %15 : Nil = goto.conditional_branch<%loop_body1, %exit1>(%8, [%i1], [])
+        |             %16 : index.Index = chain(%4, %loop_header1)
+        |             %17 : Nil = goto.branch<%self>([%16])
+        |         %18 : Nil = goto.conditional_branch<%loop_body0, %exit0>(%2, [%i0], [])
+        """))
+
+    emitted = list(emit_linearized(module.functions[0]))
+    assert '\n'.join(emitted) == ""
+    # Should produce some output lines (labels, instructions)
+    assert len(emitted) > 0
