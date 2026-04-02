@@ -81,12 +81,12 @@ class Block:
             yield arg.type
 
     @property
-    def ops(self) -> list[dgen.Op]:
-        return [
-            v
-            for v in transitive_dependencies(self.result, stop=self.captures)
-            if isinstance(v, dgen.Op)
-        ]
+    def values(self) -> Iterator[dgen.Value]:
+        return transitive_dependencies(self.result, stop=self.captures)
+
+    @property
+    def ops(self) -> Iterator[dgen.Op]:
+        return (v for v in self.values if isinstance(v, dgen.Op))
 
     @property
     def asm(self) -> Iterable[str]:
