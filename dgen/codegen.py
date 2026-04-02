@@ -225,16 +225,11 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
             )
         elif isinstance(val, builtin.TypeOp):
             type_val = val.value.type
-            if isinstance(type_val, dgen.Type):
-                _register_constant(val, type_val.__constant__)
-            else:
-                _register(type_val)
-                types[val] = types.get(type_val, "ptr")
-                constants[val] = (
-                    constants[type_val]
-                    if type_val in constants
-                    else f"{types.get(type_val, 'ptr')} %{tracker.track_name(type_val)}"
-                )
+            assert isinstance(type_val, dgen.Type), (
+                f"TypeOp codegen requires a resolved concrete type, "
+                f"got {type(type_val).__name__}"
+            )
+            _register_constant(val, type_val.__constant__)
         elif isinstance(val, dgen.Op):
             rt = _result_type_str(val.type)
             if rt is not None:
