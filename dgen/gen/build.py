@@ -211,7 +211,7 @@ def _build_trait(td: TraitDecl, dialect: Dialect, ns: dict[str, object]) -> type
     if annotations:
         trait_ns["__annotations__"] = annotations
     cls = type(td.name, (Trait,), trait_ns)
-    dialect.trait(td.name)(cls)
+    dialect.type(td.name)(cls)
     return cls
 
 
