@@ -91,7 +91,7 @@ parameterized by compile-time values.
 
 ```dgen
 type <Name>
-type <Name><param: Type, param: Type = default>
+type <Name><param: Type, param: Type>
 type <Name>:
     <body>
 type <Name><params>:
@@ -101,11 +101,11 @@ type <Name><params>:
 ### Parameters
 
 Parameters are compile-time values enclosed in angle brackets. Each
-parameter has a name and a type annotation. Parameters may have defaults.
+parameter has a name and a type annotation.
 
 ```dgen
 type Array<element_type: Type, n: Index>
-type NDBuffer<shape: Shape, dtype: Type = Float64>
+type NDBuffer<shape: Shape, dtype: Type>
 ```
 
 ### Body
@@ -214,12 +214,6 @@ When a type annotation is given, it constrains the operand to that type
 (or any parameterization of it). When omitted, the operand accepts any
 type.
 
-For variadic operands, use `Span`:
-
-```dgen
-op call<callee: String>(args: Span) -> Nil
-```
-
 ### Return type
 
 The `-> <TypeRef>` clause specifies the result type.
@@ -313,16 +307,12 @@ type Number<dtype: Type>:
 
 ### Type constraints
 
-Check that an operand's type matches a named type constructor:
+Check that an operand's type matches an unparameterized type.
+Unparameterized types behave like traits — they describe families
+of types (e.g. `Tensor` matches any `Tensor<shape, dtype>`).
 
 ```dgen
 requires <subject> has type <TypeRef>
-```
-
-The legacy `~=` syntax is equivalent:
-
-```dgen
-requires <subject> ~= <TypeRef>
 ```
 
 ```dgen
@@ -373,7 +363,7 @@ op          = "op" name [params] "(" operands ")" ["->" type_ref]
 op_body     = (INDENT (block_decl | has_trait | constraint) NEWLINE)*
 
 params      = "<" param ("," param)* ">"
-param       = name ":" type_ref ["=" default]
+param       = name ":" type_ref
 
 operands    = operand ("," operand)*
 operand     = name [":" type_ref]
@@ -386,7 +376,6 @@ layout      = "layout" Name
 has_trait   = "has trait" Name
 constraint  = "requires" name "has" "trait" Name
             | "requires" name "has" "type" type_ref
-            | "requires" name "~=" type_ref
             | "requires" expression
 block_decl  = "block" name
 ```

@@ -293,12 +293,6 @@ def _parse_constraint(line: str) -> Constraint:
         return HasTypeConstraint(
             lhs=lhs.strip(), type=_parse_type_ref(type_str.strip())
         )
-    # ~= (backward compat alias for has type)
-    if " ~= " in rest:
-        lhs, type_str = rest.split(" ~= ", 1)
-        return HasTypeConstraint(
-            lhs=lhs.strip(), type=_parse_type_ref(type_str.strip())
-        )
     return ExpressionConstraint(expr=rest.strip())
 
 
