@@ -11,13 +11,37 @@ from dgen.dialects.builtin import Nil
 algebra = Dialect("algebra")
 
 class AddMagma(Trait):
-    ...
+    __params__ = ()
+    __operands__ = ()
+    __blocks__ = ()
+    __constraints__ = ()
+    name = None
+    type = <functools.cached_property object at 0x7f3ca4137b10>
+    __layout__ = <property object at 0x7f3ca413aed0>
+    dialect = <dgen.dialect.Dialect object at 0x7f3ca3ee62d0>
+    asm_name = 'AddMagma'
 
 class MulMagma(Trait):
-    ...
+    __params__ = ()
+    __operands__ = ()
+    __blocks__ = ()
+    __constraints__ = ()
+    name = None
+    type = <functools.cached_property object at 0x7f3ca4137b10>
+    __layout__ = <property object at 0x7f3ca413aed0>
+    dialect = <dgen.dialect.Dialect object at 0x7f3ca3ee62d0>
+    asm_name = 'MulMagma'
 
 class TotalOrder(Trait):
-    ...
+    __params__ = ()
+    __operands__ = ()
+    __blocks__ = ()
+    __constraints__ = ()
+    name = None
+    type = <functools.cached_property object at 0x7f3ca4137b10>
+    __layout__ = <property object at 0x7f3ca413aed0>
+    dialect = <dgen.dialect.Dialect object at 0x7f3ca3ee62d0>
+    asm_name = 'TotalOrder'
 
 @dataclass(eq=False, kw_only=True)
 class AddOp(Op):

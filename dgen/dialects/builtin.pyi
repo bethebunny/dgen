@@ -11,16 +11,20 @@ from dgen.dialects.index import Index
 builtin = Dialect("builtin")
 
 @dataclass(frozen=True, eq=False)
-class Nil(Type): ...
+class Nil(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class String(Type): ...
+class String(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class TypeTag(Type): ...
+class TypeTag(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
-class Byte(Type): ...
+class Byte(Type):
+    ...
 
 @dataclass(frozen=True, eq=False)
 class Array(Type):
@@ -44,3 +48,4 @@ class ChainOp(Op):
     lhs: Value
     rhs: Value
     type: Type
+

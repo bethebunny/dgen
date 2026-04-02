@@ -1,7 +1,7 @@
-"""Trait base class for all dgen traits."""
+"""Trait base class — re-exported from dgen.type to avoid circular imports."""
 
 from __future__ import annotations
 
+from .type import Trait
 
-class Trait:
-    """Sentinel base class for all dgen traits."""
+__all__ = ["Trait"]

@@ -10,7 +10,6 @@ import dgen
 
 from .dialect import Dialect
 from .layout import Layout, TypeValue, _bytearray_address
-from .trait import Trait
 
 T = TypeVar("T", bound="Type")
 
@@ -64,8 +63,13 @@ class Value(Generic[T]):
         return self.type.ready and all(val.ready for _, val in self.parameters)
 
     def has_trait(self, trait: type[Trait]) -> bool:
-        """Check whether this value's type implements a trait."""
-        return isinstance(type_constant(self.type), trait)
+        """Check whether this value implements a trait.
+
+        For Types, checks directly (isinstance(self, trait)).
+        For Ops, checks the op's own traits (not the result type).
+        To check an op's result type, use ``op.type.has_trait(trait)``.
+        """
+        return isinstance(self, trait)
 
 
 def type_constant(value: Value[TypeType]) -> Type:
@@ -164,10 +168,6 @@ class Type(Value["TypeType"]):
         for _, param in self.parameters:
             yield param
 
-    def has_trait(self, trait: type[Trait]) -> bool:
-        """Check whether this type implements a trait (direct isinstance)."""
-        return isinstance(self, trait)
-
 
 @dataclass(eq=False, kw_only=True)
 class Constant(Value[T]):
@@ -187,7 +187,6 @@ Field = tuple[str, type[Type]]
 Fields = tuple[Field, ...]
 
 
-@dataclass(frozen=True, eq=False)
 class TypeType(Type):
     """A type whose values are themselves types.
 
@@ -207,7 +206,21 @@ class TypeType(Type):
 
     @cached_property
     def type(self) -> TypeType:
-        return self
+        # TypeType is its own metatype — break the infinite recursion.
+        # Subclasses (Trait and its children) use Type.type → TypeType().
+        if type(self) is TypeType:
+            return self
+        return TypeType()
+
+
+class Trait(TypeType):
+    """Base class for all dgen traits.
+
+    Traits are type values in the type hierarchy — they describe sets
+    of types. A trait can appear wherever a type can: as a type annotation,
+    in constraint checks, in ASM type position.
+
+    """
 
 
 class Memory(Generic[T]):

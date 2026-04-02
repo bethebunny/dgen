@@ -1,9 +1,7 @@
 from .block import Block
 from .dialect import Dialect
 from .op import Op
-from .trait import Trait
-from .type import Type, TypeType
-from .type import Constant, Value
+from .type import Constant, Trait, Type, TypeType, Value
 
 __all__ = [
     "Block",

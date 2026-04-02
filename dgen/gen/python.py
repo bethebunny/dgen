@@ -30,6 +30,8 @@ def _is_type_kinded(param_type: type[Type]) -> bool:
 
 def _own_fields(cls: type) -> list[dataclasses.Field[object]]:
     """Dataclass fields defined on *cls* itself (not inherited from bases)."""
+    if not dataclasses.is_dataclass(cls):
+        return []
     own = getattr(cls, "__annotations__", {})
     return [f for f in dataclasses.fields(cls) if f.name in own]
 
