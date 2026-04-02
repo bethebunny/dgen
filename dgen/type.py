@@ -19,7 +19,9 @@ SlotFn = Callable[["Value"], str]
 
 
 def _default_slot(v: Value) -> str:
-    return v.name if v.name is not None else "?"
+    if v.name is None:
+        raise ValueError(f"Unnamed value {v!r} requires a SlotTracker")
+    return v.name
 
 
 class Value(Generic[T]):
@@ -156,8 +158,7 @@ class Type(Value["TypeType"]):
 
     def format_asm(self, slot: SlotFn = _default_slot) -> str:
         """Format as ``dialect.Name<params>`` (no prefix for builtin)."""
-        prefix = "" if self.dialect.name == "builtin" else f"{self.dialect.name}."
-        name = f"{prefix}{self.asm_name}"
+        name = self.dialect.qualified_name(self.asm_name)
         params = list(self.parameters)
         if not params:
             return name
@@ -275,8 +276,6 @@ def format_json(value: object, slot: SlotFn = _default_slot) -> str:
         return _format_float(value)
     if isinstance(value, int):
         return str(value)
-    if isinstance(value, bytes):
-        return f'"{value.decode("utf-8")}"'
     if isinstance(value, str):
         return f'"{value}"'
     return str(value)

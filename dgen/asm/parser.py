@@ -5,9 +5,9 @@ read/try_read dispatch to reader functions — like lisp reader macros.
 
 from __future__ import annotations
 
-import importlib
 import re
 from collections.abc import Callable
+from functools import reduce
 from typing import Any
 
 import dgen.type
@@ -30,71 +30,36 @@ _NUMBER = re.compile(r"-?\d+\.\d*|-?\d*\.\d+|-?\d+")
 _LITERAL_START = set('-0123456789{["(')
 
 
-def _get_dialect(name: str) -> Dialect:
-    """Get a dialect by name, auto-importing it if not yet registered."""
-    try:
-        return Dialect.get(name)
-    except KeyError:
-        pass
-    # Try importing from the dgen.dialects package (covers core dialects
-    # whose Python module hasn't been imported yet in this process).
-    try:
-        importlib.import_module(f"dgen.dialects.{name}")
-        return Dialect.get(name)
-    except (ModuleNotFoundError, KeyError):
-        raise KeyError(name) from None
+class Scope(dict[str, "Scope | type[Op] | type[Type]"]):
+    """Name-resolution scope for ASM parsing.
 
-
-class Scope:
-    """Name-resolution scope built from import declarations.
-
-    Builtin types and ops are always available unqualified.  Each ``import X``
-    adds dialect ``X`` so that ``X.Foo`` resolves via ``scope.resolve_type``
-    or ``scope.resolve_op``.
+    A flat dict of unqualified names (ops and types).  ``import_dialect``
+    nests a dialect's contents under its name so ``dialect.Foo`` resolves
+    via ``scope.lookup("dialect.Foo")``.
     """
 
-    def __init__(self, imports: list[str]) -> None:
-        self._builtin = Dialect.get("builtin")
-        self._dialects: dict[str, Dialect] = {}
-        for name in imports:
-            self._dialects[name] = _get_dialect(name)
+    @classmethod
+    def from_dialect(cls, dialect: Dialect) -> Scope:
+        return cls(**dialect.ops, **dialect.types)
 
-    def _walk(self, name: str) -> tuple[Dialect, str]:
-        """Split a qualified name into (dialect, local_name)."""
-        parts = name.split(".")
-        if len(parts) == 1:
-            return self._builtin, name
-        dialect = self._dialects.get(parts[0])
-        if dialect is None:
-            raise ParseError(f"Unknown dialect: {parts[0]}")
-        for part in parts[1:-1]:
-            child = dialect.children.get(part)
-            if child is None:
-                raise ParseError(f"Unknown child dialect: {part}")
-            dialect = child
-        return dialect, parts[-1]
+    def import_dialect(self, dialect: Dialect) -> None:
+        self[dialect.name] = Scope.from_dialect(dialect)
 
-    def resolve_type(self, name: str) -> type[Type]:
-        dialect, local = self._walk(name)
-        cls = dialect.types.get(local)
-        if cls is None:
-            raise ParseError(f"Unknown type: {name}")
-        return cls
-
-    def resolve_op(self, name: str) -> type[Op]:
-        dialect, local = self._walk(name)
-        cls = dialect.ops.get(local)
-        if cls is None:
-            raise ParseError(f"Unknown op: {name}")
-        return cls
+    def lookup(self, qualified_name: str) -> type[Op] | type[Type]:
+        try:
+            result = reduce(
+                lambda scope, key: scope[key], qualified_name.split("."), self
+            )
+        except KeyError:
+            raise ParseError(f"Unknown name: {qualified_name}") from None
+        assert isinstance(result, type)
+        return result
 
 
 def parse_module(text: str) -> Module:
     parser = ASMParser(text)
-    imports: list[str] = []
     while (name := parser.try_read(_import_line)) is not None:
-        imports.append(name)
-    parser.scope = Scope(imports)
+        parser.scope.import_dialect(Dialect.get(name))
     ops: list[Op] = []
     while not parser.done:
         ops.append(parser.read(op_statement))
@@ -107,7 +72,7 @@ class ASMParser:
         self.pos: int = 0
         self.name_table: dict[str, Value] = {}
         self.pending_ops: list[Op] = []
-        self.scope: Scope = Scope([])
+        self.scope: Scope = Scope.from_dialect(Dialect.get("builtin"))
 
     @property
     def done(self) -> bool:
@@ -258,7 +223,8 @@ def value_expression(parser: ASMParser) -> object:
 
 def _named_type(parser: ASMParser) -> Type:
     name = parser.read(qualified_name)
-    type_cls = parser.scope.resolve_type(name)
+    type_cls = parser.scope.lookup(name)
+    assert issubclass(type_cls, Type)
     if not type_cls.__params__ or parser.try_read("<") is None:
         return type_cls()
     values = parser.read_list(value_expression)
@@ -283,7 +249,8 @@ def op_expression(
     parser: ASMParser,
 ) -> tuple[type[Op], list[object], list[object], list[Block]]:
     name = parser.read(qualified_name)
-    op_cls = parser.scope.resolve_op(name)
+    op_cls = parser.scope.lookup(name)
+    assert issubclass(op_cls, Op)
     parameters: list[object] = []
     if op_cls.__params__:
         parser.read("<")

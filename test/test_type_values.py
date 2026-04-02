@@ -5,7 +5,7 @@ from copy import deepcopy
 import pytest
 
 from dgen import Block, asm
-from dgen.asm.formatting import format_expr
+from dgen.type import format_value
 from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
@@ -41,8 +41,8 @@ def test_parse_dict_literal():
 
 
 def test_format_dict_literal():
-    """format_expr handles dicts."""
-    result = format_expr({"tag": "index.Index"})
+    """format_value handles dicts."""
+    result = format_value({"tag": "index.Index"})
     assert result == '{"tag": "index.Index"}'
 
 

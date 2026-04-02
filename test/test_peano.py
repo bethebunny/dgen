@@ -19,7 +19,7 @@ from typing import ClassVar
 import dgen
 from dgen import Dialect, Op, Trait, Type, Value, layout
 from dgen import codegen
-from dgen.asm.formatting import type_asm
+from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin, function
 from dgen.dialects.builtin import ChainOp, Nil

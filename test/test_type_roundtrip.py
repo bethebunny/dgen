@@ -12,8 +12,8 @@ from copy import deepcopy
 import pytest
 
 from dgen import Block, asm
-from dgen.asm.formatting import type_asm
-from dgen.asm.parser import ASMParser, Scope, parse_module, value_expression
+from dgen.type import format_value
+from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
@@ -121,8 +121,11 @@ ALL_TYPES = BUILTIN_TYPES + LLVM_TYPES + TOY_TYPES + MEMORY_TYPES
 
 def _parse_type(text: str) -> object:
     """Parse a type from ASM text, with all dialects registered."""
+    from dgen.dialect import Dialect
+
     parser = ASMParser(text)
-    parser.scope = Scope(["index", "llvm", "ndbuffer", "number", "toy"])
+    for name in ["index", "llvm", "ndbuffer", "number", "toy"]:
+        parser.scope.import_dialect(Dialect.get(name))
     return value_expression(parser)
 
 
@@ -187,10 +190,10 @@ _ASM_TYPES = [
 
 
 @pytest.mark.parametrize("ty", _ASM_TYPES)
-def test_type_asm_roundtrip(ty):
-    text = type_asm(ty)
+def test_format_value_roundtrip(ty):
+    text = format_value(ty)
     parsed = _parse_type(text)
-    assert type_asm(parsed) == text
+    assert format_value(parsed) == text
 
 
 # ---------------------------------------------------------------------------

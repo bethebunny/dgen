@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import ClassVar
 
-from dgen import Constant, Op, Type, TypeType, Value
+from dgen import Constant, Dialect, Op, Type, TypeType, Value
 from dgen.dialects.builtin import (
     Nil,
     Span,
@@ -38,9 +38,7 @@ class ConstantOp(Op, Constant):
             return self.value
         return Memory.from_value(type_constant(self.type), self.value)
 
-    def format_asm(self, slot: SlotFn = _default_slot) -> str:
-        """ConstantOp formats as an SSA reference (like any Op), not a literal."""
-        return f"%{slot(self)}"
+    format_asm = Value.format_asm  # SSA reference, not Constant literal
 
     @property
     def __constant__(self) -> Memory:
@@ -144,27 +142,30 @@ class Module:
     @property
     def asm(self) -> Iterable[str]:
         from .asm.formatting import SlotTracker, op_asm
+        from .graph import transitive_dependencies
 
-        # The _formatted set is shared across all top-level ops so that each
-        # op is printed at most once.  Ambient ops (no block-argument
-        # dependencies — e.g. FunctionOps, constants) are reachable via
-        # block.ops from every block that references them, so without sharing
-        # they would be printed once at module level AND again inside each
-        # referencing block.
-        #
-        # Each op gets its own SlotTracker (for independent slot numbering),
-        # but all trackers share a single dialects set for import collection.
-        dialects: set[str] = set()
+        # Format ops first, then collect dialects from the IR graph.
         formatted: set[int] = set()
         op_lines: list[str] = []
         for op in self.ops:
             tracker = SlotTracker()
-            tracker.dialects = dialects
-            op_lines.extend(op_asm(op, tracker, _formatted=formatted))
+            op_lines.extend(op_asm(op, tracker, formatted=formatted))
             op_lines.append("")
 
-        for d in sorted(dialects):
-            yield f"import {d}"
+        # Collect dialects by walking every op and all its value dependencies.
+        builtin_dialect = Dialect.get("builtin")
+        dialects: set[Dialect] = set()
+        for op in self.ops:
+            for inner in _walk_all_ops(op):
+                # Walk ALL transitive deps of each op (type, params, operands,
+                # block arg types, captures) — not just the type.
+                for v in transitive_dependencies(inner):
+                    if hasattr(v, "dialect"):
+                        dialects.add(v.dialect)
+        dialects.discard(builtin_dialect)
+
+        for d in sorted(dialects, key=lambda d: d.name):
+            yield f"import {d.name}"
         if dialects:
             yield ""
 
