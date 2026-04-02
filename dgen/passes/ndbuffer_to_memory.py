@@ -13,16 +13,20 @@ index linearization.
 from __future__ import annotations
 
 from math import prod
+from typing import TYPE_CHECKING
 
 import dgen
 from dgen.dialects import algebra, llvm, memory
 from dgen.dialects.builtin import String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
-from dgen.module import ConstantOp, PackOp, pack
+from dgen.module import ConstantOp, Module, PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.dialects import ndbuffer
 from toy.dialects import toy
+
+if TYPE_CHECKING:
+    from dgen.compiler import Compiler
 
 
 def _shape_of(val: dgen.Value) -> list[int]:
@@ -70,6 +74,10 @@ class NDBufferToMemory(Pass):
     def __init__(self) -> None:
         # Track shapes for allocs that have been lowered to References.
         self._shapes: dict[int, list[int]] = {}
+
+    def run(self, module: Module, compiler: Compiler[object]) -> Module:
+        self._shapes.clear()
+        return super().run(module, compiler)
 
     def _resolve_shape(self, val: dgen.Value) -> list[int]:
         """Get shape from NDBuffer type or from tracked alloc shapes."""
