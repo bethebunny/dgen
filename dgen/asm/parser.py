@@ -230,7 +230,7 @@ def _named_type(parser: ASMParser) -> Type:
     values = parser.read_list(value_expression)
     parser.read(">")
     kwargs = {
-        param_name: _coerce_param(parser, value, param_type)
+        param_name: _coerce(parser, value, param_type)
         for (param_name, param_type), value in zip(type_cls.__params__, values)
     }
     return type_cls(**kwargs)
@@ -279,14 +279,14 @@ def op_statement(parser: ASMParser) -> Op:
     if pre_type is not None:
         kwargs["type"] = pre_type
     for (param_name, param_type), value in zip(op_cls.__params__, parameters):
-        kwargs[param_name] = _coerce_param(parser, value, param_type)
+        kwargs[param_name] = _coerce(parser, value, param_type)
     for (field_name, field_type), value in zip(op_cls.__operands__, operands):
         # For polymorphic ops (field_type is base Type), infer concrete type
         # from the explicit result type annotation when available.
         effective_type = field_type
         if field_type is Type and isinstance(pre_type, Type):
             effective_type = type(pre_type)
-        kwargs[field_name] = _coerce_operand(parser, value, effective_type)
+        kwargs[field_name] = _coerce(parser, value, effective_type)
     for block_name, block in zip(op_cls.__blocks__, blocks):
         kwargs[block_name] = block
     op = op_cls(**kwargs)
@@ -333,45 +333,22 @@ def _as_constant(field_type: type[Type], raw: object) -> Constant:
     return field_type().constant(raw)
 
 
-def _coerce_operand(
+def _coerce(
     parser: ASMParser,
     value: object,
     field_type: type[Type],
 ) -> object:
-    """Coerce a parsed operand value to match its declared field type.
+    """Coerce a parsed value to match a declared field type.
 
     - ``Value`` → pass through
-    - ``list`` containing any ``Value`` or targeting a ``Span`` field → ``PackOp``
-    - ``list`` of plain literals → pass through as raw list
+    - ``list`` → ``PackOp`` (elements coerced individually)
     - other scalars → ``Constant`` via ``_as_constant``
     """
     if isinstance(value, Value):
         return value
     if isinstance(value, list):
-        if any(isinstance(v, Value) for v in value) or issubclass(
-            field_type, builtin.Span
-        ):
-            return _pack_list(parser, value, field_type)
-        return value
+        return _pack_list(parser, value, field_type)
     return _as_constant(field_type, value)
-
-
-def _coerce_param(
-    parser: ASMParser,
-    value: object,
-    param_type: type[Type],
-) -> object:
-    """Coerce a parsed type-parameter value to match its declared type.
-
-    - ``Value`` → pass through
-    - ``list`` → ``PackOp`` (each element coerced to *param_type*)
-    - other scalars → ``Constant`` via ``_as_constant``
-    """
-    if isinstance(value, Value):
-        return value
-    if isinstance(value, list):
-        return _pack_list(parser, value, param_type)
-    return _as_constant(param_type, value)
 
 
 def _pack_list(
