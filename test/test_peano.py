@@ -241,6 +241,81 @@ def test_recursive_type_roundtrip():
     assert count_nat(reconstructed) == 2
 
 
+# ============================================================================
+# Traits in type position
+# ============================================================================
+#
+# Traits should be usable wherever types are: as type annotations in ASM,
+# as return type annotations on ops, and in has_trait checks on values whose
+# type is annotated with a trait.
+
+
+@pytest.mark.xfail(strict=True, reason="traits not yet usable in type position")
+def test_trait_in_asm_type_annotation():
+    """A trait name should be valid as a type annotation in ASM."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        | import peano
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %z : peano.Natural = peano.zero()
+    """)
+    module = parse_module(ir)
+    func = module.functions[0]
+    zero_op = func.body.ops[0]
+    assert isinstance(zero_op, ZeroOp)
+    assert zero_op.type.has_trait(Natural)
+
+
+@pytest.mark.xfail(strict=True, reason="traits not yet usable in type position")
+def test_trait_annotation_roundtrips_through_asm():
+    """A trait used as a type annotation should survive ASM print/parse."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        | import peano
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %z : peano.Natural = peano.zero()
+    """)
+    module = parse_module(ir)
+    from dgen import asm
+
+    text = asm.format(module)
+    assert "peano.Natural" in text
+    reparsed = parse_module(text)
+    zero_op = reparsed.functions[0].body.ops[0]
+    assert zero_op.type.has_trait(Natural)
+
+
+@pytest.mark.xfail(strict=True, reason="traits not yet usable in type position")
+def test_trait_as_block_argument_type():
+    """A block argument annotated with a trait should parse and roundtrip."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        | import peano
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %z : peano.Natural = peano.zero()
+        |     %s : peano.Natural = peano.successor<%z>()
+        |     %v : index.Index = peano.value<%s>()
+    """)
+    module = parse_module(ir)
+    func = module.functions[0]
+    ops = func.body.ops
+    for op in ops:
+        if isinstance(op, (ZeroOp, SuccessorOp)):
+            assert op.type.has_trait(Natural)
+
+
 def test_peano_constant():
     """S(S(S(Z))) = 3, resolved entirely at compile time.
 
