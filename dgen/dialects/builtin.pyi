@@ -44,3 +44,8 @@ class ChainOp(Op):
     lhs: Value
     rhs: Value
     type: Type
+
+@dataclass(eq=False, kw_only=True)
+class TypeOp(Op):
+    value: Value
+    type: Type = dgen.TypeType()

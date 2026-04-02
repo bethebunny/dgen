@@ -24,4 +24,5 @@ type Span<pointee: Type>:
 type Tuple<types: Span<Type>>:
     layout Record
 
-op chain(lhs, rhs) -> Type
+op chain(lhs, rhs)
+op type(value) -> Type

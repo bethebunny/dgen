@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
+from dgen.dialects.builtin import Nil, Span
 
 function = Dialect("function")
 
