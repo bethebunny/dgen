@@ -21,7 +21,26 @@ class Dialect:
         self.name = name
         self.ops: dict[str, builtins.type[Op]] = {}
         self.types: dict[str, builtins.type[Type]] = {}
+        self.children: dict[str, Dialect] = {}
         Dialect._registry[name] = self
+
+    @staticmethod
+    def lookup(container: dict[str, object] | Dialect, name: str) -> object:
+        """Look up *name* in a scope dict or a Dialect.
+
+        Used with ``functools.reduce`` to walk qualified names::
+
+            reduce(Dialect.lookup, "toy.Tensor".split("."), scope)
+        """
+        if isinstance(container, dict):
+            return container[name]
+        if name in container.children:
+            return container.children[name]
+        if name in container.types:
+            return container.types[name]
+        if name in container.ops:
+            return container.ops[name]
+        raise KeyError(name)
 
     @classmethod
     def get(cls, name: str) -> Dialect:

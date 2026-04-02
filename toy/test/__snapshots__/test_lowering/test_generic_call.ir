@@ -1,6 +1,7 @@
 import function
+import ndbuffer
+import number
 import toy
-
 %multiply_transpose : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
     %0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)
     %1 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%b)

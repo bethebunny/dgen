@@ -89,6 +89,8 @@ def test_fingerprint_memoized():
 def test_graph_equivalent_same_ir():
     ir = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -102,6 +104,8 @@ def test_graph_equivalent_different_names():
     """Same computation, different SSA names -> equivalent."""
     a = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -110,6 +114,8 @@ def test_graph_equivalent_different_names():
     """)
     b = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -122,6 +128,8 @@ def test_graph_equivalent_different_names():
 def test_graph_not_equivalent_different_values():
     a = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -130,6 +138,8 @@ def test_graph_not_equivalent_different_values():
     """)
     b = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -142,6 +152,8 @@ def test_graph_not_equivalent_different_values():
 def test_structural_diff_returns_string():
     a = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -150,6 +162,8 @@ def test_structural_diff_returns_string():
     """)
     b = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():

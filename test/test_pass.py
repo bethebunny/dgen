@@ -92,6 +92,8 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
     ir_text = strip_prefix("""
         | import function
         | import index
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -121,6 +123,8 @@ def test_pass_unregistered_ops_error():
     ir_text = strip_prefix("""
         | import function
         | import index
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():

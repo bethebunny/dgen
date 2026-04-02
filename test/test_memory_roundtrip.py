@@ -21,8 +21,9 @@ def test_roundtrip_stack_allocate():
 def test_roundtrip_heap_allocate():
     ir = strip_prefix("""
         | import function
-        | import memory
         | import index
+        | import memory
+        | import number
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %n : index.Index = 10
@@ -52,8 +53,9 @@ def test_roundtrip_load_store_with_mem():
 def test_roundtrip_offset():
     ir = strip_prefix("""
         | import function
-        | import memory
         | import index
+        | import memory
+        | import number
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %n : index.Index = 10
@@ -68,8 +70,9 @@ def test_roundtrip_offset():
 def test_roundtrip_deallocate():
     ir = strip_prefix("""
         | import function
-        | import memory
         | import index
+        | import memory
+        | import number
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %n : index.Index = 1
@@ -104,8 +107,9 @@ def test_roundtrip_offset_load_store():
     """Offset + load/store: typical array access pattern."""
     ir = strip_prefix("""
         | import function
-        | import memory
         | import index
+        | import memory
+        | import number
         |
         | %f : function.Function<()> = function.function<Nil>() body():
         |     %n : index.Index = 10

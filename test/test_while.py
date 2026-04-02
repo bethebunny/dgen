@@ -97,9 +97,10 @@ def test_while_no_ivs_roundtrip():
 
 SIMPLE_WHILE = strip_prefix("""
     | import algebra
-    | import number
     | import control_flow
     | import function
+    | import index
+    | import number
     | %main : function.Function<()> = function.function<Nil>() body():
     |     %zero : index.Index = 0
     |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
@@ -127,9 +128,10 @@ def test_while_llvm_ir(snapshot):
 
 NESTED_WHILE = strip_prefix("""
     | import algebra
-    | import number
     | import control_flow
     | import function
+    | import index
+    | import number
     | %main : function.Function<()> = function.function<Nil>() body():
     |     %zero : index.Index = 0
     |     %outer : Nil = control_flow.while([%zero]) condition(%i: index.Index):

@@ -15,6 +15,7 @@ from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 NESTED_FOR = strip_prefix("""
     | import control_flow
     | import function
+    | import index
     |
     | %test : function.Function<()> = function.function<Nil>() body():
     |     %outer : Nil = control_flow.for<0, 2>([]) body(%i: index.Index):

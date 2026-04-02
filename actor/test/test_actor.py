@@ -36,6 +36,7 @@ _PIPELINE_IR = strip_prefix("""
     | import algebra
     | import control_flow
     | import function
+    | import index
     | import ndbuffer
     | import number
     |
@@ -85,6 +86,7 @@ def test_unfused_pipeline() -> None:
         | import algebra
         | import control_flow
         | import function
+        | import index
         | import ndbuffer
         | import number
         |

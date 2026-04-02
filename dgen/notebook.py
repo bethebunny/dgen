@@ -26,7 +26,7 @@ from IPython import get_ipython
 
 from dgen.gen.ast import DgenFile
 from dgen.gen.build import build
-from dgen.gen.importer import _DEFAULT_MAP
+from dgen.gen.importer import find_dgen, _path_to_module
 from dgen.gen.parser import parse
 
 
@@ -46,17 +46,18 @@ class _MagicHost(Protocol):
 def _make_import_map(ast: DgenFile) -> dict[str, str]:
     """Build an import map for dialect imports in a notebook cell.
 
-    Since there is no file path to search alongside, falls back to
-    :data:`~dgen.gen.importer._DEFAULT_MAP` first, then scans the
-    currently loaded modules in ``sys.modules`` for a module whose dotted
-    name exactly matches or ends with ``.<dialect_name>``.
+    Searches ``sys.path`` for ``.dgen`` files first, then falls back to
+    scanning already-loaded modules in ``sys.modules``.
     """
     loaded_modules = list(sys.modules)
     result: dict[str, str] = {}
     for decl in ast.imports:
-        if py_path := _DEFAULT_MAP.get(decl.module):
-            result[decl.module] = py_path
-            continue
+        dgen_file = find_dgen(decl.module)
+        if dgen_file is not None:
+            py_path = _path_to_module(dgen_file)
+            if py_path is not None:
+                result[decl.module] = py_path
+                continue
         for mod_name in loaded_modules:
             if mod_name == decl.module or mod_name.endswith(f".{decl.module}"):
                 result[decl.module] = mod_name

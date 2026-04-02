@@ -19,6 +19,8 @@ def test_transpose_elimination(ir_snapshot):
     """transpose(transpose(x)) -> x"""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -36,6 +38,8 @@ def test_reshape_of_matching_constant(ir_snapshot):
     """Reshape to same shape as constant -> remove reshape."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -52,6 +56,8 @@ def test_constant_folding_reshape(ir_snapshot):
     """Reshape of constant with different shape -> fold into new constant."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -67,6 +73,8 @@ def test_dce(ir_snapshot):
     """Dead code elimination removes unused ops."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():
@@ -85,6 +93,8 @@ def test_full_pipeline(ir_snapshot):
     """Full optimization on multiply_transpose-like example."""
     ir_text = strip_prefix("""
         | import function
+        | import ndbuffer
+        | import number
         | import toy
         |
         | %main : function.Function<()> = function.function<Nil>() body():

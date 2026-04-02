@@ -1,4 +1,7 @@
 import function
+import index
+import ndbuffer
+import number
 import toy
 
 %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():

@@ -9,8 +9,9 @@ from toy.test.helpers import strip_prefix
 def test_roundtrip_transpose():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)
@@ -22,8 +23,10 @@ def test_roundtrip_transpose():
 def test_roundtrip_reshape():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%a)
@@ -35,8 +38,10 @@ def test_roundtrip_reshape():
 def test_roundtrip_constant():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -49,8 +54,10 @@ def test_explicit_constant(ir_snapshot):
     """Explicit constant(...) syntax is accepted and normalizes to implicit form."""
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
@@ -62,8 +69,9 @@ def test_explicit_constant(ir_snapshot):
 def test_roundtrip_mul():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = toy.mul(%a, %b)
@@ -75,8 +83,9 @@ def test_roundtrip_mul():
 def test_roundtrip_add():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = toy.add(%a, %b)
@@ -88,8 +97,9 @@ def test_roundtrip_add():
 def test_roundtrip_call():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import number
+        | import toy
         |
         | %helper : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%x: toy.InferredShapeTensor<number.Float64>):
         |
@@ -103,8 +113,10 @@ def test_roundtrip_call():
 def test_roundtrip_print():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %f : function.Function<()> = function.function<Nil>() body(%a: toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>):
         |     %0 : Nil = toy.print(%a)
@@ -126,8 +138,10 @@ def test_roundtrip_void_return():
 def test_roundtrip_concat():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 8]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 8]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>, %b: toy.Tensor<ndbuffer.Shape<2>([2, 5]), number.Float64>):
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 8]), number.Float64> = toy.concat<1>(%a, %b)
@@ -139,8 +153,10 @@ def test_roundtrip_concat():
 def test_roundtrip_tile():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>, %n: index.Index):
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64> = toy.tile<%n>(%a)
@@ -153,8 +169,10 @@ def test_roundtrip_tile_with_index_constant():
     """Tile where count is an index constant — shape inference can peek through."""
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>):
         |     %0 : index.Index = 4
@@ -169,8 +187,10 @@ def test_roundtrip_tile_with_computed_count():
     ir = strip_prefix("""
         | import algebra
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>):
         |     %0 : index.Index = 2
@@ -198,8 +218,10 @@ def test_roundtrip_add_index():
 def test_roundtrip_full_program():
     ir = strip_prefix("""
         | import function
-        | import toy
         | import index
+        | import ndbuffer
+        | import number
+        | import toy
         |
         | %multiply_transpose : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)

@@ -43,6 +43,7 @@ def test_if_with_capture_roundtrip():
         | import index
         | import function
         | import index
+        | import number
         | %main : function.Function<number.Float64> = function.function<number.Float64>() body(%cond: index.Index, %x: number.Float64):
         |     %result : number.Float64 = control_flow.if(%cond, [%x], [%x]) then_body(%x: number.Float64):
         |         %a : number.Float64 = 1.0

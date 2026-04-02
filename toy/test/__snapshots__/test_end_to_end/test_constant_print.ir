@@ -2,8 +2,9 @@ import function
 import index
 import llvm
 import memory
+import ndbuffer
+import number
 import toy
-
 %main : function.Function<()> = function.function<Nil>() body():
     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     %1 : memory.Reference<number.Float64> = memory.load(%0, %0)

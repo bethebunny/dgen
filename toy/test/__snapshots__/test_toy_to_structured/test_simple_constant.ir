@@ -1,5 +1,6 @@
 import function
 import ndbuffer
+import number
 import toy
 
 %main : function.Function<()> = function.function<Nil>() body():

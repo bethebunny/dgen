@@ -10,6 +10,8 @@ from dgen.testing import strip_prefix
 
 IR = strip_prefix("""
     | import function
+    | import ndbuffer
+    | import number
     | import toy
     |
     | %main : function.Function<()> = function.function<Nil>() body():
@@ -19,6 +21,8 @@ IR = strip_prefix("""
 
 IR_RENAMED = strip_prefix("""
     | import function
+    | import ndbuffer
+    | import number
     | import toy
     |
     | %main : function.Function<()> = function.function<Nil>() body():
@@ -28,6 +32,8 @@ IR_RENAMED = strip_prefix("""
 
 IR_DIFFERENT = strip_prefix("""
     | import function
+    | import ndbuffer
+    | import number
     | import toy
     |
     | %main : function.Function<()> = function.function<Nil>() body():
