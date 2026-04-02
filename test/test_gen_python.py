@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import sys
 
-from dgen.gen.importer import DgenLoader
 from dgen.gen.python import generate_pyi
 
 
@@ -198,16 +197,14 @@ def test_import_hook_loads_toy():
     assert hasattr(mod, "toy")
 
 
-def test_import_hook_import_map_auto_resolved():
-    """DgenLoader stores the resolved import_map after loading."""
-    spec = sys.modules["dgen.dialects.builtin"].__spec__
-    assert isinstance(spec.loader, DgenLoader)
-    # builtin.dgen imports index dialect
-    assert spec.loader.import_map == {"index": "dgen.dialects.index"}
+def test_import_hook_resolves_imports():
+    """DgenLoader resolves cross-dialect imports during build."""
+    # builtin.dgen does 'from index import Index'
+    mod = sys.modules["dgen.dialects.builtin"]
+    assert hasattr(mod, "Index"), "builtin should have 'Index' from index dialect"
 
 
-def test_import_hook_toy_import_map_has_ndbuffer():
-    """Loader for toy.dgen resolves 'ndbuffer' → 'dgen.dialects.ndbuffer'."""
-    spec = sys.modules["toy.dialects.toy"].__spec__
-    assert isinstance(spec.loader, DgenLoader)
-    assert spec.loader.import_map.get("ndbuffer") == "dgen.dialects.ndbuffer"
+def test_import_hook_toy_resolves_ndbuffer():
+    """Loader for toy.dgen resolves 'ndbuffer' import during build."""
+    mod = sys.modules["toy.dialects.toy"]
+    assert hasattr(mod, "ndbuffer"), "toy should have 'ndbuffer' in its namespace"

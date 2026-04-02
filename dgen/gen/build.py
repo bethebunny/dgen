@@ -318,10 +318,15 @@ def _build_op(
     return cls
 
 
+ImportResolver = Callable[[str], str]
+"""Maps a dgen module name (e.g. ``"index"``) to a Python module path
+(e.g. ``"dgen.dialects.index"``)."""
+
+
 def build(
     ast: DgenFile,
     dialect_name: str,
-    import_map: dict[str, str],
+    resolve_import: ImportResolver,
     module: ModuleType,
 ) -> None:
     """Build all types, traits, and ops into ``module.__dict__``."""
@@ -338,12 +343,12 @@ def build(
     ns[dialect_name] = d
 
     for imp in ast.imports:
-        if py_mod := import_map.get(imp.module):
-            mod = importlib.import_module(py_mod)
-            if imp.names:
-                ns.update({name: getattr(mod, name) for name in imp.names})
-            else:
-                ns[imp.module] = mod
+        py_mod = resolve_import(imp.module)
+        mod = importlib.import_module(py_mod)
+        if imp.names:
+            ns.update({name: getattr(mod, name) for name in imp.names})
+        else:
+            ns[imp.module] = mod
 
     for td in ast.traits:
         ns[td.name] = _build_trait(td, d, ns)
