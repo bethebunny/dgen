@@ -15,7 +15,7 @@ from dgen import Block, Constant, Op, Type, Value
 from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module, PackOp, pack
+from dgen.module import ConstantOp, Module, PackOp
 
 
 class ParseError(RuntimeError):
@@ -229,19 +229,10 @@ def _named_type(parser: ASMParser) -> Type:
         return type_cls()
     values = parser.read_list(value_expression)
     parser.read(">")
-    kwargs: dict[str, object] = {}
-    for (param_name, param_type), value in zip(type_cls.__params__, values):
-        if isinstance(value, Value):
-            kwargs[param_name] = value
-        elif isinstance(value, list):
-            kwargs[param_name] = pack(
-                [
-                    v if isinstance(v, Value) else _as_constant(param_type, v)
-                    for v in value
-                ]
-            )
-        else:
-            kwargs[param_name] = _as_constant(param_type, value)
+    kwargs = {
+        param_name: _coerce_param(parser, value, param_type)
+        for (param_name, param_type), value in zip(type_cls.__params__, values)
+    }
     return type_cls(**kwargs)
 
 
@@ -288,34 +279,14 @@ def op_statement(parser: ASMParser) -> Op:
     if pre_type is not None:
         kwargs["type"] = pre_type
     for (param_name, param_type), value in zip(op_cls.__params__, parameters):
-        if isinstance(value, Value):
-            kwargs[param_name] = value
-        elif isinstance(value, list):
-            kwargs[param_name] = pack(
-                [
-                    v if isinstance(v, Value) else _as_constant(param_type, v)
-                    for v in value
-                ]
-            )
-        else:
-            kwargs[param_name] = _as_constant(param_type, value)
+        kwargs[param_name] = _coerce_param(parser, value, param_type)
     for (field_name, field_type), value in zip(op_cls.__operands__, operands):
-        if isinstance(value, Value):
-            kwargs[field_name] = value
-        elif isinstance(value, list):
-            if any(isinstance(v, Value) for v in value) or issubclass(
-                field_type, builtin.Span
-            ):
-                kwargs[field_name] = _pack_list(parser, value, field_type)
-            else:
-                kwargs[field_name] = value
-        else:
-            # For polymorphic ops (field_type is base Type), infer concrete type
-            # from the explicit result type annotation when available.
-            effective_type = field_type
-            if field_type is Type and isinstance(pre_type, Type):
-                effective_type = type(pre_type)
-            kwargs[field_name] = _as_constant(effective_type, value)
+        # For polymorphic ops (field_type is base Type), infer concrete type
+        # from the explicit result type annotation when available.
+        effective_type = field_type
+        if field_type is Type and isinstance(pre_type, Type):
+            effective_type = type(pre_type)
+        kwargs[field_name] = _coerce_operand(parser, value, effective_type)
     for block_name, block in zip(op_cls.__blocks__, blocks):
         kwargs[block_name] = block
     op = op_cls(**kwargs)
@@ -362,11 +333,52 @@ def _as_constant(field_type: type[Type], raw: object) -> Constant:
     return field_type().constant(raw)
 
 
+def _coerce_operand(
+    parser: ASMParser,
+    value: object,
+    field_type: type[Type],
+) -> object:
+    """Coerce a parsed operand value to match its declared field type.
+
+    - ``Value`` → pass through
+    - ``list`` containing any ``Value`` or targeting a ``Span`` field → ``PackOp``
+    - ``list`` of plain literals → pass through as raw list
+    - other scalars → ``Constant`` via ``_as_constant``
+    """
+    if isinstance(value, Value):
+        return value
+    if isinstance(value, list):
+        if any(isinstance(v, Value) for v in value) or issubclass(
+            field_type, builtin.Span
+        ):
+            return _pack_list(parser, value, field_type)
+        return value
+    return _as_constant(field_type, value)
+
+
+def _coerce_param(
+    parser: ASMParser,
+    value: object,
+    param_type: type[Type],
+) -> object:
+    """Coerce a parsed type-parameter value to match its declared type.
+
+    - ``Value`` → pass through
+    - ``list`` → ``PackOp`` (each element coerced to *param_type*)
+    - other scalars → ``Constant`` via ``_as_constant``
+    """
+    if isinstance(value, Value):
+        return value
+    if isinstance(value, list):
+        return _pack_list(parser, value, param_type)
+    return _as_constant(param_type, value)
+
+
 def _pack_list(
     parser: ASMParser, elems: list[object], field_type: type[Type]
 ) -> PackOp:
-    if field_type is builtin.Span or field_type.__params__:
-        # Span is parameterized; infer element type from first Value element
+    if field_type is builtin.Span or issubclass(field_type, builtin.Span):
+        # Span field: infer element type from first Value element.
         element_type: Type | None = None
         for elem in elems:
             if isinstance(elem, Value):
@@ -374,6 +386,10 @@ def _pack_list(
                 break
         if element_type is None:
             element_type = dgen.type.TypeType()
+    elif field_type.__params__:
+        # Parameterized non-Span type — can't pack bare literals.
+        _as_constant(field_type, elems)  # always raises
+        raise AssertionError("unreachable")
     else:
         element_type = field_type()
     values: list[Value] = []
@@ -384,9 +400,9 @@ def _pack_list(
             op = ConstantOp(value=elem, type=element_type)
             parser.pending_ops.append(op)
             values.append(op)
-    pack = PackOp(values=values, type=builtin.Span(pointee=element_type))
-    parser.pending_ops.append(pack)
-    return pack
+    pack_op = PackOp(values=values, type=builtin.Span(pointee=element_type))
+    parser.pending_ops.append(pack_op)
+    return pack_op
 
 
 # -- Block parsing ----------------------------------------------------------
