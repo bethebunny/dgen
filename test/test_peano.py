@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 import dgen
-from dgen import Dialect, Op, Trait, Type, Value, has_trait, layout
+from dgen import Dialect, Op, Trait, Type, Value, layout
 from dgen import codegen
 from dgen.asm.formatting import type_asm
 from dgen.asm.parser import parse_module
@@ -199,13 +199,13 @@ def test_natural_trait_is_registered():
 
 def test_zero_has_natural_trait():
     """Zero implements Natural via MRO inheritance."""
-    assert has_trait(Zero(), Natural)
+    assert Zero().has_trait(Natural)
     assert isinstance(Zero(), Natural)
 
 
 def test_successor_has_natural_trait():
     """Successor implements Natural via MRO inheritance."""
-    assert has_trait(Successor(pred=Zero()), Natural)
+    assert Successor(pred=Zero()).has_trait(Natural)
     assert isinstance(Successor(pred=Zero()), Natural)
 
 
@@ -226,6 +226,10 @@ def test_zero_type_has_natural_trait_via_asm():
     func = module.functions[0]
     zero_op = func.body.ops[0]
     assert isinstance(zero_op, ZeroOp)
+    # ZeroOp produces a type value — the result type is TypeType.
+    # The produced *type* (Zero) has trait Natural, verified via isinstance.
+    assert isinstance(Zero(), Natural)
+    assert Zero().has_trait(Natural)
 
 
 def test_recursive_type_roundtrip():

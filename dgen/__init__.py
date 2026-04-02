@@ -1,7 +1,7 @@
 from .block import Block
 from .dialect import Dialect
 from .op import Op
-from .trait import Trait, has_trait
+from .trait import Trait
 from .type import Type, TypeType
 from .type import Constant, Value
 
@@ -14,7 +14,6 @@ __all__ = [
     "Type",
     "TypeType",
     "Value",
-    "has_trait",
 ]
 
 from dgen.gen.importer import install as _install_dgen_hook

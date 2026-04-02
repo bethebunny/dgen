@@ -1,4 +1,4 @@
-"""Tests for trait infrastructure: Trait base class, has_trait(), verify_constraints."""
+"""Tests for trait infrastructure: Trait base class, Value.has_trait(), verify_constraints."""
 
 from __future__ import annotations
 
@@ -7,12 +7,16 @@ from typing import ClassVar
 
 import pytest
 
-from dgen import Block, Dialect, Op, Trait, Type, TypeType, Value, has_trait, layout
+from dgen import Block, Dialect, Op, Trait, Type, TypeType, Value, layout
 from dgen.dialects.function import Function, FunctionOp
-from dgen.gen.ast import ExpressionConstraint, MatchConstraint, TraitConstraint
+from dgen.gen.ast import (
+    ExpressionConstraint,
+    HasTraitConstraint,
+    HasTypeConstraint,
+    TypeRef,
+)
 from dgen.gen.parser import parse
 from dgen.module import Module
-from dgen.trait import Trait as TraitBase
 from dgen.type import Fields
 from dgen.verify import ConstraintError, verify_constraints
 
@@ -61,7 +65,7 @@ class RequiresNumericOp(Op):
     input: Value
     type: Type = MyInt()
     __operands__: ClassVar[Fields] = (("input", Type),)
-    __constraints__ = (TraitConstraint(lhs="input", trait="Numeric"),)
+    __constraints__ = (HasTraitConstraint(lhs="input", trait="Numeric"),)
 
 
 @_test.op("requires_ordered")
@@ -72,7 +76,7 @@ class RequiresOrderedOp(Op):
     input: Value
     type: Type = MyInt()
     __operands__: ClassVar[Fields] = (("input", Type),)
-    __constraints__ = (TraitConstraint(lhs="input", trait="Ordered"),)
+    __constraints__ = (HasTraitConstraint(lhs="input", trait="Ordered"),)
 
 
 @_test.op("requires_both")
@@ -84,8 +88,8 @@ class RequiresBothOp(Op):
     type: Type = MyInt()
     __operands__: ClassVar[Fields] = (("input", Type),)
     __constraints__ = (
-        TraitConstraint(lhs="input", trait="Numeric"),
-        TraitConstraint(lhs="input", trait="Ordered"),
+        HasTraitConstraint(lhs="input", trait="Numeric"),
+        HasTraitConstraint(lhs="input", trait="Ordered"),
     )
 
 
@@ -97,7 +101,7 @@ class RequiresParamTraitOp(Op):
     kind: Value[TypeType]
     type: Type = MyInt()
     __params__: ClassVar[Fields] = (("kind", TypeType),)
-    __constraints__ = (TraitConstraint(lhs="kind", trait="Numeric"),)
+    __constraints__ = (HasTraitConstraint(lhs="kind", trait="Numeric"),)
 
 
 @_test.op("no_constraints")
@@ -124,8 +128,8 @@ def _make_module(*body_ops: Op) -> Module:
 
 
 def test_trait_inherits_from_base() -> None:
-    assert issubclass(Numeric, TraitBase)
-    assert issubclass(Ordered, TraitBase)
+    assert issubclass(Numeric, Trait)
+    assert issubclass(Ordered, Trait)
 
 
 def test_trait_registered_in_dialect_traits() -> None:
@@ -139,30 +143,28 @@ def test_trait_not_in_dialect_types() -> None:
     assert "Ordered" not in _test.types
 
 
-# -- has_trait() on types ----------------------------------------------------
+# -- Value.has_trait() on types -----------------------------------------------
 
 
 def test_has_trait_type_positive() -> None:
-    assert has_trait(MyInt(), Numeric)
-    assert has_trait(MyInt(), Ordered)
+    assert MyInt().has_trait(Numeric)
+    assert MyInt().has_trait(Ordered)
 
 
 def test_has_trait_type_negative() -> None:
-    assert not has_trait(MyStr(), Numeric)
-    assert not has_trait(MyStr(), Ordered)
+    assert not MyStr().has_trait(Numeric)
+    assert not MyStr().has_trait(Ordered)
 
 
-# -- has_trait() on ops ------------------------------------------------------
+# -- Value.has_trait() on ops ------------------------------------------------
 
 
-def test_has_trait_op_positive() -> None:
+def test_has_trait_op_checks_result_type() -> None:
+    """Value.has_trait on an op checks the result type's traits."""
     op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
-    assert has_trait(op, Numeric)
-
-
-def test_has_trait_op_negative() -> None:
-    op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
-    assert not has_trait(op, Ordered)
+    # AddNumsOp has type=MyInt(), which implements both Numeric and Ordered
+    assert op.has_trait(Numeric)
+    assert op.has_trait(Ordered)
 
 
 # -- .dgen built traits inherit from Trait -----------------------------------
@@ -172,9 +174,9 @@ def test_dgen_built_trait_inherits() -> None:
     """Traits built from .dgen files inherit from Trait."""
     from dgen.dialects import algebra
 
-    assert issubclass(algebra.AddMagma, TraitBase)
-    assert issubclass(algebra.MulMagma, TraitBase)
-    assert issubclass(algebra.TotalOrder, TraitBase)
+    assert issubclass(algebra.AddMagma, Trait)
+    assert issubclass(algebra.MulMagma, Trait)
+    assert issubclass(algebra.TotalOrder, Trait)
 
 
 def test_dgen_built_trait_in_dialect_traits() -> None:
@@ -191,21 +193,13 @@ def test_dgen_built_trait_in_dialect_traits() -> None:
 def test_parse_has_trait_constraint() -> None:
     src = "op foo(x) -> Type:\n    requires x has trait Numeric\n"
     op = parse(src).ops[0]
-    assert len(op.constraints) == 1
-    c = op.constraints[0]
-    assert isinstance(c, TraitConstraint)
-    assert c.lhs == "x"
-    assert c.trait == "Numeric"
+    assert op.constraints == [HasTraitConstraint(lhs="x", trait="Numeric")]
 
 
 def test_parse_type_body_requires() -> None:
     src = "type Foo<t: Type>:\n    requires t has trait Numeric\n"
     td = parse(src).types[0]
-    assert len(td.constraints) == 1
-    c = td.constraints[0]
-    assert isinstance(c, TraitConstraint)
-    assert c.lhs == "t"
-    assert c.trait == "Numeric"
+    assert td.constraints == [HasTraitConstraint(lhs="t", trait="Numeric")]
 
 
 # -- verify_constraints: satisfied constraints -------------------------------
@@ -310,7 +304,7 @@ def test_verify_unknown_subject_raises() -> None:
         input: Value
         type: Type = MyInt()
         __operands__: ClassVar[Fields] = (("input", Type),)
-        __constraints__ = (TraitConstraint(lhs="nonexistent", trait="Numeric"),)
+        __constraints__ = (HasTraitConstraint(lhs="nonexistent", trait="Numeric"),)
 
     _test.op("bad_subject")(BadSubjectOp)
 
@@ -329,7 +323,7 @@ def test_verify_unknown_trait_raises() -> None:
         input: Value
         type: Type = MyInt()
         __operands__: ClassVar[Fields] = (("input", Type),)
-        __constraints__ = (TraitConstraint(lhs="input", trait="NoSuchTrait"),)
+        __constraints__ = (HasTraitConstraint(lhs="input", trait="NoSuchTrait"),)
 
     _test.op("bad_trait")(BadTraitOp)
 
@@ -390,7 +384,7 @@ class RequiresMatchOp(Op):
     input: Value
     type: Type = MyInt()
     __operands__: ClassVar[Fields] = (("input", Type),)
-    __constraints__ = (MatchConstraint(lhs="input", pattern="MyInt"),)
+    __constraints__ = (HasTypeConstraint(lhs="input", type=TypeRef("MyInt")),)
 
 
 @pytest.mark.xfail(

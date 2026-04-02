@@ -4,13 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import dgen
 from dgen import Dialect, Op, Trait, Type, Value
+from dgen.dialects.builtin import Nil
 
 algebra = Dialect("algebra")
 
-class AddMagma(Trait): ...
-class MulMagma(Trait): ...
-class TotalOrder(Trait): ...
+class AddMagma(Trait):
+    ...
+
+class MulMagma(Trait):
+    ...
+
+class TotalOrder(Trait):
+    ...
 
 @dataclass(eq=False, kw_only=True)
 class AddOp(Op):
@@ -109,3 +116,4 @@ class GreaterEqualOp(Op):
 class CastOp(Op):
     input: Value
     type: Type
+

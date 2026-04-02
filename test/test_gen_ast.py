@@ -3,10 +3,8 @@
 from dgen.gen.ast import (
     DataField,
     DgenFile,
-    ExpressionConstraint,
-    MatchConstraint,
+    HasTypeConstraint,
     OpDecl,
-    TraitConstraint,
     TypeDecl,
     TypeRef,
 )
@@ -44,30 +42,13 @@ def test_data_field_with_compound_type():
     assert data.type.args[1].name == "rank"
 
 
-def test_constraint_match():
-    c = MatchConstraint(lhs="X", pattern="Tensor")
-    assert c.lhs == "X"
-    assert c.pattern == "Tensor"
-
-
-def test_constraint_expr():
-    c = ExpressionConstraint(expr="axis < X.rank")
-    assert c.expr == "axis < X.rank"
-
-
-def test_constraint_trait():
-    c = TraitConstraint(lhs="lhs", trait="AddMagma")
-    assert c.lhs == "lhs"
-    assert c.trait == "AddMagma"
-
-
 def test_op_with_constraints():
     op = OpDecl(
         name="tile",
         return_type=TypeRef("Type"),
         constraints=[
-            MatchConstraint(lhs="X", pattern="Tensor"),
+            HasTypeConstraint(lhs="X", type=TypeRef("Tensor")),
         ],
     )
     assert len(op.constraints) == 1
-    assert isinstance(op.constraints[0], MatchConstraint)
+    assert isinstance(op.constraints[0], HasTypeConstraint)

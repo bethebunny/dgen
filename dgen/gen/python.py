@@ -9,6 +9,7 @@ module walks those live objects to emit ``.pyi`` type stubs.
 from __future__ import annotations
 
 import dataclasses
+import typing
 from collections.abc import Iterator
 from types import ModuleType
 
@@ -74,6 +75,34 @@ def _build_type_to_name(
 # ---------------------------------------------------------------------------
 # Class stub emitters
 # ---------------------------------------------------------------------------
+
+
+_TRAIT_INTERNAL: frozenset[str] = frozenset({"__module__", "asm_name", "dialect"})
+
+
+def _trait_stub(name: str, cls: type) -> Iterator[str]:
+    """Yield stub lines for a trait class."""
+    annotations = typing.get_type_hints(cls)
+    has_body = False
+    yield f"class {name}(Trait):"
+    for attr_name, ann in annotations.items():
+        has_body = True
+        attr_val = getattr(cls, attr_name, dataclasses.MISSING)
+        if attr_val is not dataclasses.MISSING:
+            yield f"    {attr_name} = {attr_val!r}"
+        else:
+            yield f"    {attr_name}: {ann}"
+    for attr_name, attr_val in vars(cls).items():
+        if (
+            attr_name not in annotations
+            and not attr_name.startswith("_")
+            and attr_name not in _TRAIT_INTERNAL
+        ):
+            has_body = True
+            yield f"    {attr_name} = {attr_val!r}"
+    if not has_body:
+        yield "    ..."
+    yield ""
 
 
 def _stub_class(
@@ -182,38 +211,10 @@ def generate_pyi(module: ModuleType, dialect_name: str) -> str:
 
     lines += ["", f'{dialect_name} = Dialect("{dialect_name}")', ""]
 
-    # Traits
     for name, val in dialect.traits.items():
-        trait_annotations = getattr(val, "__annotations__", {})
-        trait_body: list[str] = []
-        for attr_name in trait_annotations:
-            attr_val = getattr(val, attr_name, dataclasses.MISSING)
-            if attr_val is not dataclasses.MISSING:
-                trait_body.append(f"    {attr_name} = {attr_val!r}")
-            else:
-                trait_body.append(f"    {attr_name}: {trait_annotations[attr_name]}")
-        # Also include class-level defaults that aren't annotations
-        _TRAIT_INTERNAL = {"__module__", "asm_name", "dialect"}
-        for attr_name, attr_val in vars(val).items():
-            if (
-                attr_name not in trait_annotations
-                and not attr_name.startswith("_")
-                and attr_name not in _TRAIT_INTERNAL
-            ):
-                trait_body.append(f"    {attr_name} = {attr_val!r}")
-
-        lines.append(f"class {name}(Trait):")
-        if trait_body:
-            lines.extend(trait_body)
-        else:
-            lines.append("    ...")
-        lines.append("")
-
-    # Types
+        lines.extend(_trait_stub(name, val))
     for cls in dialect.types.values():
         lines.extend(_stub_class(cls, type_to_name, frozen=True))
-
-    # Ops
     for cls in dialect.ops.values():
         lines.extend(_stub_class(cls, type_to_name, frozen=False))
 

@@ -7,13 +7,13 @@ from dgen.gen.ast import (
     DataField,
     DgenFile,
     ExpressionConstraint,
+    HasTraitConstraint,
+    HasTypeConstraint,
     ImportDecl,
-    MatchConstraint,
     OpDecl,
     OperandDecl,
     ParamDecl,
     StaticField,
-    TraitConstraint,
     TraitDecl,
     TypeDecl,
     TypeRef,
@@ -280,26 +280,25 @@ def _parse_static_field(line: str) -> StaticField:
     )
 
 
-def _strip_sigil(name: str) -> str:
-    """Strip legacy $ prefix from a name."""
-    return name[1:] if name.startswith("$") else name
-
-
 def _parse_constraint(line: str) -> Constraint:
     """Parse a 'requires ...' line into a Constraint."""
     rest = line[9:]  # strip "requires "
     # has trait: requires X has trait TraitName
     if " has trait " in rest:
         lhs, trait = rest.split(" has trait ", 1)
-        return TraitConstraint(lhs=_strip_sigil(lhs.strip()), trait=trait.strip())
+        return HasTraitConstraint(lhs=lhs.strip(), trait=trait.strip())
     # has type: requires X has type TypeName
     if " has type " in rest:
-        lhs, pattern = rest.split(" has type ", 1)
-        return MatchConstraint(lhs=_strip_sigil(lhs.strip()), pattern=pattern.strip())
+        lhs, type_str = rest.split(" has type ", 1)
+        return HasTypeConstraint(
+            lhs=lhs.strip(), type=_parse_type_ref(type_str.strip())
+        )
     # ~= (backward compat alias for has type)
     if " ~= " in rest:
-        lhs, pattern = rest.split(" ~= ", 1)
-        return MatchConstraint(lhs=_strip_sigil(lhs.strip()), pattern=pattern.strip())
+        lhs, type_str = rest.split(" ~= ", 1)
+        return HasTypeConstraint(
+            lhs=lhs.strip(), type=_parse_type_ref(type_str.strip())
+        )
     return ExpressionConstraint(expr=rest.strip())
 
 
