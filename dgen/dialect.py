@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
@@ -16,6 +17,8 @@ _T = TypeVar("_T", bound="Type")
 
 class Dialect:
     _registry: dict[str, Dialect] = {}
+    paths: list[Path] = []
+    """Search paths for ``.dgen`` files, analogous to ``sys.path``."""
 
     def __init__(self, name: str) -> None:
         self.name = name
@@ -31,18 +34,29 @@ class Dialect:
 
     @classmethod
     def get(cls, name: str) -> Dialect:
-        """Look up a dialect by name, auto-importing from ``dgen.dialects`` if needed."""
-        try:
-            return cls._registry[name]
-        except KeyError:
-            pass
-        import importlib
+        """Look up a dialect by name.
 
-        try:
-            importlib.import_module(f"dgen.dialects.{name}")
+        1. Return the dialect if already registered (like ``sys.modules``).
+        2. Search ``Dialect.paths`` for ``{name}.dgen`` and import it.
+        3. Raise ``KeyError`` if not found.
+        """
+        if name in cls._registry:
             return cls._registry[name]
-        except (ModuleNotFoundError, KeyError):
-            raise KeyError(name) from None
+        for directory in cls.paths:
+            candidate = directory / f"{name}.dgen"
+            if candidate.exists():
+                import importlib
+
+                # The DgenFinder hook handles .dgen → module compilation.
+                # We need to figure out the Python module name for this path.
+                from dgen.gen.importer import _path_to_module
+
+                py_mod = _path_to_module(candidate)
+                if py_mod is not None:
+                    importlib.import_module(py_mod)
+                    if name in cls._registry:
+                        return cls._registry[name]
+        raise KeyError(name)
 
     def op(self, asm_name: str) -> Callable[[builtins.type[_O]], builtins.type[_O]]:
         def decorator(cls: builtins.type[_O]) -> builtins.type[_O]:
