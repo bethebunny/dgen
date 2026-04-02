@@ -5,6 +5,6 @@ op for<lower_bound: Index, upper_bound: Index>(initial_arguments: Span) -> Nil:
 op while(initial_arguments: Span) -> Nil:
     block condition
     block body
-op if(condition: Index, then_arguments: Span, else_arguments: Span) -> Type:
+op if(condition: Index, then_arguments: Span, else_arguments: Span):
     block then_body
     block else_body

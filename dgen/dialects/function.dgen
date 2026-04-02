@@ -5,4 +5,4 @@ type Function<result: Type>:
 
 op function<result: Type>() -> Function:
     block body
-op call<callee: Function>(arguments: Span) -> Type
+op call<callee: Function>(arguments: Span)

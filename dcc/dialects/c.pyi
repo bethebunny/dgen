@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.dialects.builtin import Nil, Span, String
+from dgen.dialects.index import Index
 
 c = Dialect("c")
 

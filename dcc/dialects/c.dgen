@@ -12,37 +12,37 @@ type CUnion<tag_name: String, field_names: String, field_types: String>:
 # source/target operands create use-def edges for scoping.
 # CToMemory lowers these to memory.stack_allocate/load/store.
 
-op variable_declaration<variable_name: String, variable_type: Type>(initializer) -> Type
-op read_variable<variable_name: String>(source) -> Type
-op assign<variable_name: String>(target, value) -> Type
-op compound_assign<variable_name: String, operator: String>(target, operand) -> Type
-op pre_increment<variable_name: String>(target) -> Type
-op post_increment<variable_name: String>(target) -> Type
-op pre_decrement<variable_name: String>(target) -> Type
-op post_decrement<variable_name: String>(target) -> Type
+op variable_declaration<variable_name: String, variable_type: Type>(initializer)
+op read_variable<variable_name: String>(source)
+op assign<variable_name: String>(target, value)
+op compound_assign<variable_name: String, operator: String>(target, operand)
+op pre_increment<variable_name: String>(target)
+op post_increment<variable_name: String>(target)
+op pre_decrement<variable_name: String>(target)
+op post_decrement<variable_name: String>(target)
 
 # --- Pointer and array ---
 
-op dereference(pointer) -> Type
-op address_of(operand) -> Type
-op subscript(base, index) -> Type
+op dereference(pointer)
+op address_of(operand)
+op subscript(base, index)
 
 # --- Struct access ---
 
-op member_access<field_name: String>(base) -> Type
-op pointer_member_access<field_name: String>(base) -> Type
+op member_access<field_name: String>(base)
+op pointer_member_access<field_name: String>(base)
 
 # --- Functions ---
 
-op call<callee: String>(arguments: Span) -> Type
+op call<callee: String>(arguments: Span)
 op return(value) -> Nil
 
 # --- C-specific arithmetic ---
 
-op modulo(lhs, rhs) -> Type
-op shift_left(lhs, rhs) -> Type
-op shift_right(lhs, rhs) -> Type
-op logical_not(operand) -> Type
+op modulo(lhs, rhs)
+op shift_left(lhs, rhs)
+op shift_right(lhs, rhs)
+op logical_not(operand)
 
 # --- Control flow ---
 
@@ -61,5 +61,5 @@ op continue() -> Nil
 
 # --- Misc ---
 
-op sizeof<target_type: Type>() -> Type
-op comma(lhs, rhs) -> Type
+op sizeof<target_type: Type>()
+op comma(lhs, rhs)

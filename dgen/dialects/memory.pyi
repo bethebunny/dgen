@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import Nil, Pointer
+from dgen.dialects.index import Index
 
 memory = Dialect("memory")
 

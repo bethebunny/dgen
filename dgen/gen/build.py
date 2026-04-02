@@ -288,10 +288,13 @@ def _build_op(
 
     annotations["type"] = "Type"
     ret = od.return_type
-    if ret is not None and ret.name != "Type":
-        default = _make_type_default(ret, type_map, known_names, ns)
-        if default is not None:
-            op_ns["type"] = default
+    if ret is not None:
+        if ret.name == "Type":
+            op_ns["type"] = TypeType()
+        else:
+            default = _make_type_default(ret, type_map, known_names, ns)
+            if default is not None:
+                op_ns["type"] = default
 
     annotations.update({block_name: "Block" for block_name in od.blocks})
 

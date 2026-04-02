@@ -24,7 +24,7 @@ op deallocate(mem, ptr: Reference) -> Nil
 #
 #     %loop  = control_flow.for ...
 #     %val   = memory.load(%loop, %alloc)
-op load(mem, ptr: Reference) -> Type
+op load(mem, ptr: Reference)
 op store(mem, value: Type, ptr: Reference) -> Nil
 
 op offset(ptr: Reference, index: Index) -> Reference

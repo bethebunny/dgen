@@ -42,6 +42,8 @@ def _stub_repr(value: object) -> str:
         data = value.value.unpack()
         scalar = data[0] if len(data) == 1 else data
         return f"{_stub_repr(value.type)}.constant({scalar!r})"
+    if isinstance(value, TypeType):
+        return "dgen.TypeType()"
     if isinstance(value, Type) and dataclasses.is_dataclass(value):
         fields = _own_fields(type(value))
         if not fields:

@@ -4,20 +4,20 @@ trait AddMagma
 trait MulMagma
 trait TotalOrder
 
-op add(left, right) -> Type
-op negate(input) -> Type
-op subtract(left, right) -> Type
-op multiply(left, right) -> Type
-op reciprocal(input) -> Type
-op divide(left, right) -> Type
-op meet(left, right) -> Type
-op join(left, right) -> Type
-op complement(input) -> Type
-op symmetric_difference(left, right) -> Type
-op equal(left, right) -> Type
-op not_equal(left, right) -> Type
-op less_than(left, right) -> Type
-op less_equal(left, right) -> Type
-op greater_than(left, right) -> Type
-op greater_equal(left, right) -> Type
-op cast(input) -> Type
+op add(left, right)
+op negate(input)
+op subtract(left, right)
+op multiply(left, right)
+op reciprocal(input)
+op divide(left, right)
+op meet(left, right)
+op join(left, right)
+op complement(input)
+op symmetric_difference(left, right)
+op equal(left, right)
+op not_equal(left, right)
+op less_than(left, right)
+op less_equal(left, right)
+op greater_than(left, right)
+op greater_equal(left, right)
+op cast(input)
