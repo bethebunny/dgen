@@ -83,7 +83,6 @@ class DgenLoader(importlib.abc.Loader):
         self.path = path
         # Populated by exec_module; available for introspection afterward.
         self.ast: DgenFile | None = None
-        self.import_map: dict[str, str] = {}
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> None:
         return None
@@ -92,14 +91,10 @@ class DgenLoader(importlib.abc.Loader):
         source = self.path.read_text()
         self.ast = parse(source)
         dgen_dir = self.path.parent
-        self.import_map = {
-            decl.module: _resolve_import(decl.module, dgen_dir)
-            for decl in self.ast.imports
-        }
         build(
             self.ast,
             dialect_name=self.path.stem,
-            import_map=self.import_map,
+            resolve_import=lambda name: _resolve_import(name, dgen_dir),
             module=module,
         )
 

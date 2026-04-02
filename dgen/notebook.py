@@ -24,7 +24,6 @@ from typing import Protocol
 
 from IPython import get_ipython
 
-from dgen.gen.ast import DgenFile
 from dgen.gen.build import build
 from dgen.gen.importer import find_dgen, _path_to_module
 from dgen.gen.parser import parse
@@ -43,26 +42,21 @@ class _MagicHost(Protocol):
     ) -> None: ...
 
 
-def _make_import_map(ast: DgenFile) -> dict[str, str]:
-    """Build an import map for dialect imports in a notebook cell.
+def _resolve_notebook_import(module_name: str) -> str:
+    """Resolve a dgen import to a Python module path in a notebook context.
 
     Searches ``sys.path`` for ``.dgen`` files first, then falls back to
     scanning already-loaded modules in ``sys.modules``.
     """
-    loaded_modules = list(sys.modules)
-    result: dict[str, str] = {}
-    for decl in ast.imports:
-        dgen_file = find_dgen(decl.module)
-        if dgen_file is not None:
-            py_path = _path_to_module(dgen_file)
-            if py_path is not None:
-                result[decl.module] = py_path
-                continue
-        for mod_name in loaded_modules:
-            if mod_name == decl.module or mod_name.endswith(f".{decl.module}"):
-                result[decl.module] = mod_name
-                break
-    return result
+    dgen_file = find_dgen(module_name)
+    if dgen_file is not None:
+        py_path = _path_to_module(dgen_file)
+        if py_path is not None:
+            return py_path
+    for mod_name in sys.modules:
+        if mod_name == module_name or mod_name.endswith(f".{module_name}"):
+            return mod_name
+    raise ImportError(f"Cannot resolve dgen import: {module_name}")
 
 
 def _dgen_dialect_magic(line: str, cell: str) -> None:
@@ -71,11 +65,15 @@ def _dgen_dialect_magic(line: str, cell: str) -> None:
     if not dialect_name:
         raise ValueError("%%dgen-dialect requires a dialect name as its argument")
     ast = parse(cell)
-    import_map = _make_import_map(ast)
     module = ModuleType(dialect_name)
     # Register before build so dataclasses can resolve cls.__module__ via sys.modules.
     sys.modules[dialect_name] = module
-    build(ast, dialect_name=dialect_name, import_map=import_map, module=module)
+    build(
+        ast,
+        dialect_name=dialect_name,
+        resolve_import=_resolve_notebook_import,
+        module=module,
+    )
     ip = get_ipython()
     if ip is not None:
         ip.user_ns[dialect_name] = module
