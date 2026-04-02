@@ -10,6 +10,7 @@ import dgen
 
 from .dialect import Dialect
 from .layout import Layout, TypeValue, _bytearray_address
+from .trait import Trait
 
 T = TypeVar("T", bound="Type")
 
@@ -20,6 +21,7 @@ class Value(Generic[T]):
     __params__: ClassVar[Fields] = ()
     __operands__: ClassVar[Fields] = ()
     __blocks__: ClassVar[tuple[str, ...]] = ()
+    __constraints__: ClassVar[tuple[object, ...]] = ()
     name: str | None = None
     type: Value[TypeType]
 
@@ -60,6 +62,10 @@ class Value(Generic[T]):
     @property
     def ready(self) -> bool:
         return self.type.ready and all(val.ready for _, val in self.parameters)
+
+    def has_trait(self, trait: type[Trait]) -> bool:
+        """Check whether this value's type implements a trait."""
+        return isinstance(type_constant(self.type), trait)
 
 
 def type_constant(value: Value[TypeType]) -> Type:
@@ -157,6 +163,10 @@ class Type(Value["TypeType"]):
         """Types only depend on their parameters — skip type/operands/blocks."""
         for _, param in self.parameters:
             yield param
+
+    def has_trait(self, trait: type[Trait]) -> bool:
+        """Check whether this type implements a trait (direct isinstance)."""
+        return isinstance(self, trait)
 
 
 @dataclass(eq=False, kw_only=True)

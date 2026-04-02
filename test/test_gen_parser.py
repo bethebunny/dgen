@@ -2,8 +2,9 @@
 
 from dgen.gen.ast import (
     ExpressionConstraint,
-    MatchConstraint,
-    TraitConstraint,
+    HasTraitConstraint,
+    HasTypeConstraint,
+    TypeRef,
 )
 from dgen.gen.parser import parse
 
@@ -352,50 +353,32 @@ def test_parse_metavar_operand():
 def test_parse_requires_match():
     src = "op tile(x: $X) -> $Result:\n    requires $X ~= Tensor\n"
     op = parse(src).ops[0]
-    assert len(op.constraints) == 1
-    c = op.constraints[0]
-    assert isinstance(c, MatchConstraint)
-    assert c.lhs == "X"
-    assert c.pattern == "Tensor"
+    assert op.constraints == [HasTypeConstraint(lhs="$X", type=TypeRef("Tensor"))]
 
 
 def test_parse_requires_has_type():
     src = "op tile(x: X) -> Result:\n    requires X has type Tensor\n"
     op = parse(src).ops[0]
-    assert len(op.constraints) == 1
-    c = op.constraints[0]
-    assert isinstance(c, MatchConstraint)
-    assert c.lhs == "X"
-    assert c.pattern == "Tensor"
+    assert op.constraints == [HasTypeConstraint(lhs="X", type=TypeRef("Tensor"))]
 
 
 def test_parse_requires_has_trait():
     src = "op add(lhs, rhs) -> Type:\n    requires lhs has trait AddMagma\n"
     op = parse(src).ops[0]
-    assert len(op.constraints) == 1
-    c = op.constraints[0]
-    assert isinstance(c, TraitConstraint)
-    assert c.lhs == "lhs"
-    assert c.trait == "AddMagma"
+    assert op.constraints == [HasTraitConstraint(lhs="lhs", trait="AddMagma")]
 
 
 def test_parse_requires_eq():
     """Equality between metavars parses as an ExpressionConstraint."""
     src = "op sqrt(x: $X) -> $Result:\n    requires $X == $Result\n"
     op = parse(src).ops[0]
-    assert len(op.constraints) == 1
-    c = op.constraints[0]
-    assert isinstance(c, ExpressionConstraint)
-    assert c.expr == "$X == $Result"
+    assert op.constraints == [ExpressionConstraint(expr="$X == $Result")]
 
 
 def test_parse_requires_expr():
     src = "op tile<axis: Index>(x: $X) -> $Result:\n    requires axis < $X.rank\n"
     op = parse(src).ops[0]
-    assert len(op.constraints) == 1
-    c = op.constraints[0]
-    assert isinstance(c, ExpressionConstraint)
-    assert c.expr == "axis < $X.rank"
+    assert op.constraints == [ExpressionConstraint(expr="axis < $X.rank")]
 
 
 def test_parse_multiple_requires():
@@ -406,25 +389,21 @@ op tile<axis: Index>(x: $X) -> $Result:
     requires $X.dtype == $Result.dtype
 """
     op = parse(src).ops[0]
-    assert len(op.constraints) == 3
-    assert isinstance(op.constraints[0], MatchConstraint)
-    assert isinstance(op.constraints[1], MatchConstraint)
-    assert isinstance(op.constraints[2], ExpressionConstraint)
+    assert op.constraints == [
+        HasTypeConstraint(lhs="$X", type=TypeRef("Tensor")),
+        HasTypeConstraint(lhs="$Result", type=TypeRef("Tensor")),
+        ExpressionConstraint(expr="$X.dtype == $Result.dtype"),
+    ]
 
 
 def test_parse_requires_with_block():
     src = "op foo() -> Nil:\n    block body\n    requires $X ~= Tensor\n"
     op = parse(src).ops[0]
     assert op.blocks == ["body"]
-    assert len(op.constraints) == 1
-    assert isinstance(op.constraints[0], MatchConstraint)
+    assert op.constraints == [HasTypeConstraint(lhs="$X", type=TypeRef("Tensor"))]
 
 
 def test_parse_type_requires():
     src = "type Number<dtype: Type>:\n    requires dtype has trait DType\n"
     td = parse(src).types[0]
-    assert len(td.constraints) == 1
-    c = td.constraints[0]
-    assert isinstance(c, TraitConstraint)
-    assert c.lhs == "dtype"
-    assert c.trait == "DType"
+    assert td.constraints == [HasTraitConstraint(lhs="dtype", trait="DType")]

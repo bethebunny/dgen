@@ -65,11 +65,11 @@ class Constraint:
 
 
 @dataclass
-class MatchConstraint(Constraint):
+class HasTypeConstraint(Constraint):
     """requires X has type Tensor"""
 
     lhs: str
-    pattern: str
+    type: TypeRef
 
 
 @dataclass
@@ -80,7 +80,7 @@ class ExpressionConstraint(Constraint):
 
 
 @dataclass
-class TraitConstraint(Constraint):
+class HasTraitConstraint(Constraint):
     """requires lhs has trait AddMagma"""
 
     lhs: str
