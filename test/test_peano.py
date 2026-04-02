@@ -199,12 +199,12 @@ def test_natural_trait_is_registered():
 
 def test_zero_has_natural_trait():
     """Zero implements Natural via MRO inheritance."""
-    assert isinstance(Zero(), Natural)
+    assert Zero().has_trait(Natural)
 
 
 def test_successor_has_natural_trait():
     """Successor implements Natural via MRO inheritance."""
-    assert isinstance(Successor(pred=Zero()), Natural)
+    assert Successor(pred=Zero()).has_trait(Natural)
 
 
 def test_zero_type_has_natural_trait_via_asm():
@@ -225,7 +225,8 @@ def test_zero_type_has_natural_trait_via_asm():
     zero_op = func.body.ops[0]
     assert isinstance(zero_op, ZeroOp)
     # ZeroOp produces a type value — the result type is TypeType.
-    assert isinstance(Zero(), Natural)
+    # The produced type (Zero) has trait Natural.
+    assert Zero().has_trait(Natural)
 
 
 def test_recursive_type_roundtrip():

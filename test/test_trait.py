@@ -139,30 +139,38 @@ def test_trait_registered_in_dialect_types() -> None:
     assert "Ordered" in _test.types
 
 
-# -- isinstance for types, has_trait for values ------------------------------
+# -- has_trait ---------------------------------------------------------------
 
 
-def test_type_isinstance_positive() -> None:
-    """Types implement traits via isinstance (they ARE their own identity)."""
-    assert isinstance(MyInt(), Numeric)
-    assert isinstance(MyInt(), Ordered)
-    assert not isinstance(MyStr(), Numeric)
-
-
-def test_has_trait_on_values() -> None:
-    """has_trait on a value checks whether value.type implements the trait."""
-    c = MyInt().constant(42)
-    assert c.has_trait(Numeric)
-    assert c.has_trait(Ordered)
-    assert not MyStr().constant("x").has_trait(Numeric)
+def test_has_trait_on_types() -> None:
+    """has_trait on a type checks isinstance(self, trait)."""
+    assert MyInt().has_trait(Numeric)
+    assert MyInt().has_trait(Ordered)
+    assert not MyStr().has_trait(Numeric)
 
 
 def test_has_trait_on_ops() -> None:
-    """has_trait on an op checks the result type's traits."""
+    """has_trait on an op checks the op's own class traits."""
     op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
-    # AddNumsOp has type=MyInt(), which implements both Numeric and Ordered
+    # AddNumsOp inherits from Numeric, not Ordered
     assert op.has_trait(Numeric)
-    assert op.has_trait(Ordered)
+    assert not op.has_trait(Ordered)
+
+
+def test_has_trait_result_type() -> None:
+    """value.type.has_trait checks the result type's traits."""
+    op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
+    # The result type MyInt implements both Numeric and Ordered
+    assert op.type.has_trait(Numeric)
+    assert op.type.has_trait(Ordered)
+
+
+def test_has_trait_on_constants() -> None:
+    """value.type.has_trait checks the constant's type traits."""
+    c = MyInt().constant(42)
+    assert c.type.has_trait(Numeric)
+    assert c.type.has_trait(Ordered)
+    assert not MyStr().constant("x").type.has_trait(Numeric)
 
 
 # -- .dgen built traits inherit from Trait -----------------------------------
