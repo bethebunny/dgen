@@ -3,7 +3,7 @@
 import pytest
 
 from dgen import asm, layout
-from dgen.asm.formatting import type_asm
+from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse_module
 from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import Index, String, Tuple

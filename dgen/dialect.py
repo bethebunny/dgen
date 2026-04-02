@@ -21,12 +21,28 @@ class Dialect:
         self.name = name
         self.ops: dict[str, builtins.type[Op]] = {}
         self.types: dict[str, builtins.type[Type]] = {}
-        self.children: dict[str, Dialect] = {}
         Dialect._registry[name] = self
+
+    def qualified_name(self, local_name: str) -> str:
+        """Return dialect-qualified name, e.g. ``toy.Tensor``.  Builtin names are unqualified."""
+        if self.name == "builtin":
+            return local_name
+        return f"{self.name}.{local_name}"
 
     @classmethod
     def get(cls, name: str) -> Dialect:
-        return cls._registry[name]
+        """Look up a dialect by name, auto-importing from ``dgen.dialects`` if needed."""
+        try:
+            return cls._registry[name]
+        except KeyError:
+            pass
+        import importlib
+
+        try:
+            importlib.import_module(f"dgen.dialects.{name}")
+            return cls._registry[name]
+        except (ModuleNotFoundError, KeyError):
+            raise KeyError(name) from None
 
     def op(self, asm_name: str) -> Callable[[builtins.type[_O]], builtins.type[_O]]:
         def decorator(cls: builtins.type[_O]) -> builtins.type[_O]:

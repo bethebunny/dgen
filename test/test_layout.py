@@ -6,7 +6,7 @@ from typing import ClassVar
 
 
 from dgen import Dialect, layout
-from dgen.asm.formatting import type_asm
+from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import builtin, number
 from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue

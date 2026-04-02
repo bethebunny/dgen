@@ -55,7 +55,7 @@ def find_dgen(module_name: str, extra_dirs: list[Path] | None = None) -> Path | 
     return None
 
 
-def _resolve_import(module_name: str, dgen_dir: Path) -> str | None:
+def _resolve_import(module_name: str, dgen_dir: Path) -> str:
     """Resolve a single import to a Python module path.
 
     Searches the *dgen_dir* (sibling files) and ``sys.path`` for a ``.dgen``
@@ -73,18 +73,13 @@ def _resolve_import(module_name: str, dgen_dir: Path) -> str | None:
     for mod_name in sys.modules:
         if mod_name == module_name or mod_name.endswith(f".{module_name}"):
             return mod_name
-    return None
+    raise ImportError(f"Cannot resolve dgen import: {module_name}")
 
 
 def _resolve_imports(dgen_path: Path, ast: DgenFile) -> dict[str, str]:
     """Build an import map for the generator from a parsed .dgen file."""
     dgen_dir = dgen_path.parent
-    result: dict[str, str] = {}
-    for decl in ast.imports:
-        py_path = _resolve_import(decl.module, dgen_dir)
-        if py_path is not None:
-            result[decl.module] = py_path
-    return result
+    return {decl.module: _resolve_import(decl.module, dgen_dir) for decl in ast.imports}
 
 
 class DgenLoader(importlib.abc.Loader):
