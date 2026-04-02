@@ -199,13 +199,11 @@ def test_natural_trait_is_registered():
 
 def test_zero_has_natural_trait():
     """Zero implements Natural via MRO inheritance."""
-    assert Zero().has_trait(Natural)
     assert isinstance(Zero(), Natural)
 
 
 def test_successor_has_natural_trait():
     """Successor implements Natural via MRO inheritance."""
-    assert Successor(pred=Zero()).has_trait(Natural)
     assert isinstance(Successor(pred=Zero()), Natural)
 
 
@@ -227,9 +225,7 @@ def test_zero_type_has_natural_trait_via_asm():
     zero_op = func.body.ops[0]
     assert isinstance(zero_op, ZeroOp)
     # ZeroOp produces a type value — the result type is TypeType.
-    # The produced *type* (Zero) has trait Natural, verified via isinstance.
     assert isinstance(Zero(), Natural)
-    assert Zero().has_trait(Natural)
 
 
 def test_recursive_type_roundtrip():
@@ -266,7 +262,7 @@ def test_trait_in_asm_type_annotation():
     func = module.functions[0]
     zero_op = func.body.ops[0]
     assert isinstance(zero_op, ZeroOp)
-    assert zero_op.type.has_trait(Natural)
+    assert isinstance(zero_op.type, Natural)
 
 
 def test_trait_annotation_roundtrips_through_asm():
@@ -288,7 +284,7 @@ def test_trait_annotation_roundtrips_through_asm():
     assert "peano.Natural" in text
     reparsed = parse_module(text)
     zero_op = reparsed.functions[0].body.ops[0]
-    assert zero_op.type.has_trait(Natural)
+    assert isinstance(zero_op.type, Natural)
 
 
 def test_trait_as_block_argument_type():
@@ -310,7 +306,7 @@ def test_trait_as_block_argument_type():
     ops = func.body.ops
     for op in ops:
         if isinstance(op, (ZeroOp, SuccessorOp)):
-            assert op.type.has_trait(Natural)
+            assert isinstance(op.type, Natural)
 
 
 def test_peano_constant():

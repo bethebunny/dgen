@@ -63,13 +63,8 @@ class Value(Generic[T]):
         return self.type.ready and all(val.ready for _, val in self.parameters)
 
     def has_trait(self, trait: type[Trait]) -> bool:
-        """Check whether this value implements a trait.
-
-        For Types, checks directly (isinstance(self, trait)).
-        For Ops, checks the op's own traits (not the result type).
-        To check an op's result type, use ``op.type.has_trait(trait)``.
-        """
-        return isinstance(self, trait)
+        """Check whether this value's type implements a trait."""
+        return isinstance(self.type, trait)
 
 
 def type_constant(value: Value[TypeType]) -> Type:
