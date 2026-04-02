@@ -223,6 +223,18 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                 if val.lhs in constants
                 else f"{types.get(val.lhs, 'i64')} %{tracker.track_name(val.lhs)}"
             )
+        elif isinstance(val, builtin.TypeOp):
+            type_val = val.value.type
+            if isinstance(type_val, dgen.Type):
+                _register_constant(val, type_val.__constant__)
+            else:
+                _register(type_val)
+                types[val] = types.get(type_val, "ptr")
+                constants[val] = (
+                    constants[type_val]
+                    if type_val in constants
+                    else f"{types.get(type_val, 'ptr')} %{tracker.track_name(type_val)}"
+                )
         elif isinstance(val, dgen.Op):
             rt = _result_type_str(val.type)
             if rt is not None:
@@ -515,7 +527,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
 
     def _emit_op(op: dgen.Op) -> Iterator[str]:
         name = tracker.track_name(op)
-        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, control_flow.IfOp)):
+        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, builtin.TypeOp, control_flow.IfOp)):
             return
         if isinstance(op, goto.BranchOp):
             yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
