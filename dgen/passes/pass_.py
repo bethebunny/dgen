@@ -86,8 +86,16 @@ class Rewriter:
         self, block: dgen.Block, old: dgen.Value, new: dgen.Value
     ) -> None:
         block.captures = [new if v is old else v for v in block.captures]
+        for arg in block.args:
+            if arg.type is old:
+                arg.type = new
+        for param in block.parameters:
+            if param.type is old:
+                param.type = new
         for op in block.ops:
             op.replace_operand(old, new)
+            if op.type is old:
+                op.type = new
             for name, param in op.parameters:
                 if param is old:
                     setattr(op, name, new)
