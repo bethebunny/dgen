@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+from collections.abc import Callable
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass
 from functools import cached_property
@@ -12,6 +13,13 @@ from .dialect import Dialect
 from .layout import Layout, TypeValue, _bytearray_address
 
 T = TypeVar("T", bound="Type")
+
+# Slot function: maps a Value to its SSA name string (without the % prefix).
+SlotFn = Callable[["Value"], str]
+
+
+def _default_slot(v: Value) -> str:
+    return v.name if v.name is not None else "?"
 
 
 class Value(Generic[T]):
@@ -62,6 +70,10 @@ class Value(Generic[T]):
     def ready(self) -> bool:
         return self.type.ready and all(val.ready for _, val in self.parameters)
 
+    def format_asm(self, slot: SlotFn = _default_slot) -> str:
+        """Format as ASM expression. Default: SSA reference ``%name``."""
+        return f"%{slot(self)}"
+
     def has_trait(self, trait: type[Trait]) -> bool:
         """Check whether this value implements a trait."""
         return isinstance(self, trait)
@@ -78,34 +90,28 @@ def type_constant(value: Value[TypeType]) -> Type:
 
 def _type_from_dict(data: dict[str, object]) -> Type:
     """Reconstruct a Type from its serialized TypeType dict."""
+    from dgen.module import pack
+
     tag = data["tag"]
     assert isinstance(tag, str)
     dialect_name, type_name = tag.split(".")
     dialect = Dialect.get(dialect_name)
     cls = dialect.types[type_name]
-    params = {k: v for k, v in data.items() if k != "tag"}
-    if not params:
-        return cls()
+    param_types = dict(cls.__params__)
     kwargs: dict[str, object] = {}
-    for param_name, param_value in params.items():
-        for field_name, field_type in cls.__params__:
-            if field_name == param_name:
-                if isinstance(param_value, list):
-                    from dgen.module import pack
-
-                    kwargs[param_name] = pack(
-                        [
-                            _type_from_dict(v)
-                            if isinstance(v, dict)
-                            else field_type().constant(v)
-                            for v in param_value
-                        ]
-                    )
-                elif isinstance(param_value, dict):
-                    kwargs[param_name] = _type_from_dict(param_value)
-                else:
-                    kwargs[param_name] = field_type().constant(param_value)
-                break
+    for param_name, param_value in data.items():
+        if param_name == "tag":
+            continue
+        field_type = param_types[param_name]
+        if isinstance(param_value, list):
+            kwargs[param_name] = pack(
+                _type_from_dict(v) if isinstance(v, dict) else field_type().constant(v)
+                for v in param_value
+            )
+        elif isinstance(param_value, dict):
+            kwargs[param_name] = _type_from_dict(param_value)
+        else:
+            kwargs[param_name] = field_type().constant(param_value)
     return cls(**kwargs)
 
 
@@ -148,6 +154,16 @@ class Type(Value["TypeType"]):
             data[name] = param.__constant__.to_json()
         return Memory.from_json(self.type, data)
 
+    def format_asm(self, slot: SlotFn = _default_slot) -> str:
+        """Format as ``dialect.Name<params>`` (no prefix for builtin)."""
+        prefix = "" if self.dialect.name == "builtin" else f"{self.dialect.name}."
+        name = f"{prefix}{self.asm_name}"
+        params = list(self.parameters)
+        if not params:
+            return name
+        args = ", ".join(format_value(val, slot) for _, val in params)
+        return f"{name}<{args}>"
+
     @cached_property
     def qualified_name(self) -> str:
         return f"{self.dialect.name}.{self.asm_name}"
@@ -168,6 +184,13 @@ class Type(Value["TypeType"]):
 class Constant(Value[T]):
     type: T
     value: Memory[T]
+
+    def format_asm(self, slot: SlotFn = _default_slot) -> str:
+        """Format as literal, with type prefix for parameterized types."""
+        json_str = format_json(self.__constant__.to_json(), slot)
+        if type(self.type).__params__:
+            return f"{self.type.format_asm(slot)}({json_str})"
+        return json_str
 
     @property
     def ready(self) -> bool:
@@ -216,6 +239,47 @@ class Trait(TypeType):
     in constraint checks, in ASM type position.
 
     """
+
+
+# ===----------------------------------------------------------------------=== #
+# ASM formatting helpers
+# ===----------------------------------------------------------------------=== #
+
+
+def _format_float(v: float) -> str:
+    iv = int(v)
+    if float(iv) == v:
+        return f"{iv}.0"
+    return str(v)
+
+
+def format_value(value: object, slot: SlotFn = _default_slot) -> str:
+    """Format a value as an ASM expression.
+
+    Values dispatch to ``format_asm``; plain Python literals (int, float,
+    str, list, dict) are formatted as JSON.
+    """
+    if isinstance(value, Value):
+        return value.format_asm(slot)
+    return format_json(value, slot)
+
+
+def format_json(value: object, slot: SlotFn = _default_slot) -> str:
+    """Format a plain Python value as an ASM literal."""
+    if isinstance(value, list):
+        return "[" + ", ".join(format_value(v, slot) for v in value) + "]"
+    if isinstance(value, dict):
+        items = ", ".join(f'"{k}": {format_value(v, slot)}' for k, v in value.items())
+        return "{" + items + "}"
+    if isinstance(value, float):
+        return _format_float(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, bytes):
+        return f'"{value.decode("utf-8")}"'
+    if isinstance(value, str):
+        return f'"{value}"'
+    return str(value)
 
 
 class Memory(Generic[T]):

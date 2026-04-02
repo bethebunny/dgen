@@ -8,11 +8,11 @@ from __future__ import annotations
 import importlib
 import re
 from collections.abc import Callable
-from functools import reduce
 from typing import Any
 
 import dgen.type
-from dgen import Block, Constant, Dialect, Op, Type, Value
+from dgen import Block, Constant, Op, Type, Value
+from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, Module, PackOp, pack
@@ -45,20 +45,48 @@ def _get_dialect(name: str) -> Dialect:
         raise KeyError(name) from None
 
 
-def _build_scope(imports: list[str]) -> dict[str, object]:
-    """Build a name-resolution scope from import declarations.
+class Scope:
+    """Name-resolution scope built from import declarations.
 
     Builtin types and ops are always available unqualified.  Each ``import X``
-    adds the dialect ``X`` under its name so that ``X.Foo`` resolves.
+    adds dialect ``X`` so that ``X.Foo`` resolves via ``scope.resolve_type``
+    or ``scope.resolve_op``.
     """
-    scope: dict[str, object] = {}
-    b = Dialect.get("builtin")
-    scope.update(b.types)
-    scope.update(b.ops)
-    scope["builtin"] = b
-    for name in imports:
-        scope[name] = _get_dialect(name)
-    return scope
+
+    def __init__(self, imports: list[str]) -> None:
+        self._builtin = Dialect.get("builtin")
+        self._dialects: dict[str, Dialect] = {}
+        for name in imports:
+            self._dialects[name] = _get_dialect(name)
+
+    def _walk(self, name: str) -> tuple[Dialect, str]:
+        """Split a qualified name into (dialect, local_name)."""
+        parts = name.split(".")
+        if len(parts) == 1:
+            return self._builtin, name
+        dialect = self._dialects.get(parts[0])
+        if dialect is None:
+            raise ParseError(f"Unknown dialect: {parts[0]}")
+        for part in parts[1:-1]:
+            child = dialect.children.get(part)
+            if child is None:
+                raise ParseError(f"Unknown child dialect: {part}")
+            dialect = child
+        return dialect, parts[-1]
+
+    def resolve_type(self, name: str) -> type[Type]:
+        dialect, local = self._walk(name)
+        cls = dialect.types.get(local)
+        if cls is None:
+            raise ParseError(f"Unknown type: {name}")
+        return cls
+
+    def resolve_op(self, name: str) -> type[Op]:
+        dialect, local = self._walk(name)
+        cls = dialect.ops.get(local)
+        if cls is None:
+            raise ParseError(f"Unknown op: {name}")
+        return cls
 
 
 def parse_module(text: str) -> Module:
@@ -66,7 +94,7 @@ def parse_module(text: str) -> Module:
     imports: list[str] = []
     while (name := parser.try_read(_import_line)) is not None:
         imports.append(name)
-    parser.scope = _build_scope(imports)
+    parser.scope = Scope(imports)
     ops: list[Op] = []
     while not parser.done:
         ops.append(parser.read(op_statement))
@@ -79,7 +107,7 @@ class ASMParser:
         self.pos: int = 0
         self.name_table: dict[str, Value] = {}
         self.pending_ops: list[Op] = []
-        self.scope: dict[str, object] = {}
+        self.scope: Scope = Scope([])
 
     @property
     def done(self) -> bool:
@@ -144,31 +172,6 @@ class ASMParser:
             if self.pos >= len(self.text) or self.text[self.pos] != ch:
                 raise ParseError(f"Expected '{string}' at {self.pos}")
             self.pos += 1
-
-
-# -- Lookup ----------------------------------------------------------------
-
-
-def _resolve(name: str, scope: dict[str, object]) -> object:
-    """Resolve a qualified name by walking the scope via ``Dialect.lookup``."""
-    try:
-        return reduce(Dialect.lookup, name.split("."), scope)
-    except KeyError:
-        raise ParseError(f"Unknown name: {name}") from None
-
-
-def _lookup_op(name: str, scope: dict[str, object]) -> type[Op]:
-    result = _resolve(name, scope)
-    if isinstance(result, type) and issubclass(result, Op):
-        return result
-    raise ParseError(f"Unknown op: {name}")
-
-
-def _lookup_type(name: str, scope: dict[str, object]) -> type[Type]:
-    result = _resolve(name, scope)
-    if isinstance(result, type) and issubclass(result, Type):
-        return result
-    raise ParseError(f"Unknown type: {name}")
 
 
 # -- Reader functions -------------------------------------------------------
@@ -255,14 +258,24 @@ def value_expression(parser: ASMParser) -> object:
 
 def _named_type(parser: ASMParser) -> Type:
     name = parser.read(qualified_name)
-    type_cls = _lookup_type(name, parser.scope)
+    type_cls = parser.scope.resolve_type(name)
     if not type_cls.__params__ or parser.try_read("<") is None:
         return type_cls()
     values = parser.read_list(value_expression)
     parser.read(">")
-    kwargs = {}
+    kwargs: dict[str, object] = {}
     for (param_name, param_type), value in zip(type_cls.__params__, values):
-        kwargs[param_name] = _coerce_param(value, param_type)
+        if isinstance(value, Value):
+            kwargs[param_name] = value
+        elif isinstance(value, list):
+            kwargs[param_name] = pack(
+                [
+                    v if isinstance(v, Value) else _as_constant(param_type, v)
+                    for v in value
+                ]
+            )
+        else:
+            kwargs[param_name] = _as_constant(param_type, value)
     return type_cls(**kwargs)
 
 
@@ -270,7 +283,7 @@ def op_expression(
     parser: ASMParser,
 ) -> tuple[type[Op], list[object], list[object], list[Block]]:
     name = parser.read(qualified_name)
-    op_cls = _lookup_op(name, parser.scope)
+    op_cls = parser.scope.resolve_op(name)
     parameters: list[object] = []
     if op_cls.__params__:
         parser.read("<")
@@ -308,11 +321,34 @@ def op_statement(parser: ASMParser) -> Op:
     if pre_type is not None:
         kwargs["type"] = pre_type
     for (param_name, param_type), value in zip(op_cls.__params__, parameters):
-        kwargs[param_name] = _coerce_param(value, param_type)
+        if isinstance(value, Value):
+            kwargs[param_name] = value
+        elif isinstance(value, list):
+            kwargs[param_name] = pack(
+                [
+                    v if isinstance(v, Value) else _as_constant(param_type, v)
+                    for v in value
+                ]
+            )
+        else:
+            kwargs[param_name] = _as_constant(param_type, value)
     for (field_name, field_type), value in zip(op_cls.__operands__, operands):
-        kwargs[field_name] = _coerce_operand(
-            parser, value, field_type, op_cls, pre_type
-        )
+        if isinstance(value, Value):
+            kwargs[field_name] = value
+        elif isinstance(value, list):
+            if any(isinstance(v, Value) for v in value) or issubclass(
+                field_type, builtin.Span
+            ):
+                kwargs[field_name] = _pack_list(parser, value, field_type)
+            else:
+                kwargs[field_name] = value
+        else:
+            # For polymorphic ops (field_type is base Type), infer concrete type
+            # from the explicit result type annotation when available.
+            effective_type = field_type
+            if field_type is Type and isinstance(pre_type, Type):
+                effective_type = type(pre_type)
+            kwargs[field_name] = _as_constant(effective_type, value)
     for block_name, block in zip(op_cls.__blocks__, blocks):
         kwargs[block_name] = block
     op = op_cls(**kwargs)
@@ -346,41 +382,11 @@ def block_arguments(parser: ASMParser) -> list[BlockArgument]:
 # -- Coercion ---------------------------------------------------------------
 
 
-def _coerce_param(value: object, field_type: type[Type]) -> object:
-    """Wrap a parsed value to match an expected param type."""
-    if isinstance(value, Value):
-        return value
-    if isinstance(value, list):
-        coerced = [_coerce_param(v, field_type) for v in value]
-        return pack(coerced)
-    return _wrap_constant(field_type, value)
+def _as_constant(field_type: type[Type], raw: object) -> Constant:
+    """Wrap a raw literal as a Constant of *field_type*.
 
-
-def _coerce_operand(
-    parser: ASMParser,
-    value: object,
-    field_type: type[Type],
-    op_cls: type[Op],
-    result_type: Type | Value | None = None,
-) -> object:
-    """Wrap a parsed operand: PackOp for mixed lists, Constant for raw scalars."""
-    if isinstance(value, Value):
-        return value
-    if isinstance(value, list):
-        if any(isinstance(v, Value) for v in value) or issubclass(
-            field_type, builtin.Span
-        ):
-            return _pack_list(parser, value, field_type)
-        return value
-    # For polymorphic ops (field_type is base Type), infer concrete type from
-    # the explicit result type annotation when available.
-    effective_type = field_type
-    if field_type is Type and isinstance(result_type, Type):
-        effective_type = type(result_type)
-    return _wrap_constant(effective_type, value)
-
-
-def _wrap_constant(field_type: type[Type], raw: object) -> Constant:
+    Raises if *field_type* is parameterized (can't infer params from a literal).
+    """
     if field_type.__params__:
         raise RuntimeError(
             f"Cannot use a bare literal for parameterized type {field_type.asm_name}; "

@@ -2,7 +2,7 @@ import function
 import index
 import ndbuffer
 
-%main : function.Function<()> = function.function<Nil>() body(%x: index.Index):
+%main : function.Function<Nil> = function.function<Nil>() body(%x: index.Index):
     %0 : index.Index = 3
     %1 : index.Index = 5
     %store : Nil = ndbuffer.store(%x, %x, %x, [%0, %x, %1])

@@ -13,25 +13,12 @@ from dgen.dialects.builtin import Nil
 from dgen.module import ConstantOp, PackOp
 
 from ..op import Op
-from ..type import Memory, Type
-from ..type import Constant, Value
+from ..type import Type, Value, format_value
 
 
 def indent(it: Iterable[str], prefix: str = "    ") -> Iterable[str]:
     for line in it:
         yield f"{prefix}{line}"
-
-
-# ===----------------------------------------------------------------------=== #
-# Helpers
-# ===----------------------------------------------------------------------=== #
-
-
-def format_float(v: float) -> str:
-    iv = int(v)
-    if float(iv) == v:
-        return f"{iv}.0"
-    return str(v)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -46,6 +33,7 @@ class SlotTracker:
         self._slots: dict[Value, str] = {}
         self._used: set[str] = set()
         self._counter = 0
+        self.dialects: set[str] = set()
 
     def register(self, ops: Sequence[Op]) -> None:
         """Pre-register all ops in a tracker so slot numbers are stable."""
@@ -82,7 +70,7 @@ class SlotTracker:
 
 
 # ===----------------------------------------------------------------------=== #
-# Expression formatter — dispatches on value type
+# Expression formatter
 # ===----------------------------------------------------------------------=== #
 
 
@@ -91,57 +79,42 @@ def _is_sugar_op(op: Op) -> bool:
     return isinstance(op, PackOp)
 
 
+def _record_dialects(value: object, dialects: set[str]) -> None:
+    """Recursively record all non-builtin dialect names referenced by a value."""
+    if isinstance(value, Type):
+        if value.dialect.name != "builtin":
+            dialects.add(value.dialect.name)
+        for _, param in value.parameters:
+            _record_dialects(param, dialects)
+    elif isinstance(value, PackOp):
+        for v in value:
+            _record_dialects(v, dialects)
+    elif isinstance(value, Value):
+        # For non-Type Values (Constants, SSA refs), record dialects from
+        # their type and recurse into the type's parameters.
+        _record_dialects(value.type, dialects)
+
+
 def format_expr(value: object, tracker: SlotTracker | None = None) -> str:
-    """Format a value as an expression string, dispatching on runtime type."""
+    """Format a value as an expression string.
+
+    Values dispatch to ``Value.format_asm``; Nil is special-cased to ``()``;
+    plain Python literals (int, float, str, list, dict) are formatted as JSON.
+    """
     if isinstance(value, Nil):
         return "()"
-    # Inline list sugar: PackOp → [elem0, elem1, ...]
-    if isinstance(value, PackOp):
-        return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
-    if isinstance(value, Constant) and not isinstance(value, Op):
-        json_str = format_expr(value.__constant__.to_json(), tracker)
-        if type(value.type).__params__:
-            return f"{type_asm(value.type, tracker)}({json_str})"
-        return json_str
-    if isinstance(value, Type):
-        return type_asm(value, tracker)
-    if isinstance(value, Value):
-        if tracker is not None:
-            return f"%{tracker.track_name(value)}"
-        name = value.name if value.name is not None else "?"
-        return f"%{name}"
-    if isinstance(value, Memory):
-        return format_expr(value.to_json(), tracker)
-    if isinstance(value, list):
-        return "[" + ", ".join(format_expr(v, tracker) for v in value) + "]"
-    if isinstance(value, dict):
-        items = ", ".join(f'"{k}": {format_expr(v, tracker)}' for k, v in value.items())
-        return "{" + items + "}"
-    if isinstance(value, float):
-        return format_float(value)
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, bytes):
-        return f'"{value.decode("utf-8")}"'
-    if isinstance(value, str):
-        return f'"{value}"'
-    return str(value)
-
-
-def _dialect_prefix(dialect_name: str) -> str:
-    """Return 'dialect.' prefix, or '' for builtin."""
-    return "" if dialect_name == "builtin" else f"{dialect_name}."
+    if tracker is not None:
+        _record_dialects(value, tracker.dialects)
+        return format_value(value, tracker.track_name)
+    return format_value(value)
 
 
 def type_asm(type_obj: Type, tracker: SlotTracker | None = None) -> str:
-    """Generic type formatter via field introspection."""
-    prefix = _dialect_prefix(type_obj.dialect.name)
-    name = f"{prefix}{type_obj.asm_name}"
-    params = list(type_obj.parameters)
-    if not params:
-        return name
-    args = ", ".join(format_expr(val, tracker) for _, val in params)
-    return f"{name}<{args}>"
+    """Format a Type as ASM text."""
+    if tracker is not None:
+        _record_dialects(type_obj, tracker.dialects)
+        return type_obj.format_asm(tracker.track_name)
+    return type_obj.format_asm()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -150,7 +123,12 @@ def type_asm(type_obj: Type, tracker: SlotTracker | None = None) -> str:
 
 
 def _format_block_arg(arg: BlockArgument | BlockParameter, tracker: SlotTracker) -> str:
-    return f"%{tracker.track_name(arg)}: {format_expr(arg.type, tracker)}"
+    type_str = (
+        type_asm(arg.type, tracker)
+        if isinstance(arg.type, Type)
+        else format_expr(arg.type, tracker)
+    )
+    return f"%{tracker.track_name(arg)}: {type_str}"
 
 
 def op_asm(
@@ -170,12 +148,17 @@ def op_asm(
     asm_name = cls.asm_name
     dialect_name = op.dialect.name
 
+    # Record the op's dialect for import generation.
+    if tracker is not None and dialect_name != "builtin":
+        tracker.dialects.add(dialect_name)
+
     # If no tracker provided, create one and register this op
     if tracker is None:
         tracker = SlotTracker()
         tracker.register([op])
 
-    # Build args from declared fields (constants first, then runtime)
+    # Build args from declared fields — type-kinded parameters use type_asm
+    # (no Nil→() mapping), while value-kinded operands use format_expr.
     param_parts = [
         type_asm(param, tracker)
         if isinstance(param, Type)
@@ -184,7 +167,7 @@ def op_asm(
     ]
     operand_parts = [format_expr(operand, tracker) for _, operand in op.operands]
 
-    # Build the line
+    # Build the line — type annotation uses type_asm (Nil stays "Nil").
     result_name = tracker.track_name(op)
     type_str = (
         type_asm(op.type, tracker)
@@ -192,7 +175,7 @@ def op_asm(
         else format_expr(op.type, tracker)
     )
     parts = [f"%{result_name} : {type_str} = "]
-    prefix = _dialect_prefix(dialect_name)
+    prefix = "" if dialect_name == "builtin" else f"{dialect_name}."
     if isinstance(op, ConstantOp):
         parts.append(format_expr(op.value, tracker))
     else:

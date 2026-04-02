@@ -12,7 +12,8 @@ import llvmlite.binding as llvmlite
 
 import dgen
 from dgen import Type
-from dgen.asm.formatting import SlotTracker, format_float
+from dgen.asm.formatting import SlotTracker
+from dgen.type import _format_float as format_float
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import builtin, control_flow, function, goto, llvm, memory
 from dgen.layout import Layout
