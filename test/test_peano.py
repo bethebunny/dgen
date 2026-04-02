@@ -250,7 +250,6 @@ def test_recursive_type_roundtrip():
 # type is annotated with a trait.
 
 
-@pytest.mark.xfail(strict=True, reason="traits not yet usable in type position")
 def test_trait_in_asm_type_annotation():
     """A trait name should be valid as a type annotation in ASM."""
     ir = strip_prefix("""
@@ -270,7 +269,6 @@ def test_trait_in_asm_type_annotation():
     assert zero_op.type.has_trait(Natural)
 
 
-@pytest.mark.xfail(strict=True, reason="traits not yet usable in type position")
 def test_trait_annotation_roundtrips_through_asm():
     """A trait used as a type annotation should survive ASM print/parse."""
     ir = strip_prefix("""
@@ -293,7 +291,6 @@ def test_trait_annotation_roundtrips_through_asm():
     assert zero_op.type.has_trait(Natural)
 
 
-@pytest.mark.xfail(strict=True, reason="traits not yet usable in type position")
 def test_trait_as_block_argument_type():
     """A block argument annotated with a trait should parse and roundtrip."""
     ir = strip_prefix("""

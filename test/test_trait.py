@@ -159,12 +159,20 @@ def test_has_trait_type_negative() -> None:
 # -- Value.has_trait() on ops ------------------------------------------------
 
 
-def test_has_trait_op_checks_result_type() -> None:
-    """Value.has_trait on an op checks the result type's traits."""
+def test_has_trait_op_own_traits() -> None:
+    """has_trait on an op checks the op's own traits."""
     op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
-    # AddNumsOp has type=MyInt(), which implements both Numeric and Ordered
+    # AddNumsOp has Numeric in its class hierarchy, not Ordered
     assert op.has_trait(Numeric)
-    assert op.has_trait(Ordered)
+    assert not op.has_trait(Ordered)
+
+
+def test_has_trait_op_result_type() -> None:
+    """op.type.has_trait checks the result type's traits."""
+    op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
+    # The result type MyInt implements both Numeric and Ordered
+    assert op.type.has_trait(Numeric)
+    assert op.type.has_trait(Ordered)
 
 
 # -- .dgen built traits inherit from Trait -----------------------------------
