@@ -139,36 +139,30 @@ def test_trait_registered_in_dialect_types() -> None:
     assert "Ordered" in _test.types
 
 
-# -- Value.has_trait() on types -----------------------------------------------
+# -- isinstance for types, has_trait for values ------------------------------
 
 
-def test_has_trait_type_positive() -> None:
-    assert MyInt().has_trait(Numeric)
-    assert MyInt().has_trait(Ordered)
+def test_type_isinstance_positive() -> None:
+    """Types implement traits via isinstance (they ARE their own identity)."""
+    assert isinstance(MyInt(), Numeric)
+    assert isinstance(MyInt(), Ordered)
+    assert not isinstance(MyStr(), Numeric)
 
 
-def test_has_trait_type_negative() -> None:
-    assert not MyStr().has_trait(Numeric)
-    assert not MyStr().has_trait(Ordered)
+def test_has_trait_on_values() -> None:
+    """has_trait on a value checks whether value.type implements the trait."""
+    c = MyInt().constant(42)
+    assert c.has_trait(Numeric)
+    assert c.has_trait(Ordered)
+    assert not MyStr().constant("x").has_trait(Numeric)
 
 
-# -- Value.has_trait() on ops ------------------------------------------------
-
-
-def test_has_trait_op_own_traits() -> None:
-    """has_trait on an op checks the op's own traits."""
+def test_has_trait_on_ops() -> None:
+    """has_trait on an op checks the result type's traits."""
     op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
-    # AddNumsOp has Numeric in its class hierarchy, not Ordered
+    # AddNumsOp has type=MyInt(), which implements both Numeric and Ordered
     assert op.has_trait(Numeric)
-    assert not op.has_trait(Ordered)
-
-
-def test_has_trait_op_result_type() -> None:
-    """op.type.has_trait checks the result type's traits."""
-    op = AddNumsOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
-    # The result type MyInt implements both Numeric and Ordered
-    assert op.type.has_trait(Numeric)
-    assert op.type.has_trait(Ordered)
+    assert op.has_trait(Ordered)
 
 
 # -- .dgen built traits inherit from Trait -----------------------------------
@@ -293,7 +287,7 @@ def test_verify_error_names_operand_and_type() -> None:
     c = MyStr().constant("hello")
     op = RequiresNumericOp(input=c, name="v0")
     module = _make_module(op)
-    with pytest.raises(ConstraintError, match="operand 'input' has type MyStr"):
+    with pytest.raises(ConstraintError, match="subject 'input'.*does not implement"):
         verify_constraints(module)
 
 

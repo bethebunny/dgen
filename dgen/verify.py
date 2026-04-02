@@ -223,31 +223,43 @@ def _resolve_trait(trait_name: str, op: dgen.Op) -> type[Trait]:
     )
 
 
-def _resolve_subject_type(subject: str, op: dgen.Op) -> dgen.Type:
-    """Resolve a constraint subject name to the type of that operand/param."""
+def _resolve_subject(subject: str, op: dgen.Op) -> dgen.Value:
+    """Resolve a constraint subject name to the value of that operand/param."""
     for name, value in op.operands:
         if name == subject:
-            return type_constant(value.type)
+            return value
     for name, value in op.parameters:
         if name == subject:
-            return type_constant(value)
+            return value
     raise ConstraintError(
         f"constraint references unknown subject {subject!r} on "
         f"{type(op).__name__} %{op.name}"
     )
 
 
+def _subject_type(subject: dgen.Value) -> dgen.Type:
+    """Get the type to check for trait membership.
+
+    For a Type, this is the type itself. For other values (Constant,
+    BlockArgument, Op), this is value.type.
+    """
+    if isinstance(subject, dgen.Type):
+        return subject
+    return type_constant(subject.type)
+
+
 def _verify_has_trait(
     constraint: HasTraitConstraint, op: dgen.Op, module: Module
 ) -> None:
     """Verify a single has-trait constraint on an op."""
-    subject_type = _resolve_subject_type(constraint.lhs, op)
+    subject = _resolve_subject(constraint.lhs, op)
     trait_class = _resolve_trait(constraint.trait, op)
+    subject_type = _subject_type(subject)
     if not isinstance(subject_type, trait_class):
         raise ConstraintError(
             f"{type(op).__name__} %{op.name}: "
-            f"operand {constraint.lhs!r} has type {type(subject_type).__name__} "
-            f"which does not implement trait {constraint.trait}\n\n"
+            f"subject {constraint.lhs!r} ({type(subject_type).__name__}) "
+            f"does not implement trait {constraint.trait}\n\n"
             + _annotated_module(module, op)
         )
 
