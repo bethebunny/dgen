@@ -7,19 +7,19 @@ with configurable context lines.
 CLI usage:
     python -m dgen.ir_diff expected.ir actual.ir
     python -m dgen.ir_diff expected.ir actual.ir -C 5
-    python -m dgen.ir_diff expected.ir actual.ir --color
+    python -m dgen.ir_diff expected.ir actual.ir -I toy/dialects
 """
 
 from __future__ import annotations
 
 import difflib
-import importlib
 import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 import click
 
-from dgen import asm
+from dgen import Dialect, asm
 from dgen.asm.formatting import SlotTracker, op_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects.function import FunctionOp
@@ -160,19 +160,19 @@ def _line_starts(formatted_ops: list[list[str]]) -> list[int]:
     help="Force color output on/off (default: auto-detect terminal).",
 )
 @click.option(
-    "-d",
-    "--dialect",
-    "dialects",
+    "-I",
+    "--include",
+    "include_dirs",
     multiple=True,
-    metavar="MODULE",
-    help="Python module to import for dialect registration (repeatable).",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Directory to search for .dgen dialect files (repeatable).",
 )
 def diff(
     expected: click.utils.LazyFile,
     actual: click.utils.LazyFile,
     context: int,
     color: bool | None,
-    dialects: tuple[str, ...],
+    include_dirs: tuple[Path, ...],
 ) -> None:
     """Semantically compare two IR files.
 
@@ -180,13 +180,13 @@ def diff(
     so op ordering and SSA label renaming are ignored.  Exits 0 if equivalent,
     1 if different.
 
-    Dialects used in the IR must be registered first:
+    Non-core dialects are discovered via --include:
 
         python -m dgen.ir_diff expected.ir actual.ir \\
-            -d toy.dialects.toy -d toy.dialects.affine
+            -I toy/dialects -I actor/dialects
     """
-    for module_path in dialects:
-        importlib.import_module(module_path)
+    for d in include_dirs:
+        Dialect.paths.append(d)
 
     expected_module = parse_module(expected.read())
     actual_module = parse_module(actual.read())
