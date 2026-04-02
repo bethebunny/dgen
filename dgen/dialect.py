@@ -21,7 +21,6 @@ class Dialect:
         self.name = name
         self.ops: dict[str, builtins.type[Op]] = {}
         self.types: dict[str, builtins.type[Type]] = {}
-        self.traits: dict[str, builtins.type] = {}
         Dialect._registry[name] = self
 
     @classmethod
@@ -47,10 +46,5 @@ class Dialect:
         return decorator
 
     def trait(self, name: str) -> Callable[[builtins.type], builtins.type]:
-        def decorator(cls: builtins.type) -> builtins.type:
-            cls.asm_name = name
-            cls.dialect = self
-            self.traits[name] = cls
-            return cls
-
-        return decorator
+        """Register a trait. Traits are stored in .types (they are types)."""
+        return self.type(name)

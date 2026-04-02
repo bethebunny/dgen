@@ -187,7 +187,7 @@ def generate_pyi(module: ModuleType, dialect_name: str) -> str:
         for cls in dialect.ops.values()
         if dataclasses.is_dataclass(cls)
     )
-    needs_trait = bool(dialect.traits)
+    needs_trait = any(issubclass(cls, Trait) for cls in dialect.types.values())
 
     dgen_imports = sorted(
         {"Dialect", "Op", "Type", "Value"}
@@ -213,10 +213,11 @@ def generate_pyi(module: ModuleType, dialect_name: str) -> str:
 
     lines += ["", f'{dialect_name} = Dialect("{dialect_name}")', ""]
 
-    for name, val in dialect.traits.items():
-        lines.extend(_trait_stub(name, val))
-    for cls in dialect.types.values():
-        lines.extend(_stub_class(cls, type_to_name, frozen=True))
+    for name, cls in dialect.types.items():
+        if issubclass(cls, Trait):
+            lines.extend(_trait_stub(name, cls))
+        else:
+            lines.extend(_stub_class(cls, type_to_name, frozen=True))
     for cls in dialect.ops.values():
         lines.extend(_stub_class(cls, type_to_name, frozen=False))
 

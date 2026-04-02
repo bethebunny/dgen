@@ -191,10 +191,10 @@ peano_compiler: Compiler[codegen.Executable] = Compiler(
 
 
 def test_natural_trait_is_registered():
-    """Natural trait is registered in peano dialect."""
+    """Natural trait is registered in peano dialect types."""
     assert issubclass(Natural, Trait)
-    assert "Natural" in peano.traits
-    assert peano.traits["Natural"] is Natural
+    assert "Natural" in peano.types
+    assert peano.types["Natural"] is Natural
 
 
 def test_zero_has_natural_trait():

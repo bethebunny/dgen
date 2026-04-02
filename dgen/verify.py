@@ -214,8 +214,9 @@ def verify_all_ready(module: Module) -> None:
 def _resolve_trait(trait_name: str, op: dgen.Op) -> type[Trait]:
     """Look up a trait class by name from the dialect registry."""
     for dialect in Dialect._registry.values():
-        if trait_name in dialect.traits:
-            return dialect.traits[trait_name]
+        cls = dialect.types.get(trait_name)
+        if cls is not None and issubclass(cls, Trait):
+            return cls
     raise ConstraintError(
         f"unknown trait {trait_name!r} referenced in constraint on "
         f"{type(op).__name__} %{op.name}"

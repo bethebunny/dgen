@@ -132,15 +132,11 @@ def test_trait_inherits_from_base() -> None:
     assert issubclass(Ordered, Trait)
 
 
-def test_trait_registered_in_dialect_traits() -> None:
-    assert "Numeric" in _test.traits
-    assert _test.traits["Numeric"] is Numeric
-    assert "Ordered" in _test.traits
-
-
-def test_trait_not_in_dialect_types() -> None:
-    assert "Numeric" not in _test.types
-    assert "Ordered" not in _test.types
+def test_trait_registered_in_dialect_types() -> None:
+    """Traits are stored in dialect.types alongside regular types."""
+    assert "Numeric" in _test.types
+    assert _test.types["Numeric"] is Numeric
+    assert "Ordered" in _test.types
 
 
 # -- Value.has_trait() on types -----------------------------------------------
@@ -187,12 +183,12 @@ def test_dgen_built_trait_inherits() -> None:
     assert issubclass(algebra.TotalOrder, Trait)
 
 
-def test_dgen_built_trait_in_dialect_traits() -> None:
-    """Traits built from .dgen are in dialect.traits, not dialect.types."""
+def test_dgen_built_trait_in_dialect_types() -> None:
+    """Traits built from .dgen are in dialect.types."""
     from dgen.dialects import algebra
 
-    assert "AddMagma" in algebra.algebra.traits
-    assert "AddMagma" not in algebra.algebra.types
+    assert "AddMagma" in algebra.algebra.types
+    assert issubclass(algebra.algebra.types["AddMagma"], Trait)
 
 
 # -- Parser: has trait / has type constraints --------------------------------
