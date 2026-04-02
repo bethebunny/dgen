@@ -19,6 +19,7 @@ from dgen.dialects import builtin, control_flow, function, goto, llvm, memory
 from dgen.layout import Layout
 from dgen.module import ConstantOp, Module, PackOp, string_value
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.type import Constant, Memory, Value
 
 # ---------------------------------------------------------------------------
@@ -223,13 +224,6 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                 if val.lhs in constants
                 else f"{types.get(val.lhs, 'i64')} %{tracker.track_name(val.lhs)}"
             )
-        elif isinstance(val, builtin.TypeOp):
-            type_val = val.value.type
-            assert isinstance(type_val, dgen.Type), (
-                f"TypeOp codegen requires a resolved concrete type, "
-                f"got {type(type_val).__name__}"
-            )
-            _register_constant(val, type_val.__constant__)
         elif isinstance(val, dgen.Op):
             rt = _result_type_str(val.type)
             if rt is not None:
@@ -522,7 +516,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
 
     def _emit_op(op: dgen.Op) -> Iterator[str]:
         name = tracker.track_name(op)
-        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, builtin.TypeOp, control_flow.IfOp)):
+        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, control_flow.IfOp)):
             return
         if isinstance(op, goto.BranchOp):
             yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
@@ -699,6 +693,7 @@ class Executable:
 def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
     """Lower a Module to LLVM IR and bundle with execution metadata."""
     _dummy = Compiler([], IdentityPass())
+    module = BuiltinToLLVM().run(module, _dummy)
     module = AlgebraToLLVM().run(module, _dummy)
     ir, host_buffers = emit_llvm_ir(module, externs=externs)
     main = module.functions[0]
