@@ -76,12 +76,6 @@ def _resolve_import(module_name: str, dgen_dir: Path) -> str:
     raise ImportError(f"Cannot resolve dgen import: {module_name}")
 
 
-def _resolve_imports(dgen_path: Path, ast: DgenFile) -> dict[str, str]:
-    """Build an import map for the generator from a parsed .dgen file."""
-    dgen_dir = dgen_path.parent
-    return {decl.module: _resolve_import(decl.module, dgen_dir) for decl in ast.imports}
-
-
 class DgenLoader(importlib.abc.Loader):
     """Loader that compiles a .dgen file into a live Python module."""
 
@@ -97,7 +91,11 @@ class DgenLoader(importlib.abc.Loader):
     def exec_module(self, module: ModuleType) -> None:
         source = self.path.read_text()
         self.ast = parse(source)
-        self.import_map = _resolve_imports(self.path, self.ast)
+        dgen_dir = self.path.parent
+        self.import_map = {
+            decl.module: _resolve_import(decl.module, dgen_dir)
+            for decl in self.ast.imports
+        }
         build(
             self.ast,
             dialect_name=self.path.stem,

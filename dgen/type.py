@@ -278,7 +278,7 @@ def format_json(value: object, slot: SlotFn = _default_slot) -> str:
         return str(value)
     if isinstance(value, str):
         return f'"{value}"'
-    return str(value)
+    raise ValueError(f"Cannot format {type(value).__name__} as ASM literal: {value!r}")
 
 
 class Memory(Generic[T]):
