@@ -350,10 +350,11 @@ def test_parse_metavar_operand():
     assert op.return_type.name == "$Result"
 
 
-def test_parse_requires_match():
+def test_parse_requires_has_type_tilde():
+    """~= is no longer supported; it parses as an ExpressionConstraint."""
     src = "op tile(x: $X) -> $Result:\n    requires $X ~= Tensor\n"
     op = parse(src).ops[0]
-    assert op.constraints == [HasTypeConstraint(lhs="$X", type=TypeRef("Tensor"))]
+    assert op.constraints == [ExpressionConstraint(expr="$X ~= Tensor")]
 
 
 def test_parse_requires_has_type():
@@ -384,8 +385,8 @@ def test_parse_requires_expr():
 def test_parse_multiple_requires():
     src = """\
 op tile<axis: Index>(x: $X) -> $Result:
-    requires $X ~= Tensor
-    requires $Result ~= Tensor
+    requires $X has type Tensor
+    requires $Result has type Tensor
     requires $X.dtype == $Result.dtype
 """
     op = parse(src).ops[0]
@@ -397,10 +398,10 @@ op tile<axis: Index>(x: $X) -> $Result:
 
 
 def test_parse_requires_with_block():
-    src = "op foo() -> Nil:\n    block body\n    requires $X ~= Tensor\n"
+    src = "op foo() -> Nil:\n    block body\n    requires X has type Tensor\n"
     op = parse(src).ops[0]
     assert op.blocks == ["body"]
-    assert op.constraints == [HasTypeConstraint(lhs="$X", type=TypeRef("Tensor"))]
+    assert op.constraints == [HasTypeConstraint(lhs="X", type=TypeRef("Tensor"))]
 
 
 def test_parse_type_requires():
