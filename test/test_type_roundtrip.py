@@ -521,7 +521,7 @@ def test_deepcopy_module_with_span_constant():
     copied = deepcopy(module)
 
     # The copied module's constant should still be readable
-    copied_const = copied.functions[0].body.ops[0]
+    copied_const = list(copied.functions[0].body.ops)[0]
     assert isinstance(copied_const, ConstantOp)
     assert copied_const.memory.to_json() == [3, 5, 7]
 

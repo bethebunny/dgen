@@ -29,7 +29,7 @@ def test_if_no_capture_roundtrip():
     module = parse_module(ir)
     fn = module.ops[0]
     assert isinstance(fn, function.FunctionOp)
-    if_op = fn.body.ops[-1]
+    if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
     assert if_op.then_body.args == []
     assert if_op.else_body.args == []
@@ -53,7 +53,7 @@ def test_if_with_capture_roundtrip():
     module = parse_module(ir)
     fn = module.ops[0]
     assert isinstance(fn, function.FunctionOp)
-    if_op = fn.body.ops[-1]
+    if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
     assert len(if_op.then_body.args) == 1
     assert len(if_op.else_body.args) == 1
@@ -78,7 +78,7 @@ def test_if_python_api_no_capture():
     module = parse_module(ir)
     fn = module.ops[0]
     assert isinstance(fn, function.FunctionOp)
-    if_op = fn.body.ops[-1]
+    if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
     assert if_op.then_body.args == []
     assert if_op.else_body.args == []

@@ -28,7 +28,7 @@ def test_simple_chain():
     b = ConstantOp(name="b", value=2, type=Index())
     c = ChainOp(name="c", lhs=a, rhs=b, type=Index())
     block = Block(result=c)
-    assert block.ops == [a, b, c]
+    assert list(block.ops) == [a, b, c]
 
 
 def test_block_args_not_included():
@@ -37,7 +37,7 @@ def test_block_args_not_included():
     a = ConstantOp(name="a", value=1, type=Index())
     c = ChainOp(name="c", lhs=x, rhs=a, type=Index())
     block = Block(result=c, args=[x])
-    assert block.ops == [a, c]
+    assert list(block.ops) == [a, c]
 
 
 def test_captures_stop_walk():
@@ -47,7 +47,7 @@ def test_captures_stop_walk():
     c = ChainOp(name="c", lhs=a, rhs=b, type=Index())
     # Stop at a — it's a capture, not included in results
     block = Block(result=c, captures=[a])
-    assert block.ops == [b, c]
+    assert list(block.ops) == [b, c]
 
 
 def test_does_not_descend_into_label_body():
@@ -61,7 +61,7 @@ def test_does_not_descend_into_label_body():
     outer_op = ChainOp(name="outer", lhs=label, rhs=label, type=Nil())
     block = Block(result=outer_op)
 
-    ops = block.ops
+    ops = list(block.ops)
     # label is reached (it's an Op), but inner_op is NOT — it's inside
     # the label's body block, which is a separate walk.
     assert label in ops
@@ -82,14 +82,14 @@ def test_label_body_is_separate_walk():
     block = Block(result=outer)
 
     # Parent walk: sees label and outer, not inner ops
-    parent_ops = block.ops
+    parent_ops = list(block.ops)
     assert label in parent_ops
     assert outer in parent_ops
     assert inner_a not in parent_ops
     assert inner_b not in parent_ops
 
     # Label body walk: only sees inner ops
-    body_ops = label.body.ops
+    body_ops = list(label.body.ops)
     assert set(body_ops) == {inner_a, inner_b, inner_result}
 
     # No overlap
@@ -106,7 +106,7 @@ def test_follows_parameters():
     branch = goto.BranchOp(target=label, arguments=pack())
     block = Block(result=branch)
 
-    ops = block.ops
+    ops = list(block.ops)
     # label is reached via the 'target' parameter
     assert label in ops
     assert branch in ops
@@ -145,7 +145,7 @@ def test_parent_sees_child_block_captures():
         ),
     )
     block = Block(result=label)
-    ops = block.ops
+    ops = list(block.ops)
     # captured is visited as a dependency of the label (via block captures)
     assert captured in ops
     assert label in ops

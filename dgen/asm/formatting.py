@@ -34,7 +34,7 @@ class SlotTracker:
         self._used: set[str] = set()
         self._counter = 0
 
-    def register(self, ops: Sequence[Op]) -> None:
+    def register(self, ops: Iterable[Op]) -> None:
         """Pre-register all ops in a tracker so slot numbers are stable."""
         for op in ops:
             if _is_sugar_op(op):

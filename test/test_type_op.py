@@ -41,9 +41,9 @@ def test_type_op_asm_roundtrip():
     """)
     module = parse_module(ir)
     func = module.functions[0]
-    ops = func.body.ops
-    assert isinstance(ops[-1], TypeOp)
-    assert isinstance(ops[-1].type, TypeType)
+    type_op = func.body.result
+    assert isinstance(type_op, TypeOp)
+    assert isinstance(type_op.type, TypeType)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -59,7 +59,7 @@ def test_type_op_result_is_type_dependency():
         |     %y : %t = 7
     """)
     module = parse_module(ir)
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     type_op = ops[1]
     y_op = ops[2]
     assert isinstance(type_op, TypeOp)
