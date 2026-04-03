@@ -129,43 +129,15 @@ def _ensure_initialized() -> None:
 
 
 def _externs(module: Module) -> list[builtin.ExternOp]:
-    """Discover extern declarations from ExternOps in the module."""
-    externs: dict[builtin.ExternOp, None] = {
-        value: None
-        for top_level in module.ops
-        for value in all_values(top_level)
-        if isinstance(value, builtin.ExternOp)
-    }
-    return list(externs)
-
-
-def _call_externs(module: Module) -> Iterator[str]:
-    """Discover and emit declare statements for external function calls.
-
-    Scans for llvm.CallOp and function.CallOp references to functions
-    not defined in the module, and emits LLVM ``declare`` statements.
-    """
-    defined = {func.name for func in module.functions}
-    seen: set[str] = set()
-
+    """Discover extern declarations from ExternOps in the module, deduped by symbol."""
+    seen: dict[str, builtin.ExternOp] = {}
     for top_level in module.ops:
         for value in all_values(top_level):
-            if isinstance(value, llvm.CallOp):
-                callee = string_value(value.callee)
-                if callee not in defined and callee not in seen:
-                    seen.add(callee)
-                    ret = llvm_type(value.type)
-                    arg_types = ", ".join(llvm_type(v.type) for v in unpack(value.args))
-                    yield f"declare {ret} @{callee}({arg_types})"
-            elif isinstance(value, function.CallOp):
-                callee = value.callee.name
-                if callee and callee not in defined and callee not in seen:
-                    seen.add(callee)
-                    ret = llvm_type(value.type)
-                    arg_types = ", ".join(
-                        llvm_type(v.type) for v in unpack(value.arguments)
-                    )
-                    yield f"declare {ret} @{callee}({arg_types})"
+            if isinstance(value, builtin.ExternOp):
+                sym = string_value(value.symbol)
+                if sym not in seen:
+                    seen[sym] = value
+    return list(seen.values())
 
 
 def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
@@ -182,7 +154,6 @@ def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
         def _lines() -> Iterator[str]:
             for extern in _externs(module):
                 yield from emit_extern(extern)
-            yield from _call_externs(module)
             yield ""
             for func in module.functions:
                 build_predecessors(func, ctx)
@@ -607,10 +578,8 @@ def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
     sym = string_value(extern.symbol)
     if isinstance(extern.type, function.Function):
         result_type = llvm_type(extern.type.result_type)
-        args = ", ".join(
-            f"{llvm_type(arg.type)} %{arg.name}" for arg in extern.type.arguments
-        )
-        yield f"declare {result_type} @{sym}({args})"
+        arg_types = ", ".join(llvm_type(arg) for arg in extern.type.arguments)
+        yield f"declare {result_type} @{sym}({arg_types})"
     else:
         result_type = llvm_type(extern.type)
         yield f"declare {result_type} @{sym}"
@@ -747,9 +716,13 @@ def emit_load(op: memory.LoadOp) -> Iterator[str]:
 @emitter_for(function.CallOp)
 def emit_function_call(op: function.CallOp) -> Iterator[str]:
     args = ", ".join(typed_reference(v) for v in unpack(op.arguments))
-    callee = op.callee.name
+    callee = op.callee
+    if isinstance(callee, builtin.ExternOp):
+        callee_name = string_value(callee.symbol)
+    else:
+        callee_name = callee.name
     ret = llvm_type(op.type)
-    yield f"  call {ret} @{callee}({args})"
+    yield f"  call {ret} @{callee_name}({args})"
 
 
 @emitter_for(llvm.CallOp)
@@ -930,9 +903,15 @@ def build_callback_thunk(
     thunk_args = [
         BlockArgument(name=arg.name, type=arg.type) for arg in func_op.body.args
     ]
-    call_op = llvm.CallOp(
-        callee=String().constant(callback_name),
-        args=pack(thunk_args),
+    callback_extern = builtin.ExternOp(
+        symbol=String().constant(callback_name),
+        type=Function(
+            arguments=pack(arg.type for arg in thunk_args), result_type=result_type
+        ),
+    )
+    call_op = function.CallOp(
+        callee=callback_extern,
+        arguments=pack(thunk_args),
         type=result_type,
     )
     thunk_func = function.FunctionOp(

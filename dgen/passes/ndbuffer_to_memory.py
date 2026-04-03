@@ -15,8 +15,8 @@ from __future__ import annotations
 from math import prod
 
 import dgen
-from dgen.dialects import algebra, llvm, memory
-from dgen.dialects.builtin import String
+from dgen.dialects import algebra, function, llvm, memory
+from dgen.dialects.builtin import ExternOp, Nil, String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.module import ConstantOp, PackOp, pack
@@ -128,5 +128,11 @@ class NDBufferToMemory(Pass):
         ptr = _deref(op.input)
         shape = self._resolve_shape(op.input)
         size = prod(shape)
+        print_memref = ExternOp(
+            symbol=String().constant("print_memref"),
+            type=function.Function(
+                arguments=pack([llvm.Ptr(), Index()]), result_type=Nil()
+            ),
+        )
         args = pack([ptr, ConstantOp(value=size, type=Index())])
-        return llvm.CallOp(callee=String().constant("print_memref"), args=args)
+        return function.CallOp(callee=print_memref, arguments=args, type=Nil())
