@@ -2,10 +2,12 @@
 
 from dgen import Block, asm
 from dgen.asm.parser import parse_module
-from dgen.codegen import compile as compile_module
+from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
+from dgen.compiler import Compiler
 from dgen.dialects.builtin import TypeOp
 from dgen.dialects.index import Index
-from dgen.module import ConstantOp
+from dgen.module import ConstantOp, Module
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.testing import assert_ir_equivalent, strip_prefix
 from dgen.type import TypeType
 
@@ -115,3 +117,35 @@ def test_type_op_jit_used_as_annotation():
     module = parse_module(ir)
     exe = compile_module(module)
     assert exe.run(21).to_json() == 42
+
+
+# ============================================================================
+# Staging short-circuit: pass-resolved constants skip JIT
+# ============================================================================
+
+
+def test_type_op_staging_short_circuit():
+    """TypeOp resolved by BuiltinToLLVM during staging skips JIT round-trip.
+
+    type(%x) is used as the type annotation for %y — a staging boundary.
+    Staging extracts the TypeOp subgraph, runs the pipeline (which includes
+    BuiltinToLLVM, lowering TypeOp → ConstantOp), and the short-circuit
+    extracts the constant directly without compiling to LLVM and executing.
+    """
+    ir = strip_prefix("""
+        | import algebra
+        | import function
+        | import index
+        |
+        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        |     %x : index.Index = 21
+        |     %t : Type = type(%x)
+        |     %y : %t = algebra.add(%x, %x)
+    """)
+    module = parse_module(ir)
+    compiler: Compiler[Executable] = Compiler(
+        passes=[BuiltinToLLVM()],
+        exit=LLVMCodegen(),
+    )
+    exe = compiler.compile(module)
+    assert exe.run().to_json() == 42
