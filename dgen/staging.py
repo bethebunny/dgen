@@ -48,25 +48,15 @@ def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
     return [op for op in func.body.ops if op in needed]
 
 
-def _make_memories(
-    block_args: Sequence[BlockArgument], python_args: Sequence
-) -> list[Memory]:
-    """Convert Python args to Memory objects using block argument types."""
-    return [
-        Memory.from_value(param.type, arg)
-        for arg, param in zip(python_args, block_args)
-    ]
-
-
 def _jit_evaluate(
     subgraph: list[dgen.Op],
     target: dgen.Value,
-    lower: Callable[[Module], Module],
+    compile: Callable[[Module], Executable],
     *,
     block_args: Sequence[BlockArgument] = (),
     args: Sequence = (),
 ) -> object:
-    """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
+    """Build a mini-module from the subgraph, compile, and JIT-execute."""
     func = function.FunctionOp(
         name="main",
         body=dgen.Block(result=target, args=list(block_args)),
@@ -74,9 +64,12 @@ def _jit_evaluate(
         type=Function(result=target.type),
     )
     module = Module(ops=[func])
-    lowered = lower(module)
-    exe = codegen.compile(lowered)
-    memories = _make_memories(block_args, args)
+    exe = compile(module)
+    # Create Memory objects before run() so non-register-passable args
+    # (e.g. TypeType values) stay alive until to_json() reads the result.
+    memories = [
+        Memory.from_value(param.type, arg) for arg, param in zip(args, block_args)
+    ]
     result = exe.run(*memories)
     return result.to_json()
 
@@ -86,7 +79,7 @@ def _resolve_comptime_field(
     op: dgen.Op,
     field_name: str,
     value: dgen.Value,
-    lower: Callable[[Module], Module],
+    compile: Callable[[Module], Executable],
     *,
     block_args: Sequence[BlockArgument] = (),
     args: Sequence = (),
@@ -96,7 +89,7 @@ def _resolve_comptime_field(
     result = _jit_evaluate(
         subgraph,
         value,
-        lower,
+        compile,
         block_args=block_args,
         args=args,
     )
@@ -307,12 +300,15 @@ class ConstantFold(Pass):
     allow_unregistered_ops = True
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        return resolve_stage0(module, compiler.run)
+        def _compile(m: Module) -> Executable:
+            return compiler.exit.run(compiler.run(m))
+
+        return resolve_stage0(module, _compile)
 
 
 def resolve_stage0(
     module: Module,
-    lower: Callable[[Module], Module],
+    compile: Callable[[Module], Executable],
 ) -> Module:
     """Deepcopy + resolve all stage-0 comptime boundaries.
 
@@ -331,7 +327,7 @@ def resolve_stage0(
             _stage_num, op, field_name, value = boundaries[0]
             if stages.get(value, 0) != 0:
                 continue
-            _resolve_comptime_field(func, op, field_name, value, lower)
+            _resolve_comptime_field(func, op, field_name, value, compile)
             resolved_any = True
             break  # re-iterate from the start after each resolution
         if not resolved_any:
@@ -341,7 +337,7 @@ def resolve_stage0(
 
 def _resolve_with_runtime_args(
     func: FunctionOp,
-    lower: Callable[[Module], Module],
+    compile: Callable[[Module], Executable],
     block_args: Sequence[BlockArgument],
     python_args: Sequence,
 ) -> None:
@@ -362,7 +358,7 @@ def _resolve_with_runtime_args(
             op,
             field_name,
             value,
-            lower,
+            compile,
             block_args=block_args,
             args=python_args,
         )
@@ -407,13 +403,11 @@ def _build_callback_thunk(
         template = deepcopy(stage2_template)
         s2_func = next(f for f in template.functions if f.name == func_name)
 
-        # Specialize IfOps: evaluate conditions, inline taken branches
-        _specialize_ifs(s2_func, compiler.run, s2_func.body.args, python_args)
-
         # Resolve all remaining boundaries with runtime args
-        _resolve_with_runtime_args(
-            s2_func, compiler.run, s2_func.body.args, python_args
-        )
+        def _compile(m: Module) -> Executable:
+            return compiler.exit.run(compiler.run(m))
+
+        _resolve_with_runtime_args(s2_func, _compile, s2_func.body.args, python_args)
 
         # Compile the fully-resolved function through the full pipeline
         func_module = Module(ops=[s2_func])
@@ -470,7 +464,11 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
     boundaries, each is compiled as a callback thunk and registered as a
     global symbol so cross-function calls (including recursion) work.
     """
-    resolved = resolve_stage0(module, compiler.run)
+
+    def _compile(m: Module) -> Executable:
+        return compiler.exit.run(compiler.run(m))
+
+    resolved = resolve_stage0(module, _compile)
 
     # Find all functions with unresolved boundaries (including nested blocks)
     unresolved_funcs: list[FunctionOp] = []
