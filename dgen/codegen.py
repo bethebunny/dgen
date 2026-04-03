@@ -173,10 +173,7 @@ _BINOP: dict[type[dgen.Op], str] = {
 
 
 def _externs(module: Module) -> list[builtin.ExternOp]:
-    """Discover extern declarations from ExternOps and call sites in the module.
-
-    Scans all functions for builtin.ExternOp instances. Returns LLVM ``declare`` strings.
-    """
+    """Discover extern declarations from ExternOps in the module."""
     externs: dict[builtin.ExternOp, None] = {
         value: None
         for top_level in module.ops
@@ -184,6 +181,37 @@ def _externs(module: Module) -> list[builtin.ExternOp]:
         if isinstance(value, builtin.ExternOp)
     }
     return list(externs)
+
+
+def _call_externs(module: Module) -> Iterator[str]:
+    """Discover and emit declare statements for external function calls.
+
+    Scans for llvm.CallOp and function.CallOp references to functions
+    not defined in the module, and emits LLVM ``declare`` statements.
+    """
+    defined = {func.name for func in module.functions}
+    seen: set[str] = set()
+
+    for top_level in module.ops:
+        for value in all_values(top_level):
+            if isinstance(value, llvm.CallOp):
+                callee = string_value(value.callee)
+                if callee not in defined and callee not in seen:
+                    seen.add(callee)
+                    ret = llvm_type(value.type)
+                    args = ", ".join(typed_reference(v) for v in unpack(value.args))
+                    # Emit with arg types only (no names needed for declare).
+                    arg_types = ", ".join(llvm_type(v.type) for v in unpack(value.args))
+                    yield f"declare {ret} @{callee}({arg_types})"
+            elif isinstance(value, function.CallOp):
+                callee = value.callee.name
+                if callee and callee not in defined and callee not in seen:
+                    seen.add(callee)
+                    ret = llvm_type(value.type)
+                    arg_types = ", ".join(
+                        llvm_type(v.type) for v in unpack(value.arguments)
+                    )
+                    yield f"declare {ret} @{callee}({arg_types})"
 
 
 def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
@@ -200,6 +228,7 @@ def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
         def _lines() -> Iterator[str]:
             for extern in _externs(module):
                 yield from emit_extern(extern)
+            yield from _call_externs(module)
             yield ""
             for func in module.functions:
                 build_predecessors(func, ctx)
@@ -448,7 +477,12 @@ def emitter_for(
 def emit(value: dgen.Value) -> Iterator[str]:
     if not isinstance(value, dgen.Op):
         return
-    emitter = EMITTERS[type(value)]
+    emitter = EMITTERS.get(type(value))
+    if emitter is None:
+        raise ValueError(
+            f"codegen: unhandled op {type(value).__name__} "
+            f"(dialect={value.dialect.name}, asm_name={value.asm_name})"
+        )
     lines = emitter(value)
     # For ops that produce an SSA value, prepend %name = to the first line.
     if isinstance(value, _NO_ASSIGN_OPS):
@@ -791,7 +825,14 @@ def emit_llvm_call(op: llvm.CallOp) -> Iterator[str]:
 
 @emitter_for(goto.ConditionalBranchOp)
 def emit_conditional_branch(op: goto.ConditionalBranchOp) -> Iterator[str]:
-    yield f"  br {typed_references(op.condition, op.true_target, op.false_target)}"
+    cond_type = llvm_type(op.condition.type)
+    cond = vr(op.condition)
+    if cond_type != "i1":
+        # Convert non-i1 condition to i1 via icmp ne.
+        zero = "null" if cond_type == "ptr" else "0"
+        yield f"  %_cond = icmp ne {cond_type} {cond}, {zero}"
+        cond = "%_cond"
+    yield f"  br i1 {cond}, {typed_references(op.true_target, op.false_target)}"
 
 
 @emitter_for(goto.BranchOp)

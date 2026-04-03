@@ -3,33 +3,29 @@
   '''
   
   define void @main() {
-  _blk0:
+  entry:
     br label %while_header0
   while_header0:
-    %wh0_i = phi i64 [ %6, %_blk3 ], [ 0, %_blk0 ]
-    br label %_blk1
-  _blk1:
-    %2 = icmp slt i64 %wh0_i, 2
-    br i1 %2, label %while_body0, label %exit0
+    %wh0_i = phi i64 [ 0, %entry ], [ %_6, %exit1 ]
+    br label %while_body0_exit
   while_body0:
-    %wb0_oi = phi i64 [ %wh0_i, %_blk1 ]
-    br label %_blk2
-  _blk2:
-    %6 = add i64 %wb0_oi, 1
+    %wb0_oi = phi i64 [ %wh0_i, %while_body0_exit ]
+    %_6 = add i64 %wb0_oi, 1
     br label %while_header1
   while_header1:
-    %wh1_j = phi i64 [ 0, %while_body1 ], [ 0, %_blk2 ]
-    br label %_blk4
-  _blk4:
-    %10 = icmp slt i64 %wh1_j, 2
-    br i1 %10, label %while_body1, label %exit1
+    %wh1_j = phi i64 [ 0, %while_body0 ], [ 0, %while_body1 ]
+    br label %while_body1_exit
   while_body1:
-    %wb1_j2 = phi i64 [ %wh1_j, %_blk4 ]
+    %wb1_j2 = phi i64 [ %wh1_j, %while_body1_exit ]
     br label %while_header1
+  while_body1_exit:
+    %_12 = icmp slt i64 %wh1_j, 2
+    br i1 %_12, label %while_body1, label %exit1
   exit1:
-    br label %_blk3
-  _blk3:
     br label %while_header0
+  while_body0_exit:
+    %_2 = icmp slt i64 %wh0_i, 2
+    br i1 %_2, label %while_body0, label %exit0
   exit0:
     ret void
   }
@@ -39,18 +35,18 @@
   '''
   
   define void @main() {
-  _blk0:
+  entry:
     br label %while_header0
   while_header0:
-    %wh0_i = phi i64 [ %6, %while_body0 ], [ 0, %_blk0 ]
-    br label %_blk1
-  _blk1:
-    %2 = icmp slt i64 %wh0_i, 10
-    br i1 %2, label %while_body0, label %exit0
+    %wh0_i = phi i64 [ 0, %entry ], [ %_6, %while_body0 ]
+    br label %while_body0_exit
   while_body0:
-    %wb0_i = phi i64 [ %wh0_i, %_blk1 ]
-    %6 = add i64 %wb0_i, 1
+    %wb0_i = phi i64 [ %wh0_i, %while_body0_exit ]
+    %_6 = add i64 %wb0_i, 1
     br label %while_header0
+  while_body0_exit:
+    %_2 = icmp slt i64 %wh0_i, 10
+    br i1 %_2, label %while_body0, label %exit0
   exit0:
     ret void
   }
