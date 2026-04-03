@@ -133,8 +133,8 @@ def test_if_void_lowering(ir_snapshot):
     assert lowered == ir_snapshot
 
 
-def test_if_with_captures_lowering(ir_snapshot):
-    """If with per-branch captures lowers correctly."""
+def test_if_with_branch_arguments_lowering(ir_snapshot):
+    """If with per-branch arguments threads values into branch bodies."""
     ir = strip_prefix("""
         | import control_flow
         | import index
@@ -149,3 +149,47 @@ def test_if_with_captures_lowering(ir_snapshot):
     module = parse_module(ir)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
     assert lowered == ir_snapshot
+
+
+def test_if_type_mismatch_then():
+    """IfOp with then-branch result type mismatch is caught in preconditions."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import control_flow
+        | import index
+        | import function
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %cond : number.Boolean = algebra.equal(%n, 0)
+        |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
+        |         %a : number.Float64 = 1.0
+        |     else_body():
+        |         %b : index.Index = 20
+    """)
+    module = parse_module(ir)
+    import pytest
+
+    with pytest.raises(TypeError, match="then-branch result type"):
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+
+
+def test_if_type_mismatch_else():
+    """IfOp with else-branch result type mismatch is caught in preconditions."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import control_flow
+        | import index
+        | import function
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %cond : number.Boolean = algebra.equal(%n, 0)
+        |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
+        |         %a : index.Index = 10
+        |     else_body():
+        |         %b : number.Float64 = 2.0
+    """)
+    module = parse_module(ir)
+    import pytest
+
+    with pytest.raises(TypeError, match="else-branch result type"):
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
