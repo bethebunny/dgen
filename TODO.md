@@ -33,6 +33,7 @@
 - Parser / lowering support for forward references and cyclic references
 
 ## Parser / formatting improvements
+- Support `%_ = %ref` syntax (alias an SSA ref without an op). Currently blocks whose result is a block argument need `chain(%arg, ())` as a workaround.
 - Massively simplify / clean the asm parser and formatter code
 - Remove anything that's thinking about "origin"s and generic python types or annotations
 - Add parser failure tests

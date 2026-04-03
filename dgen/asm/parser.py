@@ -251,11 +251,6 @@ def op_expression(
     operands = parser.read_list(value_expression)
     parser.read(")")
     blocks: list[Block] = []
-    # Save pending_ops so that ops created while parsing the type annotation
-    # or parameters (e.g. PackOp for Function<[], Nil>) don't leak into
-    # nested block parsing — they belong to the outer scope.
-    saved_pending = parser.pending_ops[:]
-    parser.pending_ops.clear()
     for block_name in op_cls.__blocks__:
         saved = parser.pos
         parser._skip_all()
@@ -263,23 +258,29 @@ def op_expression(
             parser.pos = saved
             break
         blocks.append(_read_block_body(parser))
-    parser.pending_ops = saved_pending + parser.pending_ops
     return op_cls, parameters, operands, blocks
 
 
 def op_statement(parser: ASMParser) -> Op:
     name = parser.read(ssa_name)
+    # Type annotations may create PackOps (e.g. Function<[Float64], Nil>).
+    # These belong to the outer scope, not to nested blocks parsed later.
+    # Drain them before the op body so _read_block_body doesn't see them.
     pre_type = value_expression(parser) if parser.try_read(":") is not None else None
+    type_annotation_ops = parser.pending_ops[:]
+    parser.pending_ops.clear()
     parser.read("=")
     if pre_type is not None and parser.peek() in _LITERAL_START:
         op = ConstantOp(name=name, value=value_expression(parser), type=pre_type)
         parser.name_table[name] = op
+        parser.pending_ops[:0] = type_annotation_ops
         return op
     op_cls, parameters, operands, blocks = op_expression(parser)
     if issubclass(op_cls, ConstantOp):
         assert len(operands) == 1
         op = ConstantOp(name=name, value=operands[0], type=pre_type)
         parser.name_table[name] = op
+        parser.pending_ops[:0] = type_annotation_ops
         return op
     kwargs: dict[str, object] = {"name": name}
     if pre_type is not None:
@@ -297,6 +298,7 @@ def op_statement(parser: ASMParser) -> Op:
         kwargs[block_name] = block
     op = op_cls(**kwargs)
     parser.name_table[name] = op
+    parser.pending_ops[:0] = type_annotation_ops
     return op
 
 

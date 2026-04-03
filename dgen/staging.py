@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Iterator, TypeVar
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.codegen import Executable
+from dgen.codegen import Executable, build_callback_thunk, register_executable
 from dgen.dialects import function
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, pack
@@ -228,10 +228,7 @@ class ConstantFold(Pass):
     allow_unregistered_ops = True
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        def _compile(m: Module) -> Executable:
-            return compiler.exit.run(compiler.run(m))
-
-        return resolve_stage0(module, _compile)
+        return resolve_stage0(module, compiler.run)
 
 
 def resolve_stage0(
@@ -303,8 +300,6 @@ def _build_callback_thunk(
     The callback resolves all remaining __params__ values (using the full
     stage-1 resolution loop), then JIT-compiles and executes stage-2.
     """
-    from dgen.codegen import build_callback_thunk
-
     stage2_template = resolved
     assert func.name is not None
     func_name = func.name
@@ -314,10 +309,9 @@ def _build_callback_thunk(
         template = deepcopy(stage2_template)
         s2_func = next(f for f in template.functions if f.name == func_name)
 
-        def _compile(m: Module) -> Executable:
-            return compiler.exit.run(compiler.run(m))
-
-        _resolve_with_runtime_args(s2_func, _compile, s2_func.body.args, python_args)
+        _resolve_with_runtime_args(
+            s2_func, compiler.run, s2_func.body.args, python_args
+        )
 
         func_module = Module(ops=[s2_func])
         result = compiler.compile(func_module)
@@ -346,10 +340,7 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
     global symbol so cross-function calls (including recursion) work.
     """
 
-    def _compile(m: Module) -> Executable:
-        return compiler.exit.run(compiler.run(m))
-
-    resolved = resolve_stage0(module, _compile)
+    resolved = resolve_stage0(module, compiler.run)
 
     # Find all functions with unresolved boundaries (including nested blocks)
     unresolved_funcs: list[FunctionOp] = []
@@ -359,8 +350,7 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
             unresolved_funcs.append(func)
 
     if not unresolved_funcs:
-        lowered = compiler.run(resolved)
-        return compiler.exit.run(lowered)
+        return compiler.run(resolved)
 
     # Compile each unresolved function as a callback thunk
     # and register it as a global symbol for cross-function calls.
@@ -373,8 +363,6 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
 
     all_host_refs: list[object] = []
     entry_exe: Executable | None = None
-
-    from dgen.codegen import register_executable
 
     for func in ordered:
         exe = _build_callback_thunk(resolved, func, compiler)
@@ -390,8 +378,7 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
 
     # Entry point has no unresolved boundaries — compile normally
     # but keep callback thunks alive
-    lowered = compiler.run(resolved)
-    result = compiler.exit.run(lowered)
+    result = compiler.run(resolved)
     assert isinstance(result, Executable)
     result.host_refs.extend(all_host_refs)
     return result

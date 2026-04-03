@@ -7,7 +7,7 @@ import pytest
 from actor.passes.actor_to_affine import ActorToAffine
 from dgen import asm
 from dgen.codegen import Executable, LLVMCodegen
-from dgen.compiler import Compiler
+from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import builtin
 from dgen.dialects.number import Float64
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
@@ -126,5 +126,5 @@ def test_unfused_pipeline() -> None:
 def test_lowering_ir(ir_snapshot: object) -> None:
     """Pipeline lowers to inlined actor bodies."""
     module = asm.parse(_PIPELINE_IR)
-    lowered = Compiler(passes=[ActorToAffine()], exit=LLVMCodegen()).run(module)
+    lowered = Compiler(passes=[ActorToAffine()], exit=IdentityPass()).run(module)
     assert lowered == ir_snapshot

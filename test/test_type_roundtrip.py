@@ -310,15 +310,14 @@ def test_span_jit_identity():
 
 def test_span_constant_jit_return():
     """JIT function returns a list constant: main() -> List<index>."""
-    list_type = builtin.Span(pointee=builtin.Index())
-    const = ConstantOp(value=[3, 5, 7], type=list_type)
-    func = FunctionOp(
-        name="main",
-        body=Block(result=const, args=[]),
-        result_type=list_type,
-        type=Function(arguments=pack(), result_type=list_type),
-    )
-    exe = compile_module(Module(ops=[func]))
+    ir = strip_prefix("""
+        | import function
+        | import index
+        |
+        | %main : function.Function<[], Span<index.Index>> = function.function<Span<index.Index>>() body():
+        |     %0 : Span<index.Index> = [3, 5, 7]
+    """)
+    exe = compile_module(parse_module(ir))
     result = exe.run()
     assert result.to_json() == [3, 5, 7]
 
@@ -511,15 +510,14 @@ def test_deepcopy_module_with_span_constant():
     This is what staging does — deepcopy the module, then JIT subgraphs.
     The list constant's backing data must survive the copy.
     """
-    list_type = builtin.Span(pointee=builtin.Index())
-    const = ConstantOp(value=[3, 5, 7], type=list_type)
-    func = FunctionOp(
-        name="main",
-        body=Block(result=const, args=[]),
-        result_type=list_type,
-        type=Function(arguments=pack(), result_type=list_type),
-    )
-    module = Module(ops=[func])
+    ir = strip_prefix("""
+        | import function
+        | import index
+        |
+        | %main : function.Function<[], Span<index.Index>> = function.function<Span<index.Index>>() body():
+        |     %0 : Span<index.Index> = [3, 5, 7]
+    """)
+    module = parse_module(ir)
     copied = deepcopy(module)
 
     # The copied module's constant should still be readable
