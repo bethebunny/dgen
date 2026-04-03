@@ -163,3 +163,56 @@ Once functions are linked via use-def, remove Module from the compilation pipeli
 4. **Recursion in use-def:** If `%main` calls `%helper` which calls `%main`, the
    dependency graph has a cycle. This is handled by BlockParameter `%self` for
    self-recursion, but mutual recursion needs a new pattern.
+
+## Design Docs to Update
+
+When this design is implemented, the following existing design documents need revision:
+
+### `docs/staging.md` — Compile-Time Types and Staging
+
+- §2.7 (Staging Model): Currently describes stages in terms of a module-level view.
+  Update to describe staging as operating on a single Value's dependency subgraph.
+- `constant` as stage boundary (§2.3, §2.7): The `compile(value) -> Constant` primitive
+  makes the relationship explicit — compiling a value IS the stage boundary crossing.
+  `_jit_evaluate` is subsumed by `compile`. Update the conceptual framing.
+- Add a section connecting `compile(value) -> Constant` to the quote/eval analogy:
+  `compile` is `eval` — it takes a value expression and produces a constant.
+
+### `docs/staged-computation.md` — Implementation Architecture
+
+- Stage resolution loop: Currently described as iterating `_unresolved_boundaries` on a
+  Module's functions. Update to describe resolution on a single Value's dependency graph.
+- `_jit_evaluate`: Currently builds a mini-Module, wraps in FunctionOp, compiles through
+  full pipeline. Update to describe as `compiler.compile(target_value)` — the mini-module
+  wrapper is gone.
+- Callback thunks: Currently receive a `Module` template and find functions by name.
+  Update to describe receiving a single FunctionOp with callees reachable via use-def.
+
+### `docs/pass-management.md` — Redesign PassManager → Compiler
+
+- `Compiler.compile(module: Module) -> T`: Update signature to `compile(value: Value) -> Constant`.
+- `ExitPass[T]` protocol: May be removed (folded into compile). Or may evolve —
+  depends on Executable resolution.
+- `Pass.run(module, compiler) -> Module`: Update to `run(value, compiler) -> Value`.
+- Staging trigger (`_needs_staging`): Currently walks `module.functions`. Update to walk
+  the target value's dependency graph.
+- Callback thunks section: Same as staged-computation.md updates.
+
+### `docs/passes.md` — Pass Framework Design
+
+- Walk behavior: Currently described as walking "each block's result value" within a
+  Module. The Module wrapper goes away — passes receive a Value and walk its dependencies.
+- Verification (pre/post): Currently takes `Module`. Update to take `Value` (or
+  `FunctionOp` as the common case).
+- Examples (§Examples): Update `ShapeInference` example to show use-def traversal for
+  cross-function inference instead of `_func_map`.
+- Multi-function passes: Add a section explaining how passes that need cross-function
+  context (like ShapeInference) discover callees via `transitive_dependencies` and process
+  them in topological order.
+
+### `docs/codegen.md` — Three-Phase LLVM IR Emission
+
+- `emit_llvm_ir(module)`: Update to describe receiving functions directly (discovered
+  via use-def from the entry function) rather than a Module.
+- `compile(module) -> Executable` → `build_executable(func) -> Executable` (or whatever
+  the Executable model resolves to).
