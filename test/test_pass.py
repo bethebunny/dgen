@@ -82,6 +82,52 @@ def test_rewriter_eager_replace(ir_snapshot):
     assert m == ir_snapshot
 
 
+def test_rewriter_replaces_op_type():
+    """replace_uses updates op.type when it references the replaced value."""
+    old_type = ConstantOp(name="old_t", value={"tag": "index.Index"}, type=dgen.TypeType())
+    new_type = ConstantOp(name="new_t", value={"tag": "index.Index"}, type=dgen.TypeType())
+    x = ConstantOp(name="x", value=42, type=old_type)
+    block = dgen.Block(result=x)
+
+    assert x.type is old_type
+    rewriter = Rewriter(block)
+    rewriter.replace_uses(old_type, new_type)
+    assert x.type is new_type
+
+
+def test_rewriter_replaces_block_arg_type():
+    """replace_uses updates block argument types."""
+    from dgen.dialects.index import Index
+
+    old_type = ConstantOp(name="old_t", value={"tag": "index.Index"}, type=dgen.TypeType())
+    new_type = ConstantOp(name="new_t", value={"tag": "index.Index"}, type=dgen.TypeType())
+    arg = BlockArgument(name="x", type=old_type)
+    result = ConstantOp(name="r", value=0, type=Index())
+    block = dgen.Block(result=result, args=[arg])
+
+    assert arg.type is old_type
+    rewriter = Rewriter(block)
+    rewriter.replace_uses(old_type, new_type)
+    assert arg.type is new_type
+
+
+def test_rewriter_replaces_block_parameter_type():
+    """replace_uses updates block parameter types."""
+    from dgen.block import BlockParameter
+    from dgen.dialects.index import Index
+
+    old_type = ConstantOp(name="old_t", value={"tag": "index.Index"}, type=dgen.TypeType())
+    new_type = ConstantOp(name="new_t", value={"tag": "index.Index"}, type=dgen.TypeType())
+    param = BlockParameter(name="p", type=old_type)
+    result = ConstantOp(name="r", value=0, type=Index())
+    block = dgen.Block(result=result, parameters=[param])
+
+    assert param.type is old_type
+    rewriter = Rewriter(block)
+    rewriter.replace_uses(old_type, new_type)
+    assert param.type is new_type
+
+
 # ---------------------------------------------------------------------------
 # Task 7: Pass.run — walk graph, dispatch handlers
 # ---------------------------------------------------------------------------
