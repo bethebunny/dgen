@@ -240,11 +240,76 @@ def new_synthetic_label() -> str:
 
 
 @dataclass
+class Predecessor:
+    """One incoming edge to a label/region block."""
+
+    source_name: str
+    args: list[dgen.Value]
+
+
+@dataclass
 class EmitContext:
     """Shared state for the new emitter path."""
 
     tracker: SlotTracker = field(default_factory=SlotTracker)
     host_buffers: list[Memory] = field(default_factory=list)
+    # Map from id(RegionOp/LabelOp) → list of predecessors.
+    predecessors: dict[int, list[Predecessor]] = field(default_factory=dict)
+
+
+def build_predecessors(func: function.FunctionOp, ctx: EmitContext) -> None:
+    """Walk the function body and record branch predecessors for each target.
+
+    For each BranchOp/ConditionalBranchOp, records the source block name and
+    the argument values carried to the target. The source name is determined
+    by the innermost enclosing RegionOp/LabelOp, or "entry" for the function body.
+    """
+
+    def _resolve_target(target: dgen.Value) -> dgen.Value:
+        """Resolve a branch target to the actual RegionOp/LabelOp.
+
+        Block parameters (like %self, %exit) need to be resolved to
+        the RegionOp/LabelOp they represent.
+        """
+        from dgen.block import BlockParameter
+
+        if isinstance(target, (goto.RegionOp, goto.LabelOp)):
+            return target
+        # For BlockParameters named "self", find the enclosing label.
+        if isinstance(target, BlockParameter):
+            # The parameter belongs to a block that's owned by a label/region.
+            # We need to find which label/region owns it.
+            # For now, return the target as-is — the caller uses id().
+            return target
+        return target
+
+    def _walk_block(block: dgen.Block, enclosing_name: str) -> None:
+        for op in block.ops:
+            if isinstance(op, goto.BranchOp):
+                target = op.target
+                pred_args = unpack(op.arguments)
+                ctx.predecessors.setdefault(id(target), []).append(
+                    Predecessor(source_name=enclosing_name, args=pred_args)
+                )
+            elif isinstance(op, goto.ConditionalBranchOp):
+                for target, args in [
+                    (op.true_target, op.true_arguments),
+                    (op.false_target, op.false_arguments),
+                ]:
+                    pred_args = unpack(args)
+                    ctx.predecessors.setdefault(id(target), []).append(
+                        Predecessor(source_name=enclosing_name, args=pred_args)
+                    )
+            # Recurse into nested blocks.
+            if isinstance(op, (goto.RegionOp, goto.LabelOp)):
+                label_name = ctx.tracker.track_name(op)
+                for arg in op.body.args:
+                    ctx.tracker.track_name(arg)
+                for param in op.body.parameters:
+                    ctx.tracker.track_name(param)
+                _walk_block(op.body, label_name)
+
+    _walk_block(func.body, "entry")
 
 
 _emit_ctx: contextvars.ContextVar[EmitContext] = contextvars.ContextVar("_emit_ctx")
@@ -322,15 +387,41 @@ def emit(value: dgen.Value) -> Iterator[str]:
     return
 
 
+def _emit_phi_nodes(
+    op: goto.RegionOp | goto.LabelOp,
+) -> Iterator[str]:
+    """Emit phi nodes for block args based on predecessor branches."""
+    ctx = _ctx()
+    preds = ctx.predecessors.get(id(op), [])
+    if not preds:
+        return
+    for arg_idx, arg in enumerate(op.body.args):
+        ty = llvm_type(arg.type)
+        name = ctx.tracker.track_name(arg)
+        phi_parts = [
+            f"[ {value_reference(pred.args[arg_idx])}, %{pred.source_name} ]"
+            for pred in preds
+            if arg_idx < len(pred.args)
+        ]
+        if phi_parts:
+            yield f"  %{name} = phi {ty} {', '.join(phi_parts)}"
+
+
 @emitter_for(goto.RegionOp)
 def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
     """Region: executes inline in use-def order (fall-through entry).
 
     Emits: fall-through into region block, body ops, then fall-through to exit.
     """
+    ctx = _ctx()
+    ctx.tracker.track_name(op)
+    for arg in op.body.args:
+        ctx.tracker.track_name(arg)
+    for param in op.body.parameters:
+        ctx.tracker.track_name(param)
     yield f"  br label %{op.name}"
     yield f"{op.name}:"
-    # XXX: need to emit phi ops
+    yield from _emit_phi_nodes(op)
     terminated = yield from emit_linearized(op.body)
     if not terminated:
         # Find the exit parameter and fall through to it.
@@ -338,8 +429,33 @@ def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
             if param.name and param.name.startswith("exit"):
                 yield f"  br label %{param.name}"
                 yield f"{param.name}:"
+                # Emit phi nodes for branches that target this exit parameter.
+                yield from _emit_exit_phi_nodes(param)
                 return
     return True
+
+
+def _emit_exit_phi_nodes(
+    param: dgen.Value,
+) -> Iterator[str]:
+    """Emit phi nodes for an exit parameter (branches target the param directly)."""
+    ctx = _ctx()
+    preds = ctx.predecessors.get(id(param), [])
+    if not preds:
+        return
+    # Exit parameters carry values — emit phi for each arg position.
+    # The first predecessor determines how many values to expect.
+    n_args = len(preds[0].args) if preds else 0
+    for arg_idx in range(n_args):
+        # Create a synthetic name for the phi result.
+        phi_name = f"{param.name}_phi{arg_idx}"
+        ty = llvm_type(preds[0].args[arg_idx].type)
+        phi_parts = [
+            f"[ {value_reference(pred.args[arg_idx])}, %{pred.source_name} ]"
+            for pred in preds
+        ]
+        if phi_parts:
+            yield f"  %{phi_name} = phi {ty} {', '.join(phi_parts)}"
 
 
 @emitter_for(goto.LabelOp)
@@ -349,12 +465,18 @@ def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
     Terminates the current basic block with a skip branch, emits the
     label body, then resumes with an exit label.
     """
+    ctx = _ctx()
+    ctx.tracker.track_name(op)
+    for arg in op.body.args:
+        ctx.tracker.track_name(arg)
+    for param in op.body.parameters:
+        ctx.tracker.track_name(param)
     exit_name = f"{op.name}_exit"
     # Skip over the label body in the current block's flow.
     yield f"  br label %{exit_name}"
     # Emit the label body as a separate basic block.
     yield f"{op.name}:"
-    # XXX: need to emit phi ops
+    yield from _emit_phi_nodes(op)
     yield from emit_linearized(op.body)
     # Resume the enclosing block's flow.
     yield f"{exit_name}:"
