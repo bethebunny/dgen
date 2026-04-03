@@ -14,7 +14,7 @@ import dgen
 from dgen import codegen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable, _ctype
-from dgen.dialects import builtin, control_flow, function, llvm
+from dgen.dialects import builtin, function, llvm
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, pack
@@ -193,66 +193,6 @@ def _unresolved_boundaries(
             boundaries.append((stages.get(op, 0), op, "type", op.type))
     boundaries.sort(key=lambda t: t[0])
     return boundaries
-
-
-# ---------------------------------------------------------------------------
-# IfOp specialization
-# ---------------------------------------------------------------------------
-
-
-def _specialize_ifs(
-    func: FunctionOp,
-    lower: Callable[[Module], Module],
-    block_args: Sequence[BlockArgument],
-    args: Sequence,
-) -> None:
-    """Evaluate IfOp conditions with runtime args and inline the taken branch.
-
-    After specialization, nested block ops are flattened into func.body.ops
-    and the IfOp is removed. References to the IfOp result are rewired to
-    the branch's return value.
-    """
-    replacements: dict[dgen.Value, dgen.Value] = {}
-    new_ops: list[dgen.Op] = []
-
-    for op in func.body.ops:
-        if not isinstance(op, control_flow.IfOp):
-            new_ops.append(op)
-            continue
-
-        # Evaluate the condition
-        cond = replacements.get(op.condition, op.condition)
-        subgraph = _trace_dependencies(cond, func)
-        cond_result = _jit_evaluate(
-            subgraph,
-            cond,
-            lower,
-            block_args=block_args,
-            args=args,
-        )
-
-        # Pick the taken branch
-        branch = op.then_body if cond_result else op.else_body
-
-        # Inline branch ops; block.result is the terminator value
-        new_ops.extend(branch.ops)
-        val = branch.result
-        replacements[op] = replacements.get(val, val)
-
-    # Apply replacements to all inlined ops
-    for op in new_ops:
-        for fname, fval in op.operands:
-            if isinstance(fval, dgen.Value):
-                mapped = replacements.get(fval)
-                if mapped is not None:
-                    setattr(op, fname, mapped)
-        for fname, fval in op.parameters:
-            if isinstance(fval, dgen.Value):
-                mapped = replacements.get(fval)
-                if mapped is not None:
-                    setattr(op, fname, mapped)
-
-    func.body.result = new_ops[-1]
 
 
 def _has_nested_boundaries(func: FunctionOp) -> bool:
