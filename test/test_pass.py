@@ -111,6 +111,26 @@ def test_rewriter_replaces_block_arg_type():
     assert arg.type is new_type
 
 
+def test_rewriter_replaces_captures():
+    """replace_uses updates captures and ops referencing the captured value."""
+    from dgen.dialects.index import Index
+    from dgen.dialects.builtin import ChainOp
+
+    old_val = ConstantOp(name="old", value=1, type=Index())
+    new_val = ConstantOp(name="new", value=2, type=Index())
+    inner_op = ChainOp(name="use", lhs=old_val, rhs=old_val, type=Index())
+    block = dgen.Block(result=inner_op, captures=[old_val])
+
+    assert old_val in block.captures
+    assert inner_op.lhs is old_val
+    rewriter = Rewriter(block)
+    rewriter.replace_uses(old_val, new_val)
+    assert new_val in block.captures
+    assert old_val not in block.captures
+    assert inner_op.lhs is new_val
+    assert inner_op.rhs is new_val
+
+
 def test_rewriter_replaces_block_parameter_type():
     """replace_uses updates block parameter types."""
     from dgen.block import BlockParameter
