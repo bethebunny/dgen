@@ -133,18 +133,21 @@ def test_if_void_lowering(ir_snapshot):
     assert lowered == ir_snapshot
 
 
-def test_if_with_branch_arguments_lowering(ir_snapshot):
-    """If with per-branch arguments threads values into branch bodies."""
+def test_if_with_body_captures_lowering(ir_snapshot):
+    """If where branches capture outer-scope values."""
     ir = strip_prefix("""
+        | import algebra
         | import control_flow
         | import index
         | import function
         | import number
         | %main : function.Function<[index.Index, number.Float64], number.Float64> = function.function<number.Float64>() body(%cond: index.Index, %x: number.Float64):
-        |     %result : number.Float64 = control_flow.if(%cond, [%x], [%x]) then_body(%tx: number.Float64):
-        |         %a : number.Float64 = 1.0
-        |     else_body(%ex: number.Float64):
-        |         %b : number.Float64 = 2.0
+        |     %result : number.Float64 = control_flow.if(%cond, [], []) then_body() captures(%x):
+        |         %one : number.Float64 = 1.0
+        |         %a : number.Float64 = algebra.add(%x, %one)
+        |     else_body() captures(%x):
+        |         %two : number.Float64 = 2.0
+        |         %b : number.Float64 = algebra.add(%x, %two)
     """)
     module = parse_module(ir)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
