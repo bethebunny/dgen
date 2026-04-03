@@ -161,11 +161,11 @@ class ControlFlowToGoto(Pass):
         ]
         captures.extend(op.then_body.captures)
         captures.extend(op.else_body.captures)
-        seen: set[int] = set()
+        seen: set[dgen.Value] = set()
         unique_captures: list[dgen.Value] = []
         for cap in captures:
-            if id(cap) not in seen:
-                seen.add(id(cap))
+            if cap not in seen:
+                seen.add(cap)
                 unique_captures.append(cap)
 
         region = goto.RegionOp(
