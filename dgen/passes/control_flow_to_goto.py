@@ -116,19 +116,16 @@ class ControlFlowToGoto(Pass):
         merge_self = BlockParameter(name="self", type=goto.Label())
         merge_result = BlockArgument(name=f"if_result{lid}", type=op.type)
 
-        # Both branches carry their body result to %self. The body result
-        # is the branch argument — this creates the ordering dependency
-        # that ensures side effects (stores) execute before the branch.
+        # Both branches carry their body result to %self.
         then_br = goto.BranchOp(
             target=merge_self, arguments=pack([op.then_body.result])
         )
         then_label = goto.LabelOp(
             name=f"if_then{lid}",
-            initial_arguments=op.then_arguments,
+            initial_arguments=pack([]),
             body=dgen.Block(
                 result=then_br,
-                args=list(op.then_body.args),
-                captures=[merge_self] + list(op.then_body.captures),
+                captures=[merge_self, *op.then_body.captures],
             ),
         )
 
@@ -137,11 +134,10 @@ class ControlFlowToGoto(Pass):
         )
         else_label = goto.LabelOp(
             name=f"if_else{lid}",
-            initial_arguments=op.else_arguments,
+            initial_arguments=pack([]),
             body=dgen.Block(
                 result=else_br,
-                args=list(op.else_body.args),
-                captures=[merge_self] + list(op.else_body.captures),
+                captures=[merge_self, *op.else_body.captures],
             ),
         )
 
@@ -149,24 +145,9 @@ class ControlFlowToGoto(Pass):
             condition=op.condition,
             true_target=then_label,
             false_target=else_label,
-            true_arguments=op.then_arguments,
-            false_arguments=op.else_arguments,
+            true_arguments=pack([]),
+            false_arguments=pack([]),
         )
-
-        # Captures: outer-scope values referenced by the dispatch + bodies.
-        captures: list[dgen.Value] = [
-            op.condition,
-            op.then_arguments,
-            op.else_arguments,
-        ]
-        captures.extend(op.then_body.captures)
-        captures.extend(op.else_body.captures)
-        seen: set[dgen.Value] = set()
-        unique_captures: list[dgen.Value] = []
-        for cap in captures:
-            if cap not in seen:
-                seen.add(cap)
-                unique_captures.append(cap)
 
         region = goto.RegionOp(
             name=f"if{lid}",
@@ -176,7 +157,11 @@ class ControlFlowToGoto(Pass):
                 result=ChainOp(lhs=merge_result, rhs=cond_br, type=op.type),
                 parameters=[merge_self],
                 args=[merge_result],
-                captures=unique_captures,
+                captures=[
+                    op.condition,
+                    *op.then_body.captures,
+                    *op.else_body.captures,
+                ],
             ),
         )
 
