@@ -428,6 +428,8 @@ def _emit_phi_nodes(
         return
     for arg_idx, arg in enumerate(op.body.args):
         ty = llvm_type(arg.type)
+        if ty == "void":
+            continue
         name = ctx.tracker.track_name(arg)
         phi_parts = [
             f"[ {value_reference(pred.args[arg_idx])}, %{pred.source_name} ]"
