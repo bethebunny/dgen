@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import _ctypes
+import contextvars
 import ctypes
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -233,6 +234,46 @@ def new_synthetic_label() -> str:
     return "synthetic:"
 
 
+# ---------------------------------------------------------------------------
+# New emitter dispatch
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class EmitContext:
+    """Shared state for the new emitter path."""
+
+    tracker: SlotTracker = field(default_factory=SlotTracker)
+    host_buffers: list[Memory] = field(default_factory=list)
+
+
+_emit_ctx: contextvars.ContextVar[EmitContext] = contextvars.ContextVar("_emit_ctx")
+
+
+def _ctx() -> EmitContext:
+    try:
+        return _emit_ctx.get()
+    except LookupError:
+        ctx = EmitContext()
+        _emit_ctx.set(ctx)
+        return ctx
+
+
+# Ops whose results are structural / have no LLVM SSA value.
+_NO_ASSIGN_OPS: tuple[type[dgen.Op], ...] = (
+    goto.RegionOp,
+    goto.LabelOp,
+    function.FunctionOp,
+    goto.BranchOp,
+    goto.ConditionalBranchOp,
+    memory.StoreOp,
+    PackOp,
+    ConstantOp,
+    builtin.ChainOp,
+    builtin.ExternOp,
+)
+
+
 def emit_linearized(block: dgen.Block) -> Iterator[str]:
     for op in block.ops:
         yield from emit(op)
@@ -240,21 +281,45 @@ def emit_linearized(block: dgen.Block) -> Iterator[str]:
             return True
 
 
-EMITTERS = {}
+EMITTERS: dict[type[dgen.Value], Callable[..., Iterator[str]]] = {}
 
 
-def emitter_for(ValueType: type[dgen.Value]):
-    def decorator(f):
+def emitter_for(
+    ValueType: type[dgen.Value],
+) -> Callable[[Callable[..., Iterator[str]]], Callable[..., Iterator[str]]]:
+    def decorator(
+        f: Callable[..., Iterator[str]],
+    ) -> Callable[..., Iterator[str]]:
         EMITTERS[ValueType] = f
         return f
 
     return decorator
 
 
-def emit(value: dgen.Value):
+def emit(value: dgen.Value) -> Iterator[str]:
     if not isinstance(value, dgen.Op):
         return
-    return (yield from EMITTERS[type(value)](value))
+    emitter = EMITTERS[type(value)]
+    lines = emitter(value)
+    # For ops that produce an SSA value, prepend %name = to the first line.
+    if isinstance(value, _NO_ASSIGN_OPS):
+        yield from lines
+    elif isinstance(value.type, builtin.Nil):
+        # Void-typed ops (e.g. void calls) — emit without assignment.
+        yield from lines
+    else:
+        ctx = _ctx()
+        name = ctx.tracker.track_name(value)
+        first = True
+        for line in lines:
+            if first:
+                # Prepend assignment to the first instruction line.
+                # Lines are indented with 2 spaces: "  fadd double %a, %b"
+                yield f"  %{name} ={line.lstrip(' ')}"
+                first = False
+            else:
+                yield line
+    return
 
 
 @emitter_for(goto.RegionOp)
@@ -297,12 +362,21 @@ def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
 
 @emitter_for(function.FunctionOp)
 def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
+    ctx = _ctx()
+    ctx.tracker.track_name(op)
+    for arg in op.body.args:
+        ctx.tracker.track_name(arg)
     ret_type = llvm_type(op.result_type)
-    arguments = ", ".join(f"{llvm_type(arg.type)} %{arg.name}" for arg in op.body.args)
+    arguments = ", ".join(
+        f"{llvm_type(arg.type)} %{ctx.tracker.track_name(arg)}" for arg in op.body.args
+    )
     yield f"define {ret_type} @{op.name}({arguments}) {{"
-    yield from emit_linearized(op.body)
-    # XXX: body result might be a label for instance
-    yield f"  ret {typed_reference(op.body.result)}"
+    terminated = yield from emit_linearized(op.body)
+    if not terminated:
+        if isinstance(op.result_type, builtin.Nil):
+            yield "  ret void"
+        else:
+            yield f"  ret {typed_reference(op.body.result)}"
     yield "}"
 
 
@@ -329,8 +403,18 @@ def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
 
 def value_reference(v: dgen.Value) -> str:
     if isinstance(v, Constant):
-        return f"{v.__constant__.to_json()}"
-    return f"%{v.name}"
+        mem = v.__constant__
+        if not mem.layout.register_passable:
+            ctx = _ctx()
+            ctx.host_buffers.append(mem)
+            return f"inttoptr (i64 {mem.address} to ptr)"
+        raw = mem.unpack()[0]
+        return f"{format_float(raw) if isinstance(raw, float) else raw}"
+    if isinstance(v, builtin.ChainOp):
+        return value_reference(v.lhs)
+    ctx = _ctx()
+    name = ctx.tracker.track_name(v)
+    return f"%{name}"
 
 
 vr = value_reference
