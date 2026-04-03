@@ -244,10 +244,8 @@ class EmitContext:
 
     tracker: CodegenSlotTracker = field(default_factory=CodegenSlotTracker)
     host_buffers: list[Memory] = field(default_factory=list)
-    # Map from id(RegionOp/LabelOp) → list of predecessors.
-    predecessors: dict[int, list[Predecessor]] = field(default_factory=dict)
-    # Map from id(BlockParameter) → owning RegionOp/LabelOp.
-    param_to_owner: dict[int, goto.RegionOp | goto.LabelOp] = field(
+    predecessors: dict[dgen.Value, list[Predecessor]] = field(default_factory=dict)
+    param_to_owner: dict[dgen.Value, goto.RegionOp | goto.LabelOp] = field(
         default_factory=dict
     )
 
@@ -269,7 +267,7 @@ def build_predecessors(func: function.FunctionOp, ctx: EmitContext) -> None:
         if isinstance(target, (goto.RegionOp, goto.LabelOp)):
             return target
         if isinstance(target, BlockParameter) and target.name == "self":
-            owner = ctx.param_to_owner.get(id(target))
+            owner = ctx.param_to_owner.get(target)
             if owner is not None:
                 return owner
         return target
@@ -288,7 +286,7 @@ def build_predecessors(func: function.FunctionOp, ctx: EmitContext) -> None:
             if isinstance(op, goto.BranchOp):
                 resolved = _resolve(op.target)
                 pred_args = unpack(op.arguments)
-                ctx.predecessors.setdefault(id(resolved), []).append(
+                ctx.predecessors.setdefault(resolved, []).append(
                     Predecessor(source_name=current_block, args=pred_args)
                 )
             elif isinstance(op, goto.ConditionalBranchOp):
@@ -298,7 +296,7 @@ def build_predecessors(func: function.FunctionOp, ctx: EmitContext) -> None:
                 ]:
                     resolved = _resolve(target)
                     pred_args = unpack(args)
-                    ctx.predecessors.setdefault(id(resolved), []).append(
+                    ctx.predecessors.setdefault(resolved, []).append(
                         Predecessor(source_name=current_block, args=pred_args)
                     )
             # Recurse into nested blocks.
@@ -308,13 +306,13 @@ def build_predecessors(func: function.FunctionOp, ctx: EmitContext) -> None:
                     ctx.tracker.track_name(arg)
                 for param in op.body.parameters:
                     ctx.tracker.track_name(param)
-                    ctx.param_to_owner[id(param)] = op
+                    ctx.param_to_owner[param] = op
                 # Record initial_arguments as the fall-through entry predecessor.
                 # Only add if there are actual values (empty init_args means
                 # the region has no entry values, e.g. if-merge regions).
                 init_args = unpack(op.initial_arguments)
                 if op.body.args and init_args:
-                    ctx.predecessors.setdefault(id(op), []).append(
+                    ctx.predecessors.setdefault(op, []).append(
                         Predecessor(source_name=current_block, args=init_args)
                     )
                 _walk_block(op.body, label_name)
@@ -423,7 +421,7 @@ def _emit_phi_nodes(
 ) -> Iterator[str]:
     """Emit phi nodes for block args based on predecessor branches."""
     ctx = _ctx()
-    preds = ctx.predecessors.get(id(op), [])
+    preds = ctx.predecessors.get(op, [])
     if not preds:
         return
     for arg_idx, arg in enumerate(op.body.args):
@@ -497,7 +495,7 @@ def _emit_exit_phi_nodes(
 ) -> Iterator[str]:
     """Emit phi nodes for an exit parameter (branches target the param directly)."""
     ctx = _ctx()
-    preds = ctx.predecessors.get(id(param), [])
+    preds = ctx.predecessors.get(param, [])
     if not preds:
         return
     # Exit parameters carry values — emit phi for each arg position.
@@ -605,7 +603,7 @@ def value_reference(v: dgen.Value) -> str:
     # Exit parameters keep their own name (they're separate jump targets).
     if isinstance(v, BlockParameter) and v.name == "self":
         ctx = _ctx()
-        owner = ctx.param_to_owner.get(id(v))
+        owner = ctx.param_to_owner.get(v)
         if owner is not None:
             return f"%{ctx.tracker.track_name(owner)}"
     ctx = _ctx()
