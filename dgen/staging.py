@@ -106,6 +106,12 @@ def _jit_evaluate(
     )
     module = Module(ops=[func])
     lowered = lower(module)
+    # Short-circuit: if the pass pipeline already resolved the result to a
+    # constant, extract the value directly — no need to compile to LLVM and
+    # execute.
+    lowered_result = lowered.functions[0].body.result
+    if isinstance(lowered_result, Constant):
+        return lowered_result.__constant__.to_json()
     exe = codegen.compile(lowered, externs=externs)
     memories = _make_memories(block_args, args)
     result = exe.run(*memories)
