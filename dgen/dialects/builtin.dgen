@@ -26,3 +26,4 @@ type Tuple<types: Span<Type>>:
 
 op chain(lhs, rhs)
 op type(value) -> Type
+op extern<symbol: String>()

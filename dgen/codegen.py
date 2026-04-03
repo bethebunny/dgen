@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import _ctypes
 import ctypes
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -125,17 +125,68 @@ _BINOP: dict[type[dgen.Op], str] = {
 # ---------------------------------------------------------------------------
 
 
-def emit_llvm_ir(module: Module, *, externs: Sequence[str] = ()) -> tuple[str, list]:
+def _discover_externs(module: Module) -> list[str]:
+    """Discover extern declarations from ExternOps and call sites in the module.
+
+    Scans all functions for builtin.ExternOp instances and llvm.CallOp /
+    function.CallOp call sites whose callee is not defined in the module.
+    Returns LLVM ``declare`` strings.
+    """
+    defined: set[str] = set()
+    for func in module.functions:
+        if func.name is not None:
+            defined.add(func.name)
+
+    externs: list[str] = []
+    seen: set[str] = set()
+
+    for func in module.functions:
+        for op in func.body.ops:
+            if isinstance(op, builtin.ExternOp):
+                sym = string_value(op.symbol)
+                if sym not in seen:
+                    seen.add(sym)
+                continue
+            if isinstance(op, llvm.CallOp):
+                callee_name = string_value(op.callee)
+            elif isinstance(op, function.CallOp):
+                callee_name = op.callee.name
+            else:
+                continue
+            if callee_name is None or callee_name in seen or callee_name in defined:
+                continue
+            seen.add(callee_name)
+            # Derive LLVM signature from call site
+            result_type = dgen.type.type_constant(op.type)
+            if isinstance(result_type, builtin.Nil):
+                ret_llvm = "void"
+            else:
+                ret_llvm = _llvm_type(result_type.__layout__)
+            args = op.args if isinstance(op, llvm.CallOp) else op.arguments
+            if isinstance(args, PackOp):
+                arg_values = list(args)
+            else:
+                arg_values = [args]
+            param_types = [
+                _llvm_type(dgen.type.type_constant(arg.type).__layout__)
+                for arg in arg_values
+            ]
+            externs.append(
+                f"declare {ret_llvm} @{callee_name}({', '.join(param_types)})"
+            )
+    return externs
+
+
+def emit_llvm_ir(module: Module) -> tuple[str, list]:
     """Emit LLVM IR text for a module.
 
     Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
     alive for the lifetime of the JIT engine.
     """
     host_buffers: list = []
+    externs = _discover_externs(module)
 
     def _lines() -> Iterator[str]:
-        yield "declare void @print_memref(ptr, i64)"
-        yield "declare ptr @malloc(i64)"
         yield from externs
         yield ""
         for func in module.functions:
@@ -516,7 +567,10 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
 
     def _emit_op(op: dgen.Op) -> Iterator[str]:
         name = tracker.track_name(op)
-        if isinstance(op, (ConstantOp, PackOp, builtin.ChainOp, control_flow.IfOp)):
+        if isinstance(
+            op,
+            (ConstantOp, PackOp, builtin.ChainOp, builtin.ExternOp, control_flow.IfOp),
+        ):
             return
         if isinstance(op, goto.BranchOp):
             yield f"  br label %{tracker.track_name(resolve_target(op.target))}"
@@ -690,12 +744,12 @@ class Executable:
         return Memory.from_raw(self.result_type, result)
 
 
-def compile(module: Module, *, externs: Sequence[str] = ()) -> Executable:
+def compile(module: Module) -> Executable:
     """Lower a Module to LLVM IR and bundle with execution metadata."""
     _dummy = Compiler([], IdentityPass())
     module = BuiltinToLLVM().run(module, _dummy)
     module = AlgebraToLLVM().run(module, _dummy)
-    ir, host_buffers = emit_llvm_ir(module, externs=externs)
+    ir, host_buffers = emit_llvm_ir(module)
     main = module.functions[0]
     assert main.name is not None
     return Executable(
