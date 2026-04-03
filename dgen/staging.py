@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-import ctypes
 import itertools
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import TYPE_CHECKING, Iterator, TypeVar
 
-import llvmlite.binding as llvmlite_binding
-
 import dgen
-from dgen import codegen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.codegen import Executable, _ctype
-from dgen.dialects import builtin, function, llvm
-from dgen.dialects.builtin import String
+from dgen.codegen import Executable
+from dgen.dialects import function
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module, pack
+from dgen.module import ConstantOp, Module
 from dgen.type import Constant, Memory
 
 from dgen.passes.pass_ import Pass
@@ -213,21 +208,6 @@ def _has_nested_boundaries(func: FunctionOp) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _raw_to_json(raw: object, ty: dgen.Type) -> object:
-    """Convert a raw ctypes callback value to a Python value.
-
-    Scalars (int, float) pass through. Pointer types are read from memory
-    via Memory.from_raw().to_json().
-
-    TypeType values use the self-describing TypeValue layout which reads
-    through the pointer and resolves the tag to determine the full Record.
-    """
-    if not ty.__layout__.register_passable:
-        assert isinstance(raw, int)
-        return Memory.from_raw(ty, raw).to_json()
-    return raw
-
-
 class ConstantFold(Pass):
     """Pass that resolves all stage-0 comptime boundaries.
 
@@ -315,79 +295,32 @@ def _build_callback_thunk(
     The callback resolves all remaining __params__ values (using the full
     stage-1 resolution loop), then JIT-compiles and executes stage-2.
     """
+    from dgen.codegen import build_callback_thunk
+
     stage2_template = resolved
-
-    # Derive callback signature from original function
     assert func.name is not None
-    callback_name = f"_stage2_{func.name}"
-    orig_types = [dgen.type.type_constant(arg.type) for arg in func.body.args]
-    result_type = dgen.type.type_constant(func.result)
-    result_ctype: type[ctypes._CData] | None = (
-        None if isinstance(result_type, builtin.Nil) else _ctype(result_type.__layout__)
-    )
-    # Build ctypes callback type
-    param_ctypes = [_ctype(t.__layout__) for t in orig_types]
-    cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
-
-    # Capture template + compiler in closure
     func_name = func.name
-    callback_host_refs: list[object] = []  # Keep JIT data alive across calls
+    callback_host_refs: list[object] = []
 
-    def _callback(*raw_args: object) -> object:
-        # Convert raw ctypes values to Python values
-        python_args = [
-            _raw_to_json(raw_args[i], orig_types[i]) for i in range(len(orig_types))
-        ]
-
-        # Deep-copy template and resolve all __params__ with runtime args
+    def _on_call(*python_args: object) -> Memory:
         template = deepcopy(stage2_template)
         s2_func = next(f for f in template.functions if f.name == func_name)
 
-        # Resolve all remaining boundaries with runtime args
         def _compile(m: Module) -> Executable:
             return compiler.exit.run(compiler.run(m))
 
         _resolve_with_runtime_args(s2_func, _compile, s2_func.body.args, python_args)
 
-        # Compile the fully-resolved function through the full pipeline
         func_module = Module(ops=[s2_func])
         result = compiler.compile(func_module)
         assert isinstance(result, Executable)
-        callback_host_refs.extend(result.host_refs)  # Keep memory alive
+        callback_host_refs.extend(result.host_refs)
         mem = result.run(*python_args)
-        callback_host_refs.append(mem)  # Keep memory alive
-        # Return raw ctypes value for the callback
-        if not mem.type.__layout__.register_passable:
-            return mem.address
-        return mem.to_json()
+        callback_host_refs.append(mem)
+        return mem
 
-    callback_func = cb_type(_callback)
-
-    # Register callback with llvmlite
-    codegen._ensure_initialized()
-    llvmlite_binding.add_symbol(
-        callback_name,
-        ctypes.cast(callback_func, ctypes.c_void_p).value,
-    )
-
-    # Build stage-1 thunk: call callback with all original params, return result
-    thunk_args = [BlockArgument(name=arg.name, type=arg.type) for arg in func.body.args]
-    call_op = llvm.CallOp(
-        callee=String().constant(callback_name),
-        args=pack(thunk_args),
-        type=result_type,
-    )
-    thunk_func = function.FunctionOp(
-        name=func.name,
-        body=dgen.Block(result=call_op, args=thunk_args),
-        result=result_type,
-        type=Function(result=result_type),
-    )
-    thunk_module = Module(ops=[thunk_func])
-
-    exe = codegen.compile(thunk_module)
-    exe.host_refs.append(callback_func)  # prevent GC
-    exe.host_refs.append(callback_host_refs)  # prevent GC of callback results
+    exe = build_callback_thunk(func, _on_call)
+    exe.host_refs.append(callback_host_refs)
     return exe
 
 
@@ -433,16 +366,12 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
     all_host_refs: list[object] = []
     entry_exe: Executable | None = None
 
+    from dgen.codegen import register_executable
+
     for func in ordered:
         exe = _build_callback_thunk(resolved, func, compiler)
         all_host_refs.extend(exe.host_refs)
-
-        # JIT the thunk and register its address as a global symbol
-        engine = codegen._jit_engine(exe)
-        assert func.name is not None
-        func_ptr = engine.get_function_address(func.name)
-        llvmlite_binding.add_symbol(func.name, func_ptr)
-        all_host_refs.append(engine)  # keep JIT engine alive
+        all_host_refs.extend(register_executable(exe))
 
         if func is entry:
             entry_exe = exe

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import _ctypes
 import ctypes
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -769,6 +769,97 @@ def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
     target = llvmlite.Target.from_default_triple()
     tm = target.create_target_machine()
     return llvmlite.create_mcjit_compiler(mod, tm)
+
+
+def register_executable(exe: Executable) -> list[object]:
+    """JIT-compile an Executable and register its main function as a global symbol.
+
+    Returns a list of objects that must be kept alive (the JIT engine).
+    """
+    engine = _jit_engine(exe)
+    func_ptr = engine.get_function_address(exe.main_name)
+    llvmlite.add_symbol(exe.main_name, func_ptr)
+    return [engine]
+
+
+def _raw_to_json(raw: object, ty: dgen.Type) -> object:
+    """Convert a raw ctypes callback value to a Python value.
+
+    Scalars (int, float) pass through. Pointer types are read from memory
+    via Memory.from_raw().to_json().
+    """
+    if not ty.__layout__.register_passable:
+        assert isinstance(raw, int)
+        return Memory.from_raw(ty, raw).to_json()
+    return raw
+
+
+def build_callback_thunk(
+    func_op: function.FunctionOp,
+    on_call: Callable[..., Memory],
+) -> Executable:
+    """Build a stage-1 thunk that forwards all args to a host callback.
+
+    The thunk passes all function arguments to ``on_call`` via ctypes.
+    ``on_call`` receives Python values (converted from raw ctypes) and
+    must return a Memory object with the result.
+
+    Handles: ctypes callback construction, LLVM thunk IR generation,
+    symbol registration with llvmlite, and compilation.
+    """
+    assert func_op.name is not None
+    callback_name = f"_stage2_{func_op.name}"
+    orig_types = [dgen.type.type_constant(arg.type) for arg in func_op.body.args]
+    result_type = dgen.type.type_constant(func_op.result)
+    result_ctype: type[ctypes._CData] | None = (
+        None if isinstance(result_type, builtin.Nil) else _ctype(result_type.__layout__)
+    )
+    param_ctypes = [_ctype(t.__layout__) for t in orig_types]
+    cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
+
+    def _callback(*raw_args: object) -> object:
+        python_args = [
+            _raw_to_json(raw_args[i], orig_types[i]) for i in range(len(orig_types))
+        ]
+        mem = on_call(*python_args)
+        if not mem.type.__layout__.register_passable:
+            return mem.address
+        return mem.to_json()
+
+    callback_func = cb_type(_callback)
+
+    # Register callback symbol with llvmlite
+    _ensure_initialized()
+    llvmlite.add_symbol(
+        callback_name,
+        ctypes.cast(callback_func, ctypes.c_void_p).value,
+    )
+
+    # Build thunk: call callback with all original params, return result
+    from dgen.block import BlockArgument
+    from dgen.dialects.builtin import String
+    from dgen.dialects.function import Function
+    from dgen.module import pack
+
+    thunk_args = [
+        BlockArgument(name=arg.name, type=arg.type) for arg in func_op.body.args
+    ]
+    call_op = llvm.CallOp(
+        callee=String().constant(callback_name),
+        args=pack(thunk_args),
+        type=result_type,
+    )
+    thunk_func = function.FunctionOp(
+        name=func_op.name,
+        body=dgen.Block(result=call_op, args=thunk_args),
+        result=result_type,
+        type=Function(result=result_type),
+    )
+    thunk_module = Module(ops=[thunk_func])
+
+    exe = compile(thunk_module)
+    exe.host_refs.append(callback_func)  # prevent GC
+    return exe
 
 
 # ---------------------------------------------------------------------------
