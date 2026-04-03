@@ -57,9 +57,16 @@ def _ctype(layout: Layout) -> type[ctypes._CData]:
 
 
 def llvm_type(t: dgen.Value[TypeType]) -> str:
-    match type_constant(t):
+    resolved = type_constant(t)
+    match resolved:
         case memory.Reference():
             return "ptr"
+        case llvm.Ptr():
+            return "ptr"
+        case llvm.Float():
+            return "double"
+        case llvm.Void():
+            return "void"
         case index.Index():
             return "i64"
         case number.SignedInteger(bits):
@@ -75,7 +82,13 @@ def llvm_type(t: dgen.Value[TypeType]) -> str:
         case goto.Label():
             return "label"
         case _:
-            raise TypeError(f"Unhandled type lowered to llvm: {t.asm}")
+            pass
+    # Handle llvm.Int which has a Value parameter (not directly matchable)
+    if isinstance(resolved, llvm.Int):
+        bits = resolved.bits.__constant__.to_json()
+        return f"i{bits}"
+    # Fallback: use the type's layout to determine the LLVM type
+    return _llvm_type(resolved.__layout__)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +202,30 @@ def emit_llvm_ir(module: Module) -> tuple[str, list]:
             yield from _emit_func(func, host_buffers)
 
     return "\n".join(_lines()), host_buffers
+
+
+def emit_llvm_ir_new(module: Module) -> tuple[str, list[Memory]]:
+    """Emit LLVM IR using the new emitter dispatch (WIP — not yet production).
+
+    Uses the @emitter_for decorator-based dispatch with EmitContext for
+    SSA naming, constant handling, and phi-node emission.
+    """
+    ctx = EmitContext()
+    token = _emit_ctx.set(ctx)
+
+    try:
+
+        def _lines() -> Iterator[str]:
+            for extern in _externs(module):
+                yield from emit_extern(extern)
+            yield ""
+            for func in module.functions:
+                build_predecessors(func, ctx)
+                yield from emit(func)
+
+        return "\n".join(_lines()), ctx.host_buffers
+    finally:
+        _emit_ctx.reset(token)
 
 
 def _result_type_str(ty: Value[dgen.TypeType]) -> str:
