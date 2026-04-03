@@ -39,7 +39,7 @@ def test_while_basic_roundtrip():
     module = parse_module(ir)
     fn = module.ops[0]
     assert isinstance(fn, control_flow.WhileOp) is False  # it's a FunctionOp
-    while_op = fn.body.ops[-1]
+    while_op = fn.body.result
     assert isinstance(while_op, control_flow.WhileOp)
     assert len(while_op.condition.args) == 1
     assert while_op.condition.args[0].name == "i"
@@ -65,7 +65,7 @@ def test_while_with_capture_roundtrip():
         |         %next : index.Index = algebra.add(%i, %one)
     """)
     module = parse_module(ir)
-    while_op = module.ops[0].body.ops[-1]
+    while_op = module.ops[0].body.result
     assert isinstance(while_op, control_flow.WhileOp)
     assert len(while_op.condition.args) == 1
     assert len(while_op.body.args) == 1
@@ -85,7 +85,7 @@ def test_while_no_ivs_roundtrip():
         |         %nop : index.Index = 0
     """)
     module = parse_module(ir)
-    while_op = module.ops[0].body.ops[-1]
+    while_op = module.ops[0].body.result
     assert isinstance(while_op, control_flow.WhileOp)
     assert while_op.condition.args == []
     assert while_op.body.args == []

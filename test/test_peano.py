@@ -222,7 +222,7 @@ def test_zero_type_has_natural_trait_via_asm():
     """)
     module = parse_module(ir)
     func = module.functions[0]
-    zero_op = func.body.ops[0]
+    zero_op = list(func.body.ops)[0]
     assert isinstance(zero_op, ZeroOp)
     # ZeroOp produces a type value — the result type is TypeType.
     # The produced type (Zero) has trait Natural.
@@ -261,7 +261,7 @@ def test_trait_in_asm_type_annotation():
     """)
     module = parse_module(ir)
     func = module.functions[0]
-    zero_op = func.body.ops[0]
+    zero_op = list(func.body.ops)[0]
     assert isinstance(zero_op, ZeroOp)
     assert isinstance(zero_op.type, Natural)
 
@@ -284,7 +284,7 @@ def test_trait_annotation_roundtrips_through_asm():
     text = asm.format(module)
     assert "peano.Natural" in text
     reparsed = parse_module(text)
-    zero_op = reparsed.functions[0].body.ops[0]
+    zero_op = list(reparsed.functions[0].body.ops)[0]
     assert isinstance(zero_op.type, Natural)
 
 

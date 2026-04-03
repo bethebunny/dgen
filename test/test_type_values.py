@@ -70,7 +70,7 @@ def test_ssa_ref_as_op_type():
         |     %x : %t = 42
     """)
     module = parse_module(ir)
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     t_op = ops[0]  # %t = TypeType constant
     x_op = ops[1]  # %x : %t = 42
     # %x's type is the SSA value %t (a resolved ConstantOp)
@@ -143,7 +143,7 @@ def test_array_with_ssa_dimension():
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     # Verify the Array type's `n` param is the SSA value %n
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     n_op = ops[0]
     arr_op = ops[1]
     assert isinstance(arr_op.type, builtin.Array)
@@ -164,7 +164,7 @@ def test_array_with_ssa_element_type():
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     # Verify the Array type's element_type param is the SSA value %t
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     t_op = ops[0]
     arr_op = ops[1]
     assert isinstance(arr_op.type, builtin.Array)
@@ -182,7 +182,7 @@ def test_array_with_ssa_element_type_layout():
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
     """)
     module = parse_module(ir)
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     arr_op = ops[1]
     assert isinstance(arr_op.type, builtin.Array)
     # element_type is an SSA ref but the type is ready (ConstantOp is resolved)
@@ -206,7 +206,7 @@ def test_pointer_with_ssa_pointee():
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     t_op = ops[0]
     p_op = ops[1]
     assert isinstance(p_op.type, builtin.Pointer)
@@ -259,7 +259,7 @@ def test_span_with_ssa_element_type():
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     t_op = ops[0]
     xs_op = ops[1]
     assert isinstance(xs_op.type, builtin.Span)
@@ -281,7 +281,7 @@ def test_fat_pointer_with_ssa_pointee():
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     t_op = ops[0]
     p_op = ops[1]
     assert isinstance(p_op.type, builtin.Span)
@@ -303,7 +303,7 @@ def test_function_with_ssa_result_type():
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     t_op = next(op for op in ops if isinstance(op, ConstantOp))
     f_op = next(op for op in ops if isinstance(op, FunctionOp))
     assert f_op.result_type is t_op
@@ -320,7 +320,7 @@ def test_block_argument_constant_raises_type_error():
         |     %y : %t = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
-    ops = module.functions[0].body.ops
+    ops = list(module.functions[0].body.ops)
     add_op = ops[0]
 
     # op.type is a BlockArgument — not a constant
@@ -344,7 +344,7 @@ def test_type_constant_resolves_ssa_constant():
         |     %x : %t = 42
     """)
     module = parse_module(ir)
-    t_op = module.functions[0].body.ops[0]
+    t_op = list(module.functions[0].body.ops)[0]
     resolved = type_constant(t_op)
     assert isinstance(resolved, Index)
 
@@ -410,7 +410,7 @@ def test_compile_constant_with_ssa_type():
         |     %x : %t = 42
     """)
     module = parse_module(ir)
-    x_op = module.functions[0].body.ops[1]
+    x_op = list(module.functions[0].body.ops)[1]
     assert isinstance(x_op, ConstantOp)
     assert isinstance(x_op.type, ConstantOp)  # type is SSA ref, not Type
     # compile must handle this
@@ -473,7 +473,7 @@ def test_staging_resolves_block_arg_type():
     module = parse_module(ir)
 
     # Verify the op's type is a BlockArgument (not resolvable at compile time)
-    add_op = module.functions[0].body.ops[0]
+    add_op = list(module.functions[0].body.ops)[0]
     assert isinstance(add_op.type, BlockArgument)
 
     # Compile produces a callback-based thunk — lower is NOT called yet
@@ -519,7 +519,7 @@ def test_parse_typetype_block_arg_constant_materializes():
         |     %tt : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
     """)
     module = parse_module(ir)
-    tt_op = module.functions[0].body.ops[0]
+    tt_op = list(module.functions[0].body.ops)[0]
     assert isinstance(tt_op, ConstantOp)
     assert isinstance(tt_op.value, dict)
     # Memory materializes fine — TypeValue layout is self-describing
@@ -587,14 +587,15 @@ def test_staging_resolves_type_value():
             """Lower algebra.add to llvm.add."""
             m = deepcopy(m)
             for func in m.functions:
-                for i, op in enumerate(func.body.ops):
+                ops = list(func.body.ops)
+                for i, op in enumerate(ops):
                     if isinstance(op, algebra.AddOp):
                         new_op = llvm.AddOp(
                             name=op.name, lhs=op.left, rhs=op.right, type=op.type
                         )
-                        func.body.ops[i] = new_op
+                        ops[i] = new_op
                         # Patch references
-                        for other in func.body.ops:
+                        for other in ops:
                             for field_name, _ in other.__operands__:
                                 val = getattr(other, field_name)
                                 if val is op:
