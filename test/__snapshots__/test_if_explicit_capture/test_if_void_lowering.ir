@@ -1,0 +1,20 @@
+import function
+import goto
+import index
+import memory
+
+%main : function.Function<[], Nil> = function.function<Nil>() body():
+    %cond : index.Index = 1
+    %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+    %if0 : Nil = goto.region([]) body<%self: goto.Label>(%if_result0: Nil) captures(%cond, %0, %1, %alloc):
+        %if_then0 : goto.Label = goto.label([]) body() captures(%self, %alloc):
+            %t : index.Index = 42
+            %_ : Nil = memory.store(%alloc, %t, %alloc)
+            %2 : Nil = goto.branch<%self>([%_])
+        %if_else0 : goto.Label = goto.label([]) body() captures(%self, %alloc):
+            %f : index.Index = 99
+            %3 : Nil = memory.store(%alloc, %f, %alloc)
+            %4 : Nil = goto.branch<%self>([%3])
+        %5 : Nil = goto.conditional_branch<%if_then0, %if_else0>(%cond, [], [])
+        %6 : Nil = chain(%if_result0, %5)
+    %result : index.Index = memory.load(%if0, %alloc)
