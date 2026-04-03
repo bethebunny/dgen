@@ -210,7 +210,9 @@ def test_emit_dispatches_by_value_class():
 
     dummy = _Sentinel()
     lines = list(emit(dummy))
-    assert lines == ["sentinel_output"]
+    # emit() prepends %name = for value-producing ops
+    assert len(lines) == 1
+    assert "sentinel_output" in lines[0]
 
     del EMITTERS[_Sentinel]
 

@@ -426,24 +426,24 @@ def emit(value: dgen.Value) -> Iterator[str]:
             f"(dialect={value.dialect.name}, asm_name={value.asm_name})"
         )
     lines = emitter(value)
-    # For ops that produce an SSA value, prepend %name = to the first line.
+    # Structural and noop ops handle their own output.
     if isinstance(value, _NO_ASSIGN_OPS):
         yield from lines
-    elif isinstance(value.type, builtin.Nil):
-        # Void-typed ops (e.g. void calls) — emit without assignment.
-        yield from lines
     else:
+        # Prepend %name = for value-producing ops.
         ctx = _ctx()
         name = ctx.tracker.track_name(value)
-        first = True
-        for line in lines:
-            if first:
-                # Prepend assignment to the first instruction line.
-                # Lines are indented with 2 spaces: "  fadd double %a, %b"
-                yield f"  %{name} = {line.lstrip(' ')}"
-                first = False
-            else:
-                yield line
+        first_line = next(lines, None)
+        if first_line is None:
+            return
+        # If the line already contains an assignment or is a void instruction
+        # (e.g. "  call void @..." or "  store ..."), emit as-is.
+        stripped = first_line.lstrip()
+        if stripped.startswith("call void") or stripped.startswith("store"):
+            yield first_line
+        else:
+            yield f"  %{name} = {stripped}"
+        yield from lines
     return
 
 
@@ -591,7 +591,7 @@ def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
             # the value is the first block arg (the phi result), not the region.
             if isinstance(result, goto.RegionOp) and result.body.args:
                 result = result.body.args[0]
-            yield f"  ret {typed_reference(result)}"
+            yield f"  ret {ret_type} {value_reference(result)}"
     yield "}"
 
 
