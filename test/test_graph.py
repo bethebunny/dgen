@@ -4,9 +4,9 @@ import dgen
 from dgen import asm
 from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, function, llvm
+from dgen.dialects import builtin, function, goto, llvm
 from dgen.dialects.function import Function
-from dgen.graph import transitive_dependencies
+from dgen.graph import all_values, interior_values, transitive_dependencies
 from dgen.module import ConstantOp, pack
 from dgen.op import Op
 from dgen.testing import assert_ir_equivalent, strip_prefix
@@ -57,7 +57,7 @@ def test_transitive_dependencies_does_not_descend_into_blocks():
     """)
     module = parse_module(ir)
     func = module.ops[0]
-    inner = func.body.ops[0]
+    inner = next(func.body.ops)
     deps = list(transitive_dependencies(func))
     assert func in deps
     assert inner not in deps
@@ -95,3 +95,71 @@ def test_transitive_dependencies_includes_types():
     # The Index type and its dependencies should be present
     assert any(isinstance(v, builtin.Index) for v in deps)
     assert deps[-1] is a
+
+
+# ---------------------------------------------------------------------------
+# all_values / interior_values
+# ---------------------------------------------------------------------------
+
+
+def _parse(text: str):
+    return parse_module(strip_prefix(text))
+
+
+def test_all_values_includes_nested_block_ops():
+    """all_values descends into nested blocks, unlike transitive_dependencies."""
+    module = _parse("""
+        | import function
+        | import index
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %0 : index.Index = 42
+    """)
+    func = module.ops[0]
+    inner_const = next(func.body.ops)
+    # transitive_dependencies does NOT include inner ops
+    assert inner_const not in list(transitive_dependencies(func))
+    # all_values DOES include inner ops
+    assert inner_const in list(all_values(func))
+
+
+def test_all_values_includes_deeply_nested():
+    """all_values reaches ops inside nested label/region bodies."""
+    module = _parse("""
+        | import function
+        | import goto
+        | import index
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %init : index.Index = 0
+        |     %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
+        |         %inner : index.Index = 42
+    """)
+    func = module.ops[0]
+    vals = list(all_values(func))
+    names = [v.name for v in vals if hasattr(v, "name") and v.name is not None]
+    assert "inner" in names
+    assert "r" in names
+
+
+def test_interior_values_yields_block_contents():
+    """interior_values yields values from a value's blocks, not the value itself."""
+    module = _parse("""
+        | import function
+        | import index
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %0 : index.Index = 42
+    """)
+    func = module.ops[0]
+    inner = list(interior_values(func))
+    op_names = [v.name for v in inner if isinstance(v, Op)]
+    assert "0" in op_names
+    # The function itself is NOT in interior_values
+    assert func not in inner
+
+
+def test_interior_values_empty_for_leaf_op():
+    """A leaf op with no blocks has no interior values."""
+    a = ConstantOp(value=1, type=builtin.Index())
+    assert list(interior_values(a)) == []

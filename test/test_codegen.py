@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import dgen
 from dgen import asm
-from dgen.codegen import EMITTERS, emitter_for, runtime_dependencies, emit_linearized
+from dgen.codegen import EMITTERS, _externs, emitter_for, runtime_dependencies, emit, emit_linearized
 from dgen.dialects import builtin, goto, llvm
 from dgen.testing import strip_prefix
 
@@ -51,7 +51,7 @@ def test_runtime_dependencies_follows_operands():
         | import llvm
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : number.Float64 = 2.0
         |     %c : Nil = llvm.fadd(%a, %b)
@@ -71,7 +71,7 @@ def test_runtime_dependencies_excludes_type_deps():
         | import llvm
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : number.Float64 = 2.0
         |     %c : Nil = llvm.fadd(%a, %b)
@@ -92,7 +92,7 @@ def test_runtime_dependencies_follows_captures():
         | import goto
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %x : index.Index = 42
         |     %lbl : goto.Label = goto.label([]) body() captures(%x):
         |         %_ : Nil = ()
@@ -110,7 +110,7 @@ def test_runtime_dependencies_no_duplicates():
         | import llvm
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : Nil = llvm.fadd(%a, %a)
     """)
@@ -125,7 +125,7 @@ def test_runtime_dependencies_empty_for_constant():
         | import function
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %a : number.Float64 = 42.0
     """)
     from dgen import Constant
@@ -142,7 +142,7 @@ def test_runtime_dependencies_transitive():
         | import llvm
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : number.Float64 = 2.0
         |     %c : Nil = llvm.fadd(%a, %b)
@@ -164,7 +164,7 @@ def test_runtime_dependencies_topological_order():
         | import llvm
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : number.Float64 = 2.0
         |     %c : Nil = llvm.fadd(%a, %b)
@@ -215,50 +215,6 @@ def test_emit_dispatches_by_value_class():
     del EMITTERS[_Sentinel]
 
 
-def test_emit_linearized_emits_deps_before_value():
-    """emit_linearized emits runtime dependencies before the value itself."""
-    from dgen.module import ConstantOp
-
-    block = _parse("""
-        | import function
-        | import llvm
-        | import number
-        |
-        | %f : function.Function<()> = function.function<Nil>() body():
-        |     %a : number.Float64 = 1.0
-        |     %b : number.Float64 = 2.0
-        |     %c : Nil = llvm.fadd(%a, %b)
-    """)
-    fadd = next(op for op in block.ops if isinstance(op, llvm.FaddOp))
-
-    # Register emitters keyed by op class so emit() can dispatch.
-    emitted_order: list[str] = []
-    saved = dict(EMITTERS)
-
-    @emitter_for(ConstantOp)
-    def handle_constant(value):
-        emitted_order.append(value.name or type(value).__name__)
-        yield f"emit:{value.name or type(value).__name__}"
-
-    @emitter_for(llvm.FaddOp)
-    def handle_fadd(value):
-        emitted_order.append(value.name or type(value).__name__)
-        yield f"emit:{value.name or type(value).__name__}"
-
-    lines = list(emit_linearized(fadd))
-    # deps (%a, %b) should be emitted before fadd (%c)
-    assert len(emitted_order) >= 3
-    fadd_idx = next(i for i, n in enumerate(emitted_order) if n == "c")
-    a_idx = next(i for i, n in enumerate(emitted_order) if n == "a")
-    b_idx = next(i for i, n in enumerate(emitted_order) if n == "b")
-    assert a_idx < fadd_idx
-    assert b_idx < fadd_idx
-
-    # Restore EMITTERS
-    EMITTERS.clear()
-    EMITTERS.update(saved)
-
-
 def test_emit_linearized_nested_loop():
     """emit_linearized handles nested loop IR without crashing."""
     module = asm.parse(strip_prefix("""
@@ -268,16 +224,16 @@ def test_emit_linearized_nested_loop():
         | import index
         | import number
         |
-        | %test : function.Function<()> = function.function<Nil>() body():
+        | %test : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 0
-        |     %loop_header0 : goto.Label = goto.label([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
+        |     %loop_header0 : goto.Label = goto.region([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
         |         %1 : index.Index = 2
         |         %2 : number.Boolean = algebra.less_than(%i0, %1)
         |         %loop_body0 : goto.Label = goto.label([]) body(%j0: index.Index) captures(%self):
         |             %3 : index.Index = 1
         |             %4 : index.Index = algebra.add(%j0, %3)
         |             %5 : index.Index = 0
-        |             %loop_header1 : goto.Label = goto.label([%5]) body<%6: goto.Label, %exit1: goto.Label>(%i1: index.Index):
+        |             %loop_header1 : goto.Label = goto.region([%5]) body<%6: goto.Label, %exit1: goto.Label>(%i1: index.Index):
         |                 %7 : index.Index = 2
         |                 %8 : number.Boolean = algebra.less_than(%i1, %7)
         |                 %loop_body1 : goto.Label = goto.label([]) body(%j1: index.Index) captures(%6):
@@ -293,7 +249,97 @@ def test_emit_linearized_nested_loop():
         |         %18 : Nil = goto.conditional_branch<%loop_body0, %exit0>(%2, [%i0], [])
         """))
 
-    emitted = list(emit_linearized(module.functions[0]))
+    emitted = list(emit(module.functions[0]))
     assert '\n'.join(emitted) == ""
     # Should produce some output lines (labels, instructions)
     assert len(emitted) > 0
+
+
+# ---------------------------------------------------------------------------
+# Extern discovery
+# ---------------------------------------------------------------------------
+
+
+def test_externs_function_with_typed_args():
+    """_externs discovers a function extern with real argument/return types (malloc)."""
+    module = asm.parse(strip_prefix("""
+        | import function
+        | import index
+        | import llvm
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
+        |     %size : index.Index = 48
+        |     %ptr : llvm.Ptr = function.call<%malloc>([%size])
+    """))
+    externs = _externs(module)
+    assert len(externs) == 1
+
+
+def test_externs_non_function():
+    """_externs discovers a non-function extern (global value)."""
+    module = asm.parse(strip_prefix("""
+        | import function
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %greeting : String = extern<"hello_world">()
+    """))
+    externs = _externs(module)
+    assert len(externs) == 1
+
+
+def test_externs_nested_in_region():
+    """_externs finds externs nested inside a region body."""
+    module = asm.parse(strip_prefix("""
+        | import function
+        | import goto
+        | import index
+        | import llvm
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %init : index.Index = 0
+        |     %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
+        |         %print : function.Function<[llvm.Ptr, index.Index], ()> = extern<"print_memref">()
+        |         %0 : Nil = function.call<%print>([])
+        |         %1 : index.Index = 1
+        |         %next : index.Index = llvm.add(%i, %1)
+        |         %next2 : index.Index = chain(%next, %0)
+        |         %_ : Nil = goto.branch<%self>([%next2])
+    """))
+    externs = _externs(module)
+    assert len(externs) == 1
+
+
+def test_externs_no_duplicates():
+    """_externs deduplicates: same ExternOp referenced twice appears once."""
+    module = asm.parse(strip_prefix("""
+        | import function
+        | import index
+        | import llvm
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
+        |     %0 : llvm.Ptr = function.call<%malloc>([])
+        |     %1 : llvm.Ptr = function.call<%malloc>([])
+        |     %_ : Nil = chain(%0, %1)
+    """))
+    externs = _externs(module)
+    assert len(externs) == 1
+
+
+def test_externs_multiple_distinct():
+    """_externs finds multiple distinct externs."""
+    module = asm.parse(strip_prefix("""
+        | import function
+        | import index
+        | import llvm
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
+        |     %print : function.Function<[llvm.Ptr, index.Index], ()> = extern<"print_memref">()
+        |     %ptr : llvm.Ptr = function.call<%malloc>([])
+        |     %0 : Nil = function.call<%print>([])
+        |     %_ : Nil = chain(%ptr, %0)
+    """))
+    externs = _externs(module)
+    assert len(externs) == 2

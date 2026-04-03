@@ -16,12 +16,12 @@ import toy
     %4 : index.Index = 0
     %5 : toy.Tensor<ndbuffer.Shape<2>([2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0]
     %6 : toy.Tensor<ndbuffer.Shape<2>([2, 2]), number.Float64> = [5.0, 6.0, 7.0, 8.0]
-    %loop_header4 : goto.Label = goto.label([%4]) body<%self: goto.Label, %exit4: goto.Label>(%i4: index.Index) captures(%3, %5, %6):
+    %loop_header4 : goto.Label = goto.region([%4]) body<%self: goto.Label, %exit4: goto.Label>(%i4: index.Index) captures(%3, %5, %6):
         %loop_body4 : goto.Label = goto.label([]) body(%j4: index.Index) captures(%self, %3, %5, %6):
             %7 : index.Index = 1
             %8 : index.Index = algebra.add(%j4, %7)
             %9 : index.Index = 0
-            %loop_header5 : goto.Label = goto.label([%9]) body<%10: goto.Label, %exit5: goto.Label>(%i5: index.Index) captures(%3, %5, %6, %j4):
+            %loop_header5 : goto.Label = goto.region([%9]) body<%10: goto.Label, %exit5: goto.Label>(%i5: index.Index) captures(%3, %5, %6, %j4):
                 %loop_body5 : goto.Label = goto.label([]) body(%j5: index.Index) captures(%10, %3, %5, %6, %j4):
                     %11 : index.Index = 1
                     %12 : index.Index = algebra.add(%j5, %11)

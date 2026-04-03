@@ -1,14 +1,17 @@
 """Lower control_flow dialect to goto dialect.
 
-Loops (ForOp, WhileOp) are lowered to goto labels. IfOp is NOT lowered here —
-it's structured control flow emitted directly by codegen (see docs/codegen.md).
+Loops (ForOp, WhileOp) are lowered to goto regions and labels. IfOp is NOT
+lowered here — it's structured control flow emitted directly by codegen
+(see docs/codegen.md).
 
-## Label-as-expression model
+## Region vs Label
 
-A goto.label is semantically an expression block, not a jump target. It runs
-when control reaches it in the use-def order — no explicit entry branch is
-needed. The label's `initial_arguments` provide the first-iteration values for
-its block args (replacing the entry branch + phi pattern).
+``goto.region`` executes inline in use-def order (fall-through entry). It
+emits itself as a basic block, and when unterminated falls through to its
+exit label.
+
+``goto.label`` is a pure jump target — only reachable via explicit branch.
+It emits as a separate basic block with no fall-through entry.
 
 ## ForOp lowering
 
@@ -17,7 +20,7 @@ its block args (replacing the entry branch + phi pattern).
 
 becomes:
 
-    goto.label([lo]) body<%self, %exit>(%iv):
+    goto.region([lo]) body<%self, %exit>(%iv):
         %cmp = less_than(%iv, hi)
         goto.label([]) body(%jv) captures(%self):
             <body ops, iv remapped to jv>
@@ -26,9 +29,10 @@ becomes:
         goto.conditional_branch<%body, %exit>(%cmp, [%iv], [])
 
 Key points:
+- The header is a ``region`` (falls through from use-def position)
+- The body is a ``label`` (only entered via conditional_branch)
 - `%self` parameter enables back-edges (breaks use-def cycles)
 - `%exit` parameter: codegen emits this as a fall-through label after the header
-- The body label is nested inside the header
 - `chain(increment, body_result)` ensures the increment runs AFTER the body.
   This is necessary because `add(%jv, 1)` doesn't naturally depend on the body
   result — without the chain, the increment could be scheduled before inner loops.
@@ -104,7 +108,7 @@ class ControlFlowToGoto(Pass):
         )
 
         lo = ConstantOp(value=op.lower_bound.__constant__.to_json(), type=Index())
-        header_label = goto.LabelOp(
+        header_label = goto.RegionOp(
             name=f"loop_header{lid}",
             initial_arguments=pack([lo]),
             body=dgen.Block(
@@ -178,7 +182,7 @@ class ControlFlowToGoto(Pass):
             false_arguments=pack([]),
         )
 
-        header_label = goto.LabelOp(
+        header_label = goto.RegionOp(
             name=f"while_header{lid}",
             initial_arguments=op.initial_arguments,
             body=dgen.Block(

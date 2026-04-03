@@ -3,6 +3,8 @@ from builtin import Nil, Span
 type Label:
     data: Nil
 
+op region(initial_arguments: Span) -> Label:
+    block body
 op label(initial_arguments: Span) -> Label:
     block body
 op branch<target: Label>(arguments: Span) -> Nil
