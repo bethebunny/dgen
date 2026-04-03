@@ -71,7 +71,6 @@ class ASMParser:
         self.text = text
         self.pos: int = 0
         self.name_table: dict[str, Value] = {}
-        self.pending_ops: list[Op] = []
         self.scope: Scope = Scope.from_dialect(Dialect.get("builtin"))
 
     @property
@@ -263,24 +262,17 @@ def op_expression(
 
 def op_statement(parser: ASMParser) -> Op:
     name = parser.read(ssa_name)
-    # Type annotations may create PackOps (e.g. Function<[Float64], Nil>).
-    # These belong to the outer scope, not to nested blocks parsed later.
-    # Drain them before the op body so _read_block_body doesn't see them.
     pre_type = value_expression(parser) if parser.try_read(":") is not None else None
-    type_annotation_ops = parser.pending_ops[:]
-    parser.pending_ops.clear()
     parser.read("=")
     if pre_type is not None and parser.peek() in _LITERAL_START:
         op = ConstantOp(name=name, value=value_expression(parser), type=pre_type)
         parser.name_table[name] = op
-        parser.pending_ops[:0] = type_annotation_ops
         return op
     op_cls, parameters, operands, blocks = op_expression(parser)
     if issubclass(op_cls, ConstantOp):
         assert len(operands) == 1
         op = ConstantOp(name=name, value=operands[0], type=pre_type)
         parser.name_table[name] = op
-        parser.pending_ops[:0] = type_annotation_ops
         return op
     kwargs: dict[str, object] = {"name": name}
     if pre_type is not None:
@@ -298,7 +290,6 @@ def op_statement(parser: ASMParser) -> Op:
         kwargs[block_name] = block
     op = op_cls(**kwargs)
     parser.name_table[name] = op
-    parser.pending_ops[:0] = type_annotation_ops
     return op
 
 
@@ -382,12 +373,8 @@ def _pack_list(
         if isinstance(elem, Value):
             values.append(elem)
         else:
-            op = ConstantOp(value=elem, type=element_type)
-            parser.pending_ops.append(op)
-            values.append(op)
-    pack_op = PackOp(values=values, type=builtin.Span(pointee=element_type))
-    parser.pending_ops.append(pack_op)
-    return pack_op
+            values.append(ConstantOp(value=elem, type=element_type))
+    return PackOp(values=values, type=builtin.Span(pointee=element_type))
 
 
 # -- Block parsing ----------------------------------------------------------
@@ -418,20 +405,12 @@ def _read_block_body(parser: ASMParser) -> Block:
             parameters=block_params,
             captures=captures,
         )
-    ops: list[Op] = []
+    last_op: Op | None = None
     while parser.pos < len(parser.text):
         indent = newline(parser)
         if indent < block_indent:
             break
         parser.pos += indent
-        op = op_statement(parser)
-        ops.extend(parser.pending_ops)
-        parser.pending_ops.clear()
-        ops.append(op)
-    block = Block(result=ops[-1], args=args, parameters=block_params, captures=captures)
-    live = set(block.ops)
-    dead = [op for op in ops if op not in live]
-    if dead:
-        names = [op.name or type(op).__name__ for op in dead]
-        raise ParseError(f"Dead ops in block (not reachable from result): {names}")
-    return block
+        last_op = op_statement(parser)
+    assert last_op is not None
+    return Block(result=last_op, args=args, parameters=block_params, captures=captures)
