@@ -194,6 +194,8 @@ def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
 
 
 def unpack(val: Value) -> list[Value]:
+    if isinstance(val, builtin.ChainOp):
+        return unpack(val.lhs)
     return list(val) if isinstance(val, PackOp) else [val]
 
 

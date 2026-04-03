@@ -97,13 +97,17 @@ class ControlFlowToGoto(Pass):
 
         is_void = isinstance(op.type, Nil)
 
-        # --- Merge region: receives results from then/else as block args ---
-        merge_self = BlockParameter(name="self", type=goto.Label())
-        merge_result_arg = (
-            None if is_void else BlockArgument(name=f"if_result{lid}", type=op.type)
-        )
+        # For void ifs: use an exit parameter (like loops).
+        # For value-producing ifs: use %self as merge target with block args.
+        if is_void:
+            exit_param = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
+            branch_target = exit_param
+        else:
+            merge_self = BlockParameter(name="self", type=goto.Label())
+            merge_result_arg = BlockArgument(name=f"if_result{lid}", type=op.type)
+            branch_target = merge_self
 
-        # --- Then label: runs then body, branches to merge ---
+        # --- Then label: runs then body, branches to merge/exit ---
         then_result_args: list[dgen.Value] = (
             []
             if is_void
@@ -113,14 +117,28 @@ class ControlFlowToGoto(Pass):
                 else [op.then_body.result]
             )
         )
+        # Chain branch arguments with the original body result to ensure
+        # side effects (stores) execute before the branch.
+        chained_then_args = [
+            ChainOp(lhs=arg, rhs=op.then_body.result, type=arg.type)
+            for arg in then_result_args
+        ]
+        then_args_val = pack(chained_then_args)
+        # For void branches, arguments are empty but we still need the
+        # branch ordered after body side effects. Chain the arguments
+        # pack itself through the body result.
+        if not then_result_args:
+            then_args_val = ChainOp(
+                lhs=then_args_val, rhs=op.then_body.result, type=then_args_val.type
+            )
         then_br = goto.BranchOp(
-            target=merge_self,
-            arguments=pack(then_result_args),
+            target=branch_target,
+            arguments=then_args_val,
         )
         then_body = dgen.Block(
             result=then_br,
             args=list(op.then_body.args),
-            captures=[merge_self] + list(op.then_body.captures),
+            captures=[branch_target] + list(op.then_body.captures),
         )
         then_label = goto.LabelOp(
             name=f"if_then{lid}",
@@ -128,7 +146,7 @@ class ControlFlowToGoto(Pass):
             body=then_body,
         )
 
-        # --- Else label: runs else body, branches to merge ---
+        # --- Else label: runs else body, branches to merge/exit ---
         else_result_args: list[dgen.Value] = (
             []
             if is_void
@@ -138,14 +156,23 @@ class ControlFlowToGoto(Pass):
                 else [op.else_body.result]
             )
         )
+        chained_else_args = [
+            ChainOp(lhs=arg, rhs=op.else_body.result, type=arg.type)
+            for arg in else_result_args
+        ]
+        else_args_val = pack(chained_else_args)
+        if not else_result_args:
+            else_args_val = ChainOp(
+                lhs=else_args_val, rhs=op.else_body.result, type=else_args_val.type
+            )
         else_br = goto.BranchOp(
-            target=merge_self,
-            arguments=pack(else_result_args),
+            target=branch_target,
+            arguments=else_args_val,
         )
         else_body = dgen.Block(
             result=else_br,
             args=list(op.else_body.args),
-            captures=[merge_self] + list(op.else_body.captures),
+            captures=[branch_target] + list(op.else_body.captures),
         )
         else_label = goto.LabelOp(
             name=f"if_else{lid}",
@@ -162,7 +189,7 @@ class ControlFlowToGoto(Pass):
             false_arguments=op.else_arguments,
         )
 
-        # --- Single region containing everything ---
+        # --- Captures ---
         merge_captures: list[dgen.Value] = [
             op.condition,
             op.then_arguments,
@@ -170,7 +197,6 @@ class ControlFlowToGoto(Pass):
         ]
         merge_captures.extend(op.then_body.captures)
         merge_captures.extend(op.else_body.captures)
-        # Deduplicate while preserving order
         seen: set[int] = set()
         unique_captures: list[dgen.Value] = []
         for cap in merge_captures:
@@ -178,30 +204,39 @@ class ControlFlowToGoto(Pass):
                 seen.add(id(cap))
                 unique_captures.append(cap)
 
-        merge_args = [] if is_void else [merge_result_arg]
-
+        # --- Build the region ---
         if is_void:
-            body_result = cond_br
+            # Void if: exit parameter, no block args, no phi.
+            region = goto.RegionOp(
+                name=f"if{lid}",
+                initial_arguments=pack([]),
+                body=dgen.Block(
+                    result=cond_br,
+                    parameters=[exit_param],
+                    args=[],
+                    captures=unique_captures,
+                ),
+            )
         else:
+            # Value-producing if: %self as merge target, block arg for phi.
             body_result = ChainOp(lhs=merge_result_arg, rhs=cond_br, type=op.type)
-
-        merge = goto.RegionOp(
-            name=f"if{lid}",
-            initial_arguments=pack([]),
-            type=op.type,
-            body=dgen.Block(
-                result=body_result,
-                parameters=[merge_self],
-                args=merge_args,
-                captures=unique_captures,
-            ),
-        )
+            region = goto.RegionOp(
+                name=f"if{lid}",
+                initial_arguments=pack([]),
+                type=op.type,
+                body=dgen.Block(
+                    result=body_result,
+                    parameters=[merge_self],
+                    args=[merge_result_arg],
+                    captures=unique_captures,
+                ),
+            )
 
         # Recurse into then/else bodies to handle nested control flow.
         self._run_block(then_label.body)
         self._run_block(else_label.body)
 
-        return merge
+        return region
 
     @lowering_for(control_flow.ForOp)
     def lower_for(self, op: control_flow.ForOp) -> dgen.Value | None:
