@@ -40,7 +40,7 @@ _PIPELINE_IR = strip_prefix("""
     | import ndbuffer
     | import number
     |
-    | %main : function.Function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>> = function.function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>>() body(%0: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+    | %main : function.Function<[ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>], ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>> = function.function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>>() body(%0: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
     |     %1 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = actor.pipeline(%0) body(%2: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
     |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
     |             %5 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))
@@ -90,7 +90,7 @@ def test_unfused_pipeline() -> None:
         | import ndbuffer
         | import number
         |
-        | %main : function.Function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>> = function.function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>>() body(%0: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
+        | %main : function.Function<[ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>], ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>> = function.function<ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>>() body(%0: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
         |     %1 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = actor.pipeline(%0) body(%2: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
         |         %3 : Nil = actor.actor<4, 4>(%2) body(%4: ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64>):
         |             %5 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([4]))

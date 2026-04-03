@@ -13,7 +13,7 @@ def test_roundtrip_transpose():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
+        | %f : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)
     """)
     module = parse_module(ir)
@@ -28,7 +28,7 @@ def test_roundtrip_reshape():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
+        | %f : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%a)
     """)
     module = parse_module(ir)
@@ -43,7 +43,7 @@ def test_roundtrip_constant():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
+        | %f : function.Function<[], toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     """)
     module = parse_module(ir)
@@ -59,7 +59,7 @@ def test_explicit_constant(ir_snapshot):
         | import number
         | import toy
         |
-        | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
+        | %f : function.Function<[], toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     """)
     module = parse_module(ir)
@@ -73,7 +73,7 @@ def test_roundtrip_mul():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
+        | %f : function.Function<[toy.InferredShapeTensor<number.Float64>, toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = toy.mul(%a, %b)
     """)
     module = parse_module(ir)
@@ -87,7 +87,7 @@ def test_roundtrip_add():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
+        | %f : function.Function<[toy.InferredShapeTensor<number.Float64>, toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = toy.add(%a, %b)
     """)
     module = parse_module(ir)
@@ -101,9 +101,9 @@ def test_roundtrip_call():
         | import number
         | import toy
         |
-        | %helper : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%x: toy.InferredShapeTensor<number.Float64>):
+        | %helper : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%x: toy.InferredShapeTensor<number.Float64>):
         |
-        | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
+        | %f : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = function.call<%helper>([%a])
     """)
     module = parse_module(ir)
@@ -118,7 +118,7 @@ def test_roundtrip_print():
         | import number
         | import toy
         |
-        | %f : function.Function<()> = function.function<Nil>() body(%a: toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>):
+        | %f : function.Function<[toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>], ()> = function.function<Nil>() body(%a: toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>):
         |     %0 : Nil = toy.print(%a)
     """)
     module = parse_module(ir)
@@ -129,7 +129,7 @@ def test_roundtrip_void_return():
     ir = strip_prefix("""
         | import function
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -143,7 +143,7 @@ def test_roundtrip_concat():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([2, 8]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 8]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>, %b: toy.Tensor<ndbuffer.Shape<2>([2, 5]), number.Float64>):
+        | %f : function.Function<[toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>, toy.Tensor<ndbuffer.Shape<2>([2, 5]), number.Float64>], toy.Tensor<ndbuffer.Shape<2>([2, 8]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 8]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>, %b: toy.Tensor<ndbuffer.Shape<2>([2, 5]), number.Float64>):
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 8]), number.Float64> = toy.concat<1>(%a, %b)
     """)
     module = parse_module(ir)
@@ -158,7 +158,7 @@ def test_roundtrip_tile():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>, %n: index.Index):
+        | %f : function.Function<[toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>, index.Index], toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>, %n: index.Index):
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64> = toy.tile<%n>(%a)
     """)
     module = parse_module(ir)
@@ -174,7 +174,7 @@ def test_roundtrip_tile_with_index_constant():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>):
+        | %f : function.Function<[toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>], toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>> = function.function<toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>):
         |     %0 : index.Index = 4
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([4, 3]), number.Float64> = toy.tile<%0>(%a)
     """)
@@ -192,7 +192,7 @@ def test_roundtrip_tile_with_computed_count():
         | import number
         | import toy
         |
-        | %f : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>):
+        | %f : function.Function<[toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.Tensor<ndbuffer.Shape<1>([3]), number.Float64>):
         |     %0 : index.Index = 2
         |     %1 : index.Index = 2
         |     %2 : index.Index = algebra.add(%0, %1)
@@ -208,7 +208,7 @@ def test_roundtrip_add_index():
         | import function
         | import index
         |
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index, %y: index.Index):
+        | %f : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index, %y: index.Index):
         |     %0 : index.Index = algebra.add(%x, %y)
     """)
     module = parse_module(ir)
@@ -223,12 +223,12 @@ def test_roundtrip_full_program():
         | import number
         | import toy
         |
-        | %multiply_transpose : function.Function<toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
+        | %multiply_transpose : function.Function<[toy.InferredShapeTensor<number.Float64>, toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>, %b: toy.InferredShapeTensor<number.Float64>):
         |     %0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)
         |     %1 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%b)
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.mul(%0, %1)
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)
         |     %2 : toy.Tensor<ndbuffer.Shape<1>([6]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

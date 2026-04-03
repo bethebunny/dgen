@@ -23,7 +23,7 @@ def test_transpose_elimination(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([3, 2]), number.Float64> = toy.transpose(%0)
         |     %2 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.transpose(%1)
@@ -42,7 +42,7 @@ def test_reshape_of_matching_constant(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)
         |     %2 : Nil = toy.print(%1)
@@ -60,7 +60,7 @@ def test_constant_folding_reshape(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<1>([6]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)
         |     %2 : Nil = toy.print(%1)
@@ -77,7 +77,7 @@ def test_dce(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %2 : toy.Tensor<ndbuffer.Shape<2>([3, 2]), number.Float64> = toy.transpose(%1)
@@ -97,7 +97,7 @@ def test_full_pipeline(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)
         |     %2 : toy.Tensor<ndbuffer.Shape<1>([6]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

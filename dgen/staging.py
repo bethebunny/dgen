@@ -12,7 +12,7 @@ from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable
 from dgen.dialects import function
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module
+from dgen.module import ConstantOp, Module, pack
 from dgen.type import Constant, Memory
 
 from dgen.passes.pass_ import Pass
@@ -55,8 +55,10 @@ def _jit_evaluate(
     func = function.FunctionOp(
         name="main",
         body=dgen.Block(result=target, args=list(block_args)),
-        result=target.type,
-        type=Function(result=target.type),
+        result_type=target.type,
+        type=Function(
+            arguments=pack(arg.type for arg in block_args), result_type=target.type
+        ),
     )
     module = Module(ops=[func])
     exe = compile(module)

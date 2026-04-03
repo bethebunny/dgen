@@ -14,7 +14,7 @@ def test_diff_empty_when_identical():
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -29,7 +29,7 @@ def test_diff_empty_when_ssa_names_differ():
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -39,7 +39,7 @@ def test_diff_empty_when_ssa_names_differ():
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %tensor : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %result : Nil = toy.print(%tensor)
     """)
@@ -54,7 +54,7 @@ def test_diff_empty_when_function_order_differs():
         | import number
         | import toy
         |
-        | %func_a : function.Function<()> = function.function<Nil>() body():
+        | %func_a : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -64,7 +64,7 @@ def test_diff_empty_when_function_order_differs():
         | import number
         | import toy
         |
-        | %func_b : function.Function<()> = function.function<Nil>() body():
+        | %func_b : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -110,7 +110,7 @@ def test_diff_format_semantic_change():
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -120,7 +120,7 @@ def test_diff_format_semantic_change():
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -147,7 +147,7 @@ def test_diff_format_missing_function():
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -167,7 +167,7 @@ def test_diff_format_extra_function():
         | import number
         | import toy
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)

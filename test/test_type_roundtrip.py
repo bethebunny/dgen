@@ -21,7 +21,7 @@ from dgen.compiler import Compiler
 from dgen.dialects import builtin, llvm, number
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module, string_value
+from dgen.module import ConstantOp, Module, pack, string_value
 from dgen.type import Memory
 from toy.dialects import shape_constant
 from dgen.dialects.ndbuffer import NDBuffer, Shape
@@ -135,8 +135,8 @@ def _identity_exe(ty):
     func = FunctionOp(
         name="main",
         body=Block(result=arg, args=[arg]),
-        result=ty,
-        type=Function(result=ty),
+        result_type=ty,
+        type=Function(arguments=pack([arg.type]), result_type=ty),
     )
     return compile_module(Module(ops=[func]))
 
@@ -315,8 +315,8 @@ def test_span_constant_jit_return():
     func = FunctionOp(
         name="main",
         body=Block(result=const, args=[]),
-        result=list_type,
-        type=Function(result=list_type),
+        result_type=list_type,
+        type=Function(arguments=pack(), result_type=list_type),
     )
     exe = compile_module(Module(ops=[func]))
     result = exe.run()
@@ -355,7 +355,7 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
         | import index
         | import ndbuffer
         |
-        | %main : function.Function<()> = function.function<Nil>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], ()> = function.function<Nil>() body(%x: index.Index):
         |     %store : Nil = ndbuffer.store(%x, %x, %x, [3, %x, 5])
     """)
     parsed = parse_module(ir_input)
@@ -389,7 +389,7 @@ def test_string_as_op_param():
         | import llvm
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 1
         |     %1 : index.Index = 2
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
@@ -421,7 +421,7 @@ def test_string_param_staging():
         | import llvm
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
+        | %main : function.Function<[String, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)
@@ -451,7 +451,7 @@ def test_compile_once_run_twice():
         | import llvm
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
+        | %main : function.Function<[String, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
         |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
         |     %ext : Nil = llvm.zext(%cmp)
     """)
@@ -516,8 +516,8 @@ def test_deepcopy_module_with_span_constant():
     func = FunctionOp(
         name="main",
         body=Block(result=const, args=[]),
-        result=list_type,
-        type=Function(result=list_type),
+        result_type=list_type,
+        type=Function(arguments=pack(), result_type=list_type),
     )
     module = Module(ops=[func])
     copied = deepcopy(module)

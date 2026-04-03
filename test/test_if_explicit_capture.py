@@ -19,7 +19,7 @@ def test_if_no_capture_roundtrip():
         | import control_flow
         | import index
         | import function
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %cond : number.Boolean = algebra.equal(%n, 0)
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : index.Index = 10
@@ -44,7 +44,7 @@ def test_if_with_capture_roundtrip():
         | import function
         | import index
         | import number
-        | %main : function.Function<number.Float64> = function.function<number.Float64>() body(%cond: index.Index, %x: number.Float64):
+        | %main : function.Function<[index.Index, number.Float64], number.Float64> = function.function<number.Float64>() body(%cond: index.Index, %x: number.Float64):
         |     %result : number.Float64 = control_flow.if(%cond, [%x], [%x]) then_body(%x: number.Float64):
         |         %a : number.Float64 = 1.0
         |     else_body(%x: number.Float64):
@@ -69,7 +69,7 @@ def test_if_python_api_no_capture():
         | import index
         | import function
         | import index
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%cond: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%cond: index.Index):
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : index.Index = 10
         |     else_body():

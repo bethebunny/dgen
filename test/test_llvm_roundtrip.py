@@ -12,7 +12,7 @@ def test_roundtrip_alloca():
         | import index
         | import llvm
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
     """)
     module = parse_module(ir)
@@ -27,7 +27,7 @@ def test_roundtrip_gep_load_store():
         | import memory
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<6>()
         |     %1 : index.Index = 0
         |     %2 : Nil = llvm.gep(%0, %1)
@@ -46,7 +46,7 @@ def test_roundtrip_fadd_fmul():
         | import llvm
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : number.Float64 = 1.0
         |     %1 : number.Float64 = 2.0
         |     %2 : Nil = llvm.fadd(%0, %1)
@@ -63,7 +63,7 @@ def test_roundtrip_add_mul_int():
         | import index
         | import llvm
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 3
         |     %1 : index.Index = 4
         |     %2 : Nil = llvm.add(%0, %1)
@@ -82,7 +82,7 @@ def test_roundtrip_icmp_condbr():
         | import llvm
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 0
         |     %1 : index.Index = 10
         |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
@@ -102,7 +102,7 @@ def test_roundtrip_label_br():
         | import goto
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %loop_header : goto.Label = goto.label([]) body():
         |     %_ : Nil = goto.branch<%loop_header>([])
     """)
@@ -116,7 +116,7 @@ def test_roundtrip_call_with_result():
         | import index
         | import llvm
         |
-        | %f : function.Function<()> = function.function<Nil>() body(%a: index.Index, %b: index.Index):
+        | %f : function.Function<[index.Index, index.Index], ()> = function.function<Nil>() body(%a: index.Index, %b: index.Index):
         |     %0 : Nil = llvm.call<"foo">([%a, %b])
     """)
     module = parse_module(ir)
@@ -129,7 +129,7 @@ def test_roundtrip_call_void():
         | import index
         | import llvm
         |
-        | %f : function.Function<()> = function.function<Nil>() body(%ptr: index.Index, %size: index.Index):
+        | %f : function.Function<[index.Index, index.Index], ()> = function.function<Nil>() body(%ptr: index.Index, %size: index.Index):
         |     %0 : Nil = llvm.call<"print_memref">([%ptr, %size])
     """)
     module = parse_module(ir)
@@ -141,7 +141,7 @@ def test_roundtrip_return_value():
         | import function
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : number.Float64 = 42.0
     """)
     module = parse_module(ir)
@@ -157,7 +157,7 @@ def test_roundtrip_loop_pattern():
         | import llvm
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %alloc : Nil = llvm.alloca<3>()
         |     %init : index.Index = 0
         |     %loop_header : goto.Label = goto.label([]) body(%i: index.Index, %p: llvm.Ptr):

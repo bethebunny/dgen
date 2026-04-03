@@ -11,7 +11,7 @@ def test_roundtrip_stack_allocate():
         | import memory
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
     """)
     module = parse_module(ir)
@@ -25,7 +25,7 @@ def test_roundtrip_heap_allocate():
         | import memory
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %n : index.Index = 10
         |     %0 : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
     """)
@@ -40,7 +40,7 @@ def test_roundtrip_load_store_with_mem():
         | import memory
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %val : index.Index = 42
         |     %st : Nil = memory.store(%alloc, %val, %alloc)
@@ -57,7 +57,7 @@ def test_roundtrip_offset():
         | import memory
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %n : index.Index = 10
         |     %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
         |     %idx : index.Index = 3
@@ -74,7 +74,7 @@ def test_roundtrip_deallocate():
         | import memory
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %n : index.Index = 1
         |     %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
         |     %dealloc : Nil = memory.deallocate(%alloc, %alloc)
@@ -90,7 +90,7 @@ def test_roundtrip_load_store_chain():
         | import memory
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %zero : index.Index = 0
         |     %st0 : Nil = memory.store(%alloc, %zero, %alloc)
@@ -111,7 +111,7 @@ def test_roundtrip_offset_load_store():
         | import memory
         | import number
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %n : index.Index = 10
         |     %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
         |     %idx : index.Index = 5
@@ -132,7 +132,7 @@ def test_roundtrip_mem_from_for_loop():
         | import memory
         | import index
         |
-        | %f : function.Function<index.Index> = function.function<index.Index>() body():
+        | %f : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %loop : Nil = control_flow.for<0, 10>([]) body(%iv: index.Index) captures(%alloc):
         |         %cur : index.Index = memory.load(%alloc, %alloc)
@@ -151,7 +151,7 @@ def test_roundtrip_mem_from_if_else():
         | import memory
         | import index
         |
-        | %f : function.Function<index.Index> = function.function<index.Index>() body():
+        | %f : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %cond : index.Index = 1
         |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):

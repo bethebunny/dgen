@@ -6,7 +6,7 @@ Maps C types to shared dgen types:
   void          -> builtin.Nil
   T*            -> memory.Reference<T>
   T[N]          -> builtin.Array<T, N>
-  int (*)(...)  -> function.Function<R>
+  int (*)(...)  -> function.Function<[], R>
 
 Only CStruct and CUnion remain C-specific.
 """

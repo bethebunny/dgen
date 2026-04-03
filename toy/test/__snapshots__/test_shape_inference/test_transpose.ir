@@ -4,7 +4,7 @@ import ndbuffer
 import number
 import toy
 
-%main : function.Function<Nil> = function.function<Nil>() body():
+%main : function.Function<[], Nil> = function.function<Nil>() body():
     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     %1 : toy.Tensor<ndbuffer.Shape<2>([3, 2]), number.Float64> = toy.transpose(%0)
     %2 : Nil = toy.print(%1)

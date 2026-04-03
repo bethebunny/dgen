@@ -67,7 +67,13 @@ class ToyToStructured(Pass):
     def _lower_function(self, f: FunctionOp) -> FunctionOp:
         self._run_block(f.body)
         return FunctionOp(
-            name=f.name, body=f.body, result=f.result, type=Function(result=f.result)
+            name=f.name,
+            body=f.body,
+            result_type=f.result_type,
+            type=Function(
+                arguments=pack(arg.type for arg in f.body.args),
+                result_type=f.result_type,
+            ),
         )
 
     def _shape(self, val: dgen.Value) -> list[int]:

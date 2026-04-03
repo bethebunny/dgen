@@ -27,7 +27,7 @@ def test_while_basic_roundtrip():
         | import control_flow
         | import index
         | import function
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %zero : index.Index = 0
         |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
         |         %ten : index.Index = 10
@@ -56,7 +56,7 @@ def test_while_with_capture_roundtrip():
         | import control_flow
         | import index
         | import function
-        | %main : function.Function<()> = function.function<Nil>() body(%limit: index.Index):
+        | %main : function.Function<[index.Index], ()> = function.function<Nil>() body(%limit: index.Index):
         |     %zero : index.Index = 0
         |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
         |         %cmp : number.Boolean = algebra.less_than(%i, %limit)
@@ -78,7 +78,7 @@ def test_while_no_ivs_roundtrip():
         | import control_flow
         | import index
         | import function
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %loop : Nil = control_flow.while([]) condition():
         |         %cond : index.Index = 1
         |     body():
@@ -101,7 +101,7 @@ SIMPLE_WHILE = strip_prefix("""
     | import function
     | import index
     | import number
-    | %main : function.Function<()> = function.function<Nil>() body():
+    | %main : function.Function<[], ()> = function.function<Nil>() body():
     |     %zero : index.Index = 0
     |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
     |         %ten : index.Index = 10
@@ -132,7 +132,7 @@ NESTED_WHILE = strip_prefix("""
     | import function
     | import index
     | import number
-    | %main : function.Function<()> = function.function<Nil>() body():
+    | %main : function.Function<[], ()> = function.function<Nil>() body():
     |     %zero : index.Index = 0
     |     %outer : Nil = control_flow.while([%zero]) condition(%i: index.Index):
     |         %two : index.Index = 2

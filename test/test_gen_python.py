@@ -75,11 +75,12 @@ def test_generate_builtin_op_kw_only_decorator():
 
 
 def test_generate_function_type():
-    """Function<Type> should NOT have list annotation (it's not a list container)."""
+    """Function<Span<Type>, Type> has arguments and result_type fields."""
     mod = importlib.import_module("dgen.dialects.function")
     code = generate_pyi(mod, "function")
     assert "class Function(Type):" in code
-    assert "result: Value[dgen.TypeType]" in code
+    assert "arguments: Value[Span]" in code
+    assert "result_type: Value[dgen.TypeType]" in code
 
 
 def test_generate_function_define_op_with_block():

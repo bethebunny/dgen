@@ -17,7 +17,7 @@ from dgen.type import _format_float as format_float
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import builtin, control_flow, function, goto, llvm, memory
 from dgen.layout import Layout
-from dgen.module import ConstantOp, Module, PackOp, string_value
+from dgen.module import ConstantOp, Module, PackOp, pack, string_value
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.type import Constant, Memory, Value
@@ -521,8 +521,8 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
 
     llvm_ret = (
         "void"
-        if isinstance(f.result, builtin.Nil)
-        else _llvm_type(dgen.type.type_constant(f.result).__layout__)
+        if isinstance(f.result_type, builtin.Nil)
+        else _llvm_type(dgen.type.type_constant(f.result_type).__layout__)
     )
     params = ", ".join(
         f"{types.get(a, 'i64')} %{tracker.track_name(a)}" for a in f.body.args
@@ -756,7 +756,7 @@ def compile(module: Module) -> Executable:
         ir=ir,
         input_types=[dgen.type.type_constant(arg.type) for arg in main.body.args],
         main_name=main.name,
-        result_type=dgen.type.type_constant(main.result),
+        result_type=dgen.type.type_constant(main.result_type),
         host_refs=host_buffers,
     )
 
@@ -810,7 +810,7 @@ def build_callback_thunk(
     assert func_op.name is not None
     callback_name = f"_stage2_{func_op.name}"
     orig_types = [dgen.type.type_constant(arg.type) for arg in func_op.body.args]
-    result_type = dgen.type.type_constant(func_op.result)
+    result_type = dgen.type.type_constant(func_op.result_type)
     result_ctype: type[ctypes._CData] | None = (
         None if isinstance(result_type, builtin.Nil) else _ctype(result_type.__layout__)
     )
@@ -839,7 +839,6 @@ def build_callback_thunk(
     from dgen.block import BlockArgument
     from dgen.dialects.builtin import String
     from dgen.dialects.function import Function
-    from dgen.module import pack
 
     thunk_args = [
         BlockArgument(name=arg.name, type=arg.type) for arg in func_op.body.args
@@ -852,8 +851,10 @@ def build_callback_thunk(
     thunk_func = function.FunctionOp(
         name=func_op.name,
         body=dgen.Block(result=call_op, args=thunk_args),
-        result=result_type,
-        type=Function(result=result_type),
+        result_type=result_type,
+        type=Function(
+            arguments=pack(arg.type for arg in thunk_args), result_type=result_type
+        ),
     )
     thunk_module = Module(ops=[thunk_func])
 

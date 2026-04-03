@@ -141,9 +141,11 @@ def test_full_module(ir_snapshot):
 
     mt_func = function.FunctionOp(
         name="multiply_transpose",
-        result=inferred(),
+        result_type=inferred(),
         body=dgen.Block(result=m0, args=[mt_arg_a, mt_arg_b]),
-        type=Function(result=inferred()),
+        type=Function(
+            arguments=pack([mt_arg_a.type, mt_arg_b.type]), result_type=inferred()
+        ),
     )
 
     # Build main function
@@ -174,9 +176,9 @@ def test_full_module(ir_snapshot):
 
     main_func = function.FunctionOp(
         name="main",
-        result=builtin.Nil(),
+        result_type=builtin.Nil(),
         body=dgen.Block(result=print_op, args=[]),
-        type=Function(result=builtin.Nil()),
+        type=Function(arguments=pack(), result_type=builtin.Nil()),
     )
 
     module = Module(ops=[mt_func, main_func])

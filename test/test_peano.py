@@ -217,7 +217,7 @@ def test_zero_type_has_natural_trait_via_asm():
         | import peano
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : Type = peano.zero()
     """)
     module = parse_module(ir)
@@ -256,7 +256,7 @@ def test_trait_in_asm_type_annotation():
         | import index
         | import peano
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : peano.Natural = peano.zero()
     """)
     module = parse_module(ir)
@@ -275,7 +275,7 @@ def test_trait_annotation_roundtrips_through_asm():
         | import index
         | import peano
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : peano.Natural = peano.zero()
     """)
     module = parse_module(ir)
@@ -297,7 +297,7 @@ def test_trait_as_block_argument_type():
         | import index
         | import peano
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : peano.Natural = peano.zero()
         |     %s : peano.Natural = peano.successor<%z>()
         |     %v : index.Index = peano.value<%s>()
@@ -327,7 +327,7 @@ def test_peano_constant():
         | import peano
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %s2 : Type = peano.successor<%s1>()
@@ -354,7 +354,7 @@ def test_equal_and_subtract_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %eq : number.Boolean = algebra.equal(%n, 0)
         |     %eq_i : index.Index = algebra.cast(%eq)
         |     %sub : index.Index = algebra.subtract(%n, 1)
@@ -375,7 +375,7 @@ def test_subtract_jit():
         | import function
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %sub : index.Index = algebra.subtract(%n, 1)
     """)
     module = parse_module(ir)
@@ -391,7 +391,7 @@ def test_if_else_parse_roundtrip():
         | import control_flow
         | import function
         | import index
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %cond : number.Boolean = algebra.equal(%n, 0)
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : index.Index = 10
@@ -417,7 +417,7 @@ def test_if_else_jit():
         | import control_flow
         | import function
         | import index
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %cond : number.Boolean = algebra.equal(%n, 0)
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %one : index.Index = 1
@@ -439,10 +439,10 @@ def test_call_op_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %result : index.Index = function.call<%add_one>([%x])
         |
-        | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %r : index.Index = algebra.add(%n, 1)
     """)
     module = parse_module(ir)
@@ -459,10 +459,10 @@ def test_call_jit():
         | import function
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %result : index.Index = function.call<%add_one>([%x])
         |
-        | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %r : index.Index = algebra.add(%n, 1)
     """)
     module = parse_module(ir)
@@ -481,13 +481,13 @@ def test_multi_function_staged():
         | import peano
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %n : index.Index = peano.value<%s1>()
         |     %result : index.Index = function.call<%add_one>([%n])
         |
-        | %add_one : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.add(%x, 1)
     """)
     module = parse_module(ir)
@@ -504,7 +504,7 @@ def test_equal_jit():
         | import function
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%n: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %cmp : number.Boolean = algebra.equal(%n, 0)
         |     %eq : index.Index = algebra.cast(%cmp)
     """)
@@ -525,7 +525,7 @@ def test_verify_dag_detects_cycle():
         | import function
         | import index
         |
-        | %f : function.Function<()> = function.function<Nil>() body():
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : Nil = {}
     """)
     )
@@ -559,11 +559,11 @@ def test_recursive_peano():
         | import peano
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %n : peano.Natural = function.call<%natural>([%x])
         |     %result : index.Index = peano.value<%n>()
         |
-        | %natural : function.Function<peano.Natural> = function.function<peano.Natural>() body(%n: index.Index):
+        | %natural : function.Function<[index.Index], peano.Natural> = function.function<peano.Natural>() body(%n: index.Index):
         |     %base_case : number.Boolean = algebra.equal(%n, 0)
         |     %value : peano.Natural = control_flow.if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()
