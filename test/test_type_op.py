@@ -125,12 +125,11 @@ def test_type_op_jit_used_as_annotation():
 
 
 def test_type_op_staging_short_circuit():
-    """TypeOp resolved by BuiltinToLLVM during staging skips JIT round-trip.
+    """TypeOp resolved by BuiltinToLLVM during staging doesn't need JIT.
 
     type(%x) is used as the type annotation for %y — a staging boundary.
     Staging extracts the TypeOp subgraph, runs the pipeline (which includes
-    BuiltinToLLVM, lowering TypeOp → ConstantOp), and the short-circuit
-    extracts the constant directly without compiling to LLVM and executing.
+    BuiltinToLLVM, lowering TypeOp → ConstantOp). Full end-to-end test.
     """
     ir = strip_prefix("""
         | import algebra
