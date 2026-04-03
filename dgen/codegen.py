@@ -193,16 +193,6 @@ def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
         _emit_ctx.reset(token)
 
 
-def _result_type_str(ty: Value[dgen.TypeType]) -> str:
-    """Map an op's result type to an LLVM type string, or None for void."""
-    if isinstance(ty, builtin.Nil):
-        return "void"
-    resolved = dgen.type.type_constant(ty)
-    if isinstance(resolved, llvm.Int):
-        return f"i{resolved.bits.__constant__.to_json()}"
-    return _llvm_type(resolved.__layout__)
-
-
 def unpack(val: Value) -> list[Value]:
     return list(val) if isinstance(val, PackOp) else [val]
 
@@ -230,10 +220,6 @@ def runtime_dependencies(value: dgen.Value) -> Iterator[dgen.Value]:
                 yield dependency
 
     yield from visit(value)
-
-
-def new_synthetic_label() -> str:
-    return "synthetic:"
 
 
 # ---------------------------------------------------------------------------
@@ -792,10 +778,6 @@ def emit_conditional_branch(op: goto.ConditionalBranchOp) -> Iterator[str]:
 @emitter_for(goto.BranchOp)
 def emit_branch(op: goto.BranchOp) -> Iterator[str]:
     yield f"  br {typed_references(op.target)}"
-
-
-def is_block_terminator(value: dgen.Value) -> bool:
-    return isinstance(value.type, (goto.BranchOp, goto.ConditionalBranchOp))
 
 
 # ---------------------------------------------------------------------------
