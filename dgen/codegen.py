@@ -16,7 +16,6 @@ from dgen import Type
 from dgen.asm.formatting import SlotTracker
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import (
-    algebra,
     builtin,
     control_flow,
     function,
@@ -347,34 +346,114 @@ def typed_references(*vs: dgen.Value) -> str:
     return ", ".join(typed_reference(v) for v in vs)
 
 
-@emitter_for(algebra.AddOp)
-def emit_add(op: algebra.AddOp) -> Iterator[str]:
-    # XXX: types aren't comparable yet
-    # if op.left.type != op.right.type:
-    #     raise TypeError("codegen algebra must have the same type")
-    vtype = op.left.type
-    llvm_op = {
-        number.Float64: "fadd",
-        number.SignedInteger: "add",
-        index.Index: "add",
-        number.UnsignedInteger: "add",
-    }[type(vtype)]
-    yield f"  {llvm_op} {typed_reference(op.left, op.right)}"
+# ---------------------------------------------------------------------------
+# LLVM binary ops
+# ---------------------------------------------------------------------------
+
+_BINOP_EMITTERS: dict[type[dgen.Op], str] = {
+    llvm.FaddOp: "fadd double",
+    llvm.FsubOp: "fsub double",
+    llvm.FmulOp: "fmul double",
+    llvm.FdivOp: "fdiv double",
+    llvm.AddOp: "add i64",
+    llvm.SubOp: "sub i64",
+    llvm.MulOp: "mul i64",
+    llvm.SdivOp: "sdiv i64",
+    llvm.AndOp: "and i64",
+    llvm.OrOp: "or i64",
+    llvm.XorOp: "xor i64",
+}
 
 
-@emitter_for(algebra.LessThanOp)
-def emit_less_than(op: algebra.LessThanOp) -> Iterator[str]:
-    # XXX: types aren't comparable yet
-    # if op.left.type != op.right.type:
-    #     raise TypeError("codegen algebra must have the same type")
-    vtype = op.left.type
-    llvm_op, optype = {
-        number.Float64: ("fcmp", "olt"),
-        number.SignedInteger: ("icmp", "slt"),
-        index.Index: ("icmp", "slt"),
-        number.UnsignedInteger: ("icmp", "ult"),
-    }[type(vtype)]
-    yield f"  {llvm_op} {optype} {typed_reference(op.left, op.right)}"
+def _emit_binop(op: dgen.Op) -> Iterator[str]:
+    yield f"  {_BINOP_EMITTERS[type(op)]} {vr(op.lhs)}, {vr(op.rhs)}"
+
+
+for _op_type in _BINOP_EMITTERS:
+    EMITTERS[_op_type] = _emit_binop
+
+
+# ---------------------------------------------------------------------------
+# LLVM unary / cast ops
+# ---------------------------------------------------------------------------
+
+
+@emitter_for(llvm.FnegOp)
+def emit_fneg(op: llvm.FnegOp) -> Iterator[str]:
+    yield f"  fneg double {vr(op.input)}"
+
+
+@emitter_for(llvm.ZextOp)
+def emit_zext(op: llvm.ZextOp) -> Iterator[str]:
+    yield f"  zext i1 {vr(op.input)} to i64"
+
+
+# ---------------------------------------------------------------------------
+# LLVM comparison ops
+# ---------------------------------------------------------------------------
+
+
+@emitter_for(llvm.IcmpOp)
+def emit_icmp(op: llvm.IcmpOp) -> Iterator[str]:
+    pred = string_value(op.pred)
+    yield f"  icmp {pred} i64 {vr(op.lhs)}, {vr(op.rhs)}"
+
+
+@emitter_for(llvm.FcmpOp)
+def emit_fcmp(op: llvm.FcmpOp) -> Iterator[str]:
+    pred = string_value(op.pred)
+    yield f"  fcmp {pred} double {vr(op.lhs)}, {vr(op.rhs)}"
+
+
+# ---------------------------------------------------------------------------
+# LLVM memory ops
+# ---------------------------------------------------------------------------
+
+
+@emitter_for(llvm.AllocaOp)
+def emit_alloca(op: llvm.AllocaOp) -> Iterator[str]:
+    yield f"  alloca double, i64 {op.elem_count.__constant__.to_json()}"
+
+
+@emitter_for(llvm.GepOp)
+def emit_gep(op: llvm.GepOp) -> Iterator[str]:
+    yield f"  getelementptr double, ptr {vr(op.base)}, {typed_reference(op.index)}"
+
+
+@emitter_for(memory.StoreOp)
+def emit_store(op: memory.StoreOp) -> Iterator[str]:
+    yield f"  store {typed_reference(op.value)}, {typed_reference(op.ptr)}"
+
+
+@emitter_for(memory.LoadOp)
+def emit_load(op: memory.LoadOp) -> Iterator[str]:
+    yield f"  load {llvm_type(op.type)}, {typed_reference(op.ptr)}"
+
+
+# ---------------------------------------------------------------------------
+# Call ops
+# ---------------------------------------------------------------------------
+
+
+@emitter_for(function.CallOp)
+def emit_function_call(op: function.CallOp) -> Iterator[str]:
+    args = ", ".join(typed_reference(v) for v in unpack(op.arguments))
+    callee = op.callee.name
+    ret = llvm_type(op.type)
+    yield f"  call {ret} @{callee}({args})"
+
+
+@emitter_for(llvm.CallOp)
+def emit_llvm_call(op: llvm.CallOp) -> Iterator[str]:
+    args = ", ".join(typed_reference(v) for v in unpack(op.args))
+    callee = string_value(op.callee)
+    ret = llvm_type(op.type)
+    yield f"  call {ret} @{callee}({args})"
+
+
+# ---------------------------------------------------------------------------
+# Branch ops
+# ---------------------------------------------------------------------------
 
 
 @emitter_for(goto.ConditionalBranchOp)
