@@ -216,29 +216,29 @@ def test_emit_dispatches_by_value_class():
 
 
 def test_emit_linearized_nested_loop():
-    """emit_linearized handles nested loop IR without crashing."""
+    """emit_linearized handles nested loop IR (lowered to LLVM ops) without crashing."""
     module = asm.parse(strip_prefix("""
-        | import algebra
         | import function
         | import goto
         | import index
+        | import llvm
         | import number
         |
         | %test : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 0
         |     %loop_header0 : goto.Label = goto.region([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
         |         %1 : index.Index = 2
-        |         %2 : number.Boolean = algebra.less_than(%i0, %1)
+        |         %2 : number.Boolean = llvm.icmp<"slt">(%i0, %1)
         |         %loop_body0 : goto.Label = goto.label([]) body(%j0: index.Index) captures(%self):
         |             %3 : index.Index = 1
-        |             %4 : index.Index = algebra.add(%j0, %3)
+        |             %4 : index.Index = llvm.add(%j0, %3)
         |             %5 : index.Index = 0
         |             %loop_header1 : goto.Label = goto.region([%5]) body<%6: goto.Label, %exit1: goto.Label>(%i1: index.Index):
         |                 %7 : index.Index = 2
-        |                 %8 : number.Boolean = algebra.less_than(%i1, %7)
+        |                 %8 : number.Boolean = llvm.icmp<"slt">(%i1, %7)
         |                 %loop_body1 : goto.Label = goto.label([]) body(%j1: index.Index) captures(%6):
         |                     %9 : index.Index = 1
-        |                     %10 : index.Index = algebra.add(%j1, %9)
+        |                     %10 : index.Index = llvm.add(%j1, %9)
         |                     %11 : index.Index = 0
         |                     %12 : Nil = chain(%11, %11)
         |                     %13 : index.Index = chain(%10, %12)
@@ -250,7 +250,6 @@ def test_emit_linearized_nested_loop():
         """))
 
     emitted = list(emit(module.functions[0]))
-    assert '\n'.join(emitted) == ""
     # Should produce some output lines (labels, instructions)
     assert len(emitted) > 0
 
