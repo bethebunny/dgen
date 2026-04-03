@@ -739,21 +739,21 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     # Phase 3: Emit — walk the LinearBlocks and produce LLVM IR text.
     # -----------------------------------------------------------------------
 
+    def typed_ref(val: dgen.Value) -> str:
+        return (
+            constants[val]
+            if val in constants
+            else f"{types.get(val, 'i64')} %{tracker.track_name(val)}"
+        )
+
+    def bare_ref(val: dgen.Value) -> str:
+        return (
+            constants[val].split(" ", 1)[1]
+            if val in constants
+            else f"%{tracker.track_name(val)}"
+        )
+
     def _emit_op(op: dgen.Op) -> Iterator[str]:
-        def typed_ref(val: dgen.Value) -> str:
-            return (
-                constants[val]
-                if val in constants
-                else f"{types.get(val, 'i64')} %{tracker.track_name(val)}"
-            )
-
-        def bare_ref(val: dgen.Value) -> str:
-            return (
-                constants[val].split(" ", 1)[1]
-                if val in constants
-                else f"%{tracker.track_name(val)}"
-            )
-
         name = tracker.track_name(op)
         if isinstance(
             op,

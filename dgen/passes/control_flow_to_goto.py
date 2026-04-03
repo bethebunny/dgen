@@ -1,8 +1,7 @@
 """Lower control_flow dialect to goto dialect.
 
-Loops (ForOp, WhileOp) are lowered to goto regions and labels. IfOp is NOT
-lowered here — it's structured control flow emitted directly by codegen
-(see docs/codegen.md).
+Loops (ForOp, WhileOp) and conditionals (IfOp) are lowered to goto regions
+and labels.
 
 ## Region vs Label
 
@@ -43,6 +42,32 @@ Similar structure but simpler: the condition and body are user-provided blocks.
 No explicit chain is needed for the body because the body result IS the
 next-iteration values — the back-edge branch arguments reference them
 transitively.
+
+## IfOp lowering
+
+    control_flow.if(%cond, [then_args], [else_args]) then_body(...): ... else_body(...): ...
+
+becomes:
+
+    goto.region([]) if_dispatch<%merge>():
+        goto.label([then_args]) if_then(body_args):
+            <then body>
+            goto.branch<%merge>([then_result])
+        goto.label([else_args]) if_else(body_args):
+            <else body>
+            goto.branch<%merge>([else_result])
+        goto.conditional_branch<%if_then, %if_else>(%cond, [then_args], [else_args])
+
+For value-producing ifs, a merge region follows the dispatch:
+
+    goto.region([]) if_merge(%result: type):
+        chain(%result, dispatch)
+
+The dispatch region uses an exit parameter ``%merge`` — codegen emits it as a
+fall-through label after the dispatch body. Then/else branches carry their
+results to this label, which becomes a phi node.
+
+For void ifs (type=Nil), the dispatch region is returned directly.
 """
 
 from __future__ import annotations
@@ -62,6 +87,98 @@ class ControlFlowToGoto(Pass):
 
     def __init__(self) -> None:
         self._loop_counter = 0
+
+    @lowering_for(control_flow.IfOp)
+    def lower_if(self, op: control_flow.IfOp) -> dgen.Value | None:
+        lid = self._loop_counter
+        self._loop_counter += 1
+
+        merge_exit = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
+
+        # --- Then label: runs then body, branches to merge ---
+        then_br = goto.BranchOp(
+            target=merge_exit,
+            arguments=pack(
+                list(op.then_body.result)
+                if isinstance(op.then_body.result, PackOp)
+                else [op.then_body.result]
+            ),
+        )
+        then_body = dgen.Block(
+            result=then_br,
+            args=list(op.then_body.args),
+            captures=[merge_exit] + list(op.then_body.captures),
+        )
+        then_label = goto.LabelOp(
+            name=f"if_then{lid}",
+            initial_arguments=op.then_arguments,
+            body=then_body,
+        )
+
+        # --- Else label: runs else body, branches to merge ---
+        else_br = goto.BranchOp(
+            target=merge_exit,
+            arguments=pack(
+                list(op.else_body.result)
+                if isinstance(op.else_body.result, PackOp)
+                else [op.else_body.result]
+            ),
+        )
+        else_body = dgen.Block(
+            result=else_br,
+            args=list(op.else_body.args),
+            captures=[merge_exit] + list(op.else_body.captures),
+        )
+        else_label = goto.LabelOp(
+            name=f"if_else{lid}",
+            initial_arguments=op.else_arguments,
+            body=else_body,
+        )
+
+        # --- Conditional dispatch ---
+        cond_br = goto.ConditionalBranchOp(
+            condition=op.condition,
+            true_target=then_label,
+            false_target=else_label,
+            true_arguments=op.then_arguments,
+            false_arguments=op.else_arguments,
+        )
+
+        # Collect all outer-scope captures for the dispatch region:
+        # - op.condition, op.then_arguments, op.else_arguments are from the outer scope
+        # - then/else body captures are outer-scope values referenced by nested labels
+        dispatch_captures: list[dgen.Value] = [
+            op.condition,
+            op.then_arguments,
+            op.else_arguments,
+        ]
+        dispatch_captures.extend(op.then_body.captures)
+        dispatch_captures.extend(op.else_body.captures)
+        # Deduplicate while preserving order
+        seen: set[int] = set()
+        unique_captures: list[dgen.Value] = []
+        for cap in dispatch_captures:
+            if id(cap) not in seen:
+                seen.add(id(cap))
+                unique_captures.append(cap)
+
+        dispatch = goto.RegionOp(
+            name=f"if{lid}",
+            initial_arguments=pack([]),
+            type=op.type,
+            body=dgen.Block(
+                result=cond_br,
+                parameters=[merge_exit],
+                args=[],
+                captures=unique_captures,
+            ),
+        )
+
+        # Recurse into then/else bodies to handle nested control flow.
+        self._run_block(then_label.body)
+        self._run_block(else_label.body)
+
+        return dispatch
 
     @lowering_for(control_flow.ForOp)
     def lower_for(self, op: control_flow.ForOp) -> dgen.Value | None:
