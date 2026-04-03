@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 import dgen
 from dgen import asm
 from dgen.codegen import EMITTERS, _externs, emitter_for, runtime_dependencies, emit, emit_linearized
-from dgen.dialects import builtin, goto, llvm
+from dgen.dialects import builtin, function, goto, index, llvm
+from dgen.module import pack
 from dgen.testing import strip_prefix
 
 # ---------------------------------------------------------------------------
@@ -324,6 +325,45 @@ def test_externs_no_duplicates():
         |     %1 : llvm.Ptr = function.call<%malloc>([])
         |     %_ : Nil = chain(%0, %1)
     """))
+    externs = _externs(module)
+    assert len(externs) == 1
+
+
+def test_externs_dedup_distinct_instances_same_symbol():
+    """_externs deduplicates by symbol name, not object identity.
+
+    Lowering passes create a fresh ExternOp per call site. Two different
+    ExternOp instances for "malloc" must produce a single declare.
+    """
+    from dgen.dialects.builtin import ExternOp, String
+    from dgen.dialects.function import Function
+    from dgen.module import Module
+
+    malloc1 = ExternOp(
+        symbol=String().constant("malloc"),
+        type=Function(arguments=pack([index.Index()]), result_type=llvm.Ptr()),
+    )
+    malloc2 = ExternOp(
+        symbol=String().constant("malloc"),
+        type=Function(arguments=pack([index.Index()]), result_type=llvm.Ptr()),
+    )
+    assert malloc1 is not malloc2
+
+    from dgen.block import BlockArgument
+    from dgen.dialects.function import FunctionOp
+
+    arg = BlockArgument(name="n", type=index.Index())
+    call1 = function.CallOp(callee=malloc1, arguments=pack([arg]), type=llvm.Ptr())
+    call2 = function.CallOp(callee=malloc2, arguments=pack([arg]), type=llvm.Ptr())
+    result = builtin.ChainOp(lhs=call1, rhs=call2, type=llvm.Ptr())
+    func = FunctionOp(
+        name="f",
+        body=dgen.Block(result=result, args=[arg]),
+        result_type=llvm.Ptr(),
+        type=Function(arguments=pack([index.Index()]), result_type=llvm.Ptr()),
+    )
+    module = Module(ops=[func])
+
     externs = _externs(module)
     assert len(externs) == 1
 
