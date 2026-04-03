@@ -30,19 +30,12 @@ def inline_block(block: dgen.Block, args: list[dgen.Value]) -> dgen.Value:
     return block.result
 
 
-def placeholder_block() -> dgen.Block:
-    """Create a placeholder block for label ops whose bodies aren't known yet."""
-    from dgen.dialects.builtin import Nil
-
-    return dgen.Block(result=dgen.Value(type=Nil()))
-
-
 def transitive_dependencies(
     value: dgen.Value, *, stop: Iterable[dgen.Value] = ()
 ) -> Iterator[dgen.Value]:
     """Iterate over all transitive dependencies in topological order.
 
-    Stop at any elements in theh `stop` set."""
+    Stop at any elements in the `stop` set."""
     visited: set[dgen.Value] = set(stop)
 
     def visit(value: dgen.Value) -> Iterator[dgen.Value]:
@@ -54,3 +47,18 @@ def transitive_dependencies(
         yield value
 
     yield from () if value in visited else visit(value)
+
+
+def all_values(value: dgen.Value) -> Iterator[dgen.Value]:
+    """Iterate over all values in topological order, including traversing into nested blocks."""
+    for value in transitive_dependencies(value):
+        yield from interior_values(value)
+        yield value
+
+
+def interior_values(value: dgen.Value) -> Iterator[dgen.Value]:
+    """Iterate over all values nested in blocks within value."""
+    for _, block in value.blocks:
+        for value in block.values:
+            yield value
+            yield from interior_values(value)

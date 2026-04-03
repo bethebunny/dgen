@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import _ctypes
-import collections
 import ctypes
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -27,11 +26,12 @@ from dgen.dialects import (
     memory,
     number,
 )
+from dgen.graph import all_values
 from dgen.layout import Layout
 from dgen.module import ConstantOp, Module, PackOp, pack, string_value
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.builtin_to_llvm import BuiltinToLLVM
-from dgen.type import Constant, Memory, Value
+from dgen.type import Constant, Memory, TypeType, Value, type_constant
 from dgen.type import _format_float as format_float
 
 # ---------------------------------------------------------------------------
@@ -56,8 +56,8 @@ def _ctype(layout: Layout) -> type[ctypes._CData]:
     return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
 
 
-def llvm_type(t: dgen.Type) -> str:
-    match t:
+def llvm_type(t: dgen.Value[TypeType]) -> str:
+    match type_constant(t):
         case memory.Reference():
             return "ptr"
         case index.Index():
@@ -116,14 +116,14 @@ def _ensure_initialized() -> None:
 class LinearBlock:
     """One LLVM basic block.
 
-    label       — set for real goto.LabelOp blocks; drives phi-node emission.
+    label       — set for real goto.RegionOp/LabelOp blocks; drives phi-node emission.
     cond_branch — set when the block ends with an IfOp expansion:
                   (if_op, then_label_name, else_label_name).
     """
 
     name: str
     ops: list[dgen.Op] = field(default_factory=list)
-    label: goto.LabelOp | None = None
+    label: goto.RegionOp | goto.LabelOp | None = None
     cond_branch: tuple[control_flow.IfOp, str, str] | None = None
 
 
@@ -159,56 +159,18 @@ _BINOP: dict[type[dgen.Op], str] = {
 # ---------------------------------------------------------------------------
 
 
-def _discover_externs(module: Module) -> list[str]:
+def _externs(module: Module) -> list[builtin.ExternOp]:
     """Discover extern declarations from ExternOps and call sites in the module.
 
-    Scans all functions for builtin.ExternOp instances and llvm.CallOp /
-    function.CallOp call sites whose callee is not defined in the module.
-    Returns LLVM ``declare`` strings.
+    Scans all functions for builtin.ExternOp instances. Returns LLVM ``declare`` strings.
     """
-    defined: set[str] = set()
-    for func in module.functions:
-        if func.name is not None:
-            defined.add(func.name)
-
-    externs: list[str] = []
-    seen: set[str] = set()
-
-    for func in module.functions:
-        for op in func.body.ops:
-            if isinstance(op, builtin.ExternOp):
-                sym = string_value(op.symbol)
-                if sym not in seen:
-                    seen.add(sym)
-                continue
-            if isinstance(op, llvm.CallOp):
-                callee_name = string_value(op.callee)
-            elif isinstance(op, function.CallOp):
-                callee_name = op.callee.name
-            else:
-                continue
-            if callee_name is None or callee_name in seen or callee_name in defined:
-                continue
-            seen.add(callee_name)
-            # Derive LLVM signature from call site
-            result_type = dgen.type.type_constant(op.type)
-            if isinstance(result_type, builtin.Nil):
-                ret_llvm = "void"
-            else:
-                ret_llvm = _llvm_type(result_type.__layout__)
-            args = op.args if isinstance(op, llvm.CallOp) else op.arguments
-            if isinstance(args, PackOp):
-                arg_values = list(args)
-            else:
-                arg_values = [args]
-            param_types = [
-                _llvm_type(dgen.type.type_constant(arg.type).__layout__)
-                for arg in arg_values
-            ]
-            externs.append(
-                f"declare {ret_llvm} @{callee_name}({', '.join(param_types)})"
-            )
-    return externs
+    externs: dict[builtin.ExternOp, None] = {
+        value: None
+        for top_level in module.ops
+        for value in all_values(top_level)
+        if isinstance(value, builtin.ExternOp)
+    }
+    return list(externs)
 
 
 def emit_llvm_ir(module: Module) -> tuple[str, list]:
@@ -218,10 +180,10 @@ def emit_llvm_ir(module: Module) -> tuple[str, list]:
     alive for the lifetime of the JIT engine.
     """
     host_buffers: list = []
-    externs = _discover_externs(module)
 
     def _lines() -> Iterator[str]:
-        yield from externs
+        for extern in _externs(module):
+            yield from emit_extern(extern)
         yield ""
         for func in module.functions:
             yield from _emit_func(func, host_buffers)
@@ -229,10 +191,10 @@ def emit_llvm_ir(module: Module) -> tuple[str, list]:
     return "\n".join(_lines()), host_buffers
 
 
-def _result_type_str(ty: Value[dgen.TypeType]) -> str | None:
+def _result_type_str(ty: Value[dgen.TypeType]) -> str:
     """Map an op's result type to an LLVM type string, or None for void."""
     if isinstance(ty, builtin.Nil):
-        return None
+        return "void"
     resolved = dgen.type.type_constant(ty)
     if isinstance(resolved, llvm.Int):
         return f"i{resolved.bits.__constant__.to_json()}"
@@ -243,28 +205,14 @@ def unpack(val: Value) -> list[Value]:
     return list(val) if isinstance(val, PackOp) else [val]
 
 
-# XXX: this is wrong. We need to emit _all_ dependencies,
-# but topo sort based on the runtime dependency graph.
-# Is that right? What's the right formalism? We definitely can't
-# just emit label blocks in normal dependency order, _unless_
-# it occurs in the runtime dependencies, eg. loop lowering.
-# Shoot, I thought I had this figured out.
-#
-# Okay, invariant: if a label op occurs in the dependency graph but
-# _not_ in the runtime dependencies, it can't be reached from the entrypoint.
-# Why? Normal DCE, that's the dead code condition.
-# Therefore we don't need to schedule _its_ (the label op's) dependencies.
-# That's nuanced, because dependencies can be side effects. I want
-# to convince myself that's always correct.
-# ... it's almost certainly not, because blocks have captures, and
-# we need to schedule them before the branch call that jumps to the label.
-#
-# It feels like there's a semantic difference between "expression blocks",
-# ones that expect to be executed inline when they're reached, and "jump blocks",
-# which are branched to.
-# I don't actually understand whether a "jump block" will always have a normal
-# branch terminator. If a "jump block" were to never fall through, we'd have a
-# lot of flexibility in scheduling the block body.
+# runtime_dependencies follows operands and block captures — NOT types
+# or parameters. This means branch targets (which are parameters) are
+# not followed, so emit_linearized won't descend into label bodies
+# through branch ops. That's correct:
+# - RegionOps (inline regions) appear as runtime deps of their consumers
+#   and emit themselves via fall-through.
+# - LabelOps (jump targets) are emitted by the region/function that
+#   contains them, not by the branch that targets them.
 def runtime_dependencies(value: dgen.Value) -> Iterator[dgen.Value]:
     seen = set()
 
@@ -286,14 +234,11 @@ def new_synthetic_label() -> str:
     return "synthetic:"
 
 
-def emit_linearized(value: dgen.Value) -> Iterator[str]:
-    for dep in runtime_dependencies(value):
-        if (yield from emit_linearized(dep)):
-            # XXX: I'm not sure this is right. If the next op is
-            # a label for instance we don't need this.
-            yield new_synthetic_label()
-
-    return (yield from emit(value))
+def emit_linearized(block: dgen.Block) -> Iterator[str]:
+    for op in block.ops:
+        yield from emit(op)
+        if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
+            return True
 
 
 EMITTERS = {}
@@ -310,31 +255,53 @@ def emitter_for(ValueType: type[dgen.Value]):
 def emit(value: dgen.Value):
     if not isinstance(value, dgen.Op):
         return
-    print("Emitting", value)
     return (yield from EMITTERS[type(value)](value))
+
+
+@emitter_for(goto.RegionOp)
+def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
+    """Region: executes inline in use-def order (fall-through entry).
+
+    Emits: fall-through into region block, body ops, then fall-through to exit.
+    """
+    yield f"  br label %{op.name}"
+    yield f"{op.name}:"
+    # XXX: need to emit phi ops
+    terminated = yield from emit_linearized(op.body)
+    if not terminated:
+        # Find the exit parameter and fall through to it.
+        for param in op.body.parameters:
+            if param.name and param.name.startswith("exit"):
+                yield f"  br label %{param.name}"
+                yield f"{param.name}:"
+                return
+    return True
 
 
 @emitter_for(goto.LabelOp)
 def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
-    breakpoint()
+    """Label: jump target only, not reachable by fall-through.
+
+    Terminates the current basic block with a skip branch, emits the
+    label body, then resumes with an exit label.
+    """
+    exit_name = f"{op.name}_exit"
+    # Skip over the label body in the current block's flow.
+    yield f"  br label %{exit_name}"
+    # Emit the label body as a separate basic block.
     yield f"{op.name}:"
     # XXX: need to emit phi ops
-    # XXX: need to stop at captures
-    result = op.body.result
-    yield from emit_linearized(result)
-    if is_block_terminator(result):
-        return True
-    # XXX: emit exit label
+    yield from emit_linearized(op.body)
+    # Resume the enclosing block's flow.
+    yield f"{exit_name}:"
 
 
 @emitter_for(function.FunctionOp)
 def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
-    ret_type = _result_type_str(op.result) or "void"
-    arguments = ", ".join(
-        f"{_result_type_str(arg.type) or 'i64'} %{arg.name}" for arg in op.body.args
-    )
+    ret_type = llvm_type(op.result_type)
+    arguments = ", ".join(f"{llvm_type(arg.type)} %{arg.name}" for arg in op.body.args)
     yield f"define {ret_type} @{op.name}({arguments}) {{"
-    yield from emit_linearized(op.body.result)
+    yield from emit_linearized(op.body)
     # XXX: body result might be a label for instance
     yield f"  ret {typed_reference(op.body.result)}"
     yield "}"
@@ -343,8 +310,22 @@ def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
 @emitter_for(PackOp)
 @emitter_for(ConstantOp)
 @emitter_for(builtin.ChainOp)
+@emitter_for(builtin.ExternOp)
 def noop(op: dgen.Op) -> Iterator[str]:
     return ()
+
+
+def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
+    sym = string_value(extern.symbol)
+    if isinstance(extern.type, function.Function):
+        result_type = llvm_type(extern.type.result_type)
+        args = ", ".join(
+            f"{llvm_type(arg.type)} %{arg.name}" for arg in extern.type.arguments
+        )
+        yield f"declare {result_type} @{sym}({args})"
+    else:
+        result_type = llvm_type(extern.type)
+        yield f"declare {result_type} @{sym}"
 
 
 def value_reference(v: dgen.Value) -> str:
@@ -366,6 +347,21 @@ def typed_references(*vs: dgen.Value) -> str:
     return ", ".join(typed_reference(v) for v in vs)
 
 
+@emitter_for(algebra.AddOp)
+def emit_add(op: algebra.AddOp) -> Iterator[str]:
+    # XXX: types aren't comparable yet
+    # if op.left.type != op.right.type:
+    #     raise TypeError("codegen algebra must have the same type")
+    vtype = op.left.type
+    llvm_op = {
+        number.Float64: "fadd",
+        number.SignedInteger: "add",
+        index.Index: "add",
+        number.UnsignedInteger: "add",
+    }[type(vtype)]
+    yield f"  {llvm_op} {typed_reference(op.left, op.right)}"
+
+
 @emitter_for(algebra.LessThanOp)
 def emit_less_than(op: algebra.LessThanOp) -> Iterator[str]:
     # XXX: types aren't comparable yet
@@ -384,6 +380,11 @@ def emit_less_than(op: algebra.LessThanOp) -> Iterator[str]:
 @emitter_for(goto.ConditionalBranchOp)
 def emit_conditional_branch(op: goto.ConditionalBranchOp) -> Iterator[str]:
     yield f"  br {typed_references(op.condition, op.true_target, op.false_target)}"
+
+
+@emitter_for(goto.BranchOp)
+def emit_branch(op: goto.BranchOp) -> Iterator[str]:
+    yield f"  br {typed_references(op.target)}"
 
 
 def is_block_terminator(value: dgen.Value) -> bool:
@@ -414,7 +415,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
 
     def resolve_target(target: dgen.Value) -> dgen.Value:
         """Resolve a branch target to its canonical value (label or %exit param)."""
-        if isinstance(target, goto.LabelOp):
+        if isinstance(target, (goto.RegionOp, goto.LabelOp)):
             return target
         return param_to_label.get(target, target)
 
@@ -477,7 +478,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         That's why cond_br groups with the no-dep ops: its target is a parameter.
         """
         labels: set[goto.LabelOp] = {
-            o for o in block_ops if isinstance(o, goto.LabelOp)
+            o for o in block_ops if isinstance(o, (goto.RegionOp, goto.LabelOp))
         }
         deps: set[goto.LabelOp] = set()
         seen: set[dgen.Value] = set()
@@ -487,7 +488,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
                 return
             seen.add(v)
             if v in labels:
-                assert isinstance(v, goto.LabelOp)
+                assert isinstance(v, (goto.RegionOp, goto.LabelOp))
                 deps.add(v)
                 return
             for _, operand in v.operands:
@@ -519,11 +520,13 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
         """
         nonlocal _synth_n
         ops = block.ops
-        labels = [op for op in ops if isinstance(op, goto.LabelOp)]
+        labels = [op for op in ops if isinstance(op, (goto.RegionOp, goto.LabelOp))]
         if not labels:
             return [_Seg(None, ops)]
 
-        non_label = [op for op in ops if not isinstance(op, goto.LabelOp)]
+        non_label = [
+            op for op in ops if not isinstance(op, (goto.RegionOp, goto.LabelOp))
+        ]
         if not non_label:
             return [_Seg(label, []) for label in labels]
 
@@ -681,7 +684,7 @@ def _emit_func(f: function.FunctionOp, host_buffers: list) -> Iterator[str]:
     # Populate param_to_label so resolve_target can map %self → its LabelOp.
     def _scan_self_params(block: dgen.Block) -> None:
         for op in block.ops:
-            if isinstance(op, goto.LabelOp):
+            if isinstance(op, (goto.RegionOp, goto.LabelOp)):
                 for param in op.body.parameters:
                     if param.name == "self":
                         param_to_label[param] = op

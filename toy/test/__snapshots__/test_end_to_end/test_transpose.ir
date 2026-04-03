@@ -15,12 +15,12 @@ import toy
     %3 : llvm.Ptr = llvm.call<"malloc">([%2])
     %4 : index.Index = 0
     %5 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    %loop_header0 : goto.Label = goto.label([%4]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index) captures(%3, %5):
+    %loop_header0 : goto.Label = goto.region([%4]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index) captures(%3, %5):
         %loop_body0 : goto.Label = goto.label([]) body(%j0: index.Index) captures(%self, %3, %5):
             %6 : index.Index = 1
             %7 : index.Index = algebra.add(%j0, %6)
             %8 : index.Index = 0
-            %loop_header1 : goto.Label = goto.label([%8]) body<%9: goto.Label, %exit1: goto.Label>(%i1: index.Index) captures(%3, %5, %j0):
+            %loop_header1 : goto.Label = goto.region([%8]) body<%9: goto.Label, %exit1: goto.Label>(%i1: index.Index) captures(%3, %5, %j0):
                 %loop_body1 : goto.Label = goto.label([]) body(%j1: index.Index) captures(%9, %3, %5, %j0):
                     %10 : index.Index = 1
                     %11 : index.Index = algebra.add(%j1, %10)

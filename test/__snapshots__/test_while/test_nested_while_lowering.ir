@@ -6,12 +6,12 @@ import number
 
 %main : function.Function<[], Nil> = function.function<Nil>() body():
     %zero : index.Index = 0
-    %while_header0 : goto.Label = goto.label([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
+    %while_header0 : goto.Label = goto.region([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
         %while_body0 : goto.Label = goto.label([]) body(%wb0_oi: index.Index) captures(%self):
             %one : index.Index = 1
             %next : index.Index = algebra.add(%wb0_oi, %one)
             %izero : index.Index = 0
-            %while_header1 : goto.Label = goto.label([%izero]) body<%0: goto.Label, %exit1: goto.Label>(%wh1_j: index.Index):
+            %while_header1 : goto.Label = goto.region([%izero]) body<%0: goto.Label, %exit1: goto.Label>(%wh1_j: index.Index):
                 %while_body1 : goto.Label = goto.label([]) body(%wb1_j2: index.Index) captures(%0):
                     %nop : index.Index = 0
                     %nop2 : Nil = chain(%nop, %nop)
