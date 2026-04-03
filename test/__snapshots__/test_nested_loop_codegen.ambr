@@ -3,34 +3,30 @@
   '''
   
   define void @test() {
-  _blk0:
+  entry:
     br label %loop_header0
   loop_header0:
-    %i0 = phi i64 [ %9, %_blk3 ], [ 0, %_blk0 ]
-    br label %_blk1
-  _blk1:
-    %4 = icmp slt i64 %i0, 2
-    br i1 %4, label %loop_body0, label %exit0
+    %i0 = phi i64 [ 0, %entry ], [ %_9, %exit1 ]
+    br label %loop_body0_exit
   loop_body0:
-    %j0 = phi i64 [ %i0, %_blk1 ]
-    br label %_blk2
-  _blk2:
-    %9 = add i64 %j0, 1
+    %j0 = phi i64 [ %i0, %loop_body0_exit ]
+    %_9 = add i64 %j0, 1
     br label %loop_header1
   loop_header1:
-    %i1 = phi i64 [ %20, %loop_body1 ], [ 0, %_blk2 ]
-    br label %_blk4
-  _blk4:
-    %15 = icmp slt i64 %i1, 2
-    br i1 %15, label %loop_body1, label %exit1
+    %i1 = phi i64 [ 0, %loop_body0 ], [ %_23, %loop_body1 ]
+    br label %loop_body1_exit
   loop_body1:
-    %j1 = phi i64 [ %i1, %_blk4 ]
-    %20 = add i64 %j1, 1
+    %j1 = phi i64 [ %i1, %loop_body1_exit ]
+    %_23 = add i64 %j1, 1
     br label %loop_header1
+  loop_body1_exit:
+    %_18 = icmp slt i64 %i1, 2
+    br i1 %_18, label %loop_body1, label %exit1
   exit1:
-    br label %_blk3
-  _blk3:
     br label %loop_header0
+  loop_body0_exit:
+    %_4 = icmp slt i64 %i0, 2
+    br i1 %_4, label %loop_body0, label %exit0
   exit0:
     ret void
   }
