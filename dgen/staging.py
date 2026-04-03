@@ -60,8 +60,14 @@ def _jit_evaluate(
     )
     module = Module(ops=[func])
     exe = compile(module)
-    # Create Memory objects before run() so non-register-passable args
-    # (e.g. TypeType values) stay alive until to_json() reads the result.
+    # LIFETIME BUG WORKAROUND: Executable.run() converts raw Python values
+    # to Memory objects internally, but those temporaries can be GC'd before
+    # the result is read. For non-register-passable types (e.g. TypeType),
+    # the JIT function returns a pointer into the input Memory's buffer.
+    # If that Memory is collected, the pointer dangles and to_json() reads
+    # garbage. Creating Memory objects here keeps them alive through to_json().
+    # The real fix is for Executable.run() to attach input memories to the
+    # result's host_refs so they outlive the call.
     memories = [
         Memory.from_value(param.type, arg) for arg, param in zip(args, block_args)
     ]
