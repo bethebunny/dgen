@@ -1,8 +1,6 @@
 # serializer version: 1
 # name: test_nested_while_llvm_ir
   '''
-  declare void @print_memref(ptr, i64)
-  declare ptr @malloc(i64)
   
   define void @main() {
   _blk0:
@@ -39,8 +37,6 @@
 # ---
 # name: test_while_llvm_ir
   '''
-  declare void @print_memref(ptr, i64)
-  declare ptr @malloc(i64)
   
   define void @main() {
   _blk0:

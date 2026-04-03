@@ -13,11 +13,11 @@ import llvmlite.binding as llvmlite_binding
 import dgen
 from dgen import codegen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.codegen import Executable, _ctype, _llvm_type
+from dgen.codegen import Executable, _ctype
 from dgen.dialects import builtin, control_flow, function, llvm
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module, PackOp, pack
+from dgen.module import ConstantOp, Module, pack
 from dgen.type import Constant, Memory
 
 from dgen.passes.pass_ import Pass
@@ -58,36 +58,6 @@ def _make_memories(
     ]
 
 
-def _extern_declarations(subgraph: list[dgen.Op]) -> list[str]:
-    """Generate LLVM extern declarations for function calls in a subgraph."""
-    externs: list[str] = []
-    seen: set[str] = set()
-    for op in subgraph:
-        if not isinstance(op, function.CallOp):
-            continue
-        callee_name = op.callee.name
-        if callee_name is None or callee_name in seen:
-            continue
-        seen.add(callee_name)
-        # Derive return type from CallOp's result type
-        result_type = dgen.type.type_constant(op.type)
-        if isinstance(result_type, builtin.Nil):
-            ret_llvm = "void"
-        else:
-            ret_llvm = _llvm_type(result_type.__layout__)
-        # Derive param types from the call args
-        if isinstance(op.arguments, PackOp):
-            arg_values = list(op.arguments)
-        else:
-            arg_values = [op.arguments]
-        param_types = [
-            _llvm_type(dgen.type.type_constant(arg.type).__layout__)
-            for arg in arg_values
-        ]
-        externs.append(f"declare {ret_llvm} @{callee_name}({', '.join(param_types)})")
-    return externs
-
-
 def _jit_evaluate(
     subgraph: list[dgen.Op],
     target: dgen.Value,
@@ -97,7 +67,6 @@ def _jit_evaluate(
     args: Sequence = (),
 ) -> object:
     """Build a mini-module from the subgraph, lower via the caller's pipeline, JIT."""
-    externs = _extern_declarations(subgraph)
     func = function.FunctionOp(
         name="main",
         body=dgen.Block(result=target, args=list(block_args)),
@@ -106,7 +75,7 @@ def _jit_evaluate(
     )
     module = Module(ops=[func])
     lowered = lower(module)
-    exe = codegen.compile(lowered, externs=externs)
+    exe = codegen.compile(lowered)
     memories = _make_memories(block_args, args)
     result = exe.run(*memories)
     return result.to_json()
@@ -412,20 +381,14 @@ def _build_callback_thunk(
     """
     stage2_template = resolved
 
-    # Derive callback LLVM signature from original function
+    # Derive callback signature from original function
     assert func.name is not None
     callback_name = f"_stage2_{func.name}"
     orig_types = [dgen.type.type_constant(arg.type) for arg in func.body.args]
-    orig_llvm_types = [_llvm_type(t.__layout__) for t in orig_types]
     result_type = dgen.type.type_constant(func.result)
-    if isinstance(result_type, builtin.Nil):
-        ret_llvm = "void"
-        result_ctype: type[ctypes._CData] | None = None
-    else:
-        ret_llvm = _llvm_type(result_type.__layout__)
-        result_ctype = _ctype(result_type.__layout__)
-    extern_decl = f"declare {ret_llvm} @{callback_name}({', '.join(orig_llvm_types)})"
-
+    result_ctype: type[ctypes._CData] | None = (
+        None if isinstance(result_type, builtin.Nil) else _ctype(result_type.__layout__)
+    )
     # Build ctypes callback type
     param_ctypes = [_ctype(t.__layout__) for t in orig_types]
     cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
@@ -488,7 +451,7 @@ def _build_callback_thunk(
     )
     thunk_module = Module(ops=[thunk_func])
 
-    exe = codegen.compile(thunk_module, externs=[extern_decl])
+    exe = codegen.compile(thunk_module)
     exe.host_refs.append(callback_func)  # prevent GC
     exe.host_refs.append(callback_host_refs)  # prevent GC of callback results
     return exe

@@ -1,8 +1,6 @@
 # serializer version: 1
 # name: test_nested_loop_llvm_ir
   '''
-  declare void @print_memref(ptr, i64)
-  declare ptr @malloc(i64)
   
   define void @test() {
   _blk0:
