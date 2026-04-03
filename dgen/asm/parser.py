@@ -251,6 +251,11 @@ def op_expression(
     operands = parser.read_list(value_expression)
     parser.read(")")
     blocks: list[Block] = []
+    # Save pending_ops so that ops created while parsing the type annotation
+    # or parameters (e.g. PackOp for Function<[], Nil>) don't leak into
+    # nested block parsing — they belong to the outer scope.
+    saved_pending = parser.pending_ops[:]
+    parser.pending_ops.clear()
     for block_name in op_cls.__blocks__:
         saved = parser.pos
         parser._skip_all()
@@ -258,6 +263,7 @@ def op_expression(
             parser.pos = saved
             break
         blocks.append(_read_block_body(parser))
+    parser.pending_ops = saved_pending + parser.pending_ops
     return op_cls, parameters, operands, blocks
 
 

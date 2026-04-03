@@ -69,9 +69,12 @@ class Lowering:
             block_result = dgen.Value(type=builtin.Nil())
         return function.FunctionOp(
             name=f.proto.name,
-            result=result,
+            result_type=result,
             body=dgen.Block(result=block_result, args=args),
-            type=FunctionType(result=result),
+            type=FunctionType(
+                arguments=pack(arg.type for arg in args),
+                result_type=result,
+            ),
         )
 
     def _lower_statement(self, stmt: Statement) -> Iterator[dgen.Op]:

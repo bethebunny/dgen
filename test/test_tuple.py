@@ -52,7 +52,7 @@ def test_tuple_constant_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %x : Tuple<[index.Index, String]> = [42, "hello"]
     """)
     module = parse_module(ir)
@@ -103,7 +103,7 @@ def test_tuple_type_values():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %types : Tuple<[Type, Type]> = [Index, String]
     """)
     module = parse_module(ir)

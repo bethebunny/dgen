@@ -35,7 +35,7 @@ def test_store_then_load_sees_stored_value():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %val : index.Index = 42
         |     %st : Nil = memory.store(%alloc, %val, %alloc)
@@ -57,7 +57,7 @@ def test_two_stores_last_wins():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %v10 : index.Index = 10
         |     %st1 : Nil = memory.store(%alloc, %v10, %alloc)
@@ -81,7 +81,7 @@ def test_three_stores_last_wins():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %v1 : index.Index = 1
         |     %s1 : Nil = memory.store(%alloc, %v1, %alloc)
@@ -108,7 +108,7 @@ def test_read_modify_write():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %zero : index.Index = 0
         |     %init : Nil = memory.store(%alloc, %zero, %alloc)
@@ -136,7 +136,7 @@ def test_two_independent_locations():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %v100 : index.Index = 100
         |     %sta : Nil = memory.store(%a, %v100, %a)
@@ -159,7 +159,7 @@ def test_store_float_then_load():
         | import memory
         | import number
         |
-        | %main : function.Function<number.Float64> = function.function<number.Float64>() body():
+        | %main : function.Function<[], number.Float64> = function.function<number.Float64>() body():
         |     %alloc : memory.Reference<number.Float64> = memory.stack_allocate<number.Float64>()
         |     %val : number.Float64 = 3.14
         |     %st : Nil = memory.store(%alloc, %val, %alloc)
@@ -180,7 +180,7 @@ def test_overwrite_with_input_arg():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %junk : index.Index = 999
         |     %st1 : Nil = memory.store(%alloc, %junk, %alloc)
@@ -204,7 +204,7 @@ def test_double_read_modify_write():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %z : index.Index = 0
         |     %init : Nil = memory.store(%alloc, %z, %alloc)
@@ -234,7 +234,7 @@ def test_mem_from_chain_op():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %val : index.Index = 77
         |     %st : Nil = memory.store(%alloc, %val, %alloc)
@@ -258,7 +258,7 @@ def test_cross_location_ordering():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %v55 : index.Index = 55
         |     %sta : Nil = memory.store(%a, %v55, %a)
@@ -288,7 +288,7 @@ def test_swap_via_mem_ordering():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %v10 : index.Index = 10
         |     %ia : Nil = memory.store(%a, %v10, %a)
@@ -325,7 +325,7 @@ def test_for_loop_accumulator():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %zero : index.Index = 0
         |     %init : Nil = memory.store(%alloc, %zero, %alloc)
@@ -354,7 +354,7 @@ def test_for_loop_last_iv_stored():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %loop : Nil = control_flow.for<0, 5>([]) body(%iv: index.Index) captures(%alloc):
         |         %_ : Nil = memory.store(%alloc, %iv, %alloc)
@@ -377,7 +377,7 @@ def test_if_else_stores_to_same_location():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %cond : index.Index = 1
         |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
@@ -401,7 +401,7 @@ def test_if_else_false_branch():
         | import index
         | import memory
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %cond : index.Index = 0
         |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):

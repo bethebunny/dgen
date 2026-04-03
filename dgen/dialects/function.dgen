@@ -1,8 +1,8 @@
 from builtin import Nil, Span
 
-type Function<result: Type>:
+type Function<arguments: Span<Type>, result_type: Type>:
     data: Nil
 
-op function<result: Type>() -> Function:
+op function<result_type: Type>() -> Function:
     block body
 op call<callee: Function>(arguments: Span)

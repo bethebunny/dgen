@@ -266,9 +266,12 @@ class Parser:
 
         return function.FunctionOp(
             name=name,
-            result=Nil() if is_void else ret,
+            result_type=Nil() if is_void else ret,
             body=dgen.Block(result=result, args=args),
-            type=FunctionType(result=Nil() if is_void else ret),
+            type=FunctionType(
+                arguments=pack(arg.type for arg in args),
+                result_type=Nil() if is_void else ret,
+            ),
         )
 
     # --- Statements ---

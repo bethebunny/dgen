@@ -16,7 +16,7 @@ from dgen.gen.ast import (
     TypeRef,
 )
 from dgen.gen.parser import parse
-from dgen.module import Module
+from dgen.module import Module, pack
 from dgen.type import Fields
 from dgen.verify import ConstraintError, verify_constraints
 
@@ -118,8 +118,8 @@ def _make_module(*body_ops: Op) -> Module:
     func = FunctionOp(
         name="test_fn",
         body=Block(result=result, args=[]),
-        result=MyInt(),
-        type=Function(result=MyInt()),
+        result_type=MyInt(),
+        type=Function(arguments=pack(), result_type=MyInt()),
     )
     return Module(ops=[func])
 

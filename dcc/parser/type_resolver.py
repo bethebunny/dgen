@@ -11,6 +11,7 @@ from dgen.dialects.index import Index
 from dgen.dialects.builtin import String
 from dgen.dialects.builtin import Array
 from dgen.dialects.function import Function
+from dgen.module import pack
 from dgen.dialects.number import Float64
 from dcc.dialects import c_int, c_ptr, c_void
 from dcc.dialects.c import CStruct, CUnion
@@ -129,7 +130,8 @@ class TypeResolver:
     def _resolve_func_decl(self, node: c_ast.FuncDecl) -> dgen.Type:
         """Resolve a FuncDecl to a Function type."""
         ret_type = self.resolve(node.type)
-        return Function(result=ret_type)
+        # TODO: derive argument types from the FuncDecl parameters
+        return Function(arguments=pack(), result_type=ret_type)
 
     def _resolve_struct(self, node: c_ast.Struct) -> dgen.Type:
         """Resolve a struct definition or forward reference."""

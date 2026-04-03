@@ -16,7 +16,7 @@ from dgen.dialects import algebra, builtin, llvm
 from dgen.dialects.index import Index
 from dgen.dialects.function import Function, FunctionOp
 from dgen.layout import TypeValue
-from dgen.module import ConstantOp, Module
+from dgen.module import ConstantOp, Module, pack
 from dgen.passes.pass_ import Pass
 from dgen.type import Memory, TypeType, type_constant
 from dgen.testing import strip_prefix
@@ -52,7 +52,7 @@ def test_typetype_constant_asm_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
     """)
     module = parse_module(ir)
@@ -65,7 +65,7 @@ def test_ssa_ref_as_op_type():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
@@ -84,7 +84,7 @@ def test_ssa_ref_as_op_type_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
@@ -122,7 +122,7 @@ def test_parameterized_typetype_constant_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
     """)
     module = parse_module(ir)
@@ -135,7 +135,7 @@ def test_array_with_ssa_dimension():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %n : index.Index = 4
         |     %arr : Array<index.Index, %n> = [1, 2, 3, 4]
     """)
@@ -156,7 +156,7 @@ def test_array_with_ssa_element_type():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
     """)
@@ -177,7 +177,7 @@ def test_array_with_ssa_element_type_layout():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %arr : Array<%t, 4> = [1, 2, 3, 4]
     """)
@@ -199,7 +199,7 @@ def test_pointer_with_ssa_pointee():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %p : Pointer<%t> = 0
     """)
@@ -226,8 +226,8 @@ def test_type_value_jit_identity():
     func = FunctionOp(
         name="main",
         body=Block(result=arg, args=[arg]),
-        result=idx.type,
-        type=Function(result=idx.type),
+        result_type=idx.type,
+        type=Function(arguments=pack([arg.type]), result_type=idx.type),
     )
     exe = compile_module(Module(ops=[func]))
     result = exe.run(mem)
@@ -241,8 +241,8 @@ def test_type_constant_jit_return():
     func = FunctionOp(
         name="main",
         body=Block(result=const, args=[]),
-        result=idx.type,
-        type=Function(result=idx.type),
+        result_type=idx.type,
+        type=Function(arguments=pack(), result_type=idx.type),
     )
     exe = compile_module(Module(ops=[func]))
     result = exe.run()
@@ -255,7 +255,7 @@ def test_span_with_ssa_element_type():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %xs : Span<%t> = [1, 2, 3]
     """)
@@ -277,7 +277,7 @@ def test_fat_pointer_with_ssa_pointee():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "number.Float64"}
         |     %p : Span<%t> = [0.0, 0.0]
     """)
@@ -299,18 +299,17 @@ def test_function_with_ssa_result_type():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<%t> = function.function<%t>() body(%x: index.Index):
+        |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
     ops = module.functions[0].body.ops
-    t_op = ops[0]
-    f_op = ops[1]
-    assert isinstance(f_op, FunctionOp)
-    assert f_op.result is t_op
+    t_op = next(op for op in ops if isinstance(op, ConstantOp))
+    f_op = next(op for op in ops if isinstance(op, FunctionOp))
+    assert f_op.result_type is t_op
 
 
 def test_block_argument_constant_raises_type_error():
@@ -320,7 +319,7 @@ def test_block_argument_constant_raises_type_error():
         | import function
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
+        | %main : function.Function<[Type, index.Index], index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
         |     %y : %t = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
@@ -343,7 +342,7 @@ def test_type_constant_resolves_ssa_constant():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
@@ -354,20 +353,21 @@ def test_type_constant_resolves_ssa_constant():
 
 
 def test_compile_with_ssa_function_result():
-    """compile() resolves FunctionOp.result when it's a ConstantOp type ref."""
+    """compile() resolves FunctionOp.result_type when it's a ConstantOp type ref."""
     ir = strip_prefix("""
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<%t> = function.function<%t>() body(%x: index.Index):
+        |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
     """)
     module = parse_module(ir)
-    inner_func = module.functions[0].body.ops[1]
-    assert isinstance(inner_func, FunctionOp)
+    inner_func = next(
+        op for op in module.functions[0].body.ops if isinstance(op, FunctionOp)
+    )
     # result is a ConstantOp (SSA ref), not a concrete Type
-    assert isinstance(inner_func.result, ConstantOp)
+    assert isinstance(inner_func.result_type, ConstantOp)
 
 
 def test_compile_function_with_ssa_typed_block_arg():
@@ -380,13 +380,14 @@ def test_compile_function_with_ssa_typed_block_arg():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<()> = function.function<Nil>() body(%x: %t):
+        |     %f : function.Function<[%t], ()> = function.function<Nil>() body(%x: %t):
     """)
     module = parse_module(ir)
-    inner_func = module.functions[0].body.ops[1]
-    assert isinstance(inner_func, FunctionOp)
+    inner_func = next(
+        op for op in module.functions[0].body.ops if isinstance(op, FunctionOp)
+    )
     # The block arg %x has type = ConstantOp (SSA ref %t), not a concrete Type
     x_arg = inner_func.body.args[0]
     assert isinstance(x_arg.type, ConstantOp)
@@ -407,7 +408,7 @@ def test_compile_constant_with_ssa_type():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
@@ -430,13 +431,14 @@ def test_compile_input_types_resolved_from_ssa():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<%t> = function.function<%t>() body(%x: %t):
+        |     %f : function.Function<[%t], %t> = function.function<%t>() body(%x: %t):
     """)
     module = parse_module(ir)
-    inner_func = module.functions[0].body.ops[1]
-    assert isinstance(inner_func, FunctionOp)
+    inner_func = next(
+        op for op in module.functions[0].body.ops if isinstance(op, FunctionOp)
+    )
     exe = compile_module(Module(ops=[inner_func]))
     # input_types must be concrete Types for Memory.from_value to work
     assert all(isinstance(t, builtin.Index) for t in exe.input_types)
@@ -468,7 +470,7 @@ def test_staging_resolves_block_arg_type():
         | import function
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
+        | %main : function.Function<[Type, index.Index], index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
         |     %y : %t = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
@@ -516,7 +518,7 @@ def test_parse_typetype_block_arg_constant_materializes():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body(%arr_ty: Type):
+        | %main : function.Function<[Type], ()> = function.function<Nil>() body(%arr_ty: Type):
         |     %tt : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
     """)
     module = parse_module(ir)
@@ -533,11 +535,11 @@ def test_parse_typetype_block_arg_constant_materializes():
 
 
 def test_staging_with_ssa_result_type():
-    """Staging resolves func.result when it's a ConstantOp SSA ref.
+    """Staging resolves func.result_type when it's a ConstantOp SSA ref.
 
     main() -> Nil:
         %t : Type = {"tag": "index.Index"}
-        %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: index.Index):
+        %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
             %y : %rt = index.add(%x, %x)
 
     The inner function %f has result = %t (ConstantOp), and its block arg
@@ -548,15 +550,16 @@ def test_staging_with_ssa_result_type():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<%t> = function.function<%t>() body(%rt: Type, %x: index.Index):
+        |     %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
         |         %y : %rt = algebra.add(%x, %x)
     """)
     module = parse_module(ir)
-    inner_func = module.functions[0].body.ops[1]
-    assert isinstance(inner_func, FunctionOp)
-    assert isinstance(inner_func.result, ConstantOp)
+    inner_func = next(
+        op for op in module.functions[0].body.ops if isinstance(op, FunctionOp)
+    )
+    assert isinstance(inner_func.result_type, ConstantOp)
 
     class LowerToLLVMPass(Pass):
         allow_unregistered_ops = True
@@ -606,7 +609,7 @@ def test_staging_resolves_type_value():
         | import function
         | import index
         |
-        | %main : function.Function<index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
+        | %main : function.Function<[Type, index.Index], index.Index> = function.function<index.Index>() body(%t: Type, %x: index.Index):
         |     %y : %t = algebra.add(%x, %x)
     """)
     module = parse_module(ir)

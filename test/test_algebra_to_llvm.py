@@ -22,7 +22,7 @@ def test_add_index():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.add(%x, 10)
     """,
             5,
@@ -38,7 +38,7 @@ def test_negate_index():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.negate(%x)
     """,
             7,
@@ -54,7 +54,7 @@ def test_subtract_index():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.subtract(%x, 3)
     """,
             10,
@@ -70,7 +70,7 @@ def test_multiply_index():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.multiply(%x, 4)
     """,
             3,
@@ -86,7 +86,7 @@ def test_divide_index():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.divide(%x, 3)
     """,
             10,
@@ -105,7 +105,7 @@ def test_add_float():
         | import algebra
         | import function
         | import number
-        | %f : function.Function<number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
+        | %f : function.Function<[number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
         |     %r : number.Float64 = algebra.add(%x, 1.5)
     """,
             2.5,
@@ -121,7 +121,7 @@ def test_negate_float():
         | import algebra
         | import function
         | import number
-        | %f : function.Function<number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
+        | %f : function.Function<[number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
         |     %r : number.Float64 = algebra.negate(%x)
     """,
             3.0,
@@ -137,7 +137,7 @@ def test_subtract_float():
         | import algebra
         | import function
         | import number
-        | %f : function.Function<number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
+        | %f : function.Function<[number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
         |     %r : number.Float64 = algebra.subtract(%x, 1.0)
     """,
             5.0,
@@ -153,7 +153,7 @@ def test_multiply_float():
         | import algebra
         | import function
         | import number
-        | %f : function.Function<number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
+        | %f : function.Function<[number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
         |     %r : number.Float64 = algebra.multiply(%x, 3.0)
     """,
             2.0,
@@ -169,7 +169,7 @@ def test_divide_float():
         | import algebra
         | import function
         | import number
-        | %f : function.Function<number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
+        | %f : function.Function<[number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
         |     %r : number.Float64 = algebra.divide(%x, 2.0)
     """,
             7.0,
@@ -185,7 +185,7 @@ def test_reciprocal():
         | import algebra
         | import function
         | import number
-        | %f : function.Function<number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
+        | %f : function.Function<[number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64):
         |     %r : number.Float64 = algebra.reciprocal(%x)
     """,
             4.0,
@@ -205,7 +205,7 @@ def test_meet():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.meet(%x, 6)
     """,
             5,
@@ -222,7 +222,7 @@ def test_join():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.join(%x, 6)
     """,
             5,
@@ -239,7 +239,7 @@ def test_complement():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.complement(%x)
     """,
             0,
@@ -256,7 +256,7 @@ def test_symmetric_difference():
         | import algebra
         | import function
         | import index
-        | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
         |     %r : index.Index = algebra.symmetric_difference(%x, 3)
     """,
             5,
@@ -272,7 +272,7 @@ _CMP_TEMPLATE = """
     | import function
     | import index
     | import number
-    | %f : function.Function<index.Index> = function.function<index.Index>() body(%x: index.Index):
+    | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
     |     %cmp : number.Boolean = algebra.{op}(%x, 5)
     |     %r : index.Index = algebra.cast(%cmp)
 """

@@ -26,7 +26,7 @@ def test_roundtrip_alloc():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
         |     %dealloc : Nil = ndbuffer.dealloc(%0, %0)
     """)
@@ -42,7 +42,7 @@ def test_roundtrip_store_load():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
         |     %1 : number.Float64 = 1.0
         |     %2 : index.Index = 0
@@ -60,7 +60,7 @@ def test_roundtrip_arith():
         | import function
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : number.Float64 = 2.5
         |     %1 : number.Float64 = 3.0
         |     %2 : number.Float64 = algebra.multiply(%0, %1)
@@ -76,7 +76,7 @@ def test_roundtrip_index_constant():
         | import function
         | import index
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
     module = parse_module(ir)
@@ -90,7 +90,7 @@ def test_roundtrip_print_memref():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
         |     %print : Nil = ndbuffer.print_memref(%0)
     """)
@@ -106,7 +106,7 @@ def test_roundtrip_for_op():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
         |     %loop : Nil = control_flow.for<0, 3>([]) body(%i0: index.Index):
         |         %1 : number.Float64 = 1.0
@@ -127,7 +127,7 @@ def test_roundtrip_nested_for():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
         |     %loop : Nil = control_flow.for<0, 2>([]) body(%i0: index.Index):
         |         %_ : Nil = control_flow.for<0, 3>([]) body(%i1: index.Index):
@@ -145,7 +145,7 @@ def test_roundtrip_return_value():
         | import function
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : number.Float64 = 1.0
     """)
     module = parse_module(ir)
@@ -160,7 +160,7 @@ def test_roundtrip_multi_index_load_store():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
         |     %1 : number.Float64 = 5.0
         |     %2 : index.Index = 0
@@ -180,7 +180,7 @@ def test_roundtrip_ssa_in_op_arg():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %shape : ndbuffer.Shape<2> = [2, 3]
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(%shape)
     """)
@@ -196,7 +196,7 @@ def test_roundtrip_ssa_in_type_param():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %shape : ndbuffer.Shape<2> = [2, 3]
         |     %0 : ndbuffer.NDBuffer<%shape, number.Float64> = ndbuffer.alloc(%shape)
     """)
@@ -213,7 +213,7 @@ def test_ssa_shape_through_lowering():
         | import ndbuffer
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %shape : ndbuffer.Shape<2> = [2, 3]
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(%shape)
         |     %1 : number.Float64 = 1.0

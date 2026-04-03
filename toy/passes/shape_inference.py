@@ -104,6 +104,6 @@ class ShapeInference(Pass):
         if isinstance(callee.body.result.type, toy.Tensor):
             ret_type = callee.body.result.type
             ret_shape = ret_type.shape.__constant__.to_json()
-            callee.result = ret_type
+            callee.result_type = ret_type
             op.type = toy.Tensor(shape=shape_constant(ret_shape))
         return op

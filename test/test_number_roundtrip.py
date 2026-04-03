@@ -12,7 +12,7 @@ def test_roundtrip_boolean():
         | import index
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body(%x: number.Boolean):
+        | %f : function.Function<[number.Boolean], Nil> = function.function<Nil>() body(%x: number.Boolean):
         |     %0 : index.Index = 0
     """)
     module = parse_module(ir)
@@ -25,7 +25,7 @@ def test_roundtrip_signed_integer():
         | import index
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body(%x: number.SignedInteger<64>):
+        | %f : function.Function<[number.SignedInteger<64>], Nil> = function.function<Nil>() body(%x: number.SignedInteger<64>):
         |     %0 : index.Index = 0
     """)
     module = parse_module(ir)
@@ -38,7 +38,7 @@ def test_roundtrip_unsigned_integer():
         | import index
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body(%x: number.UnsignedInteger<32>):
+        | %f : function.Function<[number.UnsignedInteger<32>], Nil> = function.function<Nil>() body(%x: number.UnsignedInteger<32>):
         |     %0 : index.Index = 0
     """)
     module = parse_module(ir)
@@ -51,7 +51,7 @@ def test_roundtrip_float64():
         | import index
         | import number
         |
-        | %f : function.Function<Nil> = function.function<Nil>() body(%x: number.Float64):
+        | %f : function.Function<[number.Float64], Nil> = function.function<Nil>() body(%x: number.Float64):
         |     %0 : index.Index = 0
     """)
     module = parse_module(ir)

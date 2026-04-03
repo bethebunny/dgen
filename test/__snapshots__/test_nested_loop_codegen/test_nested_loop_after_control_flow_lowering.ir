@@ -4,7 +4,7 @@ import goto
 import index
 import number
 
-%test : function.Function<Nil> = function.function<Nil>() body():
+%test : function.Function<[], Nil> = function.function<Nil>() body():
     %0 : index.Index = 0
     %loop_header0 : goto.Label = goto.label([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
         %loop_body0 : goto.Label = goto.label([]) body(%j0: index.Index) captures(%self):

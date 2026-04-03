@@ -21,7 +21,7 @@ def test_simple_constant(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -37,7 +37,7 @@ def test_transpose(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([3, 2]), number.Float64> = toy.transpose(%0)
         |     %2 : Nil = toy.print(%1)
@@ -54,7 +54,7 @@ def test_mul(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 2]), number.Float64> = [5.0, 6.0, 7.0, 8.0]
         |     %2 : toy.Tensor<ndbuffer.Shape<2>([2, 2]), number.Float64> = toy.mul(%0, %1)
@@ -72,7 +72,7 @@ def test_add(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 2]), number.Float64> = [5.0, 6.0, 7.0, 8.0]
         |     %2 : toy.Tensor<ndbuffer.Shape<2>([2, 2]), number.Float64> = toy.add(%0, %1)
@@ -90,7 +90,7 @@ def test_print(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -106,7 +106,7 @@ def test_3d_constant(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : Nil = toy.print(%0)
     """)
@@ -122,7 +122,7 @@ def test_3d_add(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<3>([2, 2, 2]), number.Float64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor<ndbuffer.Shape<3>([2, 2, 2]), number.Float64> = toy.add(%0, %1)
@@ -140,7 +140,7 @@ def test_3d_mul(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<3>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<3>([2, 2, 2]), number.Float64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
         |     %2 : toy.Tensor<ndbuffer.Shape<3>([2, 2, 2]), number.Float64> = toy.mul(%0, %1)
@@ -158,7 +158,7 @@ def test_full_example(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<Nil> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([3, 2]), number.Float64> = toy.transpose(%0)
         |     %2 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]

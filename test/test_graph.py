@@ -7,7 +7,7 @@ from dgen.block import BlockArgument
 from dgen.dialects import builtin, function, llvm
 from dgen.dialects.function import Function
 from dgen.graph import transitive_dependencies
-from dgen.module import ConstantOp
+from dgen.module import ConstantOp, pack
 from dgen.op import Op
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
@@ -52,8 +52,8 @@ def test_transitive_dependencies_does_not_descend_into_blocks():
     func = function.FunctionOp(
         name="f",
         body=dgen.Block(result=inner, args=[]),
-        result=builtin.Nil(),
-        type=Function(result=builtin.Nil()),
+        result_type=builtin.Nil(),
+        type=Function(arguments=pack(), result_type=builtin.Nil()),
     )
     deps = list(transitive_dependencies(func))
     assert func in deps
@@ -66,7 +66,7 @@ def test_chain_asm_round_trip():
         | import function
         | import index
         |
-        | %main : function.Function<()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 0
         |     %1 : index.Index = 1
         |     %2 : index.Index = chain(%1, %0)
