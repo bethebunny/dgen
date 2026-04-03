@@ -46,8 +46,8 @@ class Compiler(Generic[T]):
 
         return compile_module(module, self)
 
-    def run(self, module: Module) -> Module:
-        """Run passes only (no staging, no exit pass)."""
+    def run(self, module: Module) -> T:
+        """Run passes + exit (no staging)."""
         for i, p in enumerate(self.passes):
             if verify_passes.get():
                 p.verify_preconditions(module)
@@ -55,4 +55,4 @@ class Compiler(Generic[T]):
             module = p.run(module, continuation)
             if verify_passes.get():
                 p.verify_postconditions(module)
-        return module
+        return self.exit.run(module)

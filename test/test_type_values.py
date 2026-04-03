@@ -218,33 +218,30 @@ def test_pointer_with_ssa_pointee():
 
 def test_type_value_jit_identity():
     """TypeType value survives JIT identity function (passed as pointer)."""
+    ir = strip_prefix("""
+        | import function
+        |
+        | %main : function.Function<[Type], Type> = function.function<Type>() body(%t: Type):
+        |     %_ : Type = chain(%t, ())
+    """)
+    exe = compile_module(parse_module(ir))
     idx = Index()
     mem = idx.__constant__
-
-    # Build: main(t: TypeType<index.Index>) -> TypeType<index.Index> { return t }
-    arg = BlockArgument(name="t", type=idx.type)
-    func = FunctionOp(
-        name="main",
-        body=Block(result=arg, args=[arg]),
-        result_type=idx.type,
-        type=Function(arguments=pack([arg.type]), result_type=idx.type),
-    )
-    exe = compile_module(Module(ops=[func]))
     result = exe.run(mem)
     assert result.to_json() == mem.to_json()
 
 
 def test_type_constant_jit_return():
     """JIT function returns a TypeType constant, read back via Memory.from_raw."""
-    idx = Index()
-    const = ConstantOp(value=idx.__constant__.to_json(), type=idx.type)
-    func = FunctionOp(
-        name="main",
-        body=Block(result=const, args=[]),
-        result_type=idx.type,
-        type=Function(arguments=pack(), result_type=idx.type),
-    )
-    exe = compile_module(Module(ops=[func]))
+    ir = strip_prefix("""
+        | import function
+        | import index
+        |
+        | %main : function.Function<[], Type> = function.function<Type>() body():
+        |     %t : Type = {"tag": "index.Index"}
+    """)
+    module = parse_module(ir)
+    exe = compile_module(module)
     result = exe.run()
     assert result.to_json() == {"tag": "index.Index"}
 

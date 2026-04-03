@@ -48,13 +48,16 @@ def test_transitive_dependencies_visits_block_args():
 
 def test_transitive_dependencies_does_not_descend_into_blocks():
     """Ops nested inside another op's block are not included."""
-    inner = ConstantOp(value=42, type=builtin.Index())
-    func = function.FunctionOp(
-        name="f",
-        body=dgen.Block(result=inner, args=[]),
-        result_type=builtin.Nil(),
-        type=Function(arguments=pack(), result_type=builtin.Nil()),
-    )
+    ir = strip_prefix("""
+        | import function
+        | import index
+        |
+        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %0 : index.Index = 42
+    """)
+    module = parse_module(ir)
+    func = module.ops[0]
+    inner = func.body.ops[0]
     deps = list(transitive_dependencies(func))
     assert func in deps
     assert inner not in deps
