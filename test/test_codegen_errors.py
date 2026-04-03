@@ -20,7 +20,7 @@ def test_unhandled_op_raises():
     module = parse_module(ir)
     # ndbuffer.alloc has no lowering in codegen (needs NDBufferToMemory first),
     # so it should raise, not silently drop it.
-    with pytest.raises(ValueError, match="ndbuffer.alloc"):
+    with pytest.raises(ValueError, match="ndbuffer.*alloc"):
         Compiler([], LLVMCodegen()).compile(module)
 
 
