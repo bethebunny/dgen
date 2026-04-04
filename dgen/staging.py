@@ -40,6 +40,13 @@ def _resolve_boundary(
 # ---------------------------------------------------------------------------
 
 
+def _is_unresolved(value: dgen.Value) -> bool:
+    """True if value is an unresolved parameter (not yet a constant/type)."""
+    return isinstance(
+        value, (dgen.Op, BlockArgument, BlockParameter)
+    ) and not isinstance(value, (Constant, dgen.Type, FunctionOp))
+
+
 def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
     """Get all Value inputs from a set of fields, flattening list-valued ones."""
     return [getattr(op, name) for name, _ in fields]
@@ -88,10 +95,7 @@ def compute_stages(func: FunctionOp) -> dict[dgen.Value, int]:
             parts.append(1 + s if s > 0 else s)
         for ov in _field_values(value, value.__operands__):
             parts.append(_stage(ov))
-        # Unresolved type ref counts as a param boundary
-        if isinstance(value.type, dgen.Value) and not isinstance(
-            value.type, (Constant, dgen.Type)
-        ):
+        if _is_unresolved(value.type):
             s = _stage(value.type)
             parts.append(1 + s if s > 0 else s)
         result = max(parts, default=0)
@@ -117,14 +121,9 @@ def _unresolved_boundaries(
     boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
     for op in func.body.ops:
         for field_name, value in op.parameters:
-            if isinstance(
-                value, (dgen.Op, BlockArgument, BlockParameter)
-            ) and not isinstance(value, (Constant, dgen.Type, FunctionOp)):
+            if _is_unresolved(value):
                 boundaries.append((stages.get(op, 0), op, field_name, value))
-        # Also check op.type — if it's an unresolved SSA ref (Value, not Type)
-        if isinstance(op.type, dgen.Value) and not isinstance(
-            op.type, (Constant, dgen.Type)
-        ):
+        if _is_unresolved(op.type):
             boundaries.append((stages.get(op, 0), op, "type", op.type))
     boundaries.sort(key=lambda t: t[0])
     return boundaries
@@ -136,9 +135,7 @@ def _has_nested_boundaries(func: FunctionOp) -> bool:
         for _, block in op.blocks:
             for nested_op in block.ops:
                 for _, value in nested_op.parameters:
-                    if isinstance(
-                        value, (dgen.Op, BlockArgument, BlockParameter)
-                    ) and not isinstance(value, (Constant, dgen.Type, FunctionOp)):
+                    if _is_unresolved(value):
                         return True
     return False
 
@@ -241,10 +238,15 @@ def _build_callback_thunk(
         _resolve_with_runtime_args(s2_func, compiler, s2_func.body.args, python_args)
 
         func_module = Module(ops=[s2_func])
-        result = compiler.compile(func_module)
-        assert isinstance(result, Executable)
-        callback_host_refs.extend(result.host_refs)
-        mem = result.run(*python_args)
+        # After runtime boundary resolution, skip staging if no nested
+        # boundaries remain — avoids a redundant deepcopy+scan.
+        if _has_nested_boundaries(s2_func):
+            exe = compiler.compile(func_module)
+        else:
+            exe = compiler.run(func_module)
+        assert isinstance(exe, Executable)
+        callback_host_refs.extend(exe.host_refs)
+        mem = exe.run(*python_args)
         callback_host_refs.append(mem)
         return mem
 
