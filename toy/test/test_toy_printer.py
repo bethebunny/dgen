@@ -159,16 +159,15 @@ def test_full_module(ir_snapshot):
         type=ranked([6]),
     )
     r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
-    mt_ref = dgen.Value(name="multiply_transpose", type=builtin.Nil())
     pack4 = pack([r1, r3])
     function.CallOp(
-        callee=mt_ref,
+        callee=mt_func,
         arguments=pack4,
         type=inferred(),
     )
     pack5 = pack([r3, r1])
     call5 = function.CallOp(
-        callee=mt_ref,
+        callee=mt_func,
         arguments=pack5,
         type=inferred(),
     )
@@ -177,7 +176,7 @@ def test_full_module(ir_snapshot):
     main_func = function.FunctionOp(
         name="main",
         result_type=builtin.Nil(),
-        body=dgen.Block(result=print_op, args=[]),
+        body=dgen.Block(result=print_op, args=[], captures=[mt_func]),
         type=Function(arguments=pack(), result_type=builtin.Nil()),
     )
 

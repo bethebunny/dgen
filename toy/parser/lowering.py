@@ -36,6 +36,7 @@ class Lowering:
 
     def lower_module(self, tm: ToyModule) -> Module:
         functions = [self.lower_function(f) for f in tm.functions]
+        _resolve_callee_captures(functions)
         return Module(ops=functions)
 
     def lower_function(self, f: Function) -> function.FunctionOp:
@@ -254,6 +255,29 @@ class Lowering:
         yield print_op
         self.last_effect = print_op
         return arg
+
+
+def _resolve_callee_captures(functions: list[function.FunctionOp]) -> None:
+    """Resolve placeholder callee Values to actual FunctionOps and add as captures.
+
+    The lowering creates CallOps with placeholder Value(name=...) callees because
+    the target function may not exist yet. After all functions are created, replace
+    each placeholder with the actual FunctionOp and declare it as a capture on the
+    calling function's body block.
+    """
+    func_map = {f.name: f for f in functions if f.name is not None}
+    for func in functions:
+        captures: list[dgen.Value] = []
+        for op in func.body.ops:
+            if not isinstance(op, function.CallOp):
+                continue
+            callee_func = func_map.get(op.callee.name)
+            if callee_func is None:
+                continue
+            op.callee = callee_func
+            if callee_func not in captures:
+                captures.append(callee_func)
+        func.body.captures = captures
 
 
 def lower(tm: ToyModule) -> Module:

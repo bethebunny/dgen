@@ -439,7 +439,7 @@ def test_call_op_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
         |     %result : index.Index = function.call<%add_one>([%x])
         |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
@@ -459,7 +459,7 @@ def test_call_jit():
         | import function
         | import index
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
         |     %result : index.Index = function.call<%add_one>([%x])
         |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
@@ -481,7 +481,7 @@ def test_multi_function_staged():
         | import peano
         | import index
         |
-        | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
+        | %main : function.Function<[], index.Index> = function.function<index.Index>() body() captures(%add_one):
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %n : index.Index = peano.value<%s1>()
@@ -559,7 +559,7 @@ def test_recursive_peano():
         | import peano
         | import index
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%natural):
         |     %n : peano.Natural = function.call<%natural>([%x])
         |     %result : index.Index = peano.value<%n>()
         |
@@ -568,7 +568,7 @@ def test_recursive_peano():
         |     %value : peano.Natural = control_flow.if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
-        |     else_body():
+        |     else_body() captures(%natural):
         |         %n_minus_one : index.Index = algebra.subtract(%n, 1)
         |         %predecessor : peano.Natural = function.call<%natural>([%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()
