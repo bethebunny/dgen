@@ -450,5 +450,5 @@ def test_call_function_constant_keeps_engine_alive():
     """)
     )
     fc = codegen_compile(module).func_constant
-    # Executable is now unreachable; engine lives in fc.value.host_refs.
+    # Executable is now unreachable; engine lives in fc.value.origins.
     assert call(fc, 21).to_json() == 42
