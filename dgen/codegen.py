@@ -156,6 +156,7 @@ def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
                 yield from emit_extern(extern)
             yield ""
             for func in module.functions:
+                register_names(func, ctx)
                 build_predecessors(func, ctx)
                 yield from emit(func)
 
@@ -234,7 +235,7 @@ class CodegenSlotTracker:
 class Predecessor:
     """One incoming edge to a label/region block."""
 
-    source_name: str
+    source: dgen.Value  # the enclosing RegionOp/LabelOp (or function body)
     args: list[dgen.Value]
 
 
@@ -248,92 +249,105 @@ class EmitContext:
     param_to_owner: dict[dgen.Value, goto.RegionOp | goto.LabelOp] = field(
         default_factory=dict
     )
+    # Maps dgen op → LLVM block name where branches from that op's body appear.
+    # Updated by emitters as they process labels/regions.
+    block_name: dict[dgen.Value, str] = field(default_factory=dict)
+
+
+def _resolve_target(target: dgen.Value, ctx: EmitContext) -> dgen.Value:
+    """Resolve a branch target to the label/region it refers to.
+
+    %self parameters map to their owning RegionOp/LabelOp.
+    Direct RegionOp/LabelOp references pass through.
+    """
+    owner = ctx.param_to_owner.get(target)
+    return owner if owner is not None else target
+
+
+def register_names(func: function.FunctionOp, ctx: EmitContext) -> None:
+    """Pre-register all SSA names and LLVM block names in the function.
+
+    SSA names must be registered before emission so phi nodes can reference
+    values from blocks that haven't been emitted yet.
+
+    Block names are deterministic from the IR structure:
+    - LabelOp body → ops emit in the label's named block
+    - RegionOp body → ops emit in the region's named block (or {name}_entry
+      for merge regions without initial_arguments)
+    - After a nested LabelOp, remaining ops in the enclosing body emit in
+      {label}_exit
+    """
+    for arg in func.body.args:
+        ctx.tracker.track_name(arg)
+    ctx.block_name[func] = "entry"
+
+    def _walk(block: dgen.Block, owner: dgen.Value) -> None:
+        for op in block.ops:
+            ctx.tracker.track_name(op)
+            if isinstance(op, (goto.RegionOp, goto.LabelOp)):
+                for arg in op.body.args:
+                    ctx.tracker.track_name(arg)
+                for param in op.body.parameters:
+                    ctx.tracker.track_name(param)
+                    ctx.param_to_owner[param] = op
+                if isinstance(op, goto.LabelOp):
+                    ctx.block_name[op] = op.name
+                    ctx.block_name[owner] = f"{op.name}_exit"
+                elif isinstance(op, goto.RegionOp):
+                    has_initial = bool(unpack(op.initial_arguments))
+                    has_merge = bool(op.body.args) and not has_initial
+                    if has_merge:
+                        ctx.block_name[op] = f"{op.name}_entry"
+                    else:
+                        ctx.block_name[op] = op.name
+                    # After a region with exit parameters, the enclosing
+                    # block continues in the exit block.
+                    for param in op.body.parameters:
+                        if param.name and (
+                            param.name.startswith("exit")
+                            or param.name.startswith("if_exit")
+                        ):
+                            ctx.block_name[owner] = param.name
+                            break
+                _walk(op.body, op)
+
+    _walk(func.body, func)
 
 
 def build_predecessors(func: function.FunctionOp, ctx: EmitContext) -> None:
-    """Walk the function body and record branch predecessors for each target.
+    """Record branch predecessors for each label/region in the function.
 
-    For each BranchOp/ConditionalBranchOp, records the source block name and
-    the argument values carried to the target. Resolves BlockParameter targets
-    (like %self, %exit) to their owning RegionOp/LabelOp via param_to_owner.
-
-    Also records initial_arguments as a predecessor from the enclosing scope
-    (the fall-through entry into a region).
+    For each BranchOp/ConditionalBranchOp, records the enclosing label/region
+    and the argument values carried to the target. Also records
+    initial_arguments as a fall-through entry predecessor for regions with
+    block args.
     """
-    from dgen.block import BlockParameter
 
-    def _resolve(target: dgen.Value) -> dgen.Value:
-        """Resolve %self parameters to owning label. Other params stay as-is."""
-        if isinstance(target, (goto.RegionOp, goto.LabelOp)):
-            return target
-        if isinstance(target, BlockParameter) and target.name == "self":
-            owner = ctx.param_to_owner.get(target)
-            if owner is not None:
-                return owner
-        return target
-
-    def _walk_block(block: dgen.Block, enclosing_name: str) -> None:
-        # Pre-register all op names so phi nodes can reference values
-        # from blocks that haven't been emitted yet.
-        for op in block.ops:
-            ctx.tracker.track_name(op)
-
-        # Track the current LLVM basic block name. Labels create skip
-        # blocks ({name}_exit), so ops after a label are in the exit block.
-        current_block = enclosing_name
-
+    def _walk(block: dgen.Block, enclosing: dgen.Value) -> None:
         for op in block.ops:
             if isinstance(op, goto.BranchOp):
-                resolved = _resolve(op.target)
-                pred_args = unpack(op.arguments)
-                ctx.predecessors.setdefault(resolved, []).append(
-                    Predecessor(source_name=current_block, args=pred_args)
+                target = _resolve_target(op.target, ctx)
+                ctx.predecessors.setdefault(target, []).append(
+                    Predecessor(source=enclosing, args=unpack(op.arguments))
                 )
             elif isinstance(op, goto.ConditionalBranchOp):
                 for target, args in [
                     (op.true_target, op.true_arguments),
                     (op.false_target, op.false_arguments),
                 ]:
-                    resolved = _resolve(target)
-                    pred_args = unpack(args)
-                    ctx.predecessors.setdefault(resolved, []).append(
-                        Predecessor(source_name=current_block, args=pred_args)
+                    target = _resolve_target(target, ctx)
+                    ctx.predecessors.setdefault(target, []).append(
+                        Predecessor(source=enclosing, args=unpack(args))
                     )
-            # Recurse into nested blocks.
             if isinstance(op, (goto.RegionOp, goto.LabelOp)):
-                label_name = ctx.tracker.track_name(op)
-                for arg in op.body.args:
-                    ctx.tracker.track_name(arg)
-                for param in op.body.parameters:
-                    ctx.tracker.track_name(param)
-                    ctx.param_to_owner[param] = op
-                # Record initial_arguments as the fall-through entry predecessor.
-                # Only add if there are actual values (empty init_args means
-                # the region has no entry values, e.g. if-merge regions).
                 init_args = unpack(op.initial_arguments)
                 if op.body.args and init_args:
                     ctx.predecessors.setdefault(op, []).append(
-                        Predecessor(source_name=current_block, args=init_args)
+                        Predecessor(source=enclosing, args=init_args)
                     )
-                _walk_block(op.body, label_name)
-                # After a LabelOp, remaining ops are in the skip-exit block.
-                if isinstance(op, goto.LabelOp):
-                    current_block = f"{label_name}_exit"
-                # After a RegionOp with an exit parameter, remaining ops
-                # are in the exit block.
-                elif isinstance(op, goto.RegionOp):
-                    for param in op.body.parameters:
-                        if param.name and (
-                            param.name.startswith("exit")
-                            or param.name.startswith("if_exit")
-                        ):
-                            current_block = param.name
-                            break
+                _walk(op.body, op)
 
-    # Pre-register function args.
-    for arg in func.body.args:
-        ctx.tracker.track_name(arg)
-    _walk_block(func.body, "entry")
+    _walk(func.body, func)
 
 
 _emit_ctx: contextvars.ContextVar[EmitContext] = contextvars.ContextVar("_emit_ctx")
@@ -416,6 +430,11 @@ def emit(value: dgen.Value) -> Iterator[str]:
     return
 
 
+def _pred_block_name(pred: Predecessor, ctx: EmitContext) -> str:
+    """Resolve a predecessor's source op to its LLVM basic block name."""
+    return ctx.block_name.get(pred.source, "entry")
+
+
 def _emit_phi_nodes(
     op: goto.RegionOp | goto.LabelOp,
 ) -> Iterator[str]:
@@ -430,7 +449,7 @@ def _emit_phi_nodes(
             continue
         name = ctx.tracker.track_name(arg)
         phi_parts = [
-            f"[ {value_reference(pred.args[arg_idx])}, %{pred.source_name} ]"
+            f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred, ctx)} ]"
             for pred in preds
             if arg_idx < len(pred.args)
         ]
@@ -452,32 +471,22 @@ def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
       {name}: phi ... (merge point, entered only by branches)
     """
     ctx = _ctx()
-    ctx.tracker.track_name(op)
-    for arg in op.body.args:
-        ctx.tracker.track_name(arg)
-    for param in op.body.parameters:
-        ctx.tracker.track_name(param)
-
     has_initial_args = bool(unpack(op.initial_arguments))
     has_merge_args = bool(op.body.args) and not has_initial_args
 
     if has_merge_args:
-        # If-merge pattern: dispatch first, then merge block for phi.
         entry_name = f"{op.name}_entry"
         yield f"  br label %{entry_name}"
         yield f"{entry_name}:"
         terminated = yield from emit_linearized(op.body)
-        # After dispatch (cond_br terminates), emit the merge block.
         yield f"{op.name}:"
         yield from _emit_phi_nodes(op)
     else:
-        # Standard region (loop header, etc.): single block with phi.
         yield f"  br label %{op.name}"
         yield f"{op.name}:"
         yield from _emit_phi_nodes(op)
         terminated = yield from emit_linearized(op.body)
 
-    # Emit exit labels for any "exit*" or "if_exit*" parameters.
     for param in op.body.parameters:
         if param.name and (
             param.name.startswith("exit") or param.name.startswith("if_exit")
@@ -506,7 +515,7 @@ def _emit_exit_phi_nodes(
         phi_name = f"{param.name}_phi{arg_idx}"
         ty = llvm_type(preds[0].args[arg_idx].type)
         phi_parts = [
-            f"[ {value_reference(pred.args[arg_idx])}, %{pred.source_name} ]"
+            f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred, ctx)} ]"
             for pred in preds
         ]
         if phi_parts:
@@ -521,28 +530,17 @@ def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
     label body, then resumes with an exit label.
     """
     ctx = _ctx()
-    ctx.tracker.track_name(op)
-    for arg in op.body.args:
-        ctx.tracker.track_name(arg)
-    for param in op.body.parameters:
-        ctx.tracker.track_name(param)
     exit_name = f"{op.name}_exit"
-    # Skip over the label body in the current block's flow.
     yield f"  br label %{exit_name}"
-    # Emit the label body as a separate basic block.
     yield f"{op.name}:"
     yield from _emit_phi_nodes(op)
     yield from emit_linearized(op.body)
-    # Resume the enclosing block's flow.
     yield f"{exit_name}:"
 
 
 @emitter_for(function.FunctionOp)
 def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
     ctx = _ctx()
-    ctx.tracker.track_name(op)
-    for arg in op.body.args:
-        ctx.tracker.track_name(arg)
     ret_type = llvm_type(op.result_type)
     arguments = ", ".join(
         f"{llvm_type(arg.type)} %{ctx.tracker.track_name(arg)}" for arg in op.body.args
