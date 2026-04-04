@@ -114,6 +114,7 @@ class ControlFlowToGoto(Pass):
         self._loop_counter += 1
 
         merge_self = BlockParameter(name="self", type=goto.Label())
+        merge_exit = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
         merge_result = BlockArgument(name=f"if_result{lid}", type=op.type)
 
         # Both branches carry their body result to %self.
@@ -155,7 +156,7 @@ class ControlFlowToGoto(Pass):
             type=op.type,
             body=dgen.Block(
                 result=ChainOp(lhs=merge_result, rhs=cond_br, type=op.type),
-                parameters=[merge_self],
+                parameters=[merge_self, merge_exit],
                 args=[merge_result],
                 captures=[
                     op.condition,
