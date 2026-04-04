@@ -154,11 +154,11 @@ def test_verify_missing_capture_of_function_ref():
         | import index
         | import algebra
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %result : index.Index = function.call<%add_one>([%x])
-        |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %r : index.Index = algebra.add(%n, 1)
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %result : index.Index = function.call<%add_one>([%x])
     """)
     with pytest.raises(ClosedBlockError):
         verify_closed_blocks(parse_module(ir))
@@ -171,11 +171,11 @@ def test_verify_captured_function_ref_passes():
         | import index
         | import algebra
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
-        |     %result : index.Index = function.call<%add_one>([%x])
-        |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %r : index.Index = algebra.add(%n, 1)
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
+        |     %result : index.Index = function.call<%add_one>([%x])
     """)
     verify_closed_blocks(parse_module(ir))
 
