@@ -148,15 +148,12 @@ def _has_nested_boundaries(func: FunctionOp) -> bool:
 class ConstantFold(Pass):
     """Pass that resolves all stage-0 comptime boundaries.
 
-    Iteratively finds unresolved parameters whose dependency subgraphs
-    consist entirely of constants, JIT-evaluates them, and patches the
-    results back as ConstantOps.
+    Stage-0 resolution is performed by ``compile_module`` before the
+    pass pipeline runs, so this pass is a no-op in the pipeline.
+    It exists so callers can include it in a pass list for clarity.
     """
 
     allow_unregistered_ops = True
-
-    def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        return resolve_stage0(module, compiler)
 
 
 def resolve_stage0(

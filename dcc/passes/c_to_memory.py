@@ -69,13 +69,11 @@ class CToMemory(Pass):
         self._alloca: dict[str, dgen.Value] = {}
         self._mem: dict[str, dgen.Value] = {}
 
-    def run(self, module: dgen.module.Module, compiler: object) -> dgen.module.Module:
-        """Run on all functions, resetting per-variable state each time."""
-        for func in module.functions:
-            self._alloca = {}
-            self._mem = {}
-            self._run_block(func.body)
-        return module
+    def run(self, value: dgen.Value, compiler: object) -> dgen.Value:
+        """Run on a value, resetting per-variable state."""
+        self._alloca = {}
+        self._mem = {}
+        return super().run(value, compiler)
 
     def _get_mem(self, name: str) -> dgen.Value:
         """Get the current memory token for a variable."""

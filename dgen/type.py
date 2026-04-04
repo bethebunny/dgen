@@ -80,6 +80,23 @@ class Value(Generic[T]):
         """Check whether this value implements a trait."""
         return isinstance(self, trait)
 
+    def replace_operand(self, old: Value, new: Value) -> None:
+        """Replace all occurrences of old with new in operand fields."""
+        for name, _ in self.__operands__:
+            if getattr(self, name) is old:
+                setattr(self, name, new)
+
+    def replace_uses_of(self, old: Value, new: Value) -> None:
+        """Replace all references to old with new in this value's fields and owned blocks."""
+        self.replace_operand(old, new)
+        for name, val in self.parameters:
+            if val is old:
+                setattr(self, name, new)
+        if self.type is old:
+            self.type = new
+        for _, block in self.blocks:
+            block.replace_uses_of(old, new)
+
 
 def type_constant(value: Value[TypeType]) -> Type:
     """Resolve a Value[TypeType] to a concrete Type."""

@@ -6,11 +6,9 @@ from dgen.module import Module
 from toy.passes.toy_to_structured import ToyToStructured
 from toy.test.helpers import strip_prefix
 
-_compiler = Compiler([], IdentityPass())
-
 
 def lower_to_structured(m: Module) -> Module:
-    return ToyToStructured().run(m, _compiler)
+    return Compiler([ToyToStructured()], IdentityPass()).run(m)
 
 
 def test_simple_constant(ir_snapshot):

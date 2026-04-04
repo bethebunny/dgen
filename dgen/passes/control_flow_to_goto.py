@@ -74,7 +74,7 @@ from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean
 from dgen.module import ConstantOp, PackOp, pack
-from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.passes.pass_ import Pass, lowering_for
 
 
 class ControlFlowToGoto(Pass):
@@ -82,6 +82,15 @@ class ControlFlowToGoto(Pass):
 
     def __init__(self) -> None:
         self._loop_counter = 0
+
+    def _lower_block(self, block: dgen.Block) -> None:
+        """Dispatch handlers on a block's values (used for recursive lowering)."""
+        from dgen.graph import all_blocks
+
+        for b in [block, *list(all_blocks(block.result))]:
+            for v in list(b.values):
+                if (result := self._dispatch_handlers(v)) is not None:
+                    b.replace_uses_of(v, result)
 
     def verify_preconditions(self, module: dgen.module.Module) -> None:
         super().verify_preconditions(module)
@@ -166,8 +175,8 @@ class ControlFlowToGoto(Pass):
             ),
         )
 
-        self._run_block(then_label.body)
-        self._run_block(else_label.body)
+        self._lower_block(then_label.body)
+        self._lower_block(else_label.body)
 
         return region
 
@@ -182,8 +191,7 @@ class ControlFlowToGoto(Pass):
         body_iv = BlockArgument(name=f"j{lid}", type=Index())
 
         # --- Body label (inside header): remap IV, back-edge via %self ---
-        body_rewriter = Rewriter(op.body)
-        body_rewriter.replace_uses(op.body.args[0], body_iv)
+        op.body.replace_uses_of(op.body.args[0], body_iv)
 
         # The increment must depend on the inner loop body having run.
         # op.body.result will become the inner header label after replace_uses,
@@ -228,7 +236,7 @@ class ControlFlowToGoto(Pass):
         )
 
         # Recurse into the body label's block to handle nested ForOps.
-        self._run_block(body_label.body)
+        self._lower_block(body_label.body)
 
         # Replace ForOp with the header label. The label is an expression
         # block — it runs when control reaches it. No entry branch needed.
@@ -252,9 +260,8 @@ class ControlFlowToGoto(Pass):
         header_exit = BlockParameter(name=f"exit{lid}", type=goto.Label())
 
         # --- Body label: remap body block args, append back-edge ---
-        body_rewriter = Rewriter(op.body)
         for orig, new in zip(op.body.args, body_args):
-            body_rewriter.replace_uses(orig, new)
+            op.body.replace_uses_of(orig, new)
 
         # Body result is the next-iteration values. Wrap in a pack for the
         # back-edge branch arguments. The branch already depends on body_result
@@ -277,9 +284,8 @@ class ControlFlowToGoto(Pass):
         )
 
         # --- Header: remap condition block args, append conditional branch ---
-        cond_rewriter = Rewriter(op.condition)
         for orig, new in zip(op.condition.args, header_args):
-            cond_rewriter.replace_uses(orig, new)
+            op.condition.replace_uses_of(orig, new)
 
         cond_result = op.condition.result
         cond_br = goto.ConditionalBranchOp(
@@ -302,6 +308,6 @@ class ControlFlowToGoto(Pass):
         )
 
         # Recurse into body to handle nested loops.
-        self._run_block(body_label.body)
+        self._lower_block(body_label.body)
 
         return header_label

@@ -8,11 +8,9 @@ from dgen.module import Module
 from toy.passes.optimize import ToyOptimize
 from toy.test.helpers import strip_prefix
 
-_compiler = Compiler([], IdentityPass())
-
 
 def optimize(m: Module) -> Module:
-    return ToyOptimize().run(m, _compiler)
+    return Compiler([ToyOptimize()], IdentityPass()).run(m)
 
 
 def test_transpose_elimination(ir_snapshot):

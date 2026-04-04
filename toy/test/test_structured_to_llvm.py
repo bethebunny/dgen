@@ -9,15 +9,13 @@ from dgen.passes.memory_to_llvm import MemoryToLLVM
 from toy.passes.toy_to_structured import ToyToStructured
 from toy.test.helpers import strip_prefix
 
-_compiler = Compiler([], IdentityPass())
-
 
 def compile_to_llvm(ir_text: str) -> Module:
     m = parse_module(ir_text)
-    structured = ToyToStructured().run(m, _compiler)
-    structured = ControlFlowToGoto().run(structured, _compiler)
-    structured = NDBufferToMemory().run(structured, _compiler)
-    return MemoryToLLVM().run(structured, _compiler)
+    return Compiler(
+        [ToyToStructured(), ControlFlowToGoto(), NDBufferToMemory(), MemoryToLLVM()],
+        IdentityPass(),
+    ).run(m)
 
 
 def test_simple_constant(ir_snapshot):

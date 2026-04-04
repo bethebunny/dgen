@@ -799,10 +799,10 @@ def compile(module: Module) -> Executable:
     """Lower a Module to LLVM IR and bundle with execution metadata."""
     from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
-    _dummy = Compiler([], IdentityPass())
-    module = ControlFlowToGoto().run(module, _dummy)
-    module = BuiltinToLLVM().run(module, _dummy)
-    module = AlgebraToLLVM().run(module, _dummy)
+    module = Compiler(
+        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()],
+        IdentityPass(),
+    ).run(module)
     ir, host_buffers = emit_llvm_ir(module)
     main = module.functions[-1]
     assert main.name is not None

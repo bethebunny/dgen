@@ -10,13 +10,12 @@ from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.testing import strip_prefix
 
-_compiler = Compiler([], IdentityPass())
-
 
 def lower_to_llvm(m: Module) -> Module:
-    m = ControlFlowToGoto().run(m, _compiler)
-    m = NDBufferToMemory().run(m, _compiler)
-    return MemoryToLLVM().run(m, _compiler)
+    return Compiler(
+        [ControlFlowToGoto(), NDBufferToMemory(), MemoryToLLVM()],
+        IdentityPass(),
+    ).run(m)
 
 
 def test_roundtrip_alloc():

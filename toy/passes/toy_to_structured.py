@@ -56,25 +56,19 @@ def _nested_for(
 class ToyToStructured(Pass):
     allow_unregistered_ops = True
 
-    def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        return Module(
-            ops=[
-                self._lower_function(op) if isinstance(op, FunctionOp) else op
-                for op in module.ops
-            ]
-        )
-
-    def _lower_function(self, f: FunctionOp) -> FunctionOp:
-        self._run_block(f.body)
-        return FunctionOp(
-            name=f.name,
-            body=f.body,
-            result_type=f.result_type,
-            type=Function(
-                arguments=pack(arg.type for arg in f.body.args),
-                result_type=f.result_type,
-            ),
-        )
+    def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
+        result = super().run(value, compiler)
+        if isinstance(result, FunctionOp):
+            return FunctionOp(
+                name=result.name,
+                body=result.body,
+                result_type=result.result_type,
+                type=Function(
+                    arguments=pack(arg.type for arg in result.body.args),
+                    result_type=result.result_type,
+                ),
+            )
+        return result
 
     def _shape(self, val: dgen.Value) -> list[int]:
         assert isinstance(val.type, (toy.Tensor, ndbuffer.NDBuffer))

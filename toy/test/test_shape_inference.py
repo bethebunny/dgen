@@ -9,11 +9,9 @@ from toy.parser.toy_parser import parse_toy
 from toy.passes.shape_inference import ShapeInference
 from toy.test.helpers import strip_prefix
 
-_compiler = Compiler([], IdentityPass())
-
 
 def infer_shapes(m: Module) -> Module:
-    return ShapeInference().run(m, _compiler)
+    return Compiler([ShapeInference()], IdentityPass()).run(m)
 
 
 def compile_and_infer(source: str) -> Module:
@@ -170,7 +168,12 @@ def test_tile_with_computed_count():
         |     %5 : Nil = toy.print(%4)
     """)
     module = parse_module(ir)
-    result = infer_shapes(module)
+    # Run shape inference directly (no verification) — this test intentionally
+    # produces unresolved InferredShapeTensor, which verify_postconditions rejects.
+    func = module.functions[0]
+    si = ShapeInference()
+    result_func = si.run(func, Compiler([], IdentityPass()))
+    result = Module(ops=[result_func])
     out = asm.format(result)
     # Shape inference cannot resolve %4 — it stays InferredShapeTensor
     # because the count (%3) is not a constant, it's a computed value.
