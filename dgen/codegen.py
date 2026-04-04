@@ -516,7 +516,6 @@ def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
     Terminates the current basic block with a skip branch, emits the
     label body, then resumes with an exit label.
     """
-    ctx = _ctx()
     exit_name = f"{op.name}_exit"
     yield f"  br label %{exit_name}"
     yield f"{op.name}:"
