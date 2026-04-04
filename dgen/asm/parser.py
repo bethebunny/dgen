@@ -120,7 +120,7 @@ class ASMParser:
 
     def resolve(self, name: str) -> Value:
         if name not in self.name_table:
-            self.name_table[name] = Value(name=name, type=builtin.Nil())
+            raise ParseError(f"Undefined reference: %{name}")
         return self.name_table[name]
 
     def _skip_ws(self) -> None:
@@ -399,12 +399,7 @@ def _read_block_body(parser: ASMParser) -> Block:
     parser.read(":")
     block_indent = newline(parser)
     if block_indent == 0:
-        return Block(
-            result=dgen.Value(type=builtin.Nil()),
-            args=args,
-            parameters=block_params,
-            captures=captures,
-        )
+        raise ParseError("Empty block body")
     last_op: Op | None = None
     while parser.pos < len(parser.text):
         indent = newline(parser)

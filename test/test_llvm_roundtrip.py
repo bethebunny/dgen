@@ -104,6 +104,7 @@ def test_roundtrip_label_br():
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %loop_header : goto.Label = goto.label([]) body():
+        |         %_0 : Nil = ()
         |     %_ : Nil = goto.branch<%loop_header>([])
     """)
     module = parse_module(ir)
@@ -168,7 +169,7 @@ def test_roundtrip_loop_pattern():
         |             %next : llvm.Int<64> = llvm.add(%j, %one)
         |             %_ : Nil = goto.branch<%loop_header>([%next, %q])
         |         %loop_exit : goto.Label = goto.label([]) body():
-        |             %_ : Nil = ()
+        |                 %_0 : Nil = ()
         |         %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [%i, %p], [])
         |     %_ : Nil = goto.branch<%loop_header>([%init, %alloc])
     """)

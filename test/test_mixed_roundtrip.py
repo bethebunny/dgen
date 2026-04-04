@@ -44,7 +44,7 @@ def test_llvm_full_loop():
         |             %next : llvm.Int<64> = llvm.add(%j, %one)
         |             %_ : Nil = goto.branch<%loop_header>([%next])
         |         %loop_exit : goto.Label = goto.label([]) body():
-        |             %_ : Nil = ()
+        |                 %_0 : Nil = ()
         |         %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [%i0], [])
         |     %br : Nil = goto.branch<%loop_header>([%init])
         |     %c0 : Nil = chain(%0, %ret)
