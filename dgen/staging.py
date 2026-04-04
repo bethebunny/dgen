@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from copy import deepcopy
 from typing import TYPE_CHECKING, TypeVar
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable, build_callback_thunk, register_executable
-from dgen.dialects import function
-from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module, pack
-from dgen.type import Constant, Memory
-
+from dgen.dialects.function import FunctionOp
+from dgen.module import Module
 from dgen.passes.pass_ import Pass
+from dgen.type import Constant, Memory
 
 if TYPE_CHECKING:
     from dgen.compiler import Compiler
@@ -22,59 +20,17 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def _jit_evaluate(
-    target: dgen.Value,
-    compile: Callable[[Module], Executable],
-    *,
-    block_args: Sequence[BlockArgument] = (),
-    args: Sequence = (),
-) -> object:
-    """Wrap target in a function, compile, JIT-execute, and return the JSON result."""
-    func = function.FunctionOp(
-        name="main",
-        body=dgen.Block(result=target, args=list(block_args)),
-        result_type=target.type,
-        type=Function(
-            arguments=pack(arg.type for arg in block_args), result_type=target.type
-        ),
-    )
-    module = Module(ops=[func])
-    exe = compile(module)
-    # LIFETIME BUG WORKAROUND: Executable.run() converts raw Python values
-    # to Memory objects internally, but those temporaries can be GC'd before
-    # the result is read. For non-register-passable types (e.g. TypeType),
-    # the JIT function returns a pointer into the input Memory's buffer.
-    # If that Memory is collected, the pointer dangles and to_json() reads
-    # garbage. Creating Memory objects here keeps them alive through to_json().
-    # The real fix is for Executable.run() to attach input memories to the
-    # result's host_refs so they outlive the call.
-    memories = [
-        Memory.from_value(param.type, arg) for arg, param in zip(args, block_args)
-    ]
-    result = exe.run(*memories)
-    return result.to_json()
-
-
 def _resolve_comptime_field(
     op: dgen.Op,
     field_name: str,
     value: dgen.Value,
-    compile: Callable[[Module], Executable],
+    compiler: Compiler[object],
     *,
     block_args: Sequence[BlockArgument] = (),
-    args: Sequence = (),
+    args: Sequence[object] = (),
 ) -> None:
-    """Resolve a single comptime field: JIT the dependency subgraph, patch with ConstantOp."""
-    result = _jit_evaluate(
-        value,
-        compile,
-        block_args=block_args,
-        args=args,
-    )
-    const_type = value.type
-    if isinstance(result, dict) and "tag" in result:
-        const_type = dgen.type.TypeType()
-    const_op = ConstantOp(value=result, type=const_type)
+    """Resolve a single comptime field via compile_value, patch with ConstantOp."""
+    const_op = compiler.compile_value(value, block_args=block_args, args=args)
     setattr(op, field_name, const_op)
 
 
@@ -196,19 +152,18 @@ class ConstantFold(Pass):
 
     Iteratively finds unresolved parameters whose dependency subgraphs
     consist entirely of constants, JIT-evaluates them, and patches the
-    results back as ConstantOps. Uses the continuation compiler's run
-    method to lower extracted subgraphs for JIT.
+    results back as ConstantOps.
     """
 
     allow_unregistered_ops = True
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        return resolve_stage0(module, compiler.run)
+        return resolve_stage0(module, compiler)
 
 
 def resolve_stage0(
     module: Module,
-    compile: Callable[[Module], Executable],
+    compiler: Compiler[object],
 ) -> Module:
     """Deepcopy + resolve all stage-0 comptime boundaries.
 
@@ -227,7 +182,7 @@ def resolve_stage0(
             _stage_num, op, field_name, value = boundaries[0]
             if stages.get(value, 0) != 0:
                 continue
-            _resolve_comptime_field(op, field_name, value, compile)
+            _resolve_comptime_field(op, field_name, value, compiler)
             resolved_any = True
             break  # re-iterate from the start after each resolution
         if not resolved_any:
@@ -237,9 +192,9 @@ def resolve_stage0(
 
 def _resolve_with_runtime_args(
     func: FunctionOp,
-    compile: Callable[[Module], Executable],
+    compiler: Compiler[object],
     block_args: Sequence[BlockArgument],
-    python_args: Sequence,
+    python_args: Sequence[object],
 ) -> None:
     """Resolve all boundaries in a function using runtime argument values.
 
@@ -257,7 +212,7 @@ def _resolve_with_runtime_args(
             op,
             field_name,
             value,
-            compile,
+            compiler,
             block_args=block_args,
             args=python_args,
         )
@@ -282,9 +237,7 @@ def _build_callback_thunk(
         template = deepcopy(stage2_template)
         s2_func = template.functions[func_index]
 
-        _resolve_with_runtime_args(
-            s2_func, compiler.run, s2_func.body.args, python_args
-        )
+        _resolve_with_runtime_args(s2_func, compiler, s2_func.body.args, python_args)
 
         func_module = Module(ops=[s2_func])
         result = compiler.compile(func_module)
@@ -313,7 +266,7 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
     global symbol so cross-function calls (including recursion) work.
     """
 
-    resolved = resolve_stage0(module, compiler.run)
+    resolved = resolve_stage0(module, compiler)
 
     # Find all functions with unresolved boundaries (including nested blocks)
     unresolved_funcs: list[FunctionOp] = []
