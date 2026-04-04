@@ -439,11 +439,11 @@ def test_call_op_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
-        |     %result : index.Index = function.call<%add_one>([%x])
-        |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %r : index.Index = algebra.add(%n, 1)
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
+        |     %result : index.Index = function.call<%add_one>([%x])
     """)
     module = parse_module(ir)
     asm_text = "\n".join(module.asm)
@@ -459,11 +459,11 @@ def test_call_jit():
         | import function
         | import index
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
-        |     %result : index.Index = function.call<%add_one>([%x])
-        |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %r : index.Index = algebra.add(%n, 1)
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
+        |     %result : index.Index = function.call<%add_one>([%x])
     """)
     module = parse_module(ir)
     exe = codegen.compile(module)
@@ -481,14 +481,14 @@ def test_multi_function_staged():
         | import peano
         | import index
         |
+        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %r : index.Index = algebra.add(%x, 1)
+        |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body() captures(%add_one):
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %n : index.Index = peano.value<%s1>()
         |     %result : index.Index = function.call<%add_one>([%n])
-        |
-        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %r : index.Index = algebra.add(%x, 1)
     """)
     module = parse_module(ir)
     exe = peano_compiler.compile(module)

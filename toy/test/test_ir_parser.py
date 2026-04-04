@@ -102,6 +102,7 @@ def test_roundtrip_call():
         | import toy
         |
         | %helper : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%x: toy.InferredShapeTensor<number.Float64>):
+        |     %_ : Nil = ()
         |
         | %f : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>) captures(%helper):
         |     %0 : toy.InferredShapeTensor<number.Float64> = function.call<%helper>([%a])
@@ -130,6 +131,7 @@ def test_roundtrip_void_return():
         | import function
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
+        |     %_ : Nil = ()
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

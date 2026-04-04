@@ -299,6 +299,7 @@ def test_function_with_ssa_result_type():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
+        |         %_ : Nil = ()
     """)
     module = parse_module(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
@@ -358,6 +359,7 @@ def test_compile_with_ssa_function_result():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
+        |         %_ : Nil = ()
     """)
     module = parse_module(ir)
     inner_func = next(
@@ -380,6 +382,7 @@ def test_compile_function_with_ssa_typed_block_arg():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[%t], ()> = function.function<Nil>() body(%x: %t):
+        |         %_ : Nil = ()
     """)
     module = parse_module(ir)
     inner_func = next(
@@ -431,6 +434,7 @@ def test_compile_input_types_resolved_from_ssa():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[%t], %t> = function.function<%t>() body(%x: %t):
+        |         %_ : Nil = ()
     """)
     module = parse_module(ir)
     inner_func = next(
