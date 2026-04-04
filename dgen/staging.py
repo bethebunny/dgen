@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def _resolve_comptime_field(
+def _resolve_boundary(
     op: dgen.Op,
     field_name: str,
     value: dgen.Value,
@@ -29,9 +29,10 @@ def _resolve_comptime_field(
     block_args: Sequence[BlockArgument] = (),
     args: Sequence[object] = (),
 ) -> None:
-    """Resolve a single comptime field via compile_value, patch with ConstantOp."""
-    const_op = compiler.compile_value(value, block_args=block_args, args=args)
-    setattr(op, field_name, const_op)
+    """Resolve a single comptime boundary: JIT-evaluate value, patch result as ConstantOp."""
+    setattr(
+        op, field_name, compiler.compile_value(value, block_args=block_args, args=args)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +183,7 @@ def resolve_stage0(
             _stage_num, op, field_name, value = boundaries[0]
             if stages.get(value, 0) != 0:
                 continue
-            _resolve_comptime_field(op, field_name, value, compiler)
+            _resolve_boundary(op, field_name, value, compiler)
             resolved_any = True
             break  # re-iterate from the start after each resolution
         if not resolved_any:
@@ -208,7 +209,7 @@ def _resolve_with_runtime_args(
         if not boundaries:
             break
         _stage_num, op, field_name, value = boundaries[0]
-        _resolve_comptime_field(
+        _resolve_boundary(
             op,
             field_name,
             value,
