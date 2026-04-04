@@ -756,13 +756,20 @@ def emit_branch(op: goto.BranchOp) -> Iterator[str]:
 
 @dataclass
 class Executable:
-    """Compiled LLVM IR ready for JIT execution."""
+    """Compiled LLVM IR ready for JIT execution.
+
+    Thin wrapper around a ConstantOp[Function] (the JIT'd function pointer).
+    `run()` delegates to `call()`. Kept for backwards compat with callsites
+    that want an Executable-shaped object; new code should prefer passing
+    a ConstantOp[Function] around directly and invoking via `call()`.
+    """
 
     ir: str
     input_types: list[Type]
     result_type: Type
     main_name: str
     host_refs: list = field(default_factory=list)
+    _func_constant: ConstantOp | None = None
 
     @property
     def ctype(self) -> type[_ctypes.CFuncPtr]:
@@ -772,27 +779,26 @@ class Executable:
             *(_ctype(t.__layout__) for t in self.input_types),
         )
 
+    @property
+    def func_constant(self) -> ConstantOp:
+        """Lazily JIT-compile and return a ConstantOp[Function] for this executable."""
+        if self._func_constant is None:
+            func_type = function.Function(
+                arguments=pack(self.input_types),
+                result_type=self.result_type,
+            )
+            self._func_constant = jit_function(
+                func_type, self.main_name, self.ir, self.host_refs
+            )
+        return self._func_constant
+
     def run(self, *args: Memory | object) -> Memory:
         """JIT and execute, returning the result as a Memory object.
 
         Args may be Memory objects or raw Python values (int, float, etc.),
         which are converted via Memory.from_value.
         """
-        memories: list[Memory] = [
-            arg if isinstance(arg, Memory) else Memory.from_value(ty, arg)
-            for arg, ty in zip(args, self.input_types)
-        ]
-        engine = _jit_engine(self)  # must stay alive until cfunc returns
-        func_ptr = engine.get_function_address(self.main_name)
-        cfunc = self.ctype(func_ptr)
-        raw_args = [
-            m.unpack()[0] if t.__layout__.register_passable else m.address
-            for m, t in zip(memories, self.input_types)
-        ]
-        result = cfunc(*raw_args)
-        if self.result_type.__layout__.register_passable:
-            return Memory.from_value(self.result_type, result)
-        return Memory.from_raw(self.result_type, result)
+        return call(self.func_constant, *args)
 
 
 def compile(module: Module) -> Executable:
@@ -823,6 +829,78 @@ def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
     target = llvmlite.Target.from_default_triple()
     tm = target.create_target_machine()
     return llvmlite.create_mcjit_compiler(mod, tm)
+
+
+# ---------------------------------------------------------------------------
+# Function values: Constant[Function] + call()
+# ---------------------------------------------------------------------------
+
+
+def _function_arg_types(func_type: function.Function) -> list[Type]:
+    """Extract the runtime Type instances for each argument of a Function type."""
+    return [type_constant(v) for v in func_type.arguments.values]
+
+
+def jit_function(
+    func_type: function.Function, symbol: str, ir: str, host_refs: list
+) -> ConstantOp:
+    """JIT-compile `ir` and return a ConstantOp[Function] holding the function pointer.
+
+    `symbol` is the entry function's name in the IR. The returned constant's
+    Memory buffer contains an 8-byte function pointer; its host_refs keep the
+    JIT engine (and any other supplied refs) alive.
+    """
+    _ensure_initialized()
+    llvm_mod = llvmlite.parse_assembly(ir)
+    llvm_mod.verify()
+    target = llvmlite.Target.from_default_triple()
+    tm = target.create_target_machine()
+    engine = llvmlite.create_mcjit_compiler(llvm_mod, tm)
+    func_ptr = engine.get_function_address(symbol)
+    mem: Memory = Memory(func_type)
+    # Pack the raw pointer into the 8-byte buffer (Pointer layout = "P").
+    mem.layout.struct.pack_into(mem.buffer, 0, func_ptr)
+    mem.host_refs = [engine, *host_refs]
+    return ConstantOp(type=func_type, value=mem)
+
+
+def call(func_constant: Value, *args: Memory | object) -> Memory:
+    """Invoke a JIT-compiled function value.
+
+    `func_constant` is a Value whose type is a Function (typically a
+    ConstantOp[Function] produced by `jit_function`). Its Memory holds the
+    raw function pointer. Args may be Memory objects or raw Python values.
+    """
+    func_type = func_constant.type
+    assert isinstance(func_type, function.Function)
+    input_types = _function_arg_types(func_type)
+    result_type = type_constant(func_type.result_type)
+    func_mem = func_constant.__constant__
+    (func_ptr,) = func_mem.layout.struct.unpack(func_mem.buffer)
+
+    memories: list[Memory] = [
+        arg if isinstance(arg, Memory) else Memory.from_value(ty, arg)
+        for arg, ty in zip(args, input_types)
+    ]
+    cfunc_type = ctypes.CFUNCTYPE(
+        _ctype(result_type.__layout__),
+        *(_ctype(t.__layout__) for t in input_types),
+    )
+    cfunc = cfunc_type(func_ptr)
+    raw_args = [
+        m.unpack()[0] if t.__layout__.register_passable else m.address
+        for m, t in zip(memories, input_types)
+    ]
+    raw_result = cfunc(*raw_args)
+    if result_type.__layout__.register_passable:
+        result = Memory.from_value(result_type, raw_result)
+    else:
+        result = Memory.from_raw(result_type, raw_result)
+    # Keep the JIT engine, input memories, and any callback closures alive
+    # for as long as the result lives (non-register-passable results embed
+    # pointers into those buffers).
+    result.host_refs = [*func_mem.host_refs, *memories]
+    return result
 
 
 def register_executable(exe: Executable) -> list[object]:

@@ -276,6 +276,7 @@ def test_externs_function_with_typed_args():
         strip_prefix("""
         | import function
         | import index
+        | import algebra
         | import llvm
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
@@ -332,6 +333,7 @@ def test_externs_no_duplicates():
         strip_prefix("""
         | import function
         | import index
+        | import algebra
         | import llvm
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
@@ -390,6 +392,7 @@ def test_externs_multiple_distinct():
         strip_prefix("""
         | import function
         | import index
+        | import algebra
         | import llvm
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
@@ -402,3 +405,50 @@ def test_externs_multiple_distinct():
     )
     externs = _externs(module)
     assert len(externs) == 2
+
+
+# ---------------------------------------------------------------------------
+# jit_function + call
+# ---------------------------------------------------------------------------
+
+
+def test_call_invokes_jit_function():
+    """jit_function returns a ConstantOp[Function]; call invokes it."""
+    from dgen.codegen import call, compile as codegen_compile
+
+    module = asm.parse(
+        strip_prefix("""
+        | import function
+        | import index
+        | import algebra
+        |
+        | %add : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
+        |     %r : index.Index = algebra.add(%a, %b)
+    """)
+    )
+    exe = codegen_compile(module)
+    # Classic path.
+    assert exe.run(3, 4).to_json() == 7
+    # New path: the func_constant behaves like a ConstantOp[Function].
+    fc = exe.func_constant
+    assert isinstance(fc.type, function.Function)
+    assert call(fc, 5, 6).to_json() == 11
+
+
+def test_call_function_constant_keeps_engine_alive():
+    """The returned ConstantOp[Function] can be called after the Executable is gone."""
+    from dgen.codegen import call, compile as codegen_compile
+
+    module = asm.parse(
+        strip_prefix("""
+        | import function
+        | import index
+        | import algebra
+        |
+        | %double : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %r : index.Index = algebra.add(%x, %x)
+    """)
+    )
+    fc = codegen_compile(module).func_constant
+    # Executable is now unreachable; engine lives in fc.value.host_refs.
+    assert call(fc, 21).to_json() == 42

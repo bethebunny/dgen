@@ -1,7 +1,7 @@
 from builtin import Nil, Span
 
 type Function<arguments: Span<Type>, result_type: Type>:
-    data: Nil
+    data: Pointer<Nil>
 
 op function<result_type: Type>() -> Function:
     block body
