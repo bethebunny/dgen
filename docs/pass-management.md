@@ -80,14 +80,14 @@ Key design insight: **inference passes are regular lowering passes** — ShapeIn
 ### Pass Types
 
 ```python
-class Pass:  # Module → Module (existing, unchanged)
-    def run(self, module: Module) -> Module: ...
+class Pass:  # Value → Value
+    def run(self, value: Value, compiler: Compiler) -> Value: ...
 
-class ExitPass(Generic[T]):  # Module → T (new)
+class ExitPass(Generic[T]):  # Module → T
     def run(self, module: Module) -> T: ...
 ```
 
-`ExitPass[Executable]` wraps what `codegen.compile` does today. Entry passes (parsers) stay as plain functions — they don't interact with staging or compose with passes, so formalizing them adds no value.
+`Pass.run` operates on a single value (typically a FunctionOp). `Compiler.run` handles Module iteration, calling `p.run(op, continuation)` per top-level op and rebuilding the Module. `ExitPass[Executable]` wraps codegen. Entry passes (parsers) stay as plain functions.
 
 ### Compiler
 
@@ -97,12 +97,18 @@ class Compiler(Generic[T]):
     exit: ExitPass[T]
 
     def compile(self, module: Module) -> T:
-        for i, pass_ in enumerate(self.passes):
-            module = self._stage(module)
-            module = pass_.run(module)
-        module = self._stage(module)
+        """Full pipeline: staging → passes → exit."""
+        return compile_module(module, self)
+
+    def run(self, module: Module) -> T:
+        """Run passes + exit (no staging)."""
+        for i, p in enumerate(self.passes):
+            continuation = Compiler(self.passes[i + 1:], self.exit)
+            module = Module(ops=[p.run(op, continuation) for op in module.ops])
         return self.exit.run(module)
 ```
+
+Each pass receives a `continuation` Compiler representing the remaining pipeline — this allows passes (and the staging system) to invoke sub-compilations.
 
 ### Staging Trigger
 
@@ -157,8 +163,10 @@ toy_compiler = Compiler(
     passes=[
         ToyOptimize(),
         ShapeInference(),
-        ToyToAffine(),
-        AffineToLLVMLowering(),
+        ToyToStructured(),
+        ControlFlowToGoto(),
+        NDBufferToMemory(),
+        MemoryToLLVM(),
     ],
     exit=LLVMCodegen(),
 )
@@ -185,49 +193,19 @@ class LLVMCodegen(ExitPass[Executable]):
 
 This is `codegen.compile()` wrapped as an ExitPass.
 
-## Files to Modify
+## Implementation Status
 
-| File | Change |
-|------|--------|
-| `dgen/passes/pass_manager.py` | Rename to `compiler.py`, replace PassManager with Compiler |
-| `dgen/codegen.py` | Extract `LLVMCodegen` ExitPass from `compile()` function |
-| `dgen/staging.py` | Refactor: `compile_staged` → method on Compiler. Remove `infer`/`lower` callbacks. Staging uses `compiler.compile()` for JIT and callbacks. |
-| `dgen/passes/__init__.py` | Update exports |
-| `toy/cli.py` | Use Compiler instead of ad-hoc pipeline |
-| `toy/test/test_staging.py` | Update to use Compiler API |
-| `test/test_peano.py` | Update to use Compiler API |
-| Any other callers of `compile_staged` / `compile_and_run_staged` / `PassManager` | Update |
+This redesign is complete. The key files are:
 
-## Implementation Steps
-
-### 1. Add ExitPass protocol and Compiler class
-- Create `dgen/compiler.py` with `ExitPass`, `Compiler`
-- Compiler.compile implements staging-aware pass execution
-- `_needs_staging` checks IR readiness directly (no pass introspection)
-
-### 2. Extract LLVMCodegen as ExitPass
-- Wrap `codegen.compile()` as `LLVMCodegen(ExitPass[Executable])`
-- Keep `codegen.compile()` as a convenience function that delegates
-
-### 3. Move staging into Compiler
-- `Compiler._stage()` replaces `_resolve_all_comptime`
-- Stage-0 resolution uses `self.compile()` for JIT sub-expressions
-- Callback thunks call `self.compile()` on resolved template
-- Remove `infer` and `lower` parameters from staging functions
-
-### 4. Update Toy pipeline
-- Define `toy_compiler` in `toy/compiler.py` (or `toy/cli.py`)
-- `cli.run` uses `toy_compiler.compile(ir)`
-- Remove ad-hoc `_lower`, `infer_shapes` callback plumbing
-
-### 5. Update tests
-- All tests using `compile_staged`/`compile_and_run_staged` switch to Compiler
-- All tests using `PassManager` switch to Compiler (or Compiler without exit pass)
-
-### 6. Remove dead code
-- Delete `PassManager`
-- Delete `compile_staged`, `compile_and_run_staged` free functions
-- Clean up `staging.py` (staging logic moves into Compiler)
+| File | Role |
+|------|------|
+| `dgen/compiler.py` | `Compiler` class with staging-aware `compile()` and per-value `run()` |
+| `dgen/passes/pass_.py` | `Pass` base class: `run(value, compiler) -> Value`, `@lowering_for`, `_dispatch_handlers` |
+| `dgen/codegen.py` | `LLVMCodegen` ExitPass, `compile()` convenience function |
+| `dgen/staging.py` | `compile_module()`, `resolve_stage0()`, callback thunks |
+| `dgen/type.py` | `Value.replace_operand`, `Value.replace_uses_of` |
+| `dgen/block.py` | `Block.replace_uses_of` |
+| `dgen/graph.py` | `all_blocks`, `interior_blocks`, `inline_block` |
 
 ## Verification
 
@@ -245,15 +223,15 @@ python -m toy.cli toy/test/testdata/tile_add_index.toy
 
 ## Design Decisions
 
-1. **No-exit-pass case**: Compiler has an optional `run()` method that returns Module (no exit pass needed). `compile()` requires an exit pass. This covers the PassManager use case cleanly.
+1. **Pass.run operates on Value, not Module**: Compiler.run handles Module iteration, calling `p.run(op, continuation)` per top-level op. This enables `compile(value) -> Constant` as the fundamental compilation primitive.
 
-2. **`lower_builtin_to_llvm`**: Stays inside LLVMCodegen — it's always needed before LLVM IR emission and doesn't need to be visible in the pipeline.
+2. **Continuation compiler**: Each pass receives a Compiler with the remaining passes. This allows passes and the staging system to invoke sub-compilations (e.g., JIT-compiling a compile-time expression through the full pipeline).
 
-3. **Sub-expression JIT**: Uses the full compiler (self). Correct by construction, simpler. Running optimization on tiny sub-expressions is cheap. The tail-only approach would be more efficient but adds complexity around determining the right tail position.
+3. **Sub-expression JIT**: Uses the full compiler (self). Correct by construction, simpler. Running optimization on tiny sub-expressions is cheap.
 
-4. **Staging is unconditional**: Staging runs before every pass (and before the exit pass). When the IR is already fully ready — the common case — `_needs_staging` is a single walk that returns False immediately. This is simpler than having passes declare whether they need ready ops, and avoids the pass framework needing to know about staging at all.
+4. **Staging is unconditional**: `Compiler.compile` runs staging before the pass pipeline. When the IR is already fully ready — the common case — staging is a quick no-op.
 
-5. **Why `infer` was unnecessary**: The `infer` callback in today's `_resolve_all_comptime` is called after each comptime resolution, but it doesn't affect boundary detection. `_unresolved_boundaries` operates on the param dependency graph — it checks whether params are Constants, not whether types are resolved. Resolving one boundary replaces an Op with a ConstantOp, directly changing the dependency graph for downstream boundaries. The resolution loop already handles cascading without `infer`. The only place `infer` actually matters is before lowering — but that's just "ShapeInference runs before ToyToAffine," which pipeline ordering guarantees.
+5. **Why `infer` was unnecessary**: ShapeInference is a regular pass in the pipeline, not a special callback. Pipeline ordering guarantees it runs before lowering.
 
 ## Open Questions
 
