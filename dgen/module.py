@@ -157,8 +157,6 @@ class Module:
         dialects: set[Dialect] = set()
         for op in self.ops:
             for inner in _walk_all_ops(op):
-                # Walk ALL transitive deps of each op (type, params, operands,
-                # block arg types, captures) — not just the type.
                 for v in transitive_dependencies(inner):
                     if hasattr(v, "dialect"):
                         dialects.add(v.dialect)
@@ -170,6 +168,37 @@ class Module:
             yield ""
 
         yield from op_lines
+
+
+def asm_with_imports(value: Value) -> Iterator[str]:
+    """Format a value and all its dependencies as IR text with import lines.
+
+    Walks ``transitive_dependencies(value)`` in topological order, emitting
+    every non-sugar Op as a top-level SSA statement. Sugar ops (``PackOp``)
+    are inlined as ``[...]`` where referenced, matching ``Module.asm``.
+    Dialects touched anywhere in the value's use-def graph (including nested
+    block bodies) are emitted as leading ``import`` lines.
+    """
+    from .asm.formatting import SlotTracker, _is_sugar_op, op_asm
+    from .graph import all_values, transitive_dependencies
+
+    builtin_dialect = Dialect.get("builtin")
+    dialects: set[Dialect] = {
+        v.dialect for v in all_values(value) if hasattr(v, "dialect")
+    }
+    dialects.discard(builtin_dialect)
+
+    for d in sorted(dialects, key=lambda d: d.name):
+        yield f"import {d.name}"
+    if dialects:
+        yield ""
+
+    tracker = SlotTracker()
+    formatted: set[int] = set()
+    for v in transitive_dependencies(value):
+        if isinstance(v, Op) and not _is_sugar_op(v):
+            yield from op_asm(v, tracker, formatted=formatted)
+            yield ""
 
 
 # ===----------------------------------------------------------------------=== #

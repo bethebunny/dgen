@@ -5,6 +5,7 @@ from typing import Protocol
 
 from .formatting import indent
 from .parser import parse_module as parse
+from .parser import parse_value
 
 
 class HasAsm(Protocol):
@@ -16,4 +17,4 @@ def format(node: HasAsm) -> str:
     return "\n".join(node.asm)
 
 
-__all__ = ["HasAsm", "format", "indent", "parse"]
+__all__ = ["HasAsm", "format", "indent", "parse", "parse_value"]
