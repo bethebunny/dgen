@@ -109,12 +109,9 @@ class Pass(metaclass=_PassMeta):
         processing any downstream uses. This ensures handler-created blocks
         are lowered before they're referenced elsewhere.
         """
-        for v in list(block.values):
-            result = self._dispatch_handlers(v)
-            effective = result if result is not None else v
-            if isinstance(effective, dgen.Op):
-                for _, child_block in effective.blocks:
-                    self._lower_block(child_block)
+        for v in block.values:
+            for _, child_block in ((result := self._dispatch_handlers(v)) or v).blocks:
+                self._lower_block(child_block)
             if result is not None:
                 block.replace_uses_of(v, result)
 
