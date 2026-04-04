@@ -43,7 +43,7 @@ The handler returns the replacement value. The framework calls `block.replace_us
 
 ### Walk Behavior
 
-`Pass.run(value, compiler)` wraps the root value in a `Block(result=value)`, then iterates all blocks flat — no recursion:
+`Pass.run(value, compiler)` wraps the root value in a `Block(result=value)`, then iterates all blocks in a flat loop (nested blocks still get walked — the iteration is just flat over the pre-computed block list, not a recursive call tree):
 
 ```python
 root_block = Block(result=value)

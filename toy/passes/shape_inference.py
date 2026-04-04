@@ -28,13 +28,6 @@ class ShapeInference(Pass):
                         "after ShapeInference"
                     )
 
-    def _infer_block(self, block: dgen.Block) -> None:
-        """Run shape inference handlers on a single block and its nested blocks."""
-        for b in [block, *list(all_blocks(block.result))]:
-            for v in list(b.values):
-                if (result := self._dispatch_handlers(v)) is not None:
-                    b.replace_uses_of(v, result)
-
     def _shape(self, val: dgen.Value) -> list[int] | None:
         """Return the concrete shape of val if its type is a resolved Tensor."""
         if isinstance(val.type, toy.Tensor):
@@ -96,7 +89,13 @@ class ShapeInference(Pass):
             return op
         for param, shape in zip(callee.body.args, arg_shapes):
             param.type = toy.Tensor(shape=shape_constant(shape))
-        self._infer_block(callee.body)
+        # Re-walk callee with updated arg types. The base pass already walked
+        # callee.body before this handler fired (it's in all_blocks via the
+        # captured callee reference), but args were still InferredShapeTensor.
+        for b in all_blocks(callee):
+            for v in list(b.values):
+                if (result := self._dispatch_handlers(v)) is not None:
+                    b.replace_uses_of(v, result)
         if isinstance(callee.body.result.type, toy.Tensor):
             ret_type = callee.body.result.type
             ret_shape = ret_type.shape.__constant__.to_json()

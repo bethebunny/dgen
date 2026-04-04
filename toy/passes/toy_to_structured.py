@@ -58,6 +58,10 @@ class ToyToStructured(Pass):
 
     def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
         result = super().run(value, compiler)
+        # After shape inference, body.args have concrete Tensor types but
+        # func.type (the Function signature) still has the original
+        # InferredShapeTensor. Rebuild Function to sync the signature with
+        # the inferred arg types.
         if isinstance(result, FunctionOp):
             return FunctionOp(
                 name=result.name,
