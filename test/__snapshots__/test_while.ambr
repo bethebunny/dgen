@@ -6,14 +6,14 @@
   entry:
     br label %while_header0
   while_header0:
-    %wh0_i = phi i64 [ 0, %exit0 ], [ %_2, %exit1 ]
+    %wh0_i = phi i64 [ 0, %entry ], [ %_2, %exit1 ]
     br label %while_body0_exit
   while_body0:
     %wb0_oi = phi i64 [ %wh0_i, %while_body0_exit ]
     %_2 = add i64 %wb0_oi, 1
     br label %while_header1
   while_header1:
-    %wh1_j = phi i64 [ 0, %exit1 ], [ 0, %while_body1 ]
+    %wh1_j = phi i64 [ 0, %while_body0 ], [ 0, %while_body1 ]
     br label %while_body1_exit
   while_body1:
     %wb1_j2 = phi i64 [ %wh1_j, %while_body1_exit ]
@@ -38,7 +38,7 @@
   entry:
     br label %while_header0
   while_header0:
-    %wh0_i = phi i64 [ 0, %exit0 ], [ %_2, %while_body0 ]
+    %wh0_i = phi i64 [ 0, %entry ], [ %_2, %while_body0 ]
     br label %while_body0_exit
   while_body0:
     %wb0_i = phi i64 [ %wh0_i, %while_body0_exit ]
