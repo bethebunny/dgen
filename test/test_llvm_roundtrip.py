@@ -85,7 +85,7 @@ def test_roundtrip_icmp_condbr():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 0
         |     %1 : index.Index = 10
-        |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
+        |     %cmp : llvm.Int<1> = llvm.icmp<"slt">(%0, %1)
         |     %loop_body : goto.Label = goto.label([]) body():
         |         %_ : Nil = ()
         |     %loop_exit : goto.Label = goto.label([]) body():
@@ -162,10 +162,10 @@ def test_roundtrip_loop_pattern():
         |     %init : index.Index = 0
         |     %loop_header : goto.Label = goto.label([]) body(%i: index.Index, %p: llvm.Ptr):
         |         %hi : index.Index = 3
-        |         %cmp : Nil = llvm.icmp<"slt">(%i, %hi)
+        |         %cmp : llvm.Int<1> = llvm.icmp<"slt">(%i, %hi)
         |         %loop_body : goto.Label = goto.label([]) body(%j: index.Index, %q: llvm.Ptr):
         |             %one : index.Index = 1
-        |             %next : Nil = llvm.add(%j, %one)
+        |             %next : llvm.Int<64> = llvm.add(%j, %one)
         |             %_ : Nil = goto.branch<%loop_header>([%next, %q])
         |         %loop_exit : goto.Label = goto.label([]) body():
         |             %_ : Nil = ()

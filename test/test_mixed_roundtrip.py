@@ -38,10 +38,10 @@ def test_llvm_full_loop():
         |     %init : index.Index = 0
         |     %loop_header : goto.Label = goto.label([]) body(%i0: index.Index):
         |         %hi : index.Index = 3
-        |         %cmp : Nil = llvm.icmp<"slt">(%i0, %hi)
+        |         %cmp : llvm.Int<1> = llvm.icmp<"slt">(%i0, %hi)
         |         %loop_body : goto.Label = goto.label([]) body(%j: index.Index):
         |             %one : index.Index = 1
-        |             %next : Nil = llvm.add(%j, %one)
+        |             %next : llvm.Int<64> = llvm.add(%j, %one)
         |             %_ : Nil = goto.branch<%loop_header>([%next])
         |         %loop_exit : goto.Label = goto.label([]) body():
         |             %_ : Nil = ()

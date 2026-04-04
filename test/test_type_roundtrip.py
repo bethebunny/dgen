@@ -391,7 +391,7 @@ def test_string_as_op_param():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 1
         |     %1 : index.Index = 2
-        |     %cmp : Nil = llvm.icmp<"slt">(%0, %1)
+        |     %cmp : llvm.Int<1> = llvm.icmp<"slt">(%0, %1)
     """)
     parsed = parse_module(ir)
     assert_ir_equivalent(parsed, asm.parse(asm.format(parsed)))
@@ -421,8 +421,8 @@ def test_string_param_staging():
         | import index
         |
         | %main : function.Function<[String, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
-        |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
-        |     %ext : Nil = llvm.zext(%cmp)
+        |     %cmp : llvm.Int<1> = llvm.icmp<%pred>(%x, %y)
+        |     %ext : llvm.Int<64> = llvm.zext(%cmp)
     """)
     module = parse_module(ir)
 
@@ -451,8 +451,8 @@ def test_compile_once_run_twice():
         | import index
         |
         | %main : function.Function<[String, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
-        |     %cmp : Nil = llvm.icmp<%pred>(%x, %y)
-        |     %ext : Nil = llvm.zext(%cmp)
+        |     %cmp : llvm.Int<1> = llvm.icmp<%pred>(%x, %y)
+        |     %ext : llvm.Int<64> = llvm.zext(%cmp)
     """)
     module = parse_module(ir)
 

@@ -684,9 +684,6 @@ def emit_fneg(op: llvm.FnegOp) -> Iterator[str]:
 @emitter_for(llvm.ZextOp)
 def emit_zext(op: llvm.ZextOp) -> Iterator[str]:
     ty = llvm_type(op.type)
-    # ZextOp with unresolved/void type defaults to i64
-    if ty == "void":
-        ty = "i64"
     yield f"  zext i1 {vr(op.input)} to {ty}"
 
 
