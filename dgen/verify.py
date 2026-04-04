@@ -66,51 +66,30 @@ def _verify_block(
     for op in block.ops:
         valid.add(op)
 
-    if (
-        isinstance(block.result, (dgen.Op, BlockArgument, BlockParameter))
-        and block.result not in valid
-    ):
+    def _check_in_scope(value: dgen.Value, context: str) -> None:
+        if value in valid:
+            return
+        if isinstance(value, (dgen.Type, dgen.Constant)):
+            return  # Types and Constants are structural, not SSA references
         raise ClosedBlockError(
-            f"block.result references out-of-scope "
-            f"{type(block.result).__name__} %{block.result.name}\n\n"
-            + _annotated_module(module, block.result)
+            f"{context} references out-of-scope "
+            f"{type(value).__name__} %{value.name}\n\n"
+            + _annotated_module(module, value)
         )
+
+    _check_in_scope(block.result, "block.result")
 
     for op in block.ops:
         for name, operand in op.operands:
-            if (
-                isinstance(operand, (dgen.Op, BlockArgument, BlockParameter))
-                and operand not in valid
-            ):
-                raise ClosedBlockError(
-                    f"{type(op).__name__}.{name} references out-of-scope "
-                    f"{type(operand).__name__} %{operand.name}\n\n"
-                    + _annotated_module(module, op)
-                )
+            _check_in_scope(operand, f"{type(op).__name__}.{name}")
         for name, param in op.parameters:
-            if (
-                isinstance(param, (dgen.Op, BlockArgument, BlockParameter))
-                and param not in valid
-            ):
-                raise ClosedBlockError(
-                    f"{type(op).__name__}.{name} references out-of-scope "
-                    f"{type(param).__name__} %{param.name}\n\n"
-                    + _annotated_module(module, op)
-                )
+            _check_in_scope(param, f"{type(op).__name__}.{name}")
         for _, child_block in op.blocks:
             # Captures must chain: every capture of a child block must be
             # in scope in the parent. Otherwise replace_uses on the parent
             # can't maintain the child's captures.
             for capture in child_block.captures:
-                if (
-                    isinstance(capture, (dgen.Op, BlockArgument, BlockParameter))
-                    and capture not in valid
-                ):
-                    raise ClosedBlockError(
-                        f"child block captures out-of-scope "
-                        f"{type(capture).__name__} %{capture.name}\n\n"
-                        + _annotated_module(module, capture)
-                    )
+                _check_in_scope(capture, "child block capture")
             _verify_block(child_block, module, visited)
 
 

@@ -89,8 +89,8 @@ def test_verify_captured_block_parameter():
     verify_closed_blocks(parse_module(ir))
 
 
-def test_verify_ambient_op_without_capture_passes():
-    """Ambient ops (no block-arg deps) don't need capturing."""
+def test_verify_self_contained_block_passes():
+    """A nested block with only locally-defined ops needs no captures."""
     ir = strip_prefix("""
         | import function
         | import index
@@ -145,6 +145,39 @@ def test_verify_missing_capture_of_block_parameter():
     """)
     with pytest.raises(ClosedBlockError):
         verify_closed_blocks(parse_module(ir))
+
+
+def test_verify_missing_capture_of_function_ref():
+    """A function body that references a sibling FunctionOp without capturing it fails."""
+    ir = strip_prefix("""
+        | import function
+        | import index
+        | import algebra
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %result : index.Index = function.call<%add_one>([%x])
+        |
+        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %r : index.Index = algebra.add(%n, 1)
+    """)
+    with pytest.raises(ClosedBlockError):
+        verify_closed_blocks(parse_module(ir))
+
+
+def test_verify_captured_function_ref_passes():
+    """A function body that captures a sibling FunctionOp passes."""
+    ir = strip_prefix("""
+        | import function
+        | import index
+        | import algebra
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
+        |     %result : index.Index = function.call<%add_one>([%x])
+        |
+        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %r : index.Index = algebra.add(%n, 1)
+    """)
+    verify_closed_blocks(parse_module(ir))
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +291,8 @@ def test_replace_uses_updates_chained_captures():
 # ---------------------------------------------------------------------------
 
 
-def test_constant_captured_not_ambient():
-    """ConstantOps must be captured like any other op — no ambient nodes.
+def test_constant_must_be_captured():
+    """ConstantOps must be captured like any other op.
 
     A ConstantOp used inside a block must appear in that block's captures
     (or be defined within the block). The verifier rejects ConstantOps
