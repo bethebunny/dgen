@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Callable, Sequence
 from copy import deepcopy
-from typing import TYPE_CHECKING, Iterator, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
@@ -23,35 +22,14 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def _walk_inputs(op: dgen.Op) -> Iterator[dgen.Value]:
-    """Yield all parameter and operand Values."""
-    for _, val in itertools.chain(op.parameters, op.operands):
-        yield val
-
-
-def _trace_dependencies(target: dgen.Value, func: FunctionOp) -> list[dgen.Op]:
-    """Backward-walk from target, return all needed ops in topological order."""
-    needed: set[dgen.Value] = set()
-    worklist = [target]
-    while worklist:
-        val = worklist.pop()
-        if val in needed:
-            continue
-        needed.add(val)
-        if isinstance(val, dgen.Op):
-            worklist.extend(_walk_inputs(val))
-    return [op for op in func.body.ops if op in needed]
-
-
 def _jit_evaluate(
-    subgraph: list[dgen.Op],
     target: dgen.Value,
     compile: Callable[[Module], Executable],
     *,
     block_args: Sequence[BlockArgument] = (),
     args: Sequence = (),
 ) -> object:
-    """Build a mini-module from the subgraph, compile, and JIT-execute."""
+    """Wrap target in a function, compile, JIT-execute, and return the JSON result."""
     func = function.FunctionOp(
         name="main",
         body=dgen.Block(result=target, args=list(block_args)),
@@ -78,7 +56,6 @@ def _jit_evaluate(
 
 
 def _resolve_comptime_field(
-    func: FunctionOp,
     op: dgen.Op,
     field_name: str,
     value: dgen.Value,
@@ -87,10 +64,8 @@ def _resolve_comptime_field(
     block_args: Sequence[BlockArgument] = (),
     args: Sequence = (),
 ) -> None:
-    """Resolve a single Constant field: JIT the dependency subgraph, patch with ConstantOp."""
-    subgraph = _trace_dependencies(value, func)
+    """Resolve a single comptime field: JIT the dependency subgraph, patch with ConstantOp."""
     result = _jit_evaluate(
-        subgraph,
         value,
         compile,
         block_args=block_args,
@@ -252,7 +227,7 @@ def resolve_stage0(
             _stage_num, op, field_name, value = boundaries[0]
             if stages.get(value, 0) != 0:
                 continue
-            _resolve_comptime_field(func, op, field_name, value, compile)
+            _resolve_comptime_field(op, field_name, value, compile)
             resolved_any = True
             break  # re-iterate from the start after each resolution
         if not resolved_any:
@@ -279,7 +254,6 @@ def _resolve_with_runtime_args(
             break
         _stage_num, op, field_name, value = boundaries[0]
         _resolve_comptime_field(
-            func,
             op,
             field_name,
             value,
@@ -301,13 +275,12 @@ def _build_callback_thunk(
     stage-1 resolution loop), then JIT-compiles and executes stage-2.
     """
     stage2_template = resolved
-    assert func.name is not None
-    func_name = func.name
+    func_index = resolved.functions.index(func)
     callback_host_refs: list[object] = []
 
     def _on_call(*python_args: object) -> Memory:
         template = deepcopy(stage2_template)
-        s2_func = next(f for f in template.functions if f.name == func_name)
+        s2_func = template.functions[func_index]
 
         _resolve_with_runtime_args(
             s2_func, compiler.run, s2_func.body.args, python_args

@@ -68,8 +68,7 @@ def _verify_block(
         if isinstance(value, (BlockArgument, BlockParameter)) and value not in local:
             raise ClosedBlockError(
                 f"block contains foreign {type(value).__name__} "
-                f"%{value.name}\n\n"
-                + _annotated_module(module, value)
+                f"%{value.name}\n\n" + _annotated_module(module, value)
             )
 
     # Captures must chain: every capture of a child block must be

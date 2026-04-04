@@ -1,13 +1,11 @@
 """Tests for use-def graph utilities."""
 
-import dgen
 from dgen import asm
 from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
-from dgen.dialects import builtin, function, goto, llvm
-from dgen.dialects.function import Function
+from dgen.dialects import builtin, llvm
 from dgen.graph import all_values, interior_values, transitive_dependencies
-from dgen.module import ConstantOp, pack
+from dgen.module import ConstantOp
 from dgen.op import Op
 from dgen.testing import assert_ir_equivalent, strip_prefix
 

@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from dgen import Block, asm
+from dgen import asm
 from dgen.type import format_value
 from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
@@ -14,9 +14,9 @@ from dgen.compiler import Compiler, IdentityPass
 from dgen import layout
 from dgen.dialects import algebra, builtin, llvm
 from dgen.dialects.index import Index
-from dgen.dialects.function import Function, FunctionOp
+from dgen.dialects.function import FunctionOp
 from dgen.layout import TypeValue
-from dgen.module import ConstantOp, Module, pack
+from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass
 from dgen.type import Memory, TypeType, type_constant
 from dgen.testing import strip_prefix
