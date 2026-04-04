@@ -66,6 +66,26 @@ def parse_module(text: str) -> Module:
     return Module(ops=ops)
 
 
+def parse_value(text: str) -> Value:
+    """Parse IR text — imports and one or more statements, interleavable — and return the last value.
+
+    Statements and imports may appear in any order. Each statement defines an
+    SSA value that subsequent statements can reference by name; the last value
+    defined becomes the root of the returned use-def graph (all earlier ones
+    reachable as transitive dependencies).
+    """
+    parser = ASMParser(text)
+    value: Value | None = None
+    while not parser.done:
+        if (name := parser.try_read(_import_line)) is not None:
+            parser.scope.import_dialect(Dialect.get(name))
+        else:
+            value = parser.read(op_statement)
+    if value is None:
+        raise ParseError("parse_value: no statements in input")
+    return value
+
+
 class ASMParser:
     def __init__(self, text: str) -> None:
         self.text = text

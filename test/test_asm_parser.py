@@ -8,7 +8,10 @@ import pytest
 
 import toy.dialects.toy  # noqa: F401 — registers dialect
 
-from dgen.asm.parser import ASMParser, ParseError, parse_module
+from dgen.asm.parser import ASMParser, ParseError, parse_module, parse_value
+from dgen.dialects.function import FunctionOp
+from dgen.graph import transitive_dependencies
+from dgen.module import asm_with_imports
 from dgen.testing import strip_prefix
 
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
@@ -137,3 +140,119 @@ class TestParseErrors:
         """)
         with pytest.raises(Exception):
             parse_module(ir)
+
+
+class TestParseValue:
+    def test_parses_single_statement(self) -> None:
+        value = parse_value(
+            strip_prefix("""
+            | import function
+            | import index
+            |
+            | %f : function.Function<[], index.Index> = function.function<index.Index>() body():
+            |     %r : index.Index = 42
+        """)
+        )
+        assert isinstance(value, FunctionOp)
+
+    def test_returns_last_statement_with_earlier_as_deps(self) -> None:
+        """Multiple statements: later statements can reference earlier ones by name."""
+        value = parse_value(
+            strip_prefix("""
+            | import index
+            | import algebra
+            |
+            | %a : index.Index = 3
+            | %b : index.Index = 4
+            | %c : index.Index = algebra.add(%a, %b)
+        """)
+        )
+        assert value.name == "c"
+        # %a and %b are reachable as transitive deps of %c.
+        dep_names = {v.name for v in transitive_dependencies(value)}
+        assert {"a", "b", "c"} <= dep_names
+
+    def test_interleaved_imports_and_statements(self) -> None:
+        """Imports may appear between statements, not only at the top."""
+        value = parse_value(
+            strip_prefix("""
+            | import index
+            |
+            | %a : index.Index = 3
+            |
+            | import algebra
+            |
+            | %b : index.Index = algebra.add(%a, %a)
+        """)
+        )
+        assert value.name == "b"
+
+    def test_empty_input_raises(self) -> None:
+        with pytest.raises(ParseError):
+            parse_value("")
+
+    def test_roundtrips_with_asm_with_imports(self) -> None:
+        """parse_value + asm_with_imports → stable formatted text."""
+        text = strip_prefix("""
+            | import function
+            | import index
+            | import algebra
+            |
+            | %f : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
+            |     %r : index.Index = algebra.add(%a, %b)
+        """)
+        first = "\n".join(asm_with_imports(parse_value(text)))
+        second = "\n".join(asm_with_imports(parse_value(first)))
+        assert first == second
+
+    def test_roundtrips_multi_statement(self) -> None:
+        """Multi-statement IR survives a parse → asm → parse round-trip."""
+        text = strip_prefix("""
+            | import index
+            | import algebra
+            |
+            | %a : index.Index = 3
+            | %b : index.Index = 4
+            | %c : index.Index = algebra.add(%a, %b)
+        """)
+        first = "\n".join(asm_with_imports(parse_value(text)))
+        second = "\n".join(asm_with_imports(parse_value(first)))
+        assert first == second
+
+
+class TestAsmWithImports:
+    def test_collects_dialects_from_nested_blocks(self) -> None:
+        """asm_with_imports walks into block bodies to find every dialect used."""
+        # `algebra.add` is only reachable inside the function body.
+        func = parse_value(
+            strip_prefix("""
+            | import function
+            | import index
+            | import algebra
+            |
+            | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+            |     %r : index.Index = algebra.add(%x, %x)
+        """)
+        )
+        imports = [
+            line for line in asm_with_imports(func) if line.startswith("import ")
+        ]
+        assert "import algebra" in imports
+
+    def test_emits_transitive_dep_statements(self) -> None:
+        """Root's transitive dep ops show up as their own SSA statements."""
+        root = parse_value(
+            strip_prefix("""
+            | import index
+            | import algebra
+            |
+            | %a : index.Index = 3
+            | %b : index.Index = 4
+            | %c : index.Index = algebra.add(%a, %b)
+        """)
+        )
+        lines = list(asm_with_imports(root))
+        # Each of a, b, c is emitted as a top-level statement.
+        defines = [line for line in lines if line.startswith("%")]
+        names_defined = {line.split()[0] for line in defines}
+        assert {"%a", "%b", "%c"} <= names_defined
