@@ -68,9 +68,15 @@ def llvm_type(t: dgen.Value[TypeType]) -> str:
         case index.Index():
             return "i64"
         case number.SignedInteger(bits):
-            return f"i{bits.__constant__.to_json()}"
+            # Layout may be wider than declared bits (data: Index is always
+            # 64-bit); use the wider of the two so codegen matches the ABI.
+            declared = bits.__constant__.to_json()
+            layout_bits = resolved.__layout__.struct.size * 8
+            return f"i{max(declared, layout_bits)}"
         case number.UnsignedInteger(bits):
-            return f"i{bits.__constant__.to_json()}"
+            declared = bits.__constant__.to_json()
+            layout_bits = resolved.__layout__.struct.size * 8
+            return f"i{max(declared, layout_bits)}"
         case number.Boolean():
             return "i1"
         case number.Float64():
