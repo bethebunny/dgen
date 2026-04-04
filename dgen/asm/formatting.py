@@ -6,7 +6,7 @@ from dataclass field declarations alone — no per-op asm/parse code needed.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialects.builtin import Nil

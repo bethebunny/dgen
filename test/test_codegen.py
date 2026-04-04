@@ -4,7 +4,13 @@ from dataclasses import dataclass, field
 
 import dgen
 from dgen import asm
-from dgen.codegen import EMITTERS, _externs, emitter_for, runtime_dependencies, emit, emit_linearized
+from dgen.codegen import (
+    EMITTERS,
+    _externs,
+    emitter_for,
+    runtime_dependencies,
+    emit,
+)
 from dgen.dialects import builtin, function, goto, index, llvm
 from dgen.module import pack
 from dgen.testing import strip_prefix
@@ -220,7 +226,8 @@ def test_emit_dispatches_by_value_class():
 
 def test_emit_linearized_nested_loop():
     """emit_linearized handles nested loop IR (lowered to LLVM ops) without crashing."""
-    module = asm.parse(strip_prefix("""
+    module = asm.parse(
+        strip_prefix("""
         | import function
         | import goto
         | import index
@@ -250,7 +257,8 @@ def test_emit_linearized_nested_loop():
         |             %16 : index.Index = chain(%4, %loop_header1)
         |             %17 : Nil = goto.branch<%self>([%16])
         |         %18 : Nil = goto.conditional_branch<%loop_body0, %exit0>(%2, [%i0], [])
-        """))
+        """)
+    )
 
     emitted = list(emit(module.functions[0]))
     # Should produce some output lines (labels, instructions)
@@ -264,7 +272,8 @@ def test_emit_linearized_nested_loop():
 
 def test_externs_function_with_typed_args():
     """_externs discovers a function extern with real argument/return types (malloc)."""
-    module = asm.parse(strip_prefix("""
+    module = asm.parse(
+        strip_prefix("""
         | import function
         | import index
         | import llvm
@@ -273,26 +282,30 @@ def test_externs_function_with_typed_args():
         |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
         |     %size : index.Index = 48
         |     %ptr : llvm.Ptr = function.call<%malloc>([%size])
-    """))
+    """)
+    )
     externs = _externs(module)
     assert len(externs) == 1
 
 
 def test_externs_non_function():
     """_externs discovers a non-function extern (global value)."""
-    module = asm.parse(strip_prefix("""
+    module = asm.parse(
+        strip_prefix("""
         | import function
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %greeting : String = extern<"hello_world">()
-    """))
+    """)
+    )
     externs = _externs(module)
     assert len(externs) == 1
 
 
 def test_externs_nested_in_region():
     """_externs finds externs nested inside a region body."""
-    module = asm.parse(strip_prefix("""
+    module = asm.parse(
+        strip_prefix("""
         | import function
         | import goto
         | import index
@@ -307,14 +320,16 @@ def test_externs_nested_in_region():
         |         %next : index.Index = llvm.add(%i, %1)
         |         %next2 : index.Index = chain(%next, %0)
         |         %_ : Nil = goto.branch<%self>([%next2])
-    """))
+    """)
+    )
     externs = _externs(module)
     assert len(externs) == 1
 
 
 def test_externs_no_duplicates():
     """_externs deduplicates: same ExternOp referenced twice appears once."""
-    module = asm.parse(strip_prefix("""
+    module = asm.parse(
+        strip_prefix("""
         | import function
         | import index
         | import llvm
@@ -324,7 +339,8 @@ def test_externs_no_duplicates():
         |     %0 : llvm.Ptr = function.call<%malloc>([])
         |     %1 : llvm.Ptr = function.call<%malloc>([])
         |     %_ : Nil = chain(%0, %1)
-    """))
+    """)
+    )
     externs = _externs(module)
     assert len(externs) == 1
 
@@ -370,7 +386,8 @@ def test_externs_dedup_distinct_instances_same_symbol():
 
 def test_externs_multiple_distinct():
     """_externs finds multiple distinct externs."""
-    module = asm.parse(strip_prefix("""
+    module = asm.parse(
+        strip_prefix("""
         | import function
         | import index
         | import llvm
@@ -381,6 +398,7 @@ def test_externs_multiple_distinct():
         |     %ptr : llvm.Ptr = function.call<%malloc>([])
         |     %0 : Nil = function.call<%print>([])
         |     %_ : Nil = chain(%ptr, %0)
-    """))
+    """)
+    )
     externs = _externs(module)
     assert len(externs) == 2

@@ -17,9 +17,6 @@ if TYPE_CHECKING:
 class ShapeInference(Pass):
     allow_unregistered_ops = True
 
-    def __init__(self) -> None:
-        self._func_map: dict[str, function.FunctionOp] = {}
-
     def verify_postconditions(self, module: Module) -> None:
         super().verify_postconditions(module)
         for func in module.functions:
@@ -31,9 +28,10 @@ class ShapeInference(Pass):
                     )
 
     def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        self._func_map = {f.name: f for f in module.functions if f.name is not None}
-        if main := self._func_map.get("main"):
-            self._run_block(main.body)
+        # Process main first (if present), then remaining functions.
+        for f in module.functions:
+            if f.name == "main":
+                self._run_block(f.body)
         for f in module.functions:
             if f.name != "main":
                 self._run_block(f.body)
@@ -92,8 +90,8 @@ class ShapeInference(Pass):
         args = (
             list(op.arguments) if isinstance(op.arguments, PackOp) else [op.arguments]
         )
-        callee = self._func_map.get(op.callee.name)
-        if callee is None:
+        callee = op.callee
+        if not isinstance(callee, function.FunctionOp):
             return op
         arg_shapes = [self._shape(a) for a in args]
         if any(s is None for s in arg_shapes):

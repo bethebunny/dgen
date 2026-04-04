@@ -297,9 +297,7 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
             if isinstance(op, goto.BranchOp):
                 _record_branch(op.target, unpack(op.arguments), current_block)
             elif isinstance(op, goto.ConditionalBranchOp):
-                _record_branch(
-                    op.true_target, unpack(op.true_arguments), current_block
-                )
+                _record_branch(op.true_target, unpack(op.true_arguments), current_block)
                 _record_branch(
                     op.false_target, unpack(op.false_arguments), current_block
                 )
