@@ -56,7 +56,6 @@
 - `Executable.run()` lifetime bug: when raw Python values are passed as args, `run()` creates temporary `Memory` objects that can be GC'd before the result is read. For non-register-passable types (e.g. `TypeType`), the JIT returns a pointer into the input Memory's buffer — if that Memory is collected, the result reads garbage. Fix: `run()` should attach input memories to the result's `host_refs`. Workaround in `staging._jit_evaluate` creates memories outside the call.
 - Refactor `_emit_func` — 500-line closure with seven dicts of mutable state. Extract into a class or separate functions with explicit state passing.
 - Replace isinstance dispatch chain in `_emit_op` with a dispatch table keyed on `(dialect_name, asm_name)`.
-- Formalize the `%exit` convention — currently uses `param.name.startswith("exit")`, a magic-string contract between `control_flow_to_goto.py` and codegen.
 - `ChainOp` type forwarding: when a pass mutates `op.type` (e.g. shape inference resolves `InferredShapeTensor → Tensor`), wrapping ChainOps keep the old type. Needs a general solution.
 
 ## Misc
