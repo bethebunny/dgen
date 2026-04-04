@@ -82,6 +82,8 @@ See `docs/control-flow.md` and `docs/codegen.md` for the full design.
 
 - **Dialect registration**: Decorators `@dialect.op("name")` and `@dialect.type("name")` register ops/types
 - **Ops are dataclasses**: All ops inherit from `Op` (which inherits from `Value`). Fields annotated as `Value` are operands; fields annotated as `Block` are regions; other fields are compile-time attributes
+- **Pass framework**: `Pass.run(value, compiler) -> Value` operates on values, not modules. Handlers registered via `@lowering_for(ValueType)` return `Value | None`. The framework calls `block.replace_uses_of(old, result)` automatically. `Compiler.run` handles Module iteration, dispatching per top-level op. See `docs/passes.md`.
+- **Replacement cascade**: `Value.replace_uses_of(old, new)` updates operands/params/type and cascades to owned blocks. `Block.replace_uses_of(old, new)` sweeps block.values then updates metadata (captures, arg types, result). No separate Rewriter — replacement is encapsulated in instance methods.
 - **ASM round-trip**: IR can be printed to text and parsed back; round-trip correctness is heavily tested
 - **Generic constant op**: `builtin.ConstantOp` replaces per-dialect constant ops; the type annotation determines serialization and materialization
 - **Staging model**: Types have compile-time and runtime faces; `constant` is the stage boundary (see `docs/staging.md`, `docs/staged-computation.md`)

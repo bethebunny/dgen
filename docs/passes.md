@@ -14,58 +14,59 @@ All three are "dispatch on op type, do something per-op" with manual boilerplate
 
 ### Core Concepts
 
-**Pass**: declares what it can rewrite (handlers keyed on op type) and what IR it expects (domain/range sets). A pass does not control how it is walked — that is the framework's responsibility.
+**Pass**: declares what it can rewrite (handlers keyed on value type) and what IR it expects (domain/range sets). A pass does not control how it is walked — that is the framework's responsibility.
 
-**Rewriter**: passed to handlers. Exposes one mutation primitive:
+**`Value.replace_uses_of(old, new)`**: instance method on Value. Replaces all references to `old` with `new` in the value's operands, parameters, and type field, then cascades into owned blocks via `Block.replace_uses_of`. This is the fundamental mutation primitive — eager, in-place, no deferred resolution.
 
-- `replace_uses(old_value, new_value)` — eagerly walk all ops that reference `old_value` and update them to reference `new_value` instead. This is an immediate, in-place mutation — no deferred resolution, no value map to consult later.
+**`Block.replace_uses_of(old, new)`**: sweeps the block's values (while captures still define the stop set), then updates block metadata (captures, arg/param types, result). The cascade chain `Value.replace_uses_of` → `Block.replace_uses_of` → recursive `Value.replace_uses_of` correctly propagates through all nesting levels.
 
 Passes mutate the IR in place. No deepcopy.
 
-**Handler**: `(self, op: Op, rewriter: Rewriter) -> bool`. Registered via `@lowering_for(OpType)`. Multiple handlers may be registered per op type; they are tried in registration order. Returns whether it acted.
+**Handler**: `(self, value: Value) -> Value | None`. Registered via `@lowering_for(ValueType)`. Multiple handlers may be registered per value type; they are tried in registration order. Returns a replacement value, or `None` if the handler doesn't apply. When a handler returns a value, the framework calls `block.replace_uses_of(old, result)` automatically.
 
 **Readiness guarantee**: handlers are only ever invoked on ops whose operands are *ready* — all compile-time values are resolved, all dependencies are satisfied. The staging system manages JIT compilation via the pass pipeline to ensure this. For IR that is already structured so all values are ready (the common case), this degrades gracefully to the normal MLIR conception of a pass. This means handlers do not need `isinstance` guards to check whether their operands have the expected types — they can assume correctness.
 
 ### Pass Declaration
 
 ```python
-class ToyToAffine(Pass):
-    op_domain = {toy.TransposeOp, toy.MulOp, toy.AddOp, toy.ReshapeOp,
-                 toy.PrintOp, ConstantOp, builtin.ReturnOp, ...}
-    op_range = {affine.AllocOp, affine.ForOp, affine.LoadOp, affine.StoreOp,
-                affine.PrintMemrefOp, ConstantOp, builtin.ReturnOp, ...}
-    type_domain = {toy.Tensor}
-    type_range = {affine.MemRef, toy.Tensor}
-    allow_unregistered_ops = False
+class ToyToStructured(Pass):
+    allow_unregistered_ops = True
 
     @lowering_for(toy.TransposeOp)
-    def lower_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
-        alloc_op = affine.AllocOp(shape=op.type.shape)
+    def lower_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
+        alloc = ndbuffer.AllocOp(shape=op.type.shape, type=...)
         # ... build nested for ops ...
-        rewriter.replace_uses(op, alloc_op)
-        return True
+        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
 ```
+
+The handler returns the replacement value. The framework calls `block.replace_uses_of(op, result)` automatically — no manual `replace_uses` call needed.
 
 ### Walk Behavior
 
-The pass manager walks the use-def graph from each block's result value, visiting ops in dependency order:
+`Pass.run(value, compiler)` wraps the root value in a `Block(result=value)`, then iterates all blocks flat — no recursion:
 
-- **Op has registered handler(s):** call them in registration order until one returns `True`. The handler owns the op entirely, including its nested blocks. The pass manager does **not** recurse into the op's blocks.
-- **Op has no registered handler, `allow_unregistered_ops=True`:** recurse into the op's nested blocks (applying the pass within them), leave the op in place.
+```python
+root_block = Block(result=value)
+for block in [root_block, *all_blocks(value)]:
+    for v in list(block.values):
+        if (result := self._dispatch_handlers(v)) is not None:
+            block.replace_uses_of(v, result)
+return root_block.result
+```
+
+`all_blocks(value)` (from `dgen/graph.py`) yields all blocks reachable from the value in depth-first order, parallel to `all_values`. `block.replace_uses_of` handles all replacement cascading through nested blocks automatically.
+
+- **Value has registered handler(s):** call them in registration order until one returns a value. The framework calls `block.replace_uses_of(old, result)`.
+- **Op has no registered handler, `allow_unregistered_ops=True`:** leave it in place.
 - **Op has no registered handler, `allow_unregistered_ops=False`:** error.
 
-This means `allow_unregistered_ops` determines the walk mode:
-
-- `True` → **transparent pass.** Unknown ops pass through; their blocks are recursed into. Good for partial lowerings and optimizations.
-- `False` → **manual pass.** Every op must have a handler. Good for full dialect-to-dialect lowerings.
-
-Since `replace_uses` is eager (it immediately updates all referencing ops), the pass manager does not need to remap operands — they are already correct by the time downstream ops are visited.
+`Compiler.run(module)` iterates `module.ops`, calling `p.run(op, continuation)` per top-level op, then rebuilds the Module. This means passes operate on values, and Module is only the Compiler's concern.
 
 ### The IR is a graph, not a list
 
 A `Block` stores its **result value**, not a list of ops. The ops in a block are the transitive dependencies of the result value — they are discovered by walking the use-def graph. This means:
 
-- **Passes** traverse the use-def graph and mutate it in place. When a handler creates new ops and calls `replace_uses(old, new)`, the new ops are automatically part of the graph (they're reachable from whatever references `new`). No splicing, no insertion ordering.
+- **Passes** traverse the use-def graph and mutate it in place. When a handler returns a replacement value, the framework calls `block.replace_uses_of(old, new)` — the new ops are automatically part of the graph (they're reachable from whatever references `new`). No splicing, no insertion ordering.
 - **Formatting** (ASM printing) walks the use-def graph from the block's result, topologically sorts the ops, and emits them in linear order. The topological sort is a display concern, not a pass concern.
 - **Parsing** reads linear ASM and builds the graph. The parser already does this — ops reference each other via SSA names, and the parser resolves these to value references.
 
@@ -107,33 +108,29 @@ class ToyToAffine(Pass):
 
 The pass declares handlers. The framework decides execution strategy:
 
-- **Single forward pass** (default) — walk ops once, apply handlers
-- **Fixed-point iteration** — repeat until no handler returns `True`
+- **Single forward pass** (default) — walk values once, apply handlers
+- **Fixed-point iteration** — repeat until no handler returns a replacement
 
-The pass does not know or care which strategy is used. This is possible because the pass API (multiple handlers per op, `bool` return) supports both without changes.
+The pass does not know or care which strategy is used.
 
 ### Handler Registration
 
-Multiple handlers per op type, tried in registration order:
+Multiple handlers per value type, tried in registration order:
 
 ```python
 class Optimize(Pass):
     allow_unregistered_ops = True
 
     @lowering_for(toy.ReshapeOp)
-    def fold_constants(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
-        new_op = ConstantOp(value=op.input.memory.to_json(), type=...)
-        rewriter.replace_uses(op, new_op)
-        return True
+    def fold_constants(self, op: toy.ReshapeOp) -> dgen.Value | None:
+        return ConstantOp(value=op.input.memory.to_json(), type=...)
 
     @lowering_for(toy.ReshapeOp)
-    def simplify_reshape(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
-        new_op = toy.ReshapeOp(input=op.input.input, type=op.type)
-        rewriter.replace_uses(op, new_op)
-        return True
+    def simplify_reshape(self, op: toy.ReshapeOp) -> dgen.Value | None:
+        return toy.ReshapeOp(input=op.input.input, type=op.type)
 ```
 
-`fold_constants` is tried first. If it acts, `simplify_reshape` is not tried on this op. If it doesn't act, `simplify_reshape` gets a chance. Note: no `isinstance` guards are needed — the readiness guarantee means `op.input` has its expected type when the handler is called.
+`fold_constants` is tried first. If it returns a value, `simplify_reshape` is not tried on this op. If it returns `None`, `simplify_reshape` gets a chance. Note: no `isinstance` guards are needed — the readiness guarantee means `op.input` has its expected type when the handler is called.
 
 ## Design Discussion
 
@@ -162,16 +159,16 @@ rewriter.replace_op(old_op, new_ops=[alloc_op, for_op], new_value=alloc_op)
 
 This is better but still requires the handler to enumerate all new ops. Since ops reference their operands (the use-def graph), the framework can discover the full set of new ops by walking from the replacement value.
 
-The final design uses only `replace_uses(old, new)`:
+The final design has handlers return a replacement value. The framework calls `block.replace_uses_of(old, new)`:
 
 ```
-# Approach 3: replace_uses only
-alloc_op = affine.AllocOp(shape=...)
-for_op = affine.ForOp(body=Block(ops=[...load, store...], ...))
-rewriter.replace_uses(op, alloc_op)
+# Approach 3: handler returns replacement value
+alloc_op = ndbuffer.AllocOp(shape=...)
+loop = control_flow.ForOp(body=Block(result=..., ...))
+return ChainOp(lhs=alloc_op, rhs=loop, type=alloc_op.type)
 ```
 
-The handler builds the new ops (which are automatically part of the use-def graph via their operand references) and calls `replace_uses` to redirect downstream references. The new ops are reachable from the block's result because downstream ops now point to `alloc_op`. No splicing, no insertion ordering — the graph is the IR.
+The handler builds the new ops (which are automatically part of the use-def graph via their operand references) and returns the replacement. The framework calls `block.replace_uses_of(old, replacement)` which cascades through the graph. The new ops are reachable from the block's result because downstream ops now point to `alloc_op`. No splicing, no insertion ordering — the graph is the IR.
 
 ### Why use-def discovery works: blocks and visibility
 
@@ -419,13 +416,13 @@ Since the IR is a graph (not a list), there is no inherent ordering of ops withi
   Topological order for display: stride_const, mul, add
 ```
 
-Passes never think about ordering. They build ops (which reference each other via operands) and call `replace_uses`. The graph structure captures all ordering constraints implicitly.
+Passes never think about ordering. They build ops (which reference each other via operands) and return replacement values. The graph structure captures all ordering constraints implicitly.
 
 ## Paths Not Taken
 
 ### Functional replacement model (`op -> list[Op]`)
 
-Handlers return replacement ops directly; the framework splices them in. Simpler, but can't express in-place mutations (type annotation changes in shape inference) without escape hatches. Also forces the handler to manage op ordering. See [Why `replace_uses` instead of `replace_op`](#why-replace_uses-instead-of-replace_op) for the full discussion.
+Handlers return replacement ops directly; the framework splices them in. Simpler, but can't express in-place mutations (type annotation changes in shape inference) without escape hatches. Also forces the handler to manage op ordering. See [Why `replace_uses` instead of `replace_op`](#why-replace_uses-instead-of-replace_op) for the full discussion. The current design has handlers return `Value | None` — the framework calls `block.replace_uses_of` automatically.
 
 ### Separate base classes for transparent/manual passes
 
@@ -433,11 +430,11 @@ A `TransparentPass` and `ManualPass` with different base classes. Rejected becau
 
 ### MLIR-style PatternRewriter with worklist
 
-Full worklist-based fixpoint: pop ops, try patterns, add modified ops back to worklist, repeat until empty. Powerful (patterns can enable each other across distant ops) but heavyweight. The current design supports fixpoint iteration as a walk strategy without the worklist machinery. Can be added later if needed — the pass API (multiple handlers per op, `bool` return) is compatible.
+Full worklist-based fixpoint: pop ops, try patterns, add modified ops back to worklist, repeat until empty. Powerful (patterns can enable each other across distant ops) but heavyweight. The current design supports fixpoint iteration as a walk strategy without the worklist machinery. Can be added later if needed — the pass API (multiple handlers per value, `Value | None` return) is compatible.
 
 ### `erase(op)` as a separate primitive
 
-Explicit op deletion. Not needed as a rewriter primitive — unreferenced ops can be cleaned up by a general DCE pass. Since side-effecting ops are linked into the use-def graph via the `chain` mechanism, DCE is safe for all ops without special-casing.
+Explicit op deletion. Not needed as a primitive — unreferenced ops can be cleaned up by a general DCE pass. Since side-effecting ops are linked into the use-def graph via the `chain` mechanism, DCE is safe for all ops without special-casing.
 
 ### Multiple blocks per region (LLVM/MLIR model)
 
@@ -451,7 +448,7 @@ Make control flow edges explicit data edges by threading "control token" values 
 
 The initial design sketch had the pass framework deepcopy the module, walk the op list, maintain a value map (`id(old) → new`), and provide a `rewriter.resolve(value)` method to look up remapped values. New ops were discovered by walking the use-def graph from the replacement value, topologically sorted, and spliced into the op list.
 
-Rejected because: deepcopy is expensive, value maps add indirection (every value access goes through `resolve`), and topological sort in the pass is redundant work that the formatter already needs to do. The graph-based Block with eager `replace_uses` is simpler — passes just mutate the graph in place, and ops exist by being reachable from the block's result.
+Rejected because: deepcopy is expensive, value maps add indirection (every value access goes through `resolve`), and topological sort in the pass is redundant work that the formatter already needs to do. The graph-based Block with eager `block.replace_uses_of` is simpler — passes just mutate the graph in place, and ops exist by being reachable from the block's result.
 
 ### Keeping structured control flow only (no unstructured support)
 
@@ -461,14 +458,14 @@ Restrict dgen to `IfOp`/`ForOp`/`WhileOp` and push linearization to codegen. Sim
 
 ### Chain ergonomics in pass handlers
 
-The chain mechanism ensures side effects are in the use-def graph, but handlers that produce side-effecting ops need to thread the chain naturally. How does a handler receive the current chain, and how does it return the updated chain? This affects the handler signature and the rewriter API.
+The chain mechanism ensures side effects are in the use-def graph, but handlers that produce side-effecting ops need to thread the chain naturally. The current convention is to use `ChainOp(lhs=result, rhs=side_effect, type=result.type)` — this is adequate but verbose.
 
 ### Dead code elimination strategy
 
-Two options for cleaning up unreferenced ops after `replace_uses`:
+Two options for cleaning up unreferenced ops after replacement:
 
-1. **Reference counting** in the rewriter — immediate cleanup on replacement
-2. **General DCE pass** — periodic cleanup, simpler rewriter
+1. **Reference counting** — immediate cleanup on replacement
+2. **General DCE pass** — periodic cleanup, simpler
 
 Punted for now. Both work. The chain mechanism ensures DCE is safe for all ops.
 
@@ -486,75 +483,57 @@ Symbol values are constants (resolvable at compilation time). How this interacts
 
 ## Examples
 
-### Lowering pass (toy -> affine)
+### Lowering pass (toy -> structured)
 
 ```python
-class ToyToAffine(Pass):
-    op_domain = {*toy.ops, ConstantOp, builtin.ReturnOp, builtin.AddIndexOp}
-    op_range = {*affine.ops, ConstantOp, builtin.ReturnOp, builtin.AddIndexOp}
-    type_domain = {toy.Tensor, builtin.Index, builtin.F64}
-    type_range = {affine.MemRef, toy.Tensor, builtin.Index, builtin.F64}
-    allow_unregistered_ops = False
+class ToyToStructured(Pass):
+    allow_unregistered_ops = True
 
     @lowering_for(toy.TransposeOp)
-    def lower_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
-        in_alloc = op.input  # operands are already remapped by the framework
-        alloc_op = affine.AllocOp(shape=op.type.shape)
+    def lower_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
+        alloc = ndbuffer.AllocOp(shape=op.type.shape, type=...)
         # ... build ForOp with load/store body ...
-        rewriter.replace_uses(op, alloc_op)
-        return True
+        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
 ```
 
 ### Optimization pass (within toy dialect)
 
 ```python
 class ToyOptimize(Pass):
-    op_domain = {*toy.ops, ConstantOp, builtin.ReturnOp}
-    op_range = {*toy.ops, ConstantOp, builtin.ReturnOp}
-    type_domain = {toy.Tensor, builtin.Index, builtin.F64}
-    type_range = {toy.Tensor, builtin.Index, builtin.F64}
     allow_unregistered_ops = True  # pass through ops it doesn't rewrite
 
     @lowering_for(toy.TransposeOp)
-    def eliminate_double_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
+    def eliminate_double_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
+        if not isinstance(op.input, toy.TransposeOp):
+            return None
         # Readiness guarantee: op.input has its expected type
-        rewriter.replace_uses(op, op.input.input)
-        return True
+        return op.input.input
 
     @lowering_for(toy.ReshapeOp)
-    def fold_constants(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
-        new_op = ConstantOp(value=op.input.memory.to_json(), type=...)
-        rewriter.replace_uses(op, new_op)
-        return True
-
-    @lowering_for(toy.ReshapeOp)
-    def simplify_reshape(self, op: toy.ReshapeOp, rewriter: Rewriter) -> bool:
-        new_op = toy.ReshapeOp(input=op.input.input, type=op.type)
-        rewriter.replace_uses(op, new_op)
-        return True
+    def fold_reshape_of_constant(self, op: toy.ReshapeOp) -> dgen.Value | None:
+        if not isinstance(op.input, ConstantOp):
+            return None
+        return ConstantOp(value=op.input.__constant__.to_json(), type=op.type)
 ```
 
 ### Analysis pass (shape inference)
 
 ```python
 class ShapeInference(Pass):
-    op_domain = {*toy.ops, ConstantOp, builtin.ReturnOp, builtin.CallOp}
-    op_range = {*toy.ops, ConstantOp, builtin.ReturnOp, builtin.CallOp}
-    type_domain = {toy.Tensor, toy.InferredShapeTensor, builtin.Index}
-    type_range = {toy.Tensor, builtin.Index}  # all shapes resolved
     allow_unregistered_ops = True
 
     @lowering_for(toy.TransposeOp)
-    def infer_transpose(self, op: toy.TransposeOp, rewriter: Rewriter) -> bool:
-        # Readiness guarantee: op.input.type is a concrete Tensor
-        op.type = toy.Tensor(shape=reversed(op.input.type.unpack_shape()))
-        return True
+    def infer_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
+        if shape := self._shape(op.input):
+            op.type = toy.Tensor(shape=shape_constant(list(reversed(shape))))
+        return op  # return op itself — in-place type mutation
 
     def verify_postconditions(self, module: Module) -> None:
         super().verify_postconditions(module)
         # No unresolved shapes remain
-        for op in walk(module):
-            assert not isinstance(op.type, toy.InferredShapeTensor)
+        for func in module.functions:
+            for op in _walk_all_ops(func):
+                assert not isinstance(op.type, toy.InferredShapeTensor)
 ```
 
 ### Unstructured control flow (irreducible CFG)
