@@ -1,9 +1,3 @@
-## Pass framework: scope-bridging footgun
-- When a handler creates new values that reference ops from the original block and places them in a *new* block, replacements on the original block don't reach the new block's values. This causes nested lowering to silently miss the new scope.
-- **Pattern to follow**: reuse the original block in-place (modify captures/result) instead of creating a new block. See `lower_for` and `lower_if` in `control_flow_to_goto.py` — they reuse `op.body`/`op.then_body`/`op.else_body`.
-- **Remaining**: `lower_while` still uses `_lower_block` for explicit recursive lowering because it has two input blocks (condition + body) that need merging into a new structure. Refactor to reuse original blocks.
-- Eventually the pass framework should handle this automatically — the pre-computed block list should discover blocks created by handlers, not just the original blocks. This would make `_lower_block` unnecessary.
-
 ## Make the JIT work in the general case
 - Remove any "if stage0/stage1" logic
 - Batch multiple subgraphs in the same staging pass rather than serializing them

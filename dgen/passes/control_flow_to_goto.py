@@ -83,20 +83,6 @@ class ControlFlowToGoto(Pass):
     def __init__(self) -> None:
         self._loop_counter = 0
 
-    def _lower_block(self, block: dgen.Block) -> None:
-        """Dispatch handlers on a block's values (used for recursive lowering).
-
-        TODO: This exists only for lower_while. lower_for and lower_if avoid it
-        by reusing original blocks in-place. lower_while should be refactored
-        to do the same, then this method can be deleted.
-        """
-        from dgen.graph import all_blocks
-
-        for b in [block, *list(all_blocks(block.result))]:
-            for v in list(b.values):
-                if (result := self._dispatch_handlers(v)) is not None:
-                    b.replace_uses_of(v, result)
-
     def verify_preconditions(self, module: dgen.module.Module) -> None:
         super().verify_preconditions(module)
         from dgen.graph import all_values
@@ -309,8 +295,5 @@ class ControlFlowToGoto(Pass):
                 captures=list(op.condition.captures) + list(op.body.captures),
             ),
         )
-
-        # Recurse into body to handle nested loops.
-        self._lower_block(body_label.body)
 
         return header_label
