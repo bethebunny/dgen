@@ -67,7 +67,7 @@ class Lowering:
         elif ops:
             block_result = ops[-1]
         else:
-            block_result = dgen.Value(type=builtin.Nil())
+            block_result = ConstantOp(value={}, type=builtin.Nil())
         return function.FunctionOp(
             name=f.proto.name,
             result_type=result,

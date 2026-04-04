@@ -1,3 +1,4 @@
 import function
 
 %main : function.Function<[], Nil> = function.function<Nil>() body():
+    %0 : Nil = {}
