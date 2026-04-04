@@ -117,34 +117,29 @@ class ControlFlowToGoto(Pass):
         merge_exit = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
         merge_result = BlockArgument(name=f"if_result{lid}", type=op.type)
 
-        # Save original captures before mutation.
-        then_orig_captures = list(op.then_body.captures)
-        else_orig_captures = list(op.else_body.captures)
-
         # Both branches carry their body result to %self.
-        # Reuse original blocks in-place.
         then_br = goto.BranchOp(
             target=merge_self, arguments=pack([op.then_body.result])
         )
-        op.then_body.captures = [merge_self, *then_orig_captures]
-        op.then_body.result = then_br
-
         then_label = goto.LabelOp(
             name=f"if_then{lid}",
             initial_arguments=pack([]),
-            body=op.then_body,
+            body=dgen.Block(
+                result=then_br,
+                captures=[merge_self, *op.then_body.captures],
+            ),
         )
 
         else_br = goto.BranchOp(
             target=merge_self, arguments=pack([op.else_body.result])
         )
-        op.else_body.captures = [merge_self, *else_orig_captures]
-        op.else_body.result = else_br
-
         else_label = goto.LabelOp(
             name=f"if_else{lid}",
             initial_arguments=pack([]),
-            body=op.else_body,
+            body=dgen.Block(
+                result=else_br,
+                captures=[merge_self, *op.else_body.captures],
+            ),
         )
 
         cond_br = goto.ConditionalBranchOp(
@@ -155,7 +150,7 @@ class ControlFlowToGoto(Pass):
             false_arguments=pack([]),
         )
 
-        region = goto.RegionOp(
+        return goto.RegionOp(
             name=f"if{lid}",
             initial_arguments=pack([]),
             type=op.type,
@@ -163,15 +158,9 @@ class ControlFlowToGoto(Pass):
                 result=ChainOp(lhs=merge_result, rhs=cond_br, type=op.type),
                 parameters=[merge_self, merge_exit],
                 args=[merge_result],
-                captures=[
-                    op.condition,
-                    *then_orig_captures,
-                    *else_orig_captures,
-                ],
+                captures=[op.condition, *op.then_body.captures, *op.else_body.captures],
             ),
         )
-
-        return region
 
     @lowering_for(control_flow.ForOp)
     def lower_for(self, op: control_flow.ForOp) -> dgen.Value | None:
@@ -182,31 +171,26 @@ class ControlFlowToGoto(Pass):
         header_exit = BlockParameter(name=f"exit{lid}", type=goto.Label())
         header_iv = BlockArgument(name=f"i{lid}", type=Index())
 
-        # --- Body label (inside header): reuse op.body, add back-edge ---
-        # Reuse the original block arg as the body IV. No mutation needed.
+        # Body label: reuse op.body's IV, chain(increment, body_result) as
+        # the back-edge arg so the increment happens after the body runs.
         iv = op.body.args[0]
-        original_captures = list(op.body.captures)
-
-        # The increment must depend on the inner loop body having run.
-        # chain(increment, body_result) ensures the increment comes after.
         one = ConstantOp(value=1, type=Index())
-        next_iv_raw = algebra.AddOp(left=iv, right=one, type=Index())
-        next_iv = ChainOp(lhs=next_iv_raw, rhs=op.body.result, type=Index())
-        back_br = goto.BranchOp(target=header_self, arguments=pack([next_iv]))
-
-        # Modify op.body in-place: add header_self to captures, set new result.
-        # This keeps all new ops (%next, back_br) in the same scope as the
-        # original body ops, so nested lowering replacements reach them.
-        op.body.captures = [header_self] + original_captures
-        op.body.result = back_br
-
+        next_iv = ChainOp(
+            lhs=algebra.AddOp(left=iv, right=one, type=Index()),
+            rhs=op.body.result,
+            type=Index(),
+        )
         body_label = goto.LabelOp(
             name=f"loop_body{lid}",
             initial_arguments=pack([]),
-            body=op.body,
+            body=dgen.Block(
+                result=goto.BranchOp(target=header_self, arguments=pack([next_iv])),
+                args=[iv],
+                captures=[header_self, *op.body.captures],
+            ),
         )
 
-        # --- Header: compare, branch to body or %exit ---
+        # Header: compare, branch to body or %exit.
         hi = ConstantOp(value=op.upper_bound.__constant__.to_json(), type=Index())
         cmp = algebra.LessThanOp(left=header_iv, right=hi, type=Boolean())
         cond_br = goto.ConditionalBranchOp(
@@ -216,20 +200,17 @@ class ControlFlowToGoto(Pass):
             true_arguments=pack([header_iv]),
             false_arguments=pack([]),
         )
-
         lo = ConstantOp(value=op.lower_bound.__constant__.to_json(), type=Index())
-        header_label = goto.RegionOp(
+        return goto.RegionOp(
             name=f"loop_header{lid}",
             initial_arguments=pack([lo]),
             body=dgen.Block(
                 result=cond_br,
                 parameters=[header_self, header_exit],
                 args=[header_iv],
-                captures=original_captures,
+                captures=list(op.body.captures),
             ),
         )
-
-        return header_label
 
     @lowering_for(control_flow.WhileOp)
     def lower_while(self, op: control_flow.WhileOp) -> dgen.Value | None:
