@@ -89,9 +89,9 @@ class ShapeInference(Pass):
             return op
         for param, shape in zip(callee.body.args, arg_shapes):
             param.type = toy.Tensor(shape=shape_constant(shape))
-        # Re-walk callee with updated arg types. The base pass already walked
-        # callee.body before this handler fired (it's in all_blocks via the
-        # captured callee reference), but args were still InferredShapeTensor.
+        # Walk callee with updated arg types. The callee is a capture of
+        # the caller's body, so the pass framework's walk stops at it —
+        # callee bodies are processed lazily, from each call site.
         for b in all_blocks(callee):
             for v in list(b.values):
                 if (result := self._dispatch_handlers(v)) is not None:

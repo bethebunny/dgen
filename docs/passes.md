@@ -43,18 +43,26 @@ The handler returns the replacement value. The framework calls `block.replace_us
 
 ### Walk Behavior
 
-`Pass.run(value, compiler)` wraps the root value in a `Block(result=value)`, then iterates all blocks in a flat loop (nested blocks still get walked — the iteration is just flat over the pre-computed block list, not a recursive call tree):
+`Pass.run(value, compiler)` wraps the root value in a `Block(result=value)`, then recursively lowers it. For each op in topological order: dispatch handlers, then recurse into the effective op's nested blocks, then replace uses in the parent block:
 
 ```python
-root_block = Block(result=value)
-for block in [root_block, *all_blocks(value)]:
+def run(self, value, compiler):
+    root_block = Block(result=value)
+    self._lower_block(root_block)
+    return root_block.result
+
+def _lower_block(self, block):
     for v in list(block.values):
-        if (result := self._dispatch_handlers(v)) is not None:
+        result = self._dispatch_handlers(v)
+        effective = result if result is not None else v
+        if isinstance(effective, Op):
+            for _, child_block in effective.blocks:
+                self._lower_block(child_block)
+        if result is not None:
             block.replace_uses_of(v, result)
-return root_block.result
 ```
 
-`all_blocks(value)` (from `dgen/graph.py`) yields all blocks reachable from the value in depth-first order, parallel to `all_values`. `block.replace_uses_of` handles all replacement cascading through nested blocks automatically.
+The "recurse after lowering" order is critical: handler-created blocks are lowered *before* they can be referenced by downstream uses. This means handlers can freely construct new blocks (with their own fresh values) — the framework will discover and lower them before the replacement propagates.
 
 - **Value has registered handler(s):** call them in registration order until one returns a value. The framework calls `block.replace_uses_of(old, result)`.
 - **Op has no registered handler, `allow_unregistered_ops=True`:** leave it in place.

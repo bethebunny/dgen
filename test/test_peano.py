@@ -18,7 +18,6 @@ from typing import ClassVar
 import dgen
 from dgen import Dialect, Op, Trait, Type, Value, layout
 from dgen import codegen
-from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse_module
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
@@ -100,29 +99,22 @@ class ValueOp(Op):
 
 
 class PeanoLowering(Pass):
-    """Lower peano ops to constants. Prints each resolution step."""
+    """Lower peano ops to constants."""
 
     allow_unregistered_ops = True
 
     @lowering_for(ZeroOp)
     def lower_zero(self, op: ZeroOp) -> Value | None:
-        z = Zero()
-        print(f"  lower: peano.zero -> {type_asm(z)}")
-        return ConstantOp(value=z.__constant__.to_json(), type=TypeType())
+        return ConstantOp(value=Zero().__constant__.to_json(), type=TypeType())
 
     @lowering_for(SuccessorOp)
     def lower_successor(self, op: SuccessorOp) -> Value | None:
-        pred_type = type_constant(op.pred)
-        succ = Successor(pred=pred_type)
-        print(f"  lower: peano.successor<{type_asm(pred_type)}> -> {type_asm(succ)}")
+        succ = Successor(pred=type_constant(op.pred))
         return ConstantOp(value=succ.__constant__.to_json(), type=TypeType())
 
     @lowering_for(ValueOp)
     def lower_value(self, op: ValueOp) -> Value | None:
-        nat_type = type_constant(op.nat)
-        n = count_nat(nat_type)
-        print(f"  lower: peano.value<{type_asm(nat_type)}> -> {n}")
-        return ConstantOp(value=n, type=Index())
+        return ConstantOp(value=count_nat(type_constant(op.nat)), type=Index())
 
 
 def lower_peano(module: Module) -> Module:

@@ -7,7 +7,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import dgen
-from dgen.graph import all_blocks
 from dgen.module import Module
 from dgen.verify import (
     verify_all_ready,
@@ -99,11 +98,25 @@ class Pass(metaclass=_PassMeta):
     def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
         """Run this pass on a value and all its nested blocks."""
         root_block = dgen.Block(result=value)
-        for block in [root_block, *all_blocks(value)]:
-            for v in list(block.values):
-                if (result := self._dispatch_handlers(v)) is not None:
-                    block.replace_uses_of(v, result)
+        self._lower_block(root_block)
         return root_block.result
+
+    def _lower_block(self, block: dgen.Block) -> None:
+        """Lower all ops in block (topo order), recursing into nested blocks.
+
+        For each op, dispatch handlers. After lowering (whether the op was
+        replaced or not), recurse into the effective op's blocks — before
+        processing any downstream uses. This ensures handler-created blocks
+        are lowered before they're referenced elsewhere.
+        """
+        for v in list(block.values):
+            result = self._dispatch_handlers(v)
+            effective = result if result is not None else v
+            if isinstance(effective, dgen.Op):
+                for _, child_block in effective.blocks:
+                    self._lower_block(child_block)
+            if result is not None:
+                block.replace_uses_of(v, result)
 
     def verify_preconditions(self, module: Module) -> None:
         """Check IR invariants that must hold before this pass runs."""
