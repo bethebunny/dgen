@@ -10,7 +10,7 @@ import dgen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable, build_callback_thunk, register_executable
 from dgen.dialects.function import FunctionOp
-from dgen.module import Module
+from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass
 from dgen.type import Constant, Memory
 
@@ -20,31 +20,14 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 
-def _resolve_boundary(
-    op: dgen.Op,
-    field_name: str,
-    value: dgen.Value,
-    compiler: Compiler[object],
-    *,
-    block_args: Sequence[BlockArgument] = (),
-    args: Sequence[object] = (),
-) -> None:
-    """Resolve a single comptime boundary: JIT-evaluate value, patch result as ConstantOp."""
-    setattr(
-        op, field_name, compiler.compile_value(value, block_args=block_args, args=args)
-    )
-
-
 # ---------------------------------------------------------------------------
 # Stage computation
 # ---------------------------------------------------------------------------
 
 
 def _is_unresolved(value: dgen.Value) -> bool:
-    """True if value is an unresolved parameter (not yet a constant/type)."""
-    return isinstance(
-        value, (dgen.Op, BlockArgument, BlockParameter)
-    ) and not isinstance(value, (Constant, dgen.Type, FunctionOp))
+    """True if value is an unresolved parameter (not yet a constant/type/function)."""
+    return not isinstance(value, (Constant, dgen.Type, FunctionOp))
 
 
 def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
@@ -130,7 +113,13 @@ def _unresolved_boundaries(
 
 
 def _has_nested_boundaries(func: FunctionOp) -> bool:
-    """True if any op in nested blocks has unresolved __params__."""
+    """True if any op inside a nested block has unresolved __params__.
+
+    _unresolved_boundaries only walks func.body.ops (top-level). This checks
+    one level deeper: ops inside nested blocks (e.g., a loop body). If such
+    an op has an unresolved param referencing its own block's args, the
+    top-level resolution loop can't find it — we need staging to recurse.
+    """
     for op in func.body.ops:
         for _, block in op.blocks:
             for nested_op in block.ops:
@@ -177,7 +166,7 @@ def resolve_stage0(
             _stage_num, op, field_name, value = boundaries[0]
             if stages.get(value, 0) != 0:
                 continue
-            _resolve_boundary(op, field_name, value, compiler)
+            setattr(op, field_name, compiler.compile_value(value))
             resolved_any = True
             break  # re-iterate from the start after each resolution
         if not resolved_any:
@@ -193,24 +182,23 @@ def _resolve_with_runtime_args(
 ) -> None:
     """Resolve all boundaries in a function using runtime argument values.
 
-    Unlike ``resolve_stage0``, this resolves boundaries at any stage
-    by passing runtime args to the JIT evaluator. Used inside callback
+    Substitutes block_args with ConstantOps built from python_args, then
+    resolves all remaining boundaries as stage-0. Used inside callback
     thunks when runtime values become available.
     """
+    # Substitute block args with constants built from runtime values.
+    # After this, all boundaries in the function are stage-0 evaluable.
+    for block_arg, py_val in zip(block_args, python_args):
+        const = ConstantOp(value=py_val, type=block_arg.type)
+        func.body.replace_uses_of(block_arg, const)
+
     while True:
         stages = compute_stages(func)
         boundaries = _unresolved_boundaries(func, stages)
         if not boundaries:
             break
         _stage_num, op, field_name, value = boundaries[0]
-        _resolve_boundary(
-            op,
-            field_name,
-            value,
-            compiler,
-            block_args=block_args,
-            args=python_args,
-        )
+        setattr(op, field_name, compiler.compile_value(value))
 
 
 def _build_callback_thunk(
@@ -235,12 +223,14 @@ def _build_callback_thunk(
         _resolve_with_runtime_args(s2_func, compiler, s2_func.body.args, python_args)
 
         func_module = Module(ops=[s2_func])
-        # After runtime boundary resolution, skip staging if no nested
-        # boundaries remain — avoids a redundant deepcopy+scan.
+        # _resolve_with_runtime_args substitutes block_args with constants,
+        # which resolves boundaries that depend on them. But ops inside
+        # nested blocks can have params that reference the nested block's
+        # own args (not our outer block_args) — those still need staging.
         if _has_nested_boundaries(s2_func):
-            exe = compiler.compile(func_module)
+            exe = compiler.compile(func_module)  # full pipeline incl. staging
         else:
-            exe = compiler.run(func_module)
+            exe = compiler.run(func_module)  # skip redundant staging pass
         assert isinstance(exe, Executable)
         callback_host_refs.extend(exe.host_refs)
         mem = exe.run(*python_args)

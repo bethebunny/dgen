@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import pytest
 
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -21,15 +20,14 @@ from dgen import Dialect, Op, Trait, Type, Value, layout
 from dgen import codegen
 from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse_module
-from dgen.dialects import builtin, function
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
 from dgen.codegen import LLVMCodegen
-from dgen.compiler import Compiler
+from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects.function import FunctionOp
-from dgen.module import ConstantOp, Module, PackOp, pack
+from dgen.module import ConstantOp, Module
 from dgen.verify import CycleError, verify_dag
-from dgen.passes.pass_ import Pass
+from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Fields, TypeType, type_constant
 from dgen.testing import strip_prefix
 
@@ -101,85 +99,35 @@ class ValueOp(Op):
 # ============================================================================
 
 
-def _lower_peano_ops(
-    ops: list[dgen.Op], replacements: dict[Value, Value]
-) -> list[dgen.Op]:
-    """Lower peano ops in a list, descending into blocks."""
-    new_ops: list[dgen.Op] = []
-
-    for op in ops:
-        if isinstance(op, ZeroOp):
-            z = Zero()
-            print(f"  lower: peano.zero -> {type_asm(z)}")
-            const = ConstantOp(value=z.__constant__.to_json(), type=TypeType())
-            new_ops.append(const)
-            replacements[op] = const
-        elif isinstance(op, SuccessorOp):
-            pred = replacements.get(op.pred, op.pred)
-            pred_type = type_constant(pred)
-            succ = Successor(pred=pred_type)
-            print(
-                f"  lower: peano.successor<{type_asm(pred_type)}> -> {type_asm(succ)}"
-            )
-            const = ConstantOp(value=succ.__constant__.to_json(), type=TypeType())
-            new_ops.append(const)
-            replacements[op] = const
-        elif isinstance(op, ValueOp):
-            nat = replacements.get(op.nat, op.nat)
-            nat_type = type_constant(nat)
-            n = count_nat(nat_type)
-            print(f"  lower: peano.value<{type_asm(nat_type)}> -> {n}")
-            const = ConstantOp(value=n, type=Index())
-            new_ops.append(const)
-            replacements[op] = const
-        elif isinstance(op, function.CallOp):
-            if isinstance(op.arguments, PackOp):
-                new_pack = pack(replacements.get(a, a) for a in op.arguments)
-                new_ops.append(new_pack)
-                new_call = function.CallOp(
-                    callee=op.callee,
-                    arguments=new_pack,
-                    type=op.type,
-                    name=op.name,
-                )
-                new_ops.append(new_call)
-                replacements[op] = new_call
-            else:
-                new_ops.append(op)
-        else:
-            # Descend into blocks (e.g., if/else bodies)
-            for block_name, block in op.blocks:
-                block.result = _lower_peano_ops(block.ops, replacements)[-1]
-            new_ops.append(op)
-
-    return new_ops
-
-
-def _lower_peano_func(func: builtin.FunctionOp) -> None:
-    """Lower peano ops in a single function."""
-    replacements: dict[Value, Value] = {}
-    new_ops = _lower_peano_ops(func.body.ops, replacements)
-    func.body.result = new_ops[-1]
-
-
-def lower_peano(module: Module) -> Module:
-    """Lower peano ops to constants. Prints each resolution step."""
-    module = deepcopy(module)
-    for func in module.functions:
-        _lower_peano_func(func)
-    return module
-
-
 class PeanoLowering(Pass):
-    """Pass wrapper for lower_peano."""
+    """Lower peano ops to constants. Prints each resolution step."""
 
     allow_unregistered_ops = True
 
-    def run(self, value: Value, compiler: Compiler) -> Value:
-        if isinstance(value, FunctionOp):
-            value = deepcopy(value)
-            _lower_peano_func(value)
-        return value
+    @lowering_for(ZeroOp)
+    def lower_zero(self, op: ZeroOp) -> Value | None:
+        z = Zero()
+        print(f"  lower: peano.zero -> {type_asm(z)}")
+        return ConstantOp(value=z.__constant__.to_json(), type=TypeType())
+
+    @lowering_for(SuccessorOp)
+    def lower_successor(self, op: SuccessorOp) -> Value | None:
+        pred_type = type_constant(op.pred)
+        succ = Successor(pred=pred_type)
+        print(f"  lower: peano.successor<{type_asm(pred_type)}> -> {type_asm(succ)}")
+        return ConstantOp(value=succ.__constant__.to_json(), type=TypeType())
+
+    @lowering_for(ValueOp)
+    def lower_value(self, op: ValueOp) -> Value | None:
+        nat_type = type_constant(op.nat)
+        n = count_nat(nat_type)
+        print(f"  lower: peano.value<{type_asm(nat_type)}> -> {n}")
+        return ConstantOp(value=n, type=Index())
+
+
+def lower_peano(module: Module) -> Module:
+    """Standalone helper: run PeanoLowering on a whole module."""
+    return Compiler([PeanoLowering()], IdentityPass()).run(module)
 
 
 peano_compiler: Compiler[codegen.Executable] = Compiler(

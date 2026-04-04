@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from contextvars import ContextVar
 from typing import Generic, Protocol, TypeVar
 
 import dgen
-from dgen.block import BlockArgument
+from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, pack
 from dgen.passes.pass_ import Pass
-from dgen.type import Memory
 
 verify_passes: ContextVar[bool] = ContextVar("dgen.verify_passes", default=False)
 
@@ -50,45 +48,22 @@ class Compiler(Generic[T]):
 
         return compile_module(module, self)
 
-    def compile_value(
-        self,
-        value: dgen.Value,
-        *,
-        block_args: Sequence[BlockArgument] = (),
-        args: Sequence[object] = (),
-    ) -> ConstantOp:
-        """Compile a value to a constant: wrap in function, JIT, execute.
+    def compile_value(self, value: dgen.Value) -> ConstantOp:
+        """Compile a stage-0 value to a constant: wrap in function, JIT, execute.
 
-        Wraps the target value in a mini function+module, runs the full
-        pass pipeline + exit to get an Executable, executes it, and returns
-        the result as a ConstantOp.
+        The value must have no runtime (BlockArgument) dependencies. Callers
+        with runtime values should substitute them as ConstantOps in the IR
+        before calling this.
         """
-        from dgen.codegen import Executable
-        from dgen.dialects.function import Function, FunctionOp
-
         func = FunctionOp(
             name="main",
-            body=dgen.Block(result=value, args=list(block_args)),
+            body=dgen.Block(result=value),
             result_type=value.type,
-            type=Function(
-                arguments=pack(arg.type for arg in block_args),
-                result_type=value.type,
-            ),
+            type=Function(arguments=pack([]), result_type=value.type),
         )
-        module = Module(ops=[func])
-        exe = self.run(module)
-        assert isinstance(exe, Executable)
-        # LIFETIME BUG WORKAROUND: Create Memory objects before the call so
-        # they outlive exe.run(). See TODO.md for the proper fix.
-        memories = [
-            Memory.from_value(param.type, arg) for arg, param in zip(args, block_args)
-        ]
-        result = exe.run(*memories)
-        json_value = result.to_json()
-        const_type = value.type
-        if isinstance(json_value, dict) and "tag" in json_value:
-            const_type = dgen.type.TypeType()
-        return ConstantOp(value=json_value, type=const_type)
+        exe = self.run(Module(ops=[func]))
+        result = exe.run()  # type: ignore[attr-defined]
+        return ConstantOp(value=result.to_json(), type=value.type)
 
     def run(self, module: Module) -> T:
         """Run passes + exit (no staging)."""

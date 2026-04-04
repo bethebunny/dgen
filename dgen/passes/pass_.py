@@ -88,8 +88,7 @@ class Pass(metaclass=_PassMeta):
     def _dispatch_handlers(self, v: dgen.Value) -> dgen.Value | None:
         """Try handlers for v, return replacement or None."""
         for handler in self._handlers.get(type(v), []):
-            result = handler(self, v)
-            if result is not None:
+            if (result := handler(self, v)) is not None:
                 return result
         if not self.allow_unregistered_ops and isinstance(v, dgen.Op):
             raise TypeError(
@@ -100,7 +99,7 @@ class Pass(metaclass=_PassMeta):
     def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
         """Run this pass on a value and all its nested blocks."""
         root_block = dgen.Block(result=value)
-        for block in [root_block, *list(all_blocks(value))]:
+        for block in [root_block, *all_blocks(value)]:
             for v in list(block.values):
                 if (result := self._dispatch_handlers(v)) is not None:
                     block.replace_uses_of(v, result)
