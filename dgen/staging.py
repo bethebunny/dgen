@@ -356,7 +356,7 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
     # and register it as a global symbol for cross-function calls.
     # Process non-entry functions first so their symbols are available
     # when the entry function's callback fires.
-    entry = resolved.functions[0]
+    entry = resolved.functions[-1]
     ordered = [f for f in unresolved_funcs if f is not entry] + [
         f for f in unresolved_funcs if f is entry
     ]

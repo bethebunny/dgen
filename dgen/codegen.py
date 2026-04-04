@@ -806,7 +806,7 @@ def compile(module: Module) -> Executable:
     module = BuiltinToLLVM().run(module, _dummy)
     module = AlgebraToLLVM().run(module, _dummy)
     ir, host_buffers = emit_llvm_ir(module)
-    main = module.functions[0]
+    main = module.functions[-1]
     assert main.name is not None
     return Executable(
         ir=ir,
