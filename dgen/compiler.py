@@ -96,7 +96,7 @@ class Compiler(Generic[T]):
             if verify_passes.get():
                 p.verify_preconditions(module)
             continuation = Compiler(self.passes[i + 1 :], self.exit)
-            module = p.run(module, continuation)
+            module = Module(ops=[p.run(op, continuation) for op in module.ops])
             if verify_passes.get():
                 p.verify_postconditions(module)
         return self.exit.run(module)

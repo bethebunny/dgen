@@ -22,11 +22,8 @@ def inline_block(block: dgen.Block, args: list[dgen.Value]) -> dgen.Value:
     assert len(args) == len(block.args), (
         f"inline_block: expected {len(block.args)} args, got {len(args)}"
     )
-    from dgen.passes.pass_ import Rewriter  # circular: block → graph → pass_
-
-    rewriter = Rewriter(block)
     for old_arg, new_val in zip(block.args, args):
-        rewriter.replace_uses(old_arg, new_val)
+        block.replace_uses_of(old_arg, new_val)
     return block.result
 
 
@@ -62,3 +59,17 @@ def interior_values(value: dgen.Value) -> Iterator[dgen.Value]:
         for value in block.values:
             yield value
             yield from interior_values(value)
+
+
+def interior_blocks(value: dgen.Value) -> Iterator[dgen.Block]:
+    """Blocks nested within this value's block fields, recursively."""
+    for _, block in value.blocks:
+        yield block
+        for v in block.values:
+            yield from interior_blocks(v)
+
+
+def all_blocks(value: dgen.Value) -> Iterator[dgen.Block]:
+    """All blocks reachable from value: own blocks + nested blocks of dependencies."""
+    for v in transitive_dependencies(value):
+        yield from interior_blocks(v)

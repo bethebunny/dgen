@@ -15,13 +15,6 @@ class Op(Value):
     asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
 
-    def replace_operand(self, old: Value, new: Value) -> None:
-        """Replace all occurrences of old with new in operand fields."""
-        for name, _ in self.__operands__:
-            val = getattr(self, name)
-            if val is old:
-                setattr(self, name, new)
-
     @property
     def asm(self) -> Iterable[str]:
         from .asm.formatting import op_asm

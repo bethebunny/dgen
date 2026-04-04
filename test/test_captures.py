@@ -5,7 +5,6 @@ import pytest
 from dgen import asm
 from dgen.asm.parser import parse_module
 from dgen.dialects import goto, llvm
-from dgen.passes.pass_ import Rewriter
 from dgen.testing import assert_ir_equivalent, strip_prefix
 from dgen.verify import ClosedBlockError, verify_closed_blocks
 
@@ -245,7 +244,7 @@ def test_replace_uses_updates_captures():
     func = module.functions[0]
     old_arg, new_arg = func.body.args
 
-    Rewriter(func.body).replace_uses(old_arg, new_arg)
+    func.body.replace_uses_of(old_arg, new_arg)
 
     label = func.body.result
     assert isinstance(label, goto.LabelOp)
@@ -275,7 +274,7 @@ def test_replace_uses_updates_chained_captures():
     func = module.functions[0]
     old_arg, new_arg = func.body.args
 
-    Rewriter(func.body).replace_uses(old_arg, new_arg)
+    func.body.replace_uses_of(old_arg, new_arg)
 
     mid_label = func.body.result
     assert new_arg in mid_label.body.captures

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import function
+from dgen.graph import all_blocks
 from dgen.module import ConstantOp, Module, PackOp, _walk_all_ops
 from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import shape_constant, toy
@@ -27,15 +28,12 @@ class ShapeInference(Pass):
                         "after ShapeInference"
                     )
 
-    def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        # Process main first (if present), then remaining functions.
-        for f in module.functions:
-            if f.name == "main":
-                self._run_block(f.body)
-        for f in module.functions:
-            if f.name != "main":
-                self._run_block(f.body)
-        return module
+    def _infer_block(self, block: dgen.Block) -> None:
+        """Run shape inference handlers on a single block and its nested blocks."""
+        for b in [block, *list(all_blocks(block.result))]:
+            for v in list(b.values):
+                if (result := self._dispatch_handlers(v)) is not None:
+                    b.replace_uses_of(v, result)
 
     def _shape(self, val: dgen.Value) -> list[int] | None:
         """Return the concrete shape of val if its type is a resolved Tensor."""
@@ -98,7 +96,7 @@ class ShapeInference(Pass):
             return op
         for param, shape in zip(callee.body.args, arg_shapes):
             param.type = toy.Tensor(shape=shape_constant(shape))
-        self._run_block(callee.body)
+        self._infer_block(callee.body)
         if isinstance(callee.body.result.type, toy.Tensor):
             ret_type = callee.body.result.type
             ret_shape = ret_type.shape.__constant__.to_json()

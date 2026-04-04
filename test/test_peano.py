@@ -175,8 +175,11 @@ class PeanoLowering(Pass):
 
     allow_unregistered_ops = True
 
-    def run(self, module: Module, compiler: Compiler) -> Module:
-        return lower_peano(module)
+    def run(self, value: Value, compiler: Compiler) -> Value:
+        if isinstance(value, FunctionOp):
+            value = deepcopy(value)
+            _lower_peano_func(value)
+        return value
 
 
 peano_compiler: Compiler[codegen.Executable] = Compiler(
@@ -421,7 +424,7 @@ def test_if_else_jit():
         |     %cond : number.Boolean = algebra.equal(%n, 0)
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %one : index.Index = 1
-        |     else_body():
+        |     else_body() captures(%n):
         |         %val : index.Index = algebra.subtract(%n, 1)
     """)
     module = parse_module(ir)

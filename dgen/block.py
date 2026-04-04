@@ -88,6 +88,24 @@ class Block:
     def ops(self) -> Iterator[dgen.Op]:
         return (v for v in self.values if isinstance(v, dgen.Op))
 
+    def replace_uses_of(self, old: dgen.Value, new: dgen.Value) -> None:
+        """Replace all references to old with new in block values and metadata."""
+        # Sweep block.values FIRST — captures define the stop set for
+        # transitive_dependencies, so they must still contain the old value
+        # during this walk so ops that reference it are found.
+        for v in self.values:
+            v.replace_uses_of(old, new)
+        # Then update block metadata
+        self.captures = [new if c is old else c for c in self.captures]
+        for arg in self.args:
+            if arg.type is old:
+                arg.type = new
+        for param in self.parameters:
+            if param.type is old:
+                param.type = new
+        if self.result is old:
+            self.result = new
+
     @property
     def asm(self) -> Iterable[str]:
         for op in self.ops:

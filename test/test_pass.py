@@ -1,4 +1,4 @@
-"""Tests for the Pass base class, Rewriter, and Pass.run."""
+"""Tests for the Pass base class, Block.replace_uses_of, and Pass.run."""
 
 import pytest
 
@@ -11,7 +11,7 @@ from dgen.dialects.builtin import Nil
 from dgen.dialects.function import FunctionOp
 from dgen.module import ConstantOp, Module
 import dgen
-from dgen.passes.pass_ import Pass, Rewriter, lowering_for
+from dgen.passes.pass_ import Pass, lowering_for
 from dgen.staging import ConstantFold
 from dgen.verify import ClosedBlockError
 from toy.dialects import toy
@@ -52,12 +52,12 @@ def test_multiple_handlers_per_op_type():
 
 
 # ---------------------------------------------------------------------------
-# Task 6: Rewriter with eager replace_uses
+# Task 6: Block.replace_uses_of
 # ---------------------------------------------------------------------------
 
 
-def test_rewriter_eager_replace(ir_snapshot):
-    """replace_uses eagerly updates all referencing ops."""
+def test_block_replace_uses_of(ir_snapshot):
+    """replace_uses_of eagerly updates all referencing ops."""
     ir_text = strip_prefix("""
         | import function
         | import index
@@ -76,14 +76,13 @@ def test_rewriter_eager_replace(ir_snapshot):
     old = ops_by_name["0"]  # %0 = 1
     new = ops_by_name["1"]  # %1 = 2
 
-    rewriter = Rewriter(func.body)
-    rewriter.replace_uses(old, new)
+    func.body.replace_uses_of(old, new)
 
     assert m == ir_snapshot
 
 
-def test_rewriter_replaces_op_type():
-    """replace_uses updates op.type when it references the replaced value."""
+def test_block_replace_uses_of_op_type():
+    """replace_uses_of updates op.type when it references the replaced value."""
     old_type = ConstantOp(
         name="old_t", value={"tag": "index.Index"}, type=dgen.TypeType()
     )
@@ -94,13 +93,12 @@ def test_rewriter_replaces_op_type():
     block = dgen.Block(result=x)
 
     assert x.type is old_type
-    rewriter = Rewriter(block)
-    rewriter.replace_uses(old_type, new_type)
+    block.replace_uses_of(old_type, new_type)
     assert x.type is new_type
 
 
-def test_rewriter_replaces_block_arg_type():
-    """replace_uses updates block argument types."""
+def test_block_replace_uses_of_block_arg_type():
+    """replace_uses_of updates block argument types."""
     from dgen.dialects.index import Index
 
     old_type = ConstantOp(
@@ -114,13 +112,12 @@ def test_rewriter_replaces_block_arg_type():
     block = dgen.Block(result=result, args=[arg])
 
     assert arg.type is old_type
-    rewriter = Rewriter(block)
-    rewriter.replace_uses(old_type, new_type)
+    block.replace_uses_of(old_type, new_type)
     assert arg.type is new_type
 
 
-def test_rewriter_replaces_captures():
-    """replace_uses updates captures and ops referencing the captured value."""
+def test_block_replace_uses_of_captures():
+    """replace_uses_of updates captures and ops referencing the captured value."""
     from dgen.dialects.index import Index
     from dgen.dialects.builtin import ChainOp
 
@@ -131,16 +128,15 @@ def test_rewriter_replaces_captures():
 
     assert old_val in block.captures
     assert inner_op.lhs is old_val
-    rewriter = Rewriter(block)
-    rewriter.replace_uses(old_val, new_val)
+    block.replace_uses_of(old_val, new_val)
     assert new_val in block.captures
     assert old_val not in block.captures
     assert inner_op.lhs is new_val
     assert inner_op.rhs is new_val
 
 
-def test_rewriter_replaces_block_parameter_type():
-    """replace_uses updates block parameter types."""
+def test_block_replace_uses_of_block_parameter_type():
+    """replace_uses_of updates block parameter types."""
     from dgen.block import BlockParameter
     from dgen.dialects.index import Index
 
@@ -155,8 +151,7 @@ def test_rewriter_replaces_block_parameter_type():
     block = dgen.Block(result=result, parameters=[param])
 
     assert param.type is old_type
-    rewriter = Rewriter(block)
-    rewriter.replace_uses(old_type, new_type)
+    block.replace_uses_of(old_type, new_type)
     assert param.type is new_type
 
 
@@ -191,8 +186,8 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
             return op.input.input
 
     m = parse_module(ir_text)
-    compiler = Compiler(passes=[], exit=IdentityPass())
-    result = ElimTranspose().run(m, compiler)
+    compiler = Compiler(passes=[ElimTranspose()], exit=IdentityPass())
+    result = compiler.run(m)
     assert result == ir_snapshot
 
 
@@ -214,9 +209,9 @@ def test_pass_unregistered_ops_error():
         allow_unregistered_ops = False
 
     m = parse_module(ir_text)
-    compiler = Compiler(passes=[], exit=IdentityPass())
+    compiler = Compiler(passes=[StrictPass()], exit=IdentityPass())
     with pytest.raises(TypeError, match="No handler for"):
-        StrictPass().run(m, compiler)
+        compiler.run(m)
 
 
 def test_pass_multiple_handlers_first_wins():
@@ -244,8 +239,8 @@ def test_pass_multiple_handlers_first_wins():
         |     %0 : index.Index = 42
     """)
     m = parse_module(ir_text)
-    compiler = Compiler(passes=[], exit=IdentityPass())
-    MultiPass().run(m, compiler)
+    compiler = Compiler(passes=[MultiPass()], exit=IdentityPass())
+    compiler.run(m)
     assert call_log == ["first"]
 
 
@@ -270,12 +265,12 @@ def test_compiler_run_verification_catches_closed_block_violation():
 
         allow_unregistered_ops = True
 
-        def run(self, module: Module, compiler: Compiler) -> Module:
-            for func in module.functions:
+        def run(self, value: dgen.Value, compiler: Compiler) -> dgen.Value:
+            if isinstance(value, FunctionOp):
                 # Replace result with a foreign BlockArgument — a clear
                 # closed-block violation since it is not in block.args.
-                func.body.result = BlockArgument(type=Nil())
-            return module
+                value.body.result = BlockArgument(type=Nil())
+            return value
 
     m = parse_module(ir_text)
     compiler_inst: Compiler = Compiler(passes=[CorruptPass()], exit=IdentityPass())
@@ -316,10 +311,10 @@ def test_constant_fold_resolves_stage0_boundary():
     class LowerToLLVMPass(Pass):
         allow_unregistered_ops = True
 
-        def run(self, m: Module, compiler: Compiler) -> Module:
-            m = ControlFlowToGoto().run(m, compiler)
-            m = NDBufferToMemory().run(m, compiler)
-            return MemoryToLLVM().run(m, compiler)
+        def run(self, value: dgen.Value, compiler: Compiler) -> dgen.Value:
+            value = ControlFlowToGoto().run(value, compiler)
+            value = NDBufferToMemory().run(value, compiler)
+            return MemoryToLLVM().run(value, compiler)
 
     compiler: Compiler[Executable] = Compiler(
         passes=[ConstantFold(), LowerToLLVMPass()],
@@ -353,9 +348,9 @@ def test_pass_run_receives_continuation_compiler():
     class SpyPass(Pass):
         allow_unregistered_ops = True
 
-        def run(self, module: Module, compiler: Compiler) -> Module:
+        def run(self, value: dgen.Value, compiler: Compiler) -> dgen.Value:
             seen_pass_count.append(len(compiler.passes))
-            return module
+            return value
 
     ir_text = strip_prefix("""
         | import function

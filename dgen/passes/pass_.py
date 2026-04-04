@@ -1,4 +1,4 @@
-"""Pass base class and Rewriter for the pass infrastructure."""
+"""Pass base class for the pass infrastructure."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import dgen
+from dgen.graph import all_blocks
 from dgen.module import Module
 from dgen.verify import (
     verify_all_ready,
@@ -25,18 +26,18 @@ if TYPE_CHECKING:
 _HandlerFn = Callable[..., dgen.Value | None]
 
 
-def lowering_for(op_type: type[dgen.Op]) -> Callable[[_HandlerFn], _HandlerFn]:
-    """Decorator to register a method as a handler for an op type.
+def lowering_for(value_type: type[dgen.Value]) -> Callable[[_HandlerFn], _HandlerFn]:
+    """Decorator to register a method as a handler for a value type.
 
     Handlers return ``Value | None``:
-    - ``Value``: the framework calls ``replace_uses(op, result)``
+    - ``Value``: the framework calls ``block.replace_uses_of(old, result)``
     - ``None``: no match, try the next handler
     """
 
     def decorator(fn: _HandlerFn) -> _HandlerFn:
         if not hasattr(fn, "_lowering_for_ops"):
             fn._lowering_for_ops = []  # type: ignore[attr-defined]
-        fn._lowering_for_ops.append(op_type)  # type: ignore[attr-defined]
+        fn._lowering_for_ops.append(value_type)  # type: ignore[attr-defined]
         return fn
 
     return decorator
@@ -53,56 +54,18 @@ class _PassMeta(type):
     ) -> _PassMeta:
         cls = super().__new__(mcs, name, bases, namespace)
         # Collect handlers from all bases + this class
-        handlers: dict[type[dgen.Op], list[_HandlerFn]] = defaultdict(list)
+        handlers: dict[type[dgen.Value], list[_HandlerFn]] = defaultdict(list)
         for base in bases:
             if hasattr(base, "_handlers"):
-                for op_type, fns in base._handlers.items():
-                    handlers[op_type].extend(fns)
+                for value_type, fns in base._handlers.items():
+                    handlers[value_type].extend(fns)
         # Add handlers from this class
         for attr_name, attr_value in namespace.items():
             if callable(attr_value) and hasattr(attr_value, "_lowering_for_ops"):
-                for op_type in attr_value._lowering_for_ops:
-                    handlers[op_type].append(attr_value)
+                for value_type in attr_value._lowering_for_ops:
+                    handlers[value_type].append(attr_value)
         cls._handlers = dict(handlers)  # type: ignore[attr-defined]
         return cls  # type: ignore[return-value]
-
-
-# ---------------------------------------------------------------------------
-# Rewriter
-# ---------------------------------------------------------------------------
-
-
-class Rewriter:
-    """Manages in-place IR mutations during a pass."""
-
-    def __init__(self, block: dgen.Block) -> None:
-        self._block = block
-
-    def replace_uses(self, old: dgen.Value, new: dgen.Value) -> None:
-        """Eagerly replace all references to old with new, recursively."""
-        self._replace_in_block(self._block, old, new)
-
-    def _replace_in_block(
-        self, block: dgen.Block, old: dgen.Value, new: dgen.Value
-    ) -> None:
-        block.captures = [new if v is old else v for v in block.captures]
-        for arg in block.args:
-            if arg.type is old:
-                arg.type = new
-        for param in block.parameters:
-            if param.type is old:
-                param.type = new
-        for op in block.ops:
-            op.replace_operand(old, new)
-            if op.type is old:
-                op.type = new
-            for name, param in op.parameters:
-                if param is old:
-                    setattr(op, name, new)
-            for _, child_block in op.blocks:
-                self._replace_in_block(child_block, old, new)
-        if block.result is old:
-            block.result = new
 
 
 # ---------------------------------------------------------------------------
@@ -114,38 +77,34 @@ class Pass(metaclass=_PassMeta):
     """Base class for IR passes.
 
     Subclasses register ``@lowering_for`` handlers that return
-    ``Value | None``. The framework calls ``replace_uses`` automatically
-    when a handler returns a value.
+    ``Value | None``. The framework calls ``block.replace_uses_of``
+    automatically when a handler returns a value.
     """
 
-    _handlers: dict[type[dgen.Op], list[_HandlerFn]]
+    _handlers: dict[type[dgen.Value], list[_HandlerFn]]
 
     allow_unregistered_ops: bool = True
 
-    def run(self, module: Module, compiler: Compiler[object]) -> Module:
-        """Run this pass on all functions in the module."""
-        for func in module.functions:
-            self._run_block(func.body)
-        return module
+    def _dispatch_handlers(self, v: dgen.Value) -> dgen.Value | None:
+        """Try handlers for v, return replacement or None."""
+        for handler in self._handlers.get(type(v), []):
+            result = handler(self, v)
+            if result is not None:
+                return result
+        if not self.allow_unregistered_ops and isinstance(v, dgen.Op):
+            raise TypeError(
+                f"No handler for {type(v).__name__} in {type(self).__name__}"
+            )
+        return None
 
-    def _run_block(self, block: dgen.Block) -> None:
-        rewriter = Rewriter(block)
-        for op in list(block.ops):  # snapshot — graph may change
-            handlers = self._handlers.get(type(op), [])
-            result: dgen.Value | None = None
-            for handler in handlers:
-                result = handler(self, op)
-                if result is not None:
-                    rewriter.replace_uses(op, result)
-                    break
-            if result is None and not self.allow_unregistered_ops:
-                raise TypeError(
-                    f"No handler for {type(op).__name__} in {type(self).__name__}"
-                )
-            if result is None:
-                # Recurse into nested blocks for unhandled ops
-                for _, child_block in op.blocks:
-                    self._run_block(child_block)
+    def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
+        """Run this pass on a value and all its nested blocks."""
+        root_block = dgen.Block(result=value)
+        for block in [root_block, *list(all_blocks(value))]:
+            for v in list(block.values):
+                if (result := self._dispatch_handlers(v)) is not None:
+                    block.replace_uses_of(v, result)
+        return root_block.result
 
     def verify_preconditions(self, module: Module) -> None:
         """Check IR invariants that must hold before this pass runs."""

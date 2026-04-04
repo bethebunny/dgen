@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import pytest
 
+import dgen
 from dgen import asm
 from dgen.type import format_value
 from dgen.asm.parser import ASMParser, parse_module, value_expression
@@ -17,20 +18,19 @@ from dgen.dialects.index import Index
 from dgen.dialects.function import FunctionOp
 from dgen.layout import TypeValue
 from dgen.module import ConstantOp, Module
-from dgen.passes.pass_ import Pass
+from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Memory, TypeType, type_constant
 from dgen.testing import strip_prefix
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 
-_compiler = Compiler([], IdentityPass())
-
 
 def lower_to_llvm(m: Module) -> Module:
-    m = ControlFlowToGoto().run(m, _compiler)
-    m = NDBufferToMemory().run(m, _compiler)
-    return MemoryToLLVM().run(m, _compiler)
+    return Compiler(
+        [ControlFlowToGoto(), NDBufferToMemory(), MemoryToLLVM()],
+        IdentityPass(),
+    ).run(m)
 
 
 def test_parse_dict_literal():
@@ -461,10 +461,12 @@ def test_staging_resolves_block_arg_type():
     class CountingLowerToLLVM(Pass):
         allow_unregistered_ops = True
 
-        def run(self, m: Module, compiler: Compiler) -> Module:
+        def run(self, value: dgen.Value, compiler: Compiler) -> dgen.Value:
             nonlocal lower_calls
             lower_calls += 1
-            return lower_to_llvm(m)
+            value = ControlFlowToGoto().run(value, compiler)
+            value = NDBufferToMemory().run(value, compiler)
+            return MemoryToLLVM().run(value, compiler)
 
     ir = strip_prefix("""
         | import algebra
@@ -565,8 +567,10 @@ def test_staging_with_ssa_result_type():
     class LowerToLLVMPass(Pass):
         allow_unregistered_ops = True
 
-        def run(self, m: Module, compiler: Compiler) -> Module:
-            return lower_to_llvm(m)
+        def run(self, value: dgen.Value, compiler: Compiler) -> dgen.Value:
+            value = ControlFlowToGoto().run(value, compiler)
+            value = NDBufferToMemory().run(value, compiler)
+            return MemoryToLLVM().run(value, compiler)
 
     compiler: Compiler[Executable] = Compiler(
         passes=[LowerToLLVMPass()], exit=LLVMCodegen()
@@ -587,24 +591,9 @@ def test_staging_resolves_type_value():
     class LowerAlgebraAdd(Pass):
         allow_unregistered_ops = True
 
-        def run(self, m: Module, compiler: Compiler) -> Module:
-            """Lower algebra.add to llvm.add."""
-            m = deepcopy(m)
-            for func in m.functions:
-                ops = list(func.body.ops)
-                for i, op in enumerate(ops):
-                    if isinstance(op, algebra.AddOp):
-                        new_op = llvm.AddOp(
-                            name=op.name, lhs=op.left, rhs=op.right, type=op.type
-                        )
-                        ops[i] = new_op
-                        # Patch references
-                        for other in ops:
-                            for field_name, _ in other.__operands__:
-                                val = getattr(other, field_name)
-                                if val is op:
-                                    setattr(other, field_name, new_op)
-            return m
+        @lowering_for(algebra.AddOp)
+        def lower_add(self, op: algebra.AddOp) -> dgen.Value | None:
+            return llvm.AddOp(name=op.name, lhs=op.left, rhs=op.right, type=op.type)
 
     ir = strip_prefix("""
         | import algebra
