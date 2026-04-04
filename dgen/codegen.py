@@ -68,9 +68,9 @@ def llvm_type(t: dgen.Value[TypeType]) -> str:
         case index.Index():
             return "i64"
         case number.SignedInteger(bits):
-            return f"i{bits}"
+            return f"i{bits.__constant__.to_json()}"
         case number.UnsignedInteger(bits):
-            return f"u{bits}"
+            return f"i{bits.__constant__.to_json()}"
         case number.Boolean():
             return "i1"
         case number.Float64():
@@ -235,7 +235,7 @@ class CodegenSlotTracker:
 class Predecessor:
     """One incoming edge to a label/region block."""
 
-    source: dgen.Value  # the enclosing RegionOp/LabelOp (or function body)
+    source_name: str  # LLVM basic block name where the branch originates
     args: list[dgen.Value]
 
 
@@ -281,7 +281,7 @@ def register_names(func: function.FunctionOp, ctx: EmitContext) -> None:
         ctx.tracker.track_name(arg)
     ctx.block_name[func] = "entry"
 
-    def _walk(block: dgen.Block, owner: dgen.Value) -> None:
+    def _walk(block: dgen.Block) -> None:
         for op in block.ops:
             ctx.tracker.track_name(op)
             if isinstance(op, (goto.RegionOp, goto.LabelOp)):
@@ -292,7 +292,6 @@ def register_names(func: function.FunctionOp, ctx: EmitContext) -> None:
                     ctx.param_to_owner[param] = op
                 if isinstance(op, goto.LabelOp):
                     ctx.block_name[op] = op.name
-                    ctx.block_name[owner] = f"{op.name}_exit"
                 elif isinstance(op, goto.RegionOp):
                     has_initial = bool(unpack(op.initial_arguments))
                     has_merge = bool(op.body.args) and not has_initial
@@ -300,35 +299,29 @@ def register_names(func: function.FunctionOp, ctx: EmitContext) -> None:
                         ctx.block_name[op] = f"{op.name}_entry"
                     else:
                         ctx.block_name[op] = op.name
-                    # After a region with exit parameters, the enclosing
-                    # block continues in the exit block.
-                    for param in op.body.parameters:
-                        if param.name and (
-                            param.name.startswith("exit")
-                            or param.name.startswith("if_exit")
-                        ):
-                            ctx.block_name[owner] = param.name
-                            break
-                _walk(op.body, op)
+                _walk(op.body)
 
-    _walk(func.body, func)
+    _walk(func.body)
 
 
 def build_predecessors(func: function.FunctionOp, ctx: EmitContext) -> None:
     """Record branch predecessors for each label/region in the function.
 
-    For each BranchOp/ConditionalBranchOp, records the enclosing label/region
-    and the argument values carried to the target. Also records
+    For each BranchOp/ConditionalBranchOp, records the source block name and
+    the argument values carried to the target. Also records
     initial_arguments as a fall-through entry predecessor for regions with
     block args.
+
+    Tracks the current LLVM basic block name as it walks, updating it when
+    labels create skip-exit blocks and regions create exit blocks.
     """
 
-    def _walk(block: dgen.Block, enclosing: dgen.Value) -> None:
+    def _walk(block: dgen.Block, current_block: str) -> None:
         for op in block.ops:
             if isinstance(op, goto.BranchOp):
                 target = _resolve_target(op.target, ctx)
                 ctx.predecessors.setdefault(target, []).append(
-                    Predecessor(source=enclosing, args=unpack(op.arguments))
+                    Predecessor(source_name=current_block, args=unpack(op.arguments))
                 )
             elif isinstance(op, goto.ConditionalBranchOp):
                 for target, args in [
@@ -337,17 +330,31 @@ def build_predecessors(func: function.FunctionOp, ctx: EmitContext) -> None:
                 ]:
                     target = _resolve_target(target, ctx)
                     ctx.predecessors.setdefault(target, []).append(
-                        Predecessor(source=enclosing, args=unpack(args))
+                        Predecessor(source_name=current_block, args=unpack(args))
                     )
             if isinstance(op, (goto.RegionOp, goto.LabelOp)):
+                label_name = ctx.block_name[op]
                 init_args = unpack(op.initial_arguments)
                 if op.body.args and init_args:
                     ctx.predecessors.setdefault(op, []).append(
-                        Predecessor(source=enclosing, args=init_args)
+                        Predecessor(source_name=current_block, args=init_args)
                     )
-                _walk(op.body, op)
+                _walk(op.body, label_name)
+                # After a LabelOp, remaining ops are in the skip-exit block.
+                if isinstance(op, goto.LabelOp):
+                    current_block = f"{label_name}_exit"
+                # After a RegionOp with an exit parameter, remaining ops
+                # are in the exit block.
+                elif isinstance(op, goto.RegionOp):
+                    for param in op.body.parameters:
+                        if param.name and (
+                            param.name.startswith("exit")
+                            or param.name.startswith("if_exit")
+                        ):
+                            current_block = param.name
+                            break
 
-    _walk(func.body, func)
+    _walk(func.body, "entry")
 
 
 _emit_ctx: contextvars.ContextVar[EmitContext] = contextvars.ContextVar("_emit_ctx")
@@ -430,9 +437,9 @@ def emit(value: dgen.Value) -> Iterator[str]:
     return
 
 
-def _pred_block_name(pred: Predecessor, ctx: EmitContext) -> str:
-    """Resolve a predecessor's source op to its LLVM basic block name."""
-    return ctx.block_name.get(pred.source, "entry")
+def _pred_block_name(pred: Predecessor) -> str:
+    """Return the LLVM basic block name where this predecessor branch lives."""
+    return pred.source_name
 
 
 def _emit_phi_nodes(
@@ -449,7 +456,7 @@ def _emit_phi_nodes(
             continue
         name = ctx.tracker.track_name(arg)
         phi_parts = [
-            f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred, ctx)} ]"
+            f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred)} ]"
             for pred in preds
             if arg_idx < len(pred.args)
         ]
@@ -515,7 +522,7 @@ def _emit_exit_phi_nodes(
         phi_name = f"{param.name}_phi{arg_idx}"
         ty = llvm_type(preds[0].args[arg_idx].type)
         phi_parts = [
-            f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred, ctx)} ]"
+            f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred)} ]"
             for pred in preds
         ]
         if phi_parts:
@@ -626,23 +633,32 @@ def typed_references(*vs: dgen.Value) -> str:
 # LLVM binary ops
 # ---------------------------------------------------------------------------
 
-_BINOP_EMITTERS: dict[type[dgen.Op], str] = {
+_FLOAT_BINOPS: dict[type[dgen.Op], str] = {
     llvm.FaddOp: "fadd double",
     llvm.FsubOp: "fsub double",
     llvm.FmulOp: "fmul double",
     llvm.FdivOp: "fdiv double",
-    llvm.AddOp: "add i64",
-    llvm.SubOp: "sub i64",
-    llvm.MulOp: "mul i64",
-    llvm.SdivOp: "sdiv i64",
-    llvm.AndOp: "and i64",
-    llvm.OrOp: "or i64",
-    llvm.XorOp: "xor i64",
 }
+
+_INT_BINOPS: dict[type[dgen.Op], str] = {
+    llvm.AddOp: "add",
+    llvm.SubOp: "sub",
+    llvm.MulOp: "mul",
+    llvm.SdivOp: "sdiv",
+    llvm.AndOp: "and",
+    llvm.OrOp: "or",
+    llvm.XorOp: "xor",
+}
+
+_BINOP_EMITTERS: dict[type[dgen.Op], str] = {**_FLOAT_BINOPS, **_INT_BINOPS}
 
 
 def _emit_binop(op: dgen.Op) -> Iterator[str]:
-    yield f"  {_BINOP_EMITTERS[type(op)]} {vr(op.lhs)}, {vr(op.rhs)}"
+    if type(op) in _FLOAT_BINOPS:
+        yield f"  {_FLOAT_BINOPS[type(op)]} {vr(op.lhs)}, {vr(op.rhs)}"
+    else:
+        ty = llvm_type(op.type)
+        yield f"  {_INT_BINOPS[type(op)]} {ty} {vr(op.lhs)}, {vr(op.rhs)}"
 
 
 for _op_type in _BINOP_EMITTERS:
@@ -661,7 +677,11 @@ def emit_fneg(op: llvm.FnegOp) -> Iterator[str]:
 
 @emitter_for(llvm.ZextOp)
 def emit_zext(op: llvm.ZextOp) -> Iterator[str]:
-    yield f"  zext i1 {vr(op.input)} to i64"
+    ty = llvm_type(op.type)
+    # ZextOp with unresolved/void type defaults to i64
+    if ty == "void":
+        ty = "i64"
+    yield f"  zext i1 {vr(op.input)} to {ty}"
 
 
 # ---------------------------------------------------------------------------
@@ -672,7 +692,8 @@ def emit_zext(op: llvm.ZextOp) -> Iterator[str]:
 @emitter_for(llvm.IcmpOp)
 def emit_icmp(op: llvm.IcmpOp) -> Iterator[str]:
     pred = string_value(op.pred)
-    yield f"  icmp {pred} i64 {vr(op.lhs)}, {vr(op.rhs)}"
+    ty = llvm_type(op.lhs.type)
+    yield f"  icmp {pred} {ty} {vr(op.lhs)}, {vr(op.rhs)}"
 
 
 @emitter_for(llvm.FcmpOp)

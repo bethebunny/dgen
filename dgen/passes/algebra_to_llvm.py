@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import algebra, llvm
-from dgen.dialects.builtin import String
+from dgen.dialects.builtin import Nil, String
 from dgen.dialects.number import Float64
 from dgen.passes.pass_ import Pass, lowering_for
 
@@ -35,7 +35,7 @@ class AlgebraToLLVM(Pass):
     def lower_add(self, op: algebra.AddOp) -> dgen.Value:
         if _is_float(op):
             return llvm.FaddOp(lhs=op.left, rhs=op.right)
-        return llvm.AddOp(lhs=op.left, rhs=op.right)
+        return llvm.AddOp(lhs=op.left, rhs=op.right, type=op.type)
 
     @lowering_for(algebra.NegateOp)
     def lower_negate(self, op: algebra.NegateOp) -> dgen.Value:
@@ -43,19 +43,19 @@ class AlgebraToLLVM(Pass):
             return llvm.FnegOp(input=op.input)
         # Integer negate: 0 - x
         zero = dgen.module.ConstantOp(value=0, type=op.type)
-        return llvm.SubOp(lhs=zero, rhs=op.input)
+        return llvm.SubOp(lhs=zero, rhs=op.input, type=op.type)
 
     @lowering_for(algebra.SubtractOp)
     def lower_subtract(self, op: algebra.SubtractOp) -> dgen.Value:
         if _is_float(op):
             return llvm.FsubOp(lhs=op.left, rhs=op.right)
-        return llvm.SubOp(lhs=op.left, rhs=op.right)
+        return llvm.SubOp(lhs=op.left, rhs=op.right, type=op.type)
 
     @lowering_for(algebra.MultiplyOp)
     def lower_multiply(self, op: algebra.MultiplyOp) -> dgen.Value:
         if _is_float(op):
             return llvm.FmulOp(lhs=op.left, rhs=op.right)
-        return llvm.MulOp(lhs=op.left, rhs=op.right)
+        return llvm.MulOp(lhs=op.left, rhs=op.right, type=op.type)
 
     @lowering_for(algebra.ReciprocalOp)
     def lower_reciprocal(self, op: algebra.ReciprocalOp) -> dgen.Value:
@@ -66,29 +66,29 @@ class AlgebraToLLVM(Pass):
     def lower_divide(self, op: algebra.DivideOp) -> dgen.Value:
         if _is_float(op):
             return llvm.FdivOp(lhs=op.left, rhs=op.right)
-        return llvm.SdivOp(lhs=op.left, rhs=op.right)
+        return llvm.SdivOp(lhs=op.left, rhs=op.right, type=op.type)
 
     # --- Lattice / bitwise ---
 
     @lowering_for(algebra.MeetOp)
     def lower_meet(self, op: algebra.MeetOp) -> dgen.Value:
-        return llvm.AndOp(lhs=op.left, rhs=op.right)
+        return llvm.AndOp(lhs=op.left, rhs=op.right, type=op.type)
 
     @lowering_for(algebra.JoinOp)
     def lower_join(self, op: algebra.JoinOp) -> dgen.Value:
-        return llvm.OrOp(lhs=op.left, rhs=op.right)
+        return llvm.OrOp(lhs=op.left, rhs=op.right, type=op.type)
 
     @lowering_for(algebra.ComplementOp)
     def lower_complement(self, op: algebra.ComplementOp) -> dgen.Value:
         # NOT x = XOR x, -1 (all ones)
         all_ones = dgen.module.ConstantOp(value=-1, type=op.type)
-        return llvm.XorOp(lhs=op.input, rhs=all_ones)
+        return llvm.XorOp(lhs=op.input, rhs=all_ones, type=op.type)
 
     @lowering_for(algebra.SymmetricDifferenceOp)
     def lower_symmetric_difference(
         self, op: algebra.SymmetricDifferenceOp
     ) -> dgen.Value:
-        return llvm.XorOp(lhs=op.left, rhs=op.right)
+        return llvm.XorOp(lhs=op.left, rhs=op.right, type=op.type)
 
     # --- Comparison ---
 
@@ -120,9 +120,11 @@ class AlgebraToLLVM(Pass):
 
     @lowering_for(algebra.CastOp)
     def lower_cast(self, op: algebra.CastOp) -> dgen.Value:
-        # i1 → i64: comparison widening
+        # i1 → iN: comparison widening
         if isinstance(op.input, (llvm.IcmpOp, llvm.FcmpOp)):
-            return llvm.ZextOp(input=op.input)
+            if isinstance(op.type, Nil):
+                return llvm.ZextOp(input=op.input)
+            return llvm.ZextOp(input=op.input, type=op.type)
         # int → ptr: null pointer (constant 0 cast to pointer type)
         from dgen.dialects.memory import Reference
 

@@ -9,6 +9,9 @@ extend-select = ["ANN"]
 markers = ["slow: marks tests as slow (deselected by default, run with --slow)"]
 addopts = "-m 'not slow'"
 
+[tool.setuptools.packages.find]
+include = ["dgen*", "toy*", "dcc*", "actor*", "editors*"]
+
 [project]
 name = "dgen"
 version = "0.1.0"
