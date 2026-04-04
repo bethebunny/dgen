@@ -72,6 +72,7 @@ class ASMParser:
         self.pos: int = 0
         self.name_table: dict[str, Value] = {}
         self.scope: Scope = Scope.from_dialect(Dialect.get("builtin"))
+        self.block_indent: int = 0  # indent level of the current block's ops
 
     @property
     def done(self) -> bool:
@@ -398,8 +399,10 @@ def _read_block_body(parser: ASMParser) -> Block:
             captures.append(parser.resolve(ssa[1:]))  # strip leading %
     parser.read(":")
     block_indent = newline(parser)
-    if block_indent == 0:
+    if block_indent <= parser.block_indent:
         raise ParseError("Empty block body")
+    saved_indent = parser.block_indent
+    parser.block_indent = block_indent
     last_op: Op | None = None
     while parser.pos < len(parser.text):
         indent = newline(parser)
@@ -407,5 +410,6 @@ def _read_block_body(parser: ASMParser) -> Block:
             break
         parser.pos += indent
         last_op = op_statement(parser)
+    parser.block_indent = saved_indent
     assert last_op is not None
     return Block(result=last_op, args=args, parameters=block_params, captures=captures)

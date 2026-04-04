@@ -161,15 +161,15 @@ def test_roundtrip_loop_pattern():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %alloc : Nil = llvm.alloca<3>()
         |     %init : index.Index = 0
-        |     %loop_header : goto.Label = goto.label([]) body(%i: index.Index, %p: llvm.Ptr):
+        |     %loop_header : goto.Label = goto.label([]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index, %p: llvm.Ptr):
         |         %hi : index.Index = 3
         |         %cmp : llvm.Int<1> = llvm.icmp<"slt">(%i, %hi)
-        |         %loop_body : goto.Label = goto.label([]) body(%j: index.Index, %q: llvm.Ptr):
+        |         %loop_body : goto.Label = goto.label([]) body(%j: index.Index, %q: llvm.Ptr) captures(%self):
         |             %one : index.Index = 1
         |             %next : llvm.Int<64> = llvm.add(%j, %one)
-        |             %_ : Nil = goto.branch<%loop_header>([%next, %q])
+        |             %_ : Nil = goto.branch<%self>([%next, %q])
         |         %loop_exit : goto.Label = goto.label([]) body():
-        |                 %_0 : Nil = ()
+        |             %_0 : Nil = ()
         |         %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [%i, %p], [])
         |     %_ : Nil = goto.branch<%loop_header>([%init, %alloc])
     """)
