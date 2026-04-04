@@ -103,7 +103,7 @@ def test_roundtrip_call():
         |
         | %helper : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%x: toy.InferredShapeTensor<number.Float64>):
         |
-        | %f : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>):
+        | %f : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>) captures(%helper):
         |     %0 : toy.InferredShapeTensor<number.Float64> = function.call<%helper>([%a])
     """)
     module = parse_module(ir)
@@ -228,7 +228,7 @@ def test_roundtrip_full_program():
         |     %1 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%b)
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.mul(%0, %1)
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], ()> = function.function<Nil>() body() captures(%multiply_transpose):
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)
         |     %2 : toy.Tensor<ndbuffer.Shape<1>([6]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
