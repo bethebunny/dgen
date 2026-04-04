@@ -44,7 +44,7 @@ class Layout:
         raise NotImplementedError
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         raise NotImplementedError
 
@@ -59,7 +59,7 @@ class Void(Layout):
         return None
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         pass
 
@@ -72,7 +72,7 @@ class Byte(Layout):
         return self.struct.unpack_from(buf, offset)[0]
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         assert isinstance(value, int)
         self.struct.pack_into(buf, offset, value)
@@ -88,7 +88,7 @@ class Int(Layout):
         return self.struct.unpack_from(buf, offset)[0]
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         assert isinstance(value, int)
         self.struct.pack_into(buf, offset, value)
@@ -104,7 +104,7 @@ class Float64(Layout):
         return self.struct.unpack_from(buf, offset)[0]
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         assert isinstance(value, (int, float))
         self.struct.pack_into(buf, offset, float(value))
@@ -125,7 +125,7 @@ class Array(Layout):
         ]
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         assert isinstance(value, list)
         es = self.element.struct.size
@@ -149,7 +149,7 @@ class Pointer(Layout):
         return pointee.to_json(data, 0)
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         pointee = self.pointee
         origin = bytearray(pointee.struct.size)
@@ -175,7 +175,7 @@ class Span(Layout):
         return [pointee.to_json(data, i * ps) for i in range(length)]
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         assert isinstance(value, list)
         pointee = self.pointee
@@ -222,7 +222,7 @@ class Record(Layout):
         return result
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         if isinstance(value, list):
             for (_, lay), field_offset, v in zip(self.fields, self._offsets, value):
@@ -278,7 +278,7 @@ class TypeValue(Layout):
         return Record(fields)
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         assert isinstance(value, dict)
         tag = value["tag"]
@@ -313,7 +313,7 @@ class String(Span):
         return bytes(bytearray(byte_list)).decode("utf-8")
 
     def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list[bytearray]
+        self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         if isinstance(value, str):
             value = list(value.encode("utf-8"))
