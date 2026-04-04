@@ -52,6 +52,7 @@
 - Have values track their uses for forward iteration and fast `replace_uses`
 
 ## Codegen
+- `SignedInteger`/`UnsignedInteger` layout vs bit-width mismatch: the `.dgen` definition uses `data: Index` (always 64-bit) regardless of `bits`. `llvm_type` currently works around this by using `max(declared_bits, layout_bits)`, but the proper fix is parameterizing the layout on `bits` so a 32-bit integer actually has a 32-bit layout.
 - `Executable.run()` lifetime bug: when raw Python values are passed as args, `run()` creates temporary `Memory` objects that can be GC'd before the result is read. For non-register-passable types (e.g. `TypeType`), the JIT returns a pointer into the input Memory's buffer — if that Memory is collected, the result reads garbage. Fix: `run()` should attach input memories to the result's `host_refs`. Workaround in `staging._jit_evaluate` creates memories outside the call.
 - Refactor `_emit_func` — 500-line closure with seven dicts of mutable state. Extract into a class or separate functions with explicit state passing.
 - Replace isinstance dispatch chain in `_emit_op` with a dispatch table keyed on `(dialect_name, asm_name)`.
