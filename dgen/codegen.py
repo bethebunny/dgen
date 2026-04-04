@@ -5,6 +5,7 @@ from __future__ import annotations
 import _ctypes
 import contextvars
 import ctypes
+import functools
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from itertools import chain
@@ -769,7 +770,6 @@ class Executable:
     result_type: Type
     main_name: str
     host_refs: list = field(default_factory=list)
-    _func_constant: ConstantOp | None = None
 
     @property
     def ctype(self) -> type[_ctypes.CFuncPtr]:
@@ -779,18 +779,14 @@ class Executable:
             *(_ctype(t.__layout__) for t in self.input_types),
         )
 
-    @property
+    @functools.cached_property
     def func_constant(self) -> ConstantOp:
-        """Lazily JIT-compile and return a ConstantOp[Function] for this executable."""
-        if self._func_constant is None:
-            func_type = function.Function(
-                arguments=pack(self.input_types),
-                result_type=self.result_type,
-            )
-            self._func_constant = jit_function(
-                func_type, self.main_name, self.ir, self.host_refs
-            )
-        return self._func_constant
+        """JIT-compile and return a ConstantOp[Function] for this executable."""
+        func_type = function.Function(
+            arguments=pack(self.input_types),
+            result_type=self.result_type,
+        )
+        return jit_function(func_type, self.main_name, self.ir, self.host_refs)
 
     def run(self, *args: Memory | object) -> Memory:
         """JIT and execute, returning the result as a Memory object.
@@ -847,7 +843,7 @@ def jit_function(
     """JIT-compile `ir` and return a ConstantOp[Function] holding the function pointer.
 
     `symbol` is the entry function's name in the IR. The returned constant's
-    Memory buffer contains an 8-byte function pointer; its host_refs keep the
+    Memory buffer contains an 8-byte function pointer; its origins keep the
     JIT engine (and any other supplied refs) alive.
     """
     _ensure_initialized()
@@ -860,7 +856,7 @@ def jit_function(
     mem: Memory = Memory(func_type)
     # Pack the raw pointer into the 8-byte buffer (Pointer layout = "P").
     mem.layout.struct.pack_into(mem.buffer, 0, func_ptr)
-    mem.host_refs = [engine, *host_refs]
+    mem.origins = [engine, *host_refs]
     return ConstantOp(type=func_type, value=mem)
 
 
@@ -899,7 +895,7 @@ def call(func_constant: Value, *args: Memory | object) -> Memory:
     # Keep the JIT engine, input memories, and any callback closures alive
     # for as long as the result lives (non-register-passable results embed
     # pointers into those buffers).
-    result.host_refs = [*func_mem.host_refs, *memories]
+    result.origins = [*func_mem.origins, *memories]
     return result
 
 

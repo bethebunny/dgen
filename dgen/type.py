@@ -302,20 +302,20 @@ class Memory(Generic[T]):
     """Typed memory buffer — the ABI for a type.
 
     For pointer-based layouts (Span, Pointer), the buffer contains
-    raw pointers into backing data stored in `origins`. Origins are shared
-    on deepcopy (immutable constant data) so packed pointers stay valid.
+    raw pointers into backing data stored in `origins`. Origins also holds
+    any other object whose lifetime must extend through this Memory's
+    (e.g. a JIT engine for a Function pointer). Origins are shared on
+    deepcopy (immutable constant data) so packed pointers stay valid.
     """
 
     type: T
     buffer: bytearray
-    origins: list[bytearray]
-    host_refs: list
+    origins: list
 
     def __init__(self, type: T, buffer: bytearray | None = None) -> None:
         self.type = type
         self.buffer = bytearray(self.layout.byte_size) if buffer is None else buffer
         self.origins = []
-        self.host_refs = []
 
     @property
     def layout(self) -> Layout:
@@ -374,7 +374,6 @@ class Memory(Generic[T]):
         new.type = _deepcopy(self.type, memo)
         new.buffer = bytearray(self.buffer)
         new.origins = self.origins  # share, not copy
-        new.host_refs = self.host_refs  # share lifetime anchors
         return new
 
     def __eq__(self, other: object) -> bool:
