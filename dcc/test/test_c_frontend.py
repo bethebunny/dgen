@@ -694,6 +694,50 @@ class TestKnownFailures:
     def test_codegen_array_init_assertion(self) -> None:
         _codegen_verifies("int f(void) { int arr[4]; arr[0] = 1; return arr[0]; }")
 
+    @pytest.mark.xfail(
+        reason="codegen: 'integer constant must have integer type' (93 in sqlite3). "
+        "icmp ptr with the integer literal 0 instead of `null`.",
+        strict=True,
+    )
+    def test_codegen_pointer_null_compare(self) -> None:
+        _codegen_verifies("int f(int *p) { return p == 0; }")
+
+    @pytest.mark.xfail(
+        reason="codegen: value 'iN' used where 'ptr' expected (78 in sqlite3). "
+        "Integer returned from a ptr-returning function with no inttoptr cast.",
+        strict=True,
+    )
+    def test_codegen_int_returned_as_pointer(self) -> None:
+        _codegen_verifies("int *f(long x) { return x; }")
+
+    @pytest.mark.xfail(
+        reason="codegen: 'void type only allowed for function results' (17 in sqlite3). "
+        "Void-returning function used by name as an argument emits `void %g`.",
+        strict=True,
+    )
+    def test_codegen_void_function_as_argument(self) -> None:
+        _codegen_verifies(
+            "void g(void); void h(void (*cb)(void)); void f(void) { h(g); }"
+        )
+
+    @pytest.mark.xfail(
+        reason="codegen: ternary result as rvalue emits the block label instead of "
+        "the phi — '%ifN defined with type label but expected iN/ptr' "
+        "(~22 in sqlite3). Assigning a ternary through an lvalue triggers it.",
+        strict=True,
+    )
+    def test_codegen_ternary_rvalue_assignment(self) -> None:
+        _codegen_verifies("void f(int *p, int x) { *p = x ? 1 : 2; }")
+
+    @pytest.mark.xfail(
+        reason="codegen: bitwise op on pointer operands — 'instruction requires "
+        "integer operands' / 'ptr but expected iN' (~13 in sqlite3). "
+        "The (long) cast isn't lowered to ptrtoint.",
+        strict=True,
+    )
+    def test_codegen_bitwise_and_of_pointer_casts(self) -> None:
+        _codegen_verifies("long f(int *a, int *b) { return (long)a & (long)b; }")
+
 
 def _generate_sqlite_scale_c(n_functions: int, seed: int = 42) -> str:
     """Generate a C source string with realistic function complexity."""
@@ -862,8 +906,10 @@ class TestSqlite3:
         pipeline.run(root)
         verify_passes.reset(token)
 
+        import os
         import re
 
+        dump_for = os.environ.get("DUMP_IR_FOR")
         total = len(all_fns)
         emitted = 0
         parsed = 0
@@ -919,6 +965,15 @@ class TestSqlite3:
                 norm = re.sub(r"\b\d+\b", "N", norm)
                 norm = norm[:140]
                 parse_errors[norm] = parse_errors.get(norm, 0) + 1
+                if dump_for and dump_for in norm:
+                    print(f"\n=== DUMP_IR_FOR {dump_for!r} ===")
+                    print(f"function: {func.name}")
+                    print(f"normalized error: {norm}")
+                    print(f"raw error: {msg}")
+                    print("---- IR ----")
+                    print(ir)
+                    print("---- END ----")
+                    return
 
         report = (
             f"\nsqlite3 codegen progress:\n"
