@@ -21,7 +21,7 @@ from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64
-from dgen.module import ConstantOp, pack
+from dgen.module import ConstantOp, pack, string_value
 from dgen.dialects import function
 
 from dcc.dialects import c_int
@@ -187,6 +187,7 @@ class LoweringStats:
     expressions: int = 0
     skipped_functions: int = 0
     skip_reasons: dict[str, int] = field(default_factory=dict)
+    function_ops: list["function.FunctionOp"] = field(default_factory=list)
 
     def summary(self) -> str:
         return (
@@ -253,6 +254,8 @@ class Parser:
                         self.stats.skip_reasons.get(key, 0) + 1
                     )
 
+        self.stats.function_ops = functions
+        _resolve_callee_captures(functions)
         return functions[-1]
 
     def _return_type(self, node: c_ast.Node) -> dgen.Type:
@@ -830,6 +833,30 @@ class Parser:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def _resolve_callee_captures(functions: list[function.FunctionOp]) -> None:
+    """Add called-by-name functions as captures of the calling function's body.
+
+    C's c.CallOp carries the callee as a string name, so callers don't
+    naturally reference callee FunctionOps in their use-def graph. To
+    make the whole program reachable from a single entry, scan each
+    function's body for CallOps and add the matching FunctionOp to the
+    caller's body captures.
+    """
+    by_name: dict[str, function.FunctionOp] = {f.name: f for f in functions if f.name}
+    from dgen.graph import all_values
+
+    for func in functions:
+        seen: set[function.FunctionOp] = set()
+        captures = list(func.body.captures)
+        for v in all_values(func):
+            if isinstance(v, CallOp):
+                target = by_name.get(string_value(v.callee))
+                if target is not None and target is not func and target not in seen:
+                    seen.add(target)
+                    captures.append(target)
+        func.body.captures = captures
 
 
 def lower(ast: c_ast.FileAST) -> tuple[function.FunctionOp, LoweringStats]:
