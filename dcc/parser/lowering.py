@@ -760,20 +760,32 @@ class Parser:
         return op
 
     def _call(self, node: c_ast.FuncCall, scope: Scope) -> Iterator[dgen.Op]:
-        if not isinstance(node.name, c_ast.ID):
-            raise LoweringError("indirect function calls not yet supported")
-        callee = node.name.name
-        if self.file_scope.has(callee):
-            ret_type = self.file_scope.lookup(callee).type
-        else:
-            ret_type = c_int(32)
         args: list[dgen.Value] = []
         if node.args:
             for arg in node.args.exprs:
                 args.append((yield from self._expr(arg, scope)))
         p = pack(args) if args else pack([])
         yield p
-        op = CallOp(callee=String().constant(callee), arguments=p, type=ret_type)
+        if isinstance(node.name, c_ast.ID):
+            callee = node.name.name
+            if self.file_scope.has(callee):
+                ret_type = self.file_scope.lookup(callee).type
+            else:
+                ret_type = c_int(32)
+            op = CallOp(callee=String().constant(callee), arguments=p, type=ret_type)
+            yield op
+            return op
+        # Indirect call through a function-pointer expression.
+        fn_ptr = yield from self._expr(node.name, scope)
+        fn_ty = fn_ptr.type
+        # Unwrap one level of pointer/reference if present.
+        if isinstance(fn_ty, Reference) and isinstance(fn_ty.element_type, dgen.Type):
+            fn_ty = fn_ty.element_type
+        if isinstance(fn_ty, FunctionType) and isinstance(fn_ty.result_type, dgen.Type):
+            ret_type = fn_ty.result_type
+        else:
+            ret_type = c_int(32)
+        op = function.CallOp(callee=fn_ptr, arguments=p, type=ret_type)
         yield op
         return op
 

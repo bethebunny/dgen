@@ -579,6 +579,15 @@ def value_reference(v: dgen.Value) -> str:
             ctx = _ctx()
             ctx.host_buffers.append(mem)
             return f"inttoptr (i64 {mem.address} to ptr)"
+        ty = llvm_type(v.type)
+        if ty == "ptr":
+            raw = mem.unpack()[0]
+            return "null" if raw == 0 else f"inttoptr (i64 {raw} to ptr)"
+        if ty == "void":
+            # Void/Nil constant has no LLVM value. Callers that print a
+            # typed_reference for it will produce "void undef", which is
+            # invalid but also unreachable in well-formed IR.
+            return "undef"
         raw = mem.unpack()[0]
         return f"{format_float(raw) if isinstance(raw, float) else raw}"
     if isinstance(v, builtin.ChainOp):
@@ -711,12 +720,15 @@ def emit_load(op: memory.LoadOp) -> Iterator[str]:
 def emit_function_call(op: function.CallOp) -> Iterator[str]:
     args = ", ".join(typed_reference(v) for v in unpack(op.arguments))
     callee = op.callee
-    if isinstance(callee, builtin.ExternOp):
-        callee_name = string_value(callee.symbol)
-    else:
-        callee_name = callee.name
     ret = llvm_type(op.type)
-    yield f"  call {ret} @{callee_name}({args})"
+    if isinstance(callee, builtin.ExternOp):
+        callee_ref = f"@{string_value(callee.symbol)}"
+    elif isinstance(callee, function.FunctionOp):
+        callee_ref = f"@{callee.name}"
+    else:
+        # Function-pointer call — callee is an arbitrary SSA value.
+        callee_ref = value_reference(callee)
+    yield f"  call {ret} {callee_ref}({args})"
 
 
 @emitter_for(llvm.CallOp)
