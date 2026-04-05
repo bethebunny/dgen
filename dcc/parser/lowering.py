@@ -16,7 +16,7 @@ from pycparser import c_ast
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra
-from dgen.dialects.builtin import ExternOp, Nil, String
+from dgen.dialects.builtin import Array, ExternOp, Nil, String
 from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
@@ -708,7 +708,7 @@ class Parser:
     # --- Type helpers (minimal) ---
 
     def _pointee(self, ty: dgen.Type) -> dgen.Type:
-        if isinstance(ty, Reference):
+        if isinstance(ty, (Reference, Array)):
             elem = ty.element_type
             if isinstance(elem, dgen.Type):
                 return elem
