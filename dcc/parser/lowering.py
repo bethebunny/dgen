@@ -209,6 +209,7 @@ class Parser:
         self.types = TypeResolver()
         self.file_scope = Scope()
         self.stats = LoweringStats()
+        self._current_return_type: dgen.Type | None = None
 
     def parse(self, ast: c_ast.FileAST) -> function.FunctionOp:
         # First pass: register types and function declarations
@@ -285,7 +286,12 @@ class Parser:
                     scope.bind(param.name, arg)
                     args.append(arg)
 
-        ops = list(self._compound(node.body, scope)) if node.body else []
+        prev_ret = self._current_return_type
+        self._current_return_type = ret
+        try:
+            ops = list(self._compound(node.body, scope)) if node.body else []
+        finally:
+            self._current_return_type = prev_ret
         result = ops[-1] if ops else dgen.Value(type=Nil())
         is_void = isinstance(ret, Nil)
 
@@ -468,6 +474,18 @@ class Parser:
             yield ReturnOp(value=nil)
         else:
             val = yield from self._expr(node.expr, scope)
+            ret_ty = self._current_return_type
+            # Insert an implicit conversion when the returned value's type
+            # doesn't match the enclosing function's declared return type.
+            # Limited to ptr↔int for now; algebra_to_llvm turns the cast
+            # into inttoptr/ptrtoint.
+            if ret_ty is not None and val.type != ret_ty:
+                val_is_ptr = isinstance(val.type, Reference)
+                ret_is_ptr = isinstance(ret_ty, Reference)
+                if val_is_ptr != ret_is_ptr:
+                    cast = algebra.CastOp(input=val, type=ret_ty)
+                    yield cast
+                    val = cast
             yield ReturnOp(value=val)
 
     # --- Control flow ---
@@ -692,6 +710,21 @@ class Parser:
             )
             yield read
             return read
+        # File-scope function references used as values (e.g. passed as a
+        # function pointer argument) arrive here as bare dgen.Value stubs
+        # bound by `parse()` / `_function()`. Promote them to ExternOps so
+        # codegen emits `ptr @name` instead of `<retty> %name`.
+        if type(val) is dgen.Value and val.name is not None:
+            op = ExternOp(
+                name=val.name,
+                symbol=String().constant(val.name),
+                type=FunctionType(
+                    arguments=pack([]),
+                    result_type=val.type,
+                ),
+            )
+            yield op
+            return op
         return val
 
     def _binary(self, node: c_ast.BinaryOp, scope: Scope) -> Iterator[dgen.Op]:
@@ -701,6 +734,19 @@ class Parser:
         if cls is None:
             raise LoweringError(f"unsupported binary operator: {node.op}")
         ty = self._promote(left.type, right.type)
+        # Comparisons against the integer literal 0 through a pointer
+        # promote the 0 to the pointer type (C null-pointer-constant
+        # semantics). algebra_to_llvm lowers CastOp(const-0, Ref) to a
+        # typed-null ConstantOp, giving `icmp eq ptr %p, null`.
+        if node.op in _COMPARISONS and isinstance(ty, Reference):
+            if not isinstance(left.type, Reference):
+                cast = algebra.CastOp(input=left, type=ty)
+                yield cast
+                left = cast
+            if not isinstance(right.type, Reference):
+                cast = algebra.CastOp(input=right, type=ty)
+                yield cast
+                right = cast
         op = _binop(cls, left, right, ty)
         yield op
         # TODO: move to an implicit-cast pass. C comparisons return int,

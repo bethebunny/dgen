@@ -123,11 +123,14 @@ class AlgebraToLLVM(Pass):
         # i1 → iN: comparison widening
         if isinstance(op.input, (llvm.IcmpOp, llvm.FcmpOp)):
             return llvm.ZextOp(input=op.input, type=op.type)
-        # int → ptr: null pointer (constant 0 cast to pointer type)
+        from dgen.dialects.builtin import Array, Pointer
         from dgen.dialects.memory import Reference
 
-        if isinstance(op.type, Reference) and isinstance(
-            op.input, dgen.module.ConstantOp
-        ):
-            return dgen.module.ConstantOp(value=0, type=llvm.Ptr())
+        ptr_types: tuple[type, ...] = (Reference, llvm.Ptr, Pointer, Array)
+        dst_is_ptr = isinstance(op.type, ptr_types)
+        src_is_ptr = isinstance(op.input.type, ptr_types)
+        if dst_is_ptr and not src_is_ptr:
+            return llvm.InttoptrOp(input=op.input)
+        if src_is_ptr and not dst_is_ptr:
+            return llvm.PtrtointOp(input=op.input)
         return op.input
