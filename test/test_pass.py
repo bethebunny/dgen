@@ -7,6 +7,8 @@ from dgen.asm.parser import parse_module
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.dialects.builtin import Nil
 from dgen.dialects.function import FunctionOp
 from dgen.module import ConstantOp, Module
@@ -317,7 +319,12 @@ def test_constant_fold_resolves_stage0_boundary():
             return MemoryToLLVM().run(value, compiler)
 
     compiler: Compiler[Executable] = Compiler(
-        passes=[ConstantFold(), LowerToLLVMPass()],
+        passes=[
+            ConstantFold(),
+            LowerToLLVMPass(),
+            BuiltinToLLVM(),
+            AlgebraToLLVM(),
+        ],
         exit=LLVMCodegen(),
     )
     exe = compiler.compile(Module(ops=[inner_func]))

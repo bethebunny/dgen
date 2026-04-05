@@ -10,7 +10,8 @@ from dgen.type import format_value
 from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
-from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
+from dgen.codegen import Executable, LLVMCodegen
+from dgen.testing import llvm_compile as compile_module
 from dgen.compiler import Compiler, IdentityPass
 from dgen import layout
 from dgen.dialects import algebra, builtin, llvm
@@ -21,6 +22,8 @@ from dgen.module import ConstantOp, Module
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Memory, TypeType, type_constant
 from dgen.testing import strip_prefix
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 from dgen.passes.memory_to_llvm import MemoryToLLVM
@@ -484,7 +487,8 @@ def test_staging_resolves_block_arg_type():
 
     # Compile produces a callback-based thunk — lower is NOT called yet
     compiler: Compiler[Executable] = Compiler(
-        passes=[CountingLowerToLLVM()], exit=LLVMCodegen()
+        passes=[CountingLowerToLLVM(), BuiltinToLLVM(), AlgebraToLLVM()],
+        exit=LLVMCodegen(),
     )
     exe = compiler.compile(module)
     compile_time_calls = lower_calls
@@ -573,7 +577,7 @@ def test_staging_with_ssa_result_type():
             return MemoryToLLVM().run(value, compiler)
 
     compiler: Compiler[Executable] = Compiler(
-        passes=[LowerToLLVMPass()], exit=LLVMCodegen()
+        passes=[LowerToLLVMPass(), BuiltinToLLVM(), AlgebraToLLVM()], exit=LLVMCodegen()
     )
     exe = compiler.compile(Module(ops=[inner_func]))
     assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
