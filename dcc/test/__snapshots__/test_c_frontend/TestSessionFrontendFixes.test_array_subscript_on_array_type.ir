@@ -1,0 +1,10 @@
+import c
+import function
+import index
+import number
+
+%f : function.Function<[], number.SignedInteger<32>> = function.function<number.SignedInteger<32>>() body():
+    %arr : Array<number.SignedInteger<32>, 10> = extern<"arr">()
+    %0 : number.SignedInteger<32> = 3
+    %1 : number.SignedInteger<32> = c.subscript(%arr, %0)
+    %2 : Nil = c.return(%1)

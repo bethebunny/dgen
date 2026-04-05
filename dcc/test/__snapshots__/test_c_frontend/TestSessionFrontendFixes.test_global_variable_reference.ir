@@ -1,0 +1,8 @@
+import c
+import function
+import index
+import number
+
+%f : function.Function<[], number.SignedInteger<32>> = function.function<number.SignedInteger<32>>() body():
+    %g : number.SignedInteger<32> = extern<"g">()
+    %0 : Nil = c.return(%g)

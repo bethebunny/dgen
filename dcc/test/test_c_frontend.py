@@ -9,7 +9,9 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+from syrupy.assertion import SnapshotAssertion
 
+from dgen.module import Module
 from dgen.testing import llvm_compile
 from dgen.compiler import Compiler, IdentityPass
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
@@ -411,8 +413,287 @@ class TestLowering:
 
 
 # ---------------------------------------------------------------------------
-# Scale: generated C code
+# Session-fix regression tests: minimal repros for things that used to
+# fail at the C frontend / codegen boundary. Each test has:
+#   - a structural assertion that pinpoints what changed semantically;
+#   - an ir_snapshot that captures the full lowered IR for cosmetic review.
 # ---------------------------------------------------------------------------
+
+
+def _lower_c(source: str) -> Module:
+    ast = parse_c_string(source)
+    module, stats = lower(ast)
+    assert stats.skipped_functions == 0, (
+        f"lowering skipped functions: {stats.skip_reasons}"
+    )
+    return module
+
+
+def _lower_to_llvm(source: str) -> Module:
+    """Run the full frontend pipeline, returning the lowered Module."""
+    from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+    from dgen.compiler import verify_passes
+
+    ast = parse_c_string(source)
+    module, _ = lower(ast)
+    pipeline = Compiler(
+        [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM(), ControlFlowToGoto()],
+        IdentityPass(),
+    )
+    token = verify_passes.set(False)
+    try:
+        return pipeline.run(module)
+    finally:
+        verify_passes.reset(token)
+
+
+def _codegen_verifies(source: str) -> None:
+    """Compile source through the full pipeline; assert LLVM parses + verifies."""
+    from dgen.codegen import emit_llvm_ir
+    import llvmlite.binding as llvm_binding
+
+    llvm_binding.initialize_native_target()
+    llvm_binding.initialize_native_asmprinter()
+
+    module = _lower_to_llvm(source)
+    ir, _ = emit_llvm_ir(module)
+    mod = llvm_binding.parse_assembly(ir)
+    mod.verify()
+
+
+def _contains_op(module: Module, op_type: type) -> bool:
+    from dgen.graph import all_values
+
+    for top in module.ops:
+        for v in all_values(top):
+            if isinstance(v, op_type):
+                return True
+    return False
+
+
+def _count_ops(module: Module, op_type: type) -> int:
+    from dgen.graph import all_values
+
+    return sum(isinstance(v, op_type) for top in module.ops for v in all_values(top))
+
+
+class TestSessionFrontendFixes:
+    """Minimal repros for each frontend lowering fix in this session.
+
+    Every test asserts the specific IR structure that distinguishes a
+    correct lowering from the pre-fix behavior, then snapshots the full
+    Module. Regressions show up as a structural assertion failure; purely
+    cosmetic IR shifts only update the snapshot.
+    """
+
+    def test_global_variable_reference(self, ir_snapshot: SnapshotAssertion) -> None:
+        # Pre-fix: ID lookup failed with LoweringError("undefined: g")
+        # because globals were never registered in file_scope.
+        from dgen.dialects.builtin import ExternOp
+
+        m = _lower_c("int g; int f(void) { return g; }")
+        assert _contains_op(m, ExternOp), "global should become an ExternOp in the IR"
+        assert m == ir_snapshot
+
+    def test_array_subscript_on_array_type(
+        self, ir_snapshot: SnapshotAssertion
+    ) -> None:
+        # Pre-fix: _pointee on Array raised "cannot dereference non-pointer".
+        from dcc.dialects.c import SubscriptOp
+
+        m = _lower_c("int arr[10]; int f(void) { return arr[3]; }")
+        assert _contains_op(m, SubscriptOp), "arr[3] should produce SubscriptOp"
+        assert m == ir_snapshot
+
+    def test_star_array_decays_to_pointer(self, ir_snapshot: SnapshotAssertion) -> None:
+        from dcc.dialects.c import DereferenceOp
+
+        m = _lower_c("int arr[10]; int f(void) { return *arr; }")
+        assert _contains_op(m, DereferenceOp)
+        assert m == ir_snapshot
+
+    def test_lvalue_star_p(self, ir_snapshot: SnapshotAssertion) -> None:
+        # Pre-fix: _assign rejected UnaryOp lvalue.
+        from dcc.dialects.c import StoreIndirectOp
+
+        m = _lower_c("void f(int *p) { *p = 5; }")
+        assert _count_ops(m, StoreIndirectOp) == 1, (
+            "*p = 5 should emit exactly one StoreIndirectOp"
+        )
+        assert m == ir_snapshot
+
+    def test_lvalue_arrow_field(self, ir_snapshot: SnapshotAssertion) -> None:
+        # Pre-fix: _assign rejected StructRef lvalue.
+        from dcc.dialects.c import FieldAddressOp, StoreIndirectOp
+
+        m = _lower_c("struct S { int x; }; void f(struct S *s) { s->x = 7; }")
+        assert _count_ops(m, FieldAddressOp) == 1
+        assert _count_ops(m, StoreIndirectOp) == 1
+        assert m == ir_snapshot
+
+    def test_lvalue_dot_field(self, ir_snapshot: SnapshotAssertion) -> None:
+        # obj.x = v on a local struct: dot → address_of(obj) + field_address.
+        from dcc.dialects.c import FieldAddressOp, StoreIndirectOp
+
+        m = _lower_c("struct S { int x; }; void f(void) { struct S s; s.x = 7; }")
+        assert _contains_op(m, FieldAddressOp)
+        assert _contains_op(m, StoreIndirectOp)
+        assert m == ir_snapshot
+
+    def test_lvalue_array_index(self, ir_snapshot: SnapshotAssertion) -> None:
+        # Pre-fix: _assign rejected ArrayRef lvalue.
+        from dcc.dialects.c import ElementAddressOp, StoreIndirectOp
+
+        m = _lower_c("void f(int *a) { a[3] = 42; }")
+        assert _count_ops(m, ElementAddressOp) == 1
+        assert _count_ops(m, StoreIndirectOp) == 1
+        assert m == ir_snapshot
+
+    def test_compound_assign_through_pointer(
+        self, ir_snapshot: SnapshotAssertion
+    ) -> None:
+        # *p += 5: load through addr, add, store back.
+        from dcc.dialects.c import DereferenceOp, StoreIndirectOp
+
+        m = _lower_c("void f(int *p) { *p += 5; }")
+        assert _contains_op(m, DereferenceOp)
+        assert _contains_op(m, StoreIndirectOp)
+        assert m == ir_snapshot
+
+    def test_increment_through_pointer(self, ir_snapshot: SnapshotAssertion) -> None:
+        # Pre-fix: ++/-- on non-ID raised LoweringError.
+        # Desugared to load + add + store — no PostIncrementOp in IR.
+        from dcc.dialects.c import PostIncrementOp, StoreIndirectOp
+
+        m = _lower_c("void f(int *p) { (*p)++; }")
+        assert not _contains_op(m, PostIncrementOp), (
+            "non-ID increment must be desugared via StoreIndirectOp"
+        )
+        assert _contains_op(m, StoreIndirectOp)
+        assert m == ir_snapshot
+
+    def test_assign_as_expression_non_id(self, ir_snapshot: SnapshotAssertion) -> None:
+        # Pre-fix: "assign-as-expression on non-variable".
+        # The read-back dereference becomes the expression's value.
+        from dcc.dialects.c import DereferenceOp
+
+        m = _lower_c("int f(int *p) { int x = (*p = 5); return x; }")
+        assert _contains_op(m, DereferenceOp)
+        assert m == ir_snapshot
+
+    def test_unresolved_struct_field_chain(
+        self, ir_snapshot: SnapshotAssertion
+    ) -> None:
+        # Pre-fix: unknown field type fell back to c_int(64); chained ->
+        # then died with "cannot dereference non-pointer type: i64".
+        m = _lower_c(
+            "struct Fwd; struct Outer { struct Fwd *p; };"
+            "int f(struct Outer *o) { return o->p->x; }"
+        )
+        # Ratchet: this used to skip the function; presence of the
+        # function is the structural signal.
+        assert len(m.functions) == 1
+        assert m == ir_snapshot
+
+    def test_long_long_int_literal(self, ir_snapshot: SnapshotAssertion) -> None:
+        # Pre-fix: "unsupported constant type: long long int"
+        from dgen.dialects.number import SignedInteger
+        from dgen.module import ConstantOp
+
+        m = _lower_c("long long f(void) { return 1LL + 2LL; }")
+        # Both constants should land as 64-bit signed integers.
+        consts = [
+            v
+            for top in m.ops
+            for v in __import__("dgen.graph", fromlist=["all_values"]).all_values(top)
+            if isinstance(v, ConstantOp) and isinstance(v.type, SignedInteger)
+        ]
+        assert consts, "no signed-integer constants found"
+        for c in consts:
+            assert c.type.bits.__constant__.to_json() == 64
+        assert m == ir_snapshot
+
+    def test_function_pointer_call_parameter(
+        self, ir_snapshot: SnapshotAssertion
+    ) -> None:
+        # Pre-fix: "indirect function calls not yet supported"
+        from dgen.dialects import function as _function
+        from dcc.dialects.c import CallOp as CCallOp
+
+        m = _lower_c("int f(int (*p)(int)) { return p(5); }")
+        # Function pointer parameter: expect function.CallOp, not c.CallOp.
+        assert _contains_op(m, _function.CallOp), (
+            "indirect call should become function.CallOp"
+        )
+        assert not _contains_op(m, CCallOp), (
+            "calling a function-pointer local must not become c.CallOp"
+        )
+        assert m == ir_snapshot
+
+    def test_function_pointer_field_call(self, ir_snapshot: SnapshotAssertion) -> None:
+        # p->fn(x): call through a struct-field function pointer.
+        from dgen.dialects import function as _function
+
+        m = _lower_c(
+            "struct S { int (*fn)(int); };"
+            "int f(struct S *s, int x) { return s->fn(x); }"
+        )
+        assert _contains_op(m, _function.CallOp)
+        assert m == ir_snapshot
+
+
+class TestSessionCodegenFixes:
+    """Codegen-level fixes in this session."""
+
+    def test_null_pointer_constant(self) -> None:
+        # Pre-fix: ConstantOp(0, Reference) printed as "0", which LLVM
+        # rejects with "integer constant must have integer type". A
+        # pointer initialised to 0 and then used as a pointer triggers it.
+        _codegen_verifies("int *f(void) { int *p = 0; return p; }")
+
+    def test_function_pointer_call_codegen(self) -> None:
+        # Pre-fix: emit_function_call always printed @name, failing for
+        # SSA-valued callees.
+        _codegen_verifies("int f(int (*p)(int), int x) { return p(x); }")
+
+
+# ---------------------------------------------------------------------------
+# Outstanding bugs — xfailed so they'll turn green automatically when fixed.
+# Each one reproduces the smallest failing case I could find.
+# ---------------------------------------------------------------------------
+
+
+class TestKnownFailures:
+    @pytest.mark.xfail(
+        reason="frontend: 32-bit signed int dereference (3 cases in sqlite3)",
+        strict=True,
+    )
+    def test_int32_deref(self) -> None:
+        _lower_c("int f(int x) { return *x; }")
+
+    @pytest.mark.xfail(
+        reason="codegen: use of undefined value — top bucket (~850 in sqlite3). "
+        "if/else with a written-in-both-branches local var loses its phi.",
+        strict=True,
+    )
+    def test_codegen_undefined_value_if_return(self) -> None:
+        _codegen_verifies("int f(int x, int y) { if (x > 0) return y; else return x; }")
+
+    @pytest.mark.xfail(
+        reason="codegen: multiple definition of local value (~270 in sqlite3). "
+        "A local assigned inside an if gets a second alloca in the branch block.",
+        strict=True,
+    )
+    def test_codegen_slot_collision_local_written_in_branch(self) -> None:
+        _codegen_verifies("void f(int X) { long a = X; if (X > 0) { a = 1; } }")
+
+    @pytest.mark.xfail(
+        reason="codegen: Array.from_json asserts on zero-init of a local array "
+        "(17 in sqlite3). _decl emits ConstantOp(0, Array(...)).",
+        strict=True,
+    )
+    def test_codegen_array_init_assertion(self) -> None:
+        _codegen_verifies("int f(void) { int arr[4]; arr[0] = 1; return arr[0]; }")
 
 
 def _generate_sqlite_scale_c(n_functions: int, seed: int = 42) -> str:
