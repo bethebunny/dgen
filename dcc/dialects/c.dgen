@@ -26,11 +26,14 @@ op post_decrement<variable_name: String>(target)
 op dereference(pointer)
 op address_of(operand)
 op subscript(base, index)
+op element_address(base, index)
+op store_indirect(target, value)
 
 # --- Struct access ---
 
 op member_access<field_name: String>(base)
 op pointer_member_access<field_name: String>(base)
+op field_address<field_name: String>(base)
 
 # --- Functions ---
 
