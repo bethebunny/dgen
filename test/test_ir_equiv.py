@@ -2,7 +2,7 @@
 
 import pytest
 
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, number
 from dgen.dialects.llvm import AddOp, MulOp
@@ -97,7 +97,7 @@ def test_graph_equivalent_same_ir():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    assert graph_equivalent(parse_module(ir), parse_module(ir))
+    assert graph_equivalent(parse(ir), parse(ir))
 
 
 def test_graph_equivalent_different_names():
@@ -122,7 +122,7 @@ def test_graph_equivalent_different_names():
         |     %x : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %y : Nil = toy.print(%x)
     """)
-    assert graph_equivalent(parse_module(a), parse_module(b))
+    assert graph_equivalent(parse(a), parse(b))
 
 
 def test_graph_not_equivalent_different_values():
@@ -146,7 +146,7 @@ def test_graph_not_equivalent_different_values():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    assert not graph_equivalent(parse_module(a), parse_module(b))
+    assert not graph_equivalent(parse(a), parse(b))
 
 
 def test_structural_diff_returns_string():
@@ -170,7 +170,7 @@ def test_structural_diff_returns_string():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    diff = structural_diff(parse_module(a), parse_module(b))
+    diff = structural_diff(parse(a), parse(b))
     assert "-" in diff and "+" in diff
 
 

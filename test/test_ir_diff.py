@@ -1,8 +1,7 @@
 """Tests for diff_modules output format."""
 
-from dgen.asm.parser import parse_module
-from dgen.ir_diff import diff_modules
-from dgen.module import Module
+from dgen.asm.parser import parse
+from dgen.ir_diff import diff_values
 from toy.dialects import toy  # noqa: F401 — registers toy dialect
 from dgen.testing import strip_prefix
 
@@ -18,7 +17,7 @@ def test_diff_empty_when_identical():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    assert diff_modules(parse_module(ir), parse_module(ir)) == ""
+    assert diff_values(parse(ir), parse(ir)) == ""
 
 
 def test_diff_empty_when_ssa_names_differ():
@@ -43,7 +42,7 @@ def test_diff_empty_when_ssa_names_differ():
         |     %tensor : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %result : Nil = toy.print(%tensor)
     """)
-    assert diff_modules(parse_module(a), parse_module(b)) == ""
+    assert diff_values(parse(a), parse(b)) == ""
 
 
 def test_diff_empty_when_function_order_differs():
@@ -68,11 +67,13 @@ def test_diff_empty_when_function_order_differs():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    fa = parse_module(a).functions[0]
-    fb = parse_module(b).functions[0]
-    module_ab = Module(ops=[fa, fb])
-    module_ba = Module(ops=[fb, fa])
-    assert diff_modules(module_ab, module_ba) == ""
+    fa = parse(a)
+    fb = parse(b)
+    from dgen.dialects.builtin import ChainOp
+
+    root_ab = ChainOp(lhs=fa, rhs=fb, type=fa.type)
+    root_ba = ChainOp(lhs=fb, rhs=fa, type=fb.type)
+    assert diff_values(root_ab, root_ba) == ""
 
 
 def test_diff_empty_when_op_order_differs():
@@ -99,7 +100,7 @@ def test_diff_empty_when_op_order_differs():
         |     %y : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %z : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.mul(%y, %x)
     """)
-    assert diff_modules(parse_module(a), parse_module(b)) == ""
+    assert diff_values(parse(a), parse(b)) == ""
 
 
 def test_diff_format_semantic_change():
@@ -124,7 +125,7 @@ def test_diff_format_semantic_change():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    result = diff_modules(parse_module(actual), parse_module(expected))
+    result = diff_values(parse(actual), parse(expected))
     assert result.startswith("--- expected\n+++ actual")
     assert "@@" in result
     assert any(
@@ -151,8 +152,8 @@ def test_diff_format_missing_function():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    actual_module = Module(ops=[])
-    result = diff_modules(actual_module, parse_module(expected))
+    actual_module = None
+    result = diff_values(actual_module, parse(expected))
     assert result.startswith("--- expected\n+++ actual")
     lines = result.splitlines()
     assert any(ln.startswith("-") for ln in lines if not ln.startswith("---"))
@@ -171,8 +172,8 @@ def test_diff_format_extra_function():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    expected_module = Module(ops=[])
-    result = diff_modules(parse_module(actual), expected_module)
+    expected_module = None
+    result = diff_values(parse(actual), expected_module)
     assert result.startswith("--- expected\n+++ actual")
     lines = result.splitlines()
     assert any(ln.startswith("+") for ln in lines if not ln.startswith("+++"))

@@ -83,11 +83,11 @@ Key design insight: **inference passes are regular lowering passes** — ShapeIn
 class Pass:  # Value → Value
     def run(self, value: Value, compiler: Compiler) -> Value: ...
 
-class ExitPass(Generic[T]):  # Module → T
-    def run(self, module: Module) -> T: ...
+class ExitPass(Generic[T]):  # Value → T
+    def run(self, value: Value) -> T: ...
 ```
 
-`Pass.run` operates on a single value (typically a FunctionOp). `Compiler.run` handles Module iteration, calling `p.run(op, continuation)` per top-level op and rebuilding the Module. `ExitPass[Executable]` wraps codegen. Entry passes (parsers) stay as plain functions.
+`Pass.run` operates on a single value (typically a FunctionOp). `ExitPass[Executable]` wraps codegen. Entry passes (parsers) stay as plain functions.
 
 ### Compiler
 
@@ -96,32 +96,23 @@ class Compiler(Generic[T]):
     passes: list[Pass]
     exit: ExitPass[T]
 
-    def compile(self, module: Module) -> T:
+    def compile(self, value: Value) -> T:
         """Full pipeline: staging → passes → exit."""
-        return compile_module(module, self)
+        return compile_value(value, self)
 
-    def run(self, module: Module) -> T:
+    def run(self, value: Value) -> T:
         """Run passes + exit (no staging)."""
         for i, p in enumerate(self.passes):
             continuation = Compiler(self.passes[i + 1:], self.exit)
-            module = Module(ops=[p.run(op, continuation) for op in module.ops])
-        return self.exit.run(module)
+            value = p.run(value, continuation)
+        return self.exit.run(value)
 ```
 
 Each pass receives a `continuation` Compiler representing the remaining pipeline — this allows passes (and the staging system) to invoke sub-compilations.
 
 ### Staging Trigger
 
-**Readiness is a property of the IR, not the pass.** `Value.ready` returns True when the value's type is ready and all its `__params__` are ready (recursively — a param is ready when it's a Constant or a Type). Staging checks the IR directly:
-
-```python
-def _needs_staging(self, module: Module) -> bool:
-    for func in module.functions:
-        for op in func.body.ops:
-            if not op.ready:
-                return True
-    return False
-```
+**Readiness is a property of the IR, not the pass.** `Value.ready` returns True when the value's type is ready and all its `__params__` are ready (recursively — a param is ready when it's a Constant or a Type). Staging checks the IR directly by walking every op reachable from the root value (via `all_values`) and testing `op.ready`.
 
 No per-pass introspection needed. When the IR has non-ready ops, staging resolves what it can before the next pass runs.
 
@@ -147,7 +138,7 @@ When runtime-dependent boundaries remain (stage-1+ example: `nonzero_count(%x)` 
 
 ```python
 def _callback(*runtime_args):
-    template = deepcopy(captured_module)
+    template = deepcopy(captured_value)
     resolve_boundaries_with_runtime_args(template, runtime_args)
     return compiler.compile(template)  # re-run FULL pipeline
 ```
@@ -183,10 +174,10 @@ def run(source: str, *, args=()):
 
 ```python
 class LLVMCodegen(ExitPass[Executable]):
-    def run(self, module: Module) -> Executable:
-        module = lower_builtin_to_llvm(module)
-        ir, host_buffers = emit_llvm_ir(module)
-        main = module.functions[0]
+    def run(self, value: Value) -> Executable:
+        # If value is a FunctionOp, use it as entry; otherwise wrap.
+        entry = value if isinstance(value, FunctionOp) else _wrap(value)
+        ir, host_buffers = emit_llvm_ir(entry)
         ...
         return Executable(ir=ir, ...)
 ```
@@ -223,7 +214,7 @@ python -m toy.cli toy/test/testdata/tile_add_index.toy
 
 ## Design Decisions
 
-1. **Pass.run operates on Value, not Module**: Compiler.run handles Module iteration, calling `p.run(op, continuation)` per top-level op. This enables `compile(value) -> Constant` as the fundamental compilation primitive.
+1. **Pass.run operates on Value, not Module**: `Compiler.run(value)` threads a single Value through every pass. This enables `compile(value) -> T` as the fundamental compilation primitive.
 
 2. **Continuation compiler**: Each pass receives a Compiler with the remaining passes. This allows passes and the staging system to invoke sub-compilations (e.g., JIT-compiling a compile-time expression through the full pipeline).
 

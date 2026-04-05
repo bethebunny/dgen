@@ -1,6 +1,6 @@
 """Syrupy snapshot extension for IR graph equivalence testing.
 
-Provides ``IRSnapshotExtension``, a syrupy extension that stores IR module
+Provides ``IRSnapshotExtension``, a syrupy extension that stores IR value
 snapshots as ``.ir`` text files and compares them using graph equivalence
 (order- and label-insensitive Merkle fingerprinting) rather than string equality.
 
@@ -18,7 +18,7 @@ In ``conftest.py``::
 In tests::
 
     def test_my_pass(ir_snapshot):
-        result = my_pass(module)
+        result = my_pass(value)
         assert result == ir_snapshot
 
 On the first run (no snapshot file yet), pass ``--snapshot-update`` to generate
@@ -27,7 +27,7 @@ test passes as long as the computation is semantically identical, regardless of
 op ordering or SSA name choice.
 
 When the output changes semantically, run ``--snapshot-update`` again to accept
-the new snapshot.  The failure output shows a semantic diff via ``diff_modules``
+the new snapshot.  The failure output shows a semantic diff via ``diff_values``
 rather than a raw text diff, so only real changes are reported.
 """
 
@@ -45,19 +45,20 @@ from syrupy.types import (
     SerializedData,
 )
 
-from dgen.asm.parser import parse_module
-from dgen.ir_diff import diff_modules
+from dgen.asm.parser import parse
+from dgen.ir_diff import diff_values
 from dgen.ir_equiv import graph_equivalent
-from dgen.module import Module
+from dgen.module import asm_with_imports
+from dgen.type import Value
 
 
 class IRSnapshotExtension(SingleFileSnapshotExtension):
-    """Syrupy extension for IR ``Module`` snapshot testing.
+    """Syrupy extension for IR ``Value`` snapshot testing.
 
     Snapshots are stored as plain ``.ir`` text files (one file per test).
     Comparison uses ``graph_equivalent``, so tests remain green across
     semantically-irrelevant reformattings (op reordering, SSA renaming).
-    Failure output uses ``diff_modules`` for a semantic, noise-free diff.
+    Failure output uses ``diff_values`` for a semantic, noise-free diff.
     """
 
     file_extension = "ir"
@@ -72,10 +73,10 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
         include: Optional[PropertyFilter] = None,
         matcher: Optional[PropertyMatcher] = None,
     ) -> SerializedData:
-        assert isinstance(data, Module), (
-            f"IRSnapshotExtension expects a Module, got {type(data).__name__}"
+        assert isinstance(data, Value), (
+            f"IRSnapshotExtension expects a Value, got {type(data).__name__}"
         )
-        return "\n".join(data.asm)
+        return "\n".join(asm_with_imports(data))
 
     def matches(
         self,
@@ -85,8 +86,8 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
     ) -> bool:
         assert isinstance(serialized_data, str)
         assert isinstance(snapshot_data, str)
-        actual = parse_module(serialized_data)
-        expected = parse_module(snapshot_data)
+        actual = parse(serialized_data)
+        expected = parse(snapshot_data)
         return graph_equivalent(actual, expected)
 
     def diff_lines(
@@ -94,9 +95,9 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
     ) -> Iterator[str]:
         assert isinstance(serialized_data, str)
         assert isinstance(snapshot_data, str)
-        actual = parse_module(serialized_data)
-        expected = parse_module(snapshot_data)
-        diff: str = diff_modules(actual, expected)
+        actual = parse(serialized_data)
+        expected = parse(snapshot_data)
+        diff: str = diff_values(actual, expected)
 
         if self.side_by_side:
             result = subprocess.run(

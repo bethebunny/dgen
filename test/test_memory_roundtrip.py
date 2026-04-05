@@ -1,7 +1,7 @@
 """Round-trip tests for memory dialect: construct -> asm -> parse -> asm."""
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
@@ -14,7 +14,7 @@ def test_roundtrip_stack_allocate():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -29,7 +29,7 @@ def test_roundtrip_heap_allocate():
         |     %n : index.Index = 10
         |     %0 : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -46,7 +46,7 @@ def test_roundtrip_load_store_with_mem():
         |     %st : Nil = memory.store(%alloc, %val, %alloc)
         |     %ld : index.Index = memory.load(%st, %alloc)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -63,7 +63,7 @@ def test_roundtrip_offset():
         |     %idx : index.Index = 3
         |     %ptr : memory.Reference<number.Float64> = memory.offset(%alloc, %idx)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -79,7 +79,7 @@ def test_roundtrip_deallocate():
         |     %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
         |     %dealloc : Nil = memory.deallocate(%alloc, %alloc)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -99,7 +99,7 @@ def test_roundtrip_load_store_chain():
         |     %st1 : Nil = memory.store(%ld0, %one, %alloc)
         |     %ld1 : index.Index = memory.load(%st1, %alloc)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -120,7 +120,7 @@ def test_roundtrip_offset_load_store():
         |     %st : Nil = memory.store(%ptr, %val, %ptr)
         |     %ld : number.Float64 = memory.load(%st, %ptr)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -139,7 +139,7 @@ def test_roundtrip_mem_from_for_loop():
         |         %_ : Nil = memory.store(%cur, %iv, %alloc)
         |     %ld : index.Index = memory.load(%loop, %alloc)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -162,5 +162,5 @@ def test_roundtrip_mem_from_if_else():
         |         %_ : Nil = memory.store(%alloc, %twenty, %alloc)
         |     %ld : index.Index = memory.load(%if, %alloc)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

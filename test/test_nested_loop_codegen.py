@@ -5,7 +5,7 @@ inner loop's exit label, not inside the outer body block before the inner
 loop's entry branch.
 """
 
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.testing import strip_prefix
@@ -29,14 +29,14 @@ NESTED_FOR = strip_prefix("""
 
 def test_nested_loop_after_control_flow_lowering(ir_snapshot):
     """Nested ForOps lowered to goto labels."""
-    m = parse_module(NESTED_FOR)
+    m = parse(NESTED_FOR)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
     assert lowered == ir_snapshot
 
 
 def test_nested_loop_llvm_ir(snapshot):
     """Nested loop all the way to LLVM IR — shows the codegen issue."""
-    m = parse_module(NESTED_FOR)
+    m = parse(NESTED_FOR)
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
     ).compile(m)

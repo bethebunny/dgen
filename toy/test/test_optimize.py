@@ -2,14 +2,14 @@
 
 import pytest
 
+import dgen
 from dgen import asm
 from dgen.compiler import Compiler, IdentityPass
-from dgen.module import Module
 from toy.passes.optimize import ToyOptimize
 from toy.test.helpers import strip_prefix
 
 
-def optimize(m: Module) -> Module:
+def optimize(m: dgen.Value) -> dgen.Value:
     return Compiler([ToyOptimize()], IdentityPass()).run(m)
 
 

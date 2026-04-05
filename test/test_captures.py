@@ -3,7 +3,7 @@
 import pytest
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.dialects import goto, llvm
 from dgen.testing import assert_ir_equivalent, strip_prefix
 from dgen.verify import ClosedBlockError, verify_closed_blocks
@@ -25,8 +25,8 @@ def test_roundtrip_captures():
         |     %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index) captures(%x):
         |         %zero : index.Index = 0
     """)
-    module = parse_module(ir)
-    (func,) = module.ops
+    module = parse(ir)
+    func = module
     label = func.body.result
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.captures) == 1
@@ -45,7 +45,7 @@ def test_roundtrip_empty_captures():
         | %loop : goto.Label = goto.label([]) body(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     formatted = asm.format(module)
     assert "captures" not in formatted
 
@@ -69,7 +69,7 @@ def test_verify_captured_block_arg_in_scope():
         |         %0 : index.Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
-    verify_closed_blocks(parse_module(ir))
+    verify_closed_blocks(parse(ir))
 
 
 def test_verify_captured_block_parameter():
@@ -85,7 +85,7 @@ def test_verify_captured_block_parameter():
         |         %body : goto.Label = goto.label([]) body() captures(%self):
         |             %0 : Nil = goto.branch<%self>([])
     """)
-    verify_closed_blocks(parse_module(ir))
+    verify_closed_blocks(parse(ir))
 
 
 def test_verify_self_contained_block_passes():
@@ -103,7 +103,7 @@ def test_verify_self_contained_block_passes():
         |         %1 : index.Index = 0
         |         %2 : llvm.Int<64> = llvm.add(%0, %1)
     """)
-    verify_closed_blocks(parse_module(ir))
+    verify_closed_blocks(parse(ir))
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ def test_verify_missing_capture_of_block_arg():
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
     with pytest.raises(ClosedBlockError):
-        verify_closed_blocks(parse_module(ir))
+        verify_closed_blocks(parse(ir))
 
 
 def test_verify_missing_capture_of_block_parameter():
@@ -143,7 +143,7 @@ def test_verify_missing_capture_of_block_parameter():
         |             %0 : Nil = goto.branch<%self>([])
     """)
     with pytest.raises(ClosedBlockError):
-        verify_closed_blocks(parse_module(ir))
+        verify_closed_blocks(parse(ir))
 
 
 def test_verify_missing_capture_of_function_ref():
@@ -160,7 +160,7 @@ def test_verify_missing_capture_of_function_ref():
         |     %result : index.Index = function.call<%add_one>([%x])
     """)
     with pytest.raises(ClosedBlockError):
-        verify_closed_blocks(parse_module(ir))
+        verify_closed_blocks(parse(ir))
 
 
 def test_verify_captured_function_ref_passes():
@@ -176,7 +176,7 @@ def test_verify_captured_function_ref_passes():
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
         |     %result : index.Index = function.call<%add_one>([%x])
     """)
-    verify_closed_blocks(parse_module(ir))
+    verify_closed_blocks(parse(ir))
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ def test_verify_chained_captures():
         |             %0 : index.Index = 0
         |             %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
-    verify_closed_blocks(parse_module(ir))
+    verify_closed_blocks(parse(ir))
 
 
 def test_verify_unchained_capture_fails():
@@ -218,7 +218,7 @@ def test_verify_unchained_capture_fails():
         |             %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
     with pytest.raises(ClosedBlockError):
-        verify_closed_blocks(parse_module(ir))
+        verify_closed_blocks(parse(ir))
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +240,8 @@ def test_replace_uses_updates_captures():
         |         %0 : index.Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%old, %0)
     """)
-    module = parse_module(ir)
-    func = module.functions[0]
+    module = parse(ir)
+    func = module
     old_arg, new_arg = func.body.args
 
     func.body.replace_uses_of(old_arg, new_arg)
@@ -270,8 +270,8 @@ def test_replace_uses_updates_chained_captures():
         |             %0 : index.Index = 0
         |             %1 : llvm.Int<64> = llvm.add(%old, %0)
     """)
-    module = parse_module(ir)
-    func = module.functions[0]
+    module = parse(ir)
+    func = module
     old_arg, new_arg = func.body.args
 
     func.body.replace_uses_of(old_arg, new_arg)
@@ -306,13 +306,13 @@ def test_constant_must_be_captured():
         |     %lbl : goto.Label = goto.label([]) body(%x: index.Index) captures(%c):
         |         %use : index.Index = chain(%x, %c)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     verify_closed_blocks(module)
 
     # The ConstantOp %c is in the parent's ops (reachable from the label
     # via block captures) and is a capture boundary in the label body
     # (not in the body's ops).
-    func = module.functions[0]
+    func = module
     label = func.body.result
     assert any(op.name == "c" for op in func.body.ops)
     # %c is NOT in the label body's ops — it's a capture boundary

@@ -7,7 +7,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import dgen
-from dgen.module import Module
 from dgen.verify import (
     verify_all_ready,
     verify_closed_blocks,
@@ -115,14 +114,14 @@ class Pass(metaclass=_PassMeta):
             if result is not None:
                 block.replace_uses_of(v, result)
 
-    def verify_preconditions(self, module: Module) -> None:
+    def verify_preconditions(self, value: dgen.Value) -> None:
         """Check IR invariants that must hold before this pass runs."""
-        verify_all_ready(module)
-        verify_dag(module)
-        verify_closed_blocks(module)
-        verify_constraints(module)
+        verify_all_ready(value)
+        verify_dag(value)
+        verify_closed_blocks(value)
+        verify_constraints(value)
 
-    def verify_postconditions(self, module: Module) -> None:
+    def verify_postconditions(self, value: dgen.Value) -> None:
         """Check IR invariants that must hold after this pass runs."""
-        verify_dag(module)
-        verify_closed_blocks(module)
+        verify_dag(value)
+        verify_closed_blocks(value)

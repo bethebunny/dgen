@@ -8,7 +8,7 @@ import pytest
 
 import toy.dialects.toy  # noqa: F401 — registers dialect
 
-from dgen.asm.parser import ASMParser, ParseError, parse_module, parse_value
+from dgen.asm.parser import ASMParser, ParseError, parse, parse_value
 from dgen.dialects.function import FunctionOp
 from dgen.graph import transitive_dependencies
 from dgen.module import asm_with_imports
@@ -127,7 +127,7 @@ class TestParseErrors:
             | %f : function.Function<[], toy.Tensor<[2, 3], number.Float64>> = function.function<toy.Tensor<[2, 3], number.Float64>>() body():
         """)
         with pytest.raises(RuntimeError, match=r"bare literal.*Shape.*Shape<\.\.\.>"):
-            parse_module(ir)
+            parse(ir)
 
     def test_unimported_dialect_rejected(self) -> None:
         """Referencing a dialect not declared via `import` should fail."""
@@ -139,7 +139,7 @@ class TestParseErrors:
             |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         """)
         with pytest.raises(Exception):
-            parse_module(ir)
+            parse(ir)
 
 
 class TestParseValue:

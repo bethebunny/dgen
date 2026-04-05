@@ -1,7 +1,7 @@
 """Tests for use-def graph utilities."""
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.graph import all_values, interior_values, transitive_dependencies
@@ -53,8 +53,8 @@ def test_transitive_dependencies_does_not_descend_into_blocks():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    module = parse_module(ir)
-    func = module.ops[0]
+    module = parse(ir)
+    func = module
     inner = next(func.body.ops)
     deps = list(transitive_dependencies(func))
     assert func in deps
@@ -72,7 +72,7 @@ def test_chain_asm_round_trip():
         |     %1 : index.Index = 1
         |     %2 : index.Index = chain(%1, %0)
     """)
-    m = parse_module(ir_text)
+    m = parse(ir_text)
     assert_ir_equivalent(m, asm.parse(asm.format(m)))
 
 
@@ -101,7 +101,7 @@ def test_transitive_dependencies_includes_types():
 
 
 def _parse(text: str):
-    return parse_module(strip_prefix(text))
+    return parse(strip_prefix(text))
 
 
 def test_all_values_includes_nested_block_ops():
@@ -113,7 +113,7 @@ def test_all_values_includes_nested_block_ops():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    func = module.ops[0]
+    func = module
     inner_const = next(func.body.ops)
     # transitive_dependencies does NOT include inner ops
     assert inner_const not in list(transitive_dependencies(func))
@@ -133,7 +133,7 @@ def test_all_values_includes_deeply_nested():
         |     %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
         |         %inner : index.Index = 42
     """)
-    func = module.ops[0]
+    func = module
     vals = list(all_values(func))
     names = [v.name for v in vals if hasattr(v, "name") and v.name is not None]
     assert "inner" in names
@@ -149,7 +149,7 @@ def test_interior_values_yields_block_contents():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    func = module.ops[0]
+    func = module
     inner = list(interior_values(func))
     op_names = [v.name for v in inner if isinstance(v, Op)]
     assert "0" in op_names

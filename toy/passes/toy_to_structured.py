@@ -11,7 +11,7 @@ from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean, Float64
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module, pack
+from dgen.module import ConstantOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.dialects import control_flow
 from dgen.dialects import ndbuffer

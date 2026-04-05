@@ -5,7 +5,7 @@ them, verifying that the mem operand correctly enforces ordering. Each test is
 designed so that incorrect ordering would produce the wrong result.
 """
 
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
@@ -17,7 +17,7 @@ from dgen.testing import strip_prefix
 
 def _jit(ir: str, *args: object) -> object:
     """Parse IR, compile through memory pipeline, JIT-run, return JSON result."""
-    module = parse_module(strip_prefix(ir))
+    module = parse(strip_prefix(ir))
     compiler: Compiler[Executable] = Compiler(
         [ControlFlowToGoto(), MemoryToLLVM(), BuiltinToLLVM(), AlgebraToLLVM()],
         LLVMCodegen(),

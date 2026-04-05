@@ -1,7 +1,7 @@
 """Tests for the builtin type op: op type(value) -> Type."""
 
 from dgen import Block, asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.testing import llvm_compile as compile_module
 from dgen.compiler import Compiler
@@ -41,8 +41,8 @@ def test_type_op_asm_roundtrip():
         |     %x : index.Index = 42
         |     %t : Type = type(%x)
     """)
-    module = parse_module(ir)
-    func = module.functions[0]
+    module = parse(ir)
+    func = module
     type_op = func.body.result
     assert isinstance(type_op, TypeOp)
     assert isinstance(type_op.type, TypeType)
@@ -60,8 +60,8 @@ def test_type_op_result_is_type_dependency():
         |     %t : Type = type(%x)
         |     %y : %t = 7
     """)
-    module = parse_module(ir)
-    ops = list(module.functions[0].body.ops)
+    module = parse(ir)
+    ops = list(module.body.ops)
     type_op = ops[1]
     y_op = ops[2]
     assert isinstance(type_op, TypeOp)
@@ -84,7 +84,7 @@ def test_type_op_jit_returns_type():
         |     %x : index.Index = 42
         |     %t : Type = type(%x)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     exe = compile_module(module)
     result = exe.run()
     assert result.to_json() == {"tag": "index.Index"}
@@ -99,7 +99,7 @@ def test_type_op_jit_with_argument():
         | %main : function.Function<[index.Index], Type> = function.function<Type>() body(%x: index.Index):
         |     %t : Type = type(%x)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     exe = compile_module(module)
     result = exe.run(99)
     assert result.to_json() == {"tag": "index.Index"}
@@ -116,7 +116,7 @@ def test_type_op_jit_used_as_annotation():
         |     %t : Type = type(%x)
         |     %y : %t = algebra.add(%x, %x)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     exe = compile_module(module)
     assert exe.run(21).to_json() == 42
 
@@ -143,7 +143,7 @@ def test_type_op_staging_short_circuit():
         |     %t : Type = type(%x)
         |     %y : %t = algebra.add(%x, %x)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     compiler: Compiler[Executable] = Compiler(
         passes=[BuiltinToLLVM(), AlgebraToLLVM()],
         exit=LLVMCodegen(),

@@ -1,5 +1,10 @@
 # Design: Value as the Compilation Interface
 
+**Status: Implemented.** `Module` has been deleted entirely; `Value` is the
+sole compilation primitive. `parse(text) -> Value`, `Compiler.compile/run`
+take a `Value`, `ExitPass.run(value: Value) -> T`, verifiers/codegen/staging
+all walk a single-Value graph. See current code for the end state.
+
 ## Context
 
 Module is the only IR construct that isn't a Value. Everything else — ops, types, blocks —

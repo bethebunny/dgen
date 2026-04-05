@@ -13,7 +13,7 @@ import pytest
 
 from dgen import Block, asm
 from dgen.type import format_value
-from dgen.asm.parser import ASMParser, parse_module, value_expression
+from dgen.asm.parser import ASMParser, parse, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen
@@ -22,7 +22,7 @@ from dgen.compiler import Compiler
 from dgen.dialects import builtin, llvm, number
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, Module, pack, string_value
+from dgen.module import ConstantOp, pack, string_value
 from dgen.type import Memory
 from toy.dialects import shape_constant
 from dgen.dialects.ndbuffer import NDBuffer, Shape
@@ -139,7 +139,7 @@ def _identity_exe(ty):
         result_type=ty,
         type=Function(arguments=pack([arg.type]), result_type=ty),
     )
-    return compile_module(Module(ops=[func]))
+    return compile_module(func)
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +318,7 @@ def test_span_constant_jit_return():
         | %main : function.Function<[], Span<index.Index>> = function.function<Span<index.Index>>() body():
         |     %0 : Span<index.Index> = [3, 5, 7]
     """)
-    exe = compile_module(parse_module(ir))
+    exe = compile_module(parse(ir))
     result = exe.run()
     assert result.to_json() == [3, 5, 7]
 
@@ -358,7 +358,7 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
         | %main : function.Function<[index.Index], ()> = function.function<Nil>() body(%x: index.Index):
         |     %store : Nil = ndbuffer.store(%x, %x, %x, [3, %x, 5])
     """)
-    parsed = parse_module(ir_input)
+    parsed = parse(ir_input)
     assert parsed == ir_snapshot
 
 
@@ -394,7 +394,7 @@ def test_string_as_op_param():
         |     %1 : index.Index = 2
         |     %cmp : llvm.Int<1> = llvm.icmp<"slt">(%0, %1)
     """)
-    parsed = parse_module(ir)
+    parsed = parse(ir)
     assert_ir_equivalent(parsed, asm.parse(asm.format(parsed)))
 
 
@@ -425,7 +425,7 @@ def test_string_param_staging():
         |     %cmp : llvm.Int<1> = llvm.icmp<%pred>(%x, %y)
         |     %ext : llvm.Int<64> = llvm.zext(%cmp)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
 
     identity_compiler: Compiler[Executable] = Compiler(passes=[], exit=LLVMCodegen())
 
@@ -455,7 +455,7 @@ def test_compile_once_run_twice():
         |     %cmp : llvm.Int<1> = llvm.icmp<%pred>(%x, %y)
         |     %ext : llvm.Int<64> = llvm.zext(%cmp)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
 
     identity_compiler: Compiler[Executable] = Compiler(passes=[], exit=LLVMCodegen())
 
@@ -518,11 +518,11 @@ def test_deepcopy_module_with_span_constant():
         | %main : function.Function<[], Span<index.Index>> = function.function<Span<index.Index>>() body():
         |     %0 : Span<index.Index> = [3, 5, 7]
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     copied = deepcopy(module)
 
     # The copied module's constant should still be readable
-    copied_const = list(copied.functions[0].body.ops)[0]
+    copied_const = list(copied.body.ops)[0]
     assert isinstance(copied_const, ConstantOp)
     assert copied_const.memory.to_json() == [3, 5, 7]
 

@@ -68,7 +68,7 @@ The "recurse after lowering" order is critical: handler-created blocks are lower
 - **Op has no registered handler, `allow_unregistered_ops=True`:** leave it in place.
 - **Op has no registered handler, `allow_unregistered_ops=False`:** error.
 
-`Compiler.run(module)` iterates `module.ops`, calling `p.run(op, continuation)` per top-level op, then rebuilds the Module. This means passes operate on values, and Module is only the Compiler's concern.
+`Compiler.run(value)` threads the root `Value` through every pass, then applies the `ExitPass`. There is no `Module` wrapper — the value IS the root of the use-def graph.
 
 ### The IR is a graph, not a list
 
@@ -99,15 +99,15 @@ Verifiers are **debug assertions** — the pass manager decides whether to run t
 
 ```python
 class ToyToAffine(Pass):
-    def verify_preconditions(self, module: Module) -> None:
-        super().verify_preconditions(module)
+    def verify_preconditions(self, value: Value) -> None:
+        super().verify_preconditions(value)
         # custom: every tensor must have a known shape
-        for op in walk(module):
+        for op in all_values(value):
             if isinstance(op.type, toy.Tensor):
                 assert op.type.shape is not None
 
-    def verify_postconditions(self, module: Module) -> None:
-        super().verify_postconditions(module)
+    def verify_postconditions(self, value: Value) -> None:
+        super().verify_postconditions(value)
         # custom: no MemRef leaks (every alloc has a matching dealloc)
         ...
 ```
@@ -536,12 +536,11 @@ class ShapeInference(Pass):
             op.type = toy.Tensor(shape=shape_constant(list(reversed(shape))))
         return op  # return op itself — in-place type mutation
 
-    def verify_postconditions(self, module: Module) -> None:
-        super().verify_postconditions(module)
+    def verify_postconditions(self, value: Value) -> None:
+        super().verify_postconditions(value)
         # No unresolved shapes remain
-        for func in module.functions:
-            for op in _walk_all_ops(func):
-                assert not isinstance(op.type, toy.InferredShapeTensor)
+        for op in all_values(value):
+            assert not isinstance(op.type, toy.InferredShapeTensor)
 ```
 
 ### Unstructured control flow (irreducible CFG)

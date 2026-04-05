@@ -1,4 +1,4 @@
-"""Emit valid LLVM IR text from a Module and JIT-compile via llvmlite."""
+"""Emit valid LLVM IR text from a Value and JIT-compile via llvmlite."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from dgen.dialects import (
 )
 from dgen.graph import all_values
 from dgen.layout import Layout
-from dgen.module import ConstantOp, Module, PackOp, pack, string_value
+from dgen.module import ConstantOp, PackOp, pack, string_value
 from dgen.type import Constant, Memory, TypeType, Value, type_constant
 from dgen.type import _format_float as format_float
 
@@ -132,20 +132,30 @@ def _ensure_initialized() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _externs(module: Module) -> list[builtin.ExternOp]:
-    """Discover extern declarations from ExternOps in the module, deduped by symbol."""
+def _externs(root: dgen.Value) -> list[builtin.ExternOp]:
+    """Discover extern declarations reachable from root, deduped by symbol."""
     seen: dict[str, builtin.ExternOp] = {}
-    for top_level in module.ops:
-        for value in all_values(top_level):
-            if isinstance(value, builtin.ExternOp):
-                sym = string_value(value.symbol)
-                if sym not in seen:
-                    seen[sym] = value
+    for value in all_values(root):
+        if isinstance(value, builtin.ExternOp):
+            sym = string_value(value.symbol)
+            if sym not in seen:
+                seen[sym] = value
     return list(seen.values())
 
 
-def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
-    """Emit LLVM IR text for a module.
+def _reachable_functions(root: dgen.Value) -> list[function.FunctionOp]:
+    """All FunctionOps reachable from root, in topological order, deduped by identity."""
+    seen: set[int] = set()
+    funcs: list[function.FunctionOp] = []
+    for value in all_values(root):
+        if isinstance(value, function.FunctionOp) and id(value) not in seen:
+            seen.add(id(value))
+            funcs.append(value)
+    return funcs
+
+
+def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
+    """Emit LLVM IR text for root and every function reachable from it.
 
     Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
     alive for the lifetime of the JIT engine.
@@ -156,10 +166,10 @@ def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
     try:
 
         def _lines() -> Iterator[str]:
-            for extern in _externs(module):
+            for extern in _externs(root):
                 yield from emit_extern(extern)
             yield ""
-            for func in module.functions:
+            for func in _reachable_functions(root):
                 prepare_function(func, ctx)
                 yield from emit(func)
 
@@ -966,7 +976,7 @@ def build_callback_thunk(
             arguments=pack(arg.type for arg in thunk_args), result_type=result_type
         ),
     )
-    ir, host_buffers = emit_llvm_ir(Module(ops=[thunk_func]))
+    ir, host_buffers = emit_llvm_ir(thunk_func)
     exe = Executable(
         ir=ir,
         input_types=orig_types,
@@ -984,16 +994,28 @@ def build_callback_thunk(
 
 
 class LLVMCodegen:
-    """Exit pass: emit LLVM IR and bundle as Executable."""
+    """Exit pass: emit LLVM IR and bundle as Executable.
 
-    def run(self, module: Module) -> Executable:
-        ir, host_buffers = emit_llvm_ir(module)
-        main = module.functions[-1]
-        assert main.name is not None
+    If the input value is a FunctionOp, it's used as the entry. Otherwise
+    the value is wrapped in a synthesized nil-arg FunctionOp named ``main``.
+    """
+
+    def run(self, value: dgen.Value) -> Executable:
+        if isinstance(value, function.FunctionOp):
+            entry = value
+        else:
+            entry = function.FunctionOp(
+                name="main",
+                body=dgen.Block(result=value),
+                result_type=value.type,
+                type=function.Function(arguments=pack([]), result_type=value.type),
+            )
+        ir, host_buffers = emit_llvm_ir(entry)
+        assert entry.name is not None
         return Executable(
             ir=ir,
-            input_types=[type_constant(arg.type) for arg in main.body.args],
-            main_name=main.name,
-            result_type=type_constant(main.result_type),
+            input_types=[type_constant(arg.type) for arg in entry.body.args],
+            main_name=entry.name,
+            result_type=type_constant(entry.result_type),
             host_refs=host_buffers,
         )

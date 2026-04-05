@@ -4,7 +4,7 @@ import pytest
 
 from dgen import asm, layout
 from dgen.type import format_value as type_asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import Index, String, Tuple
 from dgen.dialects.number import Float64
@@ -55,7 +55,7 @@ def test_tuple_constant_roundtrip():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %x : Tuple<[index.Index, String]> = [42, "hello"]
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -106,5 +106,5 @@ def test_tuple_type_values():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %types : Tuple<[Type, Type]> = [Index, String]
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

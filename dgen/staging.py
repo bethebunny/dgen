@@ -10,7 +10,8 @@ import dgen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable, build_callback_thunk, register_executable
 from dgen.dialects.function import FunctionOp
-from dgen.module import ConstantOp, Module
+from dgen.graph import all_values
+from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass
 from dgen.type import Constant, Memory
 
@@ -129,6 +130,41 @@ def _has_nested_boundaries(func: FunctionOp) -> bool:
     return False
 
 
+def _reachable_functions(root: dgen.Value) -> list[FunctionOp]:
+    """FunctionOps reachable from root, in topological order, deduped by identity."""
+    seen: set[int] = set()
+    funcs: list[FunctionOp] = []
+    for value in all_values(root):
+        if isinstance(value, FunctionOp) and id(value) not in seen:
+            seen.add(id(value))
+            funcs.append(value)
+    return funcs
+
+
+# ---------------------------------------------------------------------------
+# Compile-time subgraph evaluation
+# ---------------------------------------------------------------------------
+
+
+def _jit_evaluate(target: dgen.Value, compiler: Compiler[object]) -> ConstantOp:
+    """JIT-compile and execute `target`, return its result as a ConstantOp.
+
+    Target must be stage-0 evaluable (no BlockArgument dependencies).
+    """
+    from dgen.dialects.function import Function
+    from dgen.module import pack
+
+    func = FunctionOp(
+        name="main",
+        body=dgen.Block(result=target),
+        result_type=target.type,
+        type=Function(arguments=pack([]), result_type=target.type),
+    )
+    exe = compiler.run(func)
+    result = exe.run()  # type: ignore[attr-defined]
+    return ConstantOp(value=result.to_json(), type=target.type)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -137,7 +173,7 @@ def _has_nested_boundaries(func: FunctionOp) -> bool:
 class ConstantFold(Pass):
     """Pass that resolves all stage-0 comptime boundaries.
 
-    Stage-0 resolution is performed by ``compile_module`` before the
+    Stage-0 resolution is performed by ``compile_value`` before the
     pass pipeline runs, so this pass is a no-op in the pipeline.
     It exists so callers can include it in a pass list for clarity.
     """
@@ -146,19 +182,19 @@ class ConstantFold(Pass):
 
 
 def resolve_stage0(
-    module: Module,
+    root: dgen.Value,
     compiler: Compiler[object],
-) -> Module:
+) -> dgen.Value:
     """Deepcopy + resolve all stage-0 comptime boundaries.
 
     Iteratively resolves the lowest-stage boundary whose value can be
     evaluated without runtime values (no BlockArgument dependencies).
     Stops when only runtime-dependent boundaries remain.
     """
-    module = deepcopy(module)
+    root = deepcopy(root)
     while True:
         resolved_any = False
-        for func in module.functions:
+        for func in _reachable_functions(root):
             stages = compute_stages(func)
             boundaries = _unresolved_boundaries(func, stages)
             if not boundaries:
@@ -166,12 +202,12 @@ def resolve_stage0(
             _stage_num, op, field_name, value = boundaries[0]
             if stages.get(value, 0) != 0:
                 continue
-            setattr(op, field_name, compiler.compile_value(value))
+            setattr(op, field_name, _jit_evaluate(value, compiler))
             resolved_any = True
             break  # re-iterate from the start after each resolution
         if not resolved_any:
             break
-    return module
+    return root
 
 
 def _resolve_with_runtime_args(
@@ -198,12 +234,12 @@ def _resolve_with_runtime_args(
         if not boundaries:
             break
         _stage_num, op, field_name, value = boundaries[0]
-        setattr(op, field_name, compiler.compile_value(value))
+        setattr(op, field_name, _jit_evaluate(value, compiler))
 
 
-def _build_callback_thunk(
-    resolved: Module,
-    func: FunctionOp,
+def _build_callback_thunk_for(
+    resolved_root: dgen.Value,
+    func_index: int,
     compiler: Compiler[T],
 ) -> Executable:
     """Build a stage-1 thunk that calls a host callback for stage-2 JIT.
@@ -211,38 +247,40 @@ def _build_callback_thunk(
     The compiled function passes all its arguments to a host callback.
     The callback resolves all remaining __params__ values (using the full
     stage-1 resolution loop), then JIT-compiles and executes stage-2.
+
+    ``func_index`` identifies the target FunctionOp inside
+    ``resolved_root``'s reachable-functions list.
     """
-    stage2_template = resolved
-    func_index = resolved.functions.index(func)
+    stage2_template = resolved_root
     callback_host_refs: list[object] = []
 
     def _on_call(*python_args: object) -> Memory:
-        template = deepcopy(stage2_template)
-        s2_func = template.functions[func_index]
+        template_root = deepcopy(stage2_template)
+        s2_func = _reachable_functions(template_root)[func_index]
 
         _resolve_with_runtime_args(s2_func, compiler, s2_func.body.args, python_args)
 
-        func_module = Module(ops=[s2_func])
         # _resolve_with_runtime_args substitutes block_args with constants,
         # which resolves boundaries that depend on them. But ops inside
         # nested blocks can have params that reference the nested block's
         # own args (not our outer block_args) — those still need staging.
         if _has_nested_boundaries(s2_func):
-            exe = compiler.compile(func_module)  # full pipeline incl. staging
+            exe = compiler.compile(s2_func)  # full pipeline incl. staging
         else:
-            exe = compiler.run(func_module)  # skip redundant staging pass
+            exe = compiler.run(s2_func)  # skip redundant staging pass
         assert isinstance(exe, Executable)
         callback_host_refs.extend(exe.host_refs)
         mem = exe.run(*python_args)
         callback_host_refs.append(mem)
         return mem
 
-    exe = build_callback_thunk(func, _on_call)
+    target_func = _reachable_functions(resolved_root)[func_index]
+    exe = build_callback_thunk(target_func, _on_call)
     exe.host_refs.append(callback_host_refs)
     return exe
 
 
-def compile_module(module: Module, compiler: Compiler[T]) -> T:
+def compile_value(root: dgen.Value, compiler: Compiler[T]) -> T:
     """Full staged compilation: resolve stage-0, run passes, exit.
 
     If all __params__ are resolvable at compile time (stage-0), resolves them
@@ -251,49 +289,52 @@ def compile_module(module: Module, compiler: Compiler[T]) -> T:
     If some __params__ depend on runtime values (stage-1+), builds callback-
     based thunks that JIT-compile when runtime values become available.
 
-    For multi-function modules where multiple functions have unresolved
+    For multi-function IR where multiple functions have unresolved
     boundaries, each is compiled as a callback thunk and registered as a
     global symbol so cross-function calls (including recursion) work.
     """
 
-    resolved = resolve_stage0(module, compiler)
+    resolved = resolve_stage0(root, compiler)
 
     # Find all functions with unresolved boundaries (including nested blocks)
-    unresolved_funcs: list[FunctionOp] = []
-    for func in resolved.functions:
+    functions = _reachable_functions(resolved)
+    unresolved_indices: list[int] = []
+    for i, func in enumerate(functions):
         stages = compute_stages(func)
         if _unresolved_boundaries(func, stages) or _has_nested_boundaries(func):
-            unresolved_funcs.append(func)
+            unresolved_indices.append(i)
 
-    if not unresolved_funcs:
+    if not unresolved_indices:
         return compiler.run(resolved)
 
-    # Compile each unresolved function as a callback thunk
-    # and register it as a global symbol for cross-function calls.
-    # Process non-entry functions first so their symbols are available
+    # The "entry" is the root itself. If the root is a FunctionOp it IS
+    # the entry; otherwise codegen will wrap it. For callback thunks,
+    # process non-entry functions first so their symbols are available
     # when the entry function's callback fires.
-    entry = resolved.functions[-1]
-    ordered = [f for f in unresolved_funcs if f is not entry] + [
-        f for f in unresolved_funcs if f is entry
-    ]
+    entry_func: FunctionOp | None = (
+        resolved if isinstance(resolved, FunctionOp) else None
+    )
+    ordered_indices = [
+        i for i in unresolved_indices if functions[i] is not entry_func
+    ] + [i for i in unresolved_indices if functions[i] is entry_func]
 
     all_host_refs: list[object] = []
     entry_exe: Executable | None = None
 
-    for func in ordered:
-        exe = _build_callback_thunk(resolved, func, compiler)
+    for i in ordered_indices:
+        exe = _build_callback_thunk_for(resolved, i, compiler)
         all_host_refs.extend(exe.host_refs)
         all_host_refs.extend(register_executable(exe))
 
-        if func is entry:
+        if functions[i] is entry_func:
             entry_exe = exe
 
     if entry_exe is not None:
         entry_exe.host_refs = all_host_refs
         return entry_exe  # type: ignore[return-value]
 
-    # Entry point has no unresolved boundaries — compile normally
-    # but keep callback thunks alive
+    # Entry has no unresolved boundaries — compile normally but keep
+    # callback thunks alive.
     result = compiler.run(resolved)
     assert isinstance(result, Executable)
     result.host_refs.extend(all_host_refs)
