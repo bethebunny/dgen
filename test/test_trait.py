@@ -112,7 +112,7 @@ class NoConstraintsOp(Op):
     __operands__: ClassVar[Fields] = (("input", Type),)
 
 
-def _make_module(*body_ops: Op) -> FunctionOp:
+def _make_function(*body_ops: Op) -> FunctionOp:
     """Build a minimal FunctionOp wrapping ops inside a function body."""
     result = body_ops[-1] if body_ops else MyInt().constant(0)
     return FunctionOp(
@@ -214,31 +214,31 @@ def test_verify_operand_trait_satisfied() -> None:
     """Constraint passes when operand type implements the required trait."""
     c = MyInt().constant(42)
     op = RequiresNumericOp(input=c)
-    module = _make_module(op)
-    verify_constraints(module)  # should not raise
+    fn = _make_function(op)
+    verify_constraints(fn)  # should not raise
 
 
 def test_verify_both_traits_satisfied() -> None:
     """Both trait constraints pass when operand type implements both."""
     c = MyInt().constant(42)
     op = RequiresBothOp(input=c)
-    module = _make_module(op)
-    verify_constraints(module)  # should not raise
+    fn = _make_function(op)
+    verify_constraints(fn)  # should not raise
 
 
 def test_verify_no_constraints_passes() -> None:
     """Ops without constraints pass verification."""
     c = MyStr().constant("hello")
     op = NoConstraintsOp(input=c)
-    module = _make_module(op)
-    verify_constraints(module)  # should not raise
+    fn = _make_function(op)
+    verify_constraints(fn)  # should not raise
 
 
 def test_verify_param_trait_satisfied() -> None:
     """Constraint passes when a compile-time parameter's type has the trait."""
     op = RequiresParamTraitOp(kind=MyInt())
-    module = _make_module(op)
-    verify_constraints(module)  # should not raise
+    fn = _make_function(op)
+    verify_constraints(fn)  # should not raise
 
 
 # -- verify_constraints: violated constraints --------------------------------
@@ -248,18 +248,18 @@ def test_verify_operand_trait_violated() -> None:
     """Constraint fails when operand type does not implement the required trait."""
     c = MyStr().constant("hello")
     op = RequiresNumericOp(input=c)
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError, match="does not implement trait Numeric"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 def test_verify_ordered_trait_violated() -> None:
     """MyStr does not implement Ordered — constraint fails."""
     c = MyStr().constant("hello")
     op = RequiresOrderedOp(input=c)
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError, match="does not implement trait Ordered"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 def test_verify_one_of_two_traits_violated() -> None:
@@ -267,35 +267,35 @@ def test_verify_one_of_two_traits_violated() -> None:
     # MyStr lacks both Numeric and Ordered — first failure is Numeric
     c = MyStr().constant("hello")
     op = RequiresBothOp(input=c)
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError, match="does not implement trait Numeric"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 def test_verify_param_trait_violated() -> None:
     """Constraint fails when parameter type does not have the trait."""
     op = RequiresParamTraitOp(kind=MyStr())
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError, match="does not implement trait Numeric"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 def test_verify_error_names_op() -> None:
     """Error message includes the op class name and op name."""
     c = MyStr().constant("hello")
     op = RequiresNumericOp(input=c, name="bad_op")
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError, match="RequiresNumericOp %bad_op"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 def test_verify_error_names_operand_and_type() -> None:
     """Error message includes the operand name and actual type."""
     c = MyStr().constant("hello")
     op = RequiresNumericOp(input=c, name="v0")
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError, match="subject 'input'.*does not implement"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 # -- verify_constraints: unknown subject / trait -----------------------------
@@ -315,9 +315,9 @@ def test_verify_unknown_subject_raises() -> None:
 
     c = MyInt().constant(42)
     op = BadSubjectOp(input=c)
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError, match="unknown subject 'nonexistent'"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 def test_verify_unknown_trait_raises() -> None:
@@ -334,12 +334,12 @@ def test_verify_unknown_trait_raises() -> None:
 
     c = MyInt().constant(42)
     op = BadTraitOp(input=c)
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError, match="unknown trait 'NoSuchTrait'"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
-# -- verify_constraints: mixed ops in a module -------------------------------
+# -- verify_constraints: mixed ops in a fn -------------------------------
 
 
 def test_verify_mixed_ops_first_bad() -> None:
@@ -350,9 +350,9 @@ def test_verify_mixed_ops_first_bad() -> None:
     from dgen.dialects.builtin import ChainOp
 
     chain = ChainOp(lhs=bad, rhs=good, type=MyInt())
-    module = _make_module(chain)
+    fn = _make_function(chain)
     with pytest.raises(ConstraintError, match="RequiresNumericOp %bad"):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 # -- verify_constraints: expression constraints (not yet implemented) --------
@@ -398,9 +398,9 @@ class RequiresMatchOp(Op):
 def test_verify_expression_constraint_violated() -> None:
     """Expression constraint should fail when condition is false."""
     op = RequiresPositiveOp(input=MyInt().constant(-1))
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 @pytest.mark.xfail(
@@ -409,9 +409,9 @@ def test_verify_expression_constraint_violated() -> None:
 def test_verify_type_equality_expression_violated() -> None:
     """Type equality expression should fail when operand types differ."""
     op = RequiresEqualTypesOp(lhs=MyInt().constant(1), rhs=MyStr().constant("x"))
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError):
-        verify_constraints(module)
+        verify_constraints(fn)
 
 
 @pytest.mark.xfail(
@@ -420,6 +420,6 @@ def test_verify_type_equality_expression_violated() -> None:
 def test_verify_match_constraint_violated() -> None:
     """Match constraint should fail when operand type doesn't match."""
     op = RequiresMatchOp(input=MyStr().constant("x"))
-    module = _make_module(op)
+    fn = _make_function(op)
     with pytest.raises(ConstraintError):
-        verify_constraints(module)
+        verify_constraints(fn)

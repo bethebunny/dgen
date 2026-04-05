@@ -17,12 +17,12 @@ from dgen.testing import strip_prefix
 
 def _jit(ir: str, *args: object) -> object:
     """Parse IR, compile through memory pipeline, JIT-run, return JSON result."""
-    module = parse(strip_prefix(ir))
+    value = parse(strip_prefix(ir))
     compiler: Compiler[Executable] = Compiler(
         [ControlFlowToGoto(), MemoryToLLVM(), BuiltinToLLVM(), AlgebraToLLVM()],
         LLVMCodegen(),
     )
-    exe = compiler.compile(module)
+    exe = compiler.compile(value)
     return exe.run(*args).to_json()
 
 

@@ -28,14 +28,14 @@ def test_if_no_capture_roundtrip():
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    module = parse(ir)
-    fn = module
+    value = parse(ir)
+    fn = value
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
     assert if_op.then_body.args == []
     assert if_op.else_body.args == []
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_if_with_capture_roundtrip():
@@ -52,8 +52,8 @@ def test_if_with_capture_roundtrip():
         |     else_body(%x: number.Float64):
         |         %b : number.Float64 = 2.0
     """)
-    module = parse(ir)
-    fn = module
+    value = parse(ir)
+    fn = value
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
@@ -61,7 +61,7 @@ def test_if_with_capture_roundtrip():
     assert len(if_op.else_body.args) == 1
     assert if_op.then_body.args[0].name == "x"
     assert if_op.else_body.args[0].name == "x"
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_if_python_api_no_capture():
@@ -77,14 +77,14 @@ def test_if_python_api_no_capture():
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    module = parse(ir)
-    fn = module
+    value = parse(ir)
+    fn = value
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
     assert if_op.then_body.args == []
     assert if_op.else_body.args == []
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 # -- Lowering to goto --
@@ -105,8 +105,8 @@ def test_if_value_lowering(ir_snapshot):
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    module = parse(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+    value = parse(ir)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)
     assert lowered == ir_snapshot
 
 
@@ -128,8 +128,8 @@ def test_if_void_lowering(ir_snapshot):
         |         %_ : Nil = memory.store(%alloc, %f, %alloc)
         |     %result : index.Index = memory.load(%if, %alloc)
     """)
-    module = parse(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+    value = parse(ir)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)
     assert lowered == ir_snapshot
 
 
@@ -149,8 +149,8 @@ def test_if_with_body_captures_lowering(ir_snapshot):
         |         %two : number.Float64 = 2.0
         |         %b : number.Float64 = algebra.add(%x, %two)
     """)
-    module = parse(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+    value = parse(ir)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)
     assert lowered == ir_snapshot
 
 
@@ -169,11 +169,11 @@ def test_if_type_mismatch_then():
         |     else_body():
         |         %b : index.Index = 20
     """)
-    module = parse(ir)
+    value = parse(ir)
     import pytest
 
     with pytest.raises(TypeError, match="then-branch result type"):
-        Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)
 
 
 def test_if_type_mismatch_else():
@@ -191,8 +191,8 @@ def test_if_type_mismatch_else():
         |     else_body():
         |         %b : number.Float64 = 2.0
     """)
-    module = parse(ir)
+    value = parse(ir)
     import pytest
 
     with pytest.raises(TypeError, match="else-branch result type"):
-        Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)

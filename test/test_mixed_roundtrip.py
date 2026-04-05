@@ -20,8 +20,8 @@ def test_llvm_via_imports():
         |     %1 : number.Float64 = 1.0
         |     %store : Nil = memory.store(%0, %1, %0)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_llvm_full_loop():
@@ -49,5 +49,5 @@ def test_llvm_full_loop():
         |     %br : Nil = goto.branch<%loop_header>([%init])
         |     %_ : Nil = chain(%0, %br)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))

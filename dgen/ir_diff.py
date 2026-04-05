@@ -21,10 +21,9 @@ import click
 
 import dgen
 from dgen import Dialect, asm
-from dgen.asm.formatting import SlotTracker, op_asm
+from dgen.asm.formatting import SlotTracker, _is_sugar_op, op_asm
 from dgen.asm.parser import parse
-from dgen.dialects.function import FunctionOp
-from dgen.graph import all_values
+from dgen.graph import all_values, transitive_dependencies
 from dgen.ir_equiv import Fingerprinter
 
 
@@ -33,19 +32,21 @@ def structural_diff(actual: dgen.Value, expected: dgen.Value) -> str:
     return diff_values(actual, expected)
 
 
-def _reachable_functions(
-    root: dgen.Value | None,
-) -> dict[str | None, FunctionOp]:
-    """FunctionOps reachable from root, keyed by name, deduped by identity."""
-    if root is None:
-        return {}
-    seen: set[int] = set()
-    out: dict[str | None, FunctionOp] = {}
+def _make_fingerprinter(root: dgen.Value) -> Fingerprinter:
+    fp = Fingerprinter()
     for v in all_values(root):
-        if isinstance(v, FunctionOp) and id(v) not in seen:
-            seen.add(id(v))
-            out[v.name] = v
-    return out
+        for _, block in v.blocks:
+            fp.register_block(block)
+    return fp
+
+
+def _top_level_ops(root: dgen.Value) -> list[dgen.Op]:
+    """The ops ``asm_with_imports`` would emit as top-level SSA statements."""
+    return [
+        v
+        for v in transitive_dependencies(root)
+        if isinstance(v, dgen.Op) and not _is_sugar_op(v)
+    ]
 
 
 def diff_values(
@@ -59,61 +60,51 @@ def diff_values(
     ``---``/``+++`` file headers so the output can be piped to external
     diff renderers like ``delta``.
     """
-    actual_funcs = _reachable_functions(actual)
-    expected_funcs = _reachable_functions(expected)
-
-    hunks: list[str] = []
-
-    for name in sorted(expected_funcs.keys() | actual_funcs.keys()):
-        if name not in actual_funcs:
-            lines = "\n".join(
-                f"-{line}" for line in asm.format(expected_funcs[name]).splitlines()
-            )
-            hunks.append(lines)
-        elif name not in expected_funcs:
-            lines = "\n".join(
-                f"+{line}" for line in asm.format(actual_funcs[name]).splitlines()
-            )
-            hunks.append(lines)
-        else:
-            body = "\n".join(
-                _diff_function(actual_funcs[name], expected_funcs[name], context)
-            )
-            if body:
-                hunks.append(body)
-
-    if not hunks:
+    if actual is None and expected is None:
         return ""
-    return "--- expected\n+++ actual\n" + "\n".join(hunks)
+    if actual is None:
+        assert expected is not None
+        lines = "\n".join(f"-{line}" for line in asm.format(expected).splitlines())
+        return "--- expected\n+++ actual\n" + lines
+    if expected is None:
+        lines = "\n".join(f"+{line}" for line in asm.format(actual).splitlines())
+        return "--- expected\n+++ actual\n" + lines
 
+    fp_a = _make_fingerprinter(actual)
+    fp_e = _make_fingerprinter(expected)
+    if fp_a.fingerprint(actual) == fp_e.fingerprint(expected):
+        return ""
 
-def _diff_function(
-    actual_func: FunctionOp, expected_func: FunctionOp, context: int
-) -> Iterator[str]:
-    """Yield unified-diff lines comparing two function bodies."""
-    fp_a = Fingerprinter()
-    fp_e = Fingerprinter()
-    for _, block in actual_func.blocks:
-        fp_a.register_block(block)
-    for _, block in expected_func.blocks:
-        fp_e.register_block(block)
-
-    if fp_a.fingerprint(actual_func) == fp_e.fingerprint(expected_func):
-        return
+    actual_ops = _top_level_ops(actual)
+    expected_ops = _top_level_ops(expected)
 
     tracker_a = SlotTracker()
-    tracker_a.register([actual_func])
+    tracker_a.register(actual_ops)
     tracker_e = SlotTracker()
-    tracker_e.register([expected_func])
-
-    actual_ops = list(actual_func.body.ops)
-    expected_ops = list(expected_func.body.ops)
+    tracker_e.register(expected_ops)
 
     actual_fps = [fp_a.fingerprint(op) for op in actual_ops]
     expected_fps = [fp_e.fingerprint(op) for op in expected_ops]
 
     actual_fmt = [list(op_asm(op, tracker_a)) for op in actual_ops]
     expected_fmt = [list(op_asm(op, tracker_e)) for op in expected_ops]
+
+    body = "\n".join(
+        _diff_op_lists(actual_fps, expected_fps, actual_fmt, expected_fmt, context)
+    )
+    if not body:
+        return ""
+    return "--- expected\n+++ actual\n" + body
+
+
+def _diff_op_lists(
+    actual_fps: list[bytes],
+    expected_fps: list[bytes],
+    actual_fmt: list[list[str]],
+    expected_fmt: list[list[str]],
+    context: int,
+) -> Iterator[str]:
+    """Yield unified-diff lines from two fingerprint/formatted-op lists."""
 
     exp_starts = _line_starts(expected_fmt)
     act_starts = _line_starts(actual_fmt)

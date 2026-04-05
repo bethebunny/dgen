@@ -15,8 +15,8 @@ def test_roundtrip_boolean():
         | %f : function.Function<[number.Boolean], Nil> = function.function<Nil>() body(%x: number.Boolean):
         |     %0 : index.Index = 0
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_signed_integer():
@@ -28,8 +28,8 @@ def test_roundtrip_signed_integer():
         | %f : function.Function<[number.SignedInteger<64>], Nil> = function.function<Nil>() body(%x: number.SignedInteger<64>):
         |     %0 : index.Index = 0
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_unsigned_integer():
@@ -41,8 +41,8 @@ def test_roundtrip_unsigned_integer():
         | %f : function.Function<[number.UnsignedInteger<32>], Nil> = function.function<Nil>() body(%x: number.UnsignedInteger<32>):
         |     %0 : index.Index = 0
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_float64():
@@ -54,5 +54,5 @@ def test_roundtrip_float64():
         | %f : function.Function<[number.Float64], Nil> = function.function<Nil>() body(%x: number.Float64):
         |     %0 : index.Index = 0
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))

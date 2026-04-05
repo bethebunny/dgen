@@ -170,8 +170,8 @@ def test_zero_type_has_natural_trait_via_asm():
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : Type = peano.zero()
     """)
-    module = parse(ir)
-    func = module
+    value = parse(ir)
+    func = value
     zero_op = list(func.body.ops)[0]
     assert isinstance(zero_op, ZeroOp)
     # ZeroOp produces a type value — the result type is TypeType.
@@ -209,8 +209,8 @@ def test_trait_in_asm_type_annotation():
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : peano.Natural = peano.zero()
     """)
-    module = parse(ir)
-    func = module
+    value = parse(ir)
+    func = value
     zero_op = list(func.body.ops)[0]
     assert isinstance(zero_op, ZeroOp)
     assert isinstance(zero_op.type, Natural)
@@ -228,10 +228,10 @@ def test_trait_annotation_roundtrips_through_asm():
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : peano.Natural = peano.zero()
     """)
-    module = parse(ir)
+    value = parse(ir)
     from dgen import asm
 
-    text = asm.format(module)
+    text = asm.format(value)
     assert "peano.Natural" in text
     reparsed = parse(text)
     zero_op = list(reparsed.body.ops)[0]
@@ -252,8 +252,8 @@ def test_trait_as_block_argument_type():
         |     %s : peano.Natural = peano.successor<%z>()
         |     %v : index.Index = peano.value<%s>()
     """)
-    module = parse(ir)
-    func = module
+    value = parse(ir)
+    func = value
     ops = func.body.ops
     for op in ops:
         if isinstance(op, (ZeroOp, SuccessorOp)):
@@ -284,10 +284,10 @@ def test_peano_constant():
         |     %s3 : Type = peano.successor<%s2>()
         |     %n : index.Index = peano.value<%s3>()
     """)
-    module = parse(ir)
+    value = parse(ir)
 
     print("\n=== Compile ===")
-    exe = peano_compiler.compile(module)
+    exe = peano_compiler.compile(value)
 
     print("\n=== Run ===")
     result = exe.run()
@@ -310,8 +310,8 @@ def test_equal_and_subtract_roundtrip():
         |     %sub : index.Index = algebra.subtract(%n, 1)
         |     %result : index.Index = algebra.add(%eq_i, %sub)
     """)
-    module = parse(ir)
-    asm_lines = list(module.asm)
+    value = parse(ir)
+    asm_lines = list(value.asm)
     asm_text = "\n".join(asm_lines)
     assert "algebra.equal" in asm_text
     assert "algebra.subtract" in asm_text
@@ -328,8 +328,8 @@ def test_subtract_jit():
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %sub : index.Index = algebra.subtract(%n, 1)
     """)
-    module = parse(ir)
-    exe = llvm_compile(module)
+    value = parse(ir)
+    exe = llvm_compile(value)
     assert exe.run(5).to_json() == 4
 
 
@@ -348,8 +348,8 @@ def test_if_else_parse_roundtrip():
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    module = parse(ir)
-    asm_text = asm.format(module)
+    value = parse(ir)
+    asm_text = asm.format(value)
     print(asm_text)
     assert "control_flow.if(" in asm_text
     assert "else" in asm_text
@@ -374,8 +374,8 @@ def test_if_else_jit():
         |     else_body() captures(%n):
         |         %val : index.Index = algebra.subtract(%n, 1)
     """)
-    module = parse(ir)
-    exe = llvm_compile(module)
+    value = parse(ir)
+    exe = llvm_compile(value)
     assert exe.run(0).to_json() == 1
     assert exe.run(5).to_json() == 4
     assert exe.run(1).to_json() == 0
@@ -395,8 +395,8 @@ def test_call_op_roundtrip():
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
         |     %result : index.Index = function.call<%add_one>([%x])
     """)
-    module = parse(ir)
-    asm_text = asm.format(module)
+    value = parse(ir)
+    asm_text = asm.format(value)
     print(asm_text)
     assert "function.call<%add_one>" in asm_text
 
@@ -415,14 +415,14 @@ def test_call_jit():
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
         |     %result : index.Index = function.call<%add_one>([%x])
     """)
-    module = parse(ir)
-    exe = llvm_compile(module)
+    value = parse(ir)
+    exe = llvm_compile(value)
     assert exe.run(5).to_json() == 6
     assert exe.run(0).to_json() == 1
 
 
 def test_multi_function_staged():
-    """Multi-function module: helper with staging, called from main."""
+    """Multi-function value: helper with staging, called from main."""
     ir = strip_prefix("""
         | import algebra
         | import number
@@ -440,8 +440,8 @@ def test_multi_function_staged():
         |     %n : index.Index = peano.value<%s1>()
         |     %result : index.Index = function.call<%add_one>([%n])
     """)
-    module = parse(ir)
-    exe = peano_compiler.compile(module)
+    value = parse(ir)
+    exe = peano_compiler.compile(value)
     result = exe.run()
     assert result.to_json() == 2  # value(Successor(Zero)) = 1, then add 1 = 2
 
@@ -458,8 +458,8 @@ def test_equal_jit():
         |     %cmp : number.Boolean = algebra.equal(%n, 0)
         |     %eq : index.Index = algebra.cast(%cmp)
     """)
-    module = parse(ir)
-    exe = llvm_compile(module)
+    value = parse(ir)
+    exe = llvm_compile(value)
     assert exe.run(0).to_json() == 1
     assert exe.run(5).to_json() == 0
 
@@ -470,7 +470,7 @@ def test_verify_dag_detects_cycle():
     We construct a cycle by parsing valid IR and then mutating it: the
     function body result references the function itself via a ChainOp.
     """
-    module = parse(
+    value = parse(
         strip_prefix("""
         | import function
         | import index
@@ -479,7 +479,7 @@ def test_verify_dag_detects_cycle():
         |     %0 : Nil = {}
     """)
     )
-    func = module
+    func = value
     assert isinstance(func, FunctionOp)
     # Create cycle: func.body.result → ChainOp → func
     chain = ChainOp(lhs=func.body.result, rhs=func, type=Nil())
@@ -523,8 +523,8 @@ def test_recursive_peano():
         |         %predecessor : peano.Natural = function.call<%natural>([%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()
     """)
-    module = parse(ir)
-    exe = peano_compiler.compile(module)
+    value = parse(ir)
+    exe = peano_compiler.compile(value)
 
     # natural(0) = Successor(Zero) → value = 1, so main(0) = 1
     assert exe.run(0).to_json() == 1

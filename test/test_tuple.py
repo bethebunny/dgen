@@ -55,8 +55,8 @@ def test_tuple_constant_roundtrip():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %x : Tuple<[index.Index, String]> = [42, "hello"]
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_tuple_type_constant_serialization():
@@ -106,5 +106,5 @@ def test_tuple_type_values():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %types : Tuple<[Type, Type]> = [Index, String]
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))

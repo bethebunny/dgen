@@ -76,10 +76,6 @@ def parse(text: str) -> Value:
     return value
 
 
-# Backwards-compat alias.
-parse_value = parse
-
-
 class ASMParser:
     def __init__(self, text: str) -> None:
         self.text = text

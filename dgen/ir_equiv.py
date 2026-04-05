@@ -15,7 +15,6 @@ import struct
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialects.builtin import Nil
-from dgen.dialects.function import FunctionOp
 from dgen.graph import all_values
 from dgen.module import PackOp
 from dgen.type import Constant, Type, Value
@@ -126,32 +125,23 @@ class Fingerprinter:
         return _hash_parts(b"block", self.fingerprint(block.result))
 
 
-def _function_fingerprints(root: Value) -> dict[str | None, bytes]:
-    """Fingerprint all functions reachable from root using a shared Fingerprinter.
+def fingerprint(root: Value) -> bytes:
+    """Fingerprint a Value's use-def graph.
 
-    A single Fingerprinter is used so that cross-function callee references
-    (where a CallOp's callee parameter is the actual FunctionOp object) can
-    be fingerprinted without KeyErrors: all block args from all functions are
-    registered before any fingerprinting begins.
+    Pre-registers every block reachable from root (including captures,
+    nested blocks, and cross-value references) so arg/param positions are
+    known before any recursive fingerprinting begins.
     """
-    seen: set[int] = set()
-    functions: list[FunctionOp] = []
-    for v in all_values(root):
-        if isinstance(v, FunctionOp) and id(v) not in seen:
-            seen.add(id(v))
-            functions.append(v)
     fp = Fingerprinter()
-    for func in functions:
-        for _, block in func.blocks:
+    for v in all_values(root):
+        for _, block in v.blocks:
             fp.register_block(block)
-    return {f.name: fp.fingerprint(f) for f in functions}
+    return fp.fingerprint(root)
 
 
 def graph_equivalent(actual: Value, expected: Value) -> bool:
-    """Return True if actual and expected compute the same IR graph.
-
-    Matches functions by name. Two functions are equivalent if their
-    use-def graphs are structurally isomorphic — same ops, same operand
-    structure, up to op ordering and SSA name assignment.
+    """Return True if actual and expected have structurally equivalent
+    use-def graphs — same ops, same operand structure, up to op ordering
+    and SSA name assignment.
     """
-    return _function_fingerprints(actual) == _function_fingerprints(expected)
+    return fingerprint(actual) == fingerprint(expected)
