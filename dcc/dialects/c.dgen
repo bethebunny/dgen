@@ -37,7 +37,6 @@ op field_address<field_name: String>(base)
 
 # --- Functions ---
 
-op call<callee: String>(arguments: Span)
 op return(value) -> Nil
 
 # --- C-specific arithmetic ---

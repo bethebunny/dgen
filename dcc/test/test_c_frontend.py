@@ -73,10 +73,8 @@ _GCC_COMPAT_DEFINES = [
 
 
 def run_c(source: str, *args: int) -> int:
-    """Compile a C source string, JIT the first function, return the result."""
-    ast = parse_c_string(source)
-    entry, _stats = lower(ast)
-    lowered = _c_compiler.run(entry)
+    """Compile a C source string, JIT the last function, return the result."""
+    lowered = _lower_to_llvm(source)
     exe = llvm_compile(lowered)
     result = exe.run(*args)
     return result.to_json()
@@ -431,18 +429,26 @@ def _lower_c(source: str) -> dgen.Value:
 
 
 def _lower_to_llvm(source: str) -> dgen.Value:
-    """Run the full frontend pipeline on the entry function."""
+    """Run the full frontend pipeline, chaining all functions."""
+    from functools import reduce
+    from dgen.dialects.builtin import ChainOp
     from dgen.passes.control_flow_to_goto import ControlFlowToGoto
     from dgen.compiler import verify_passes
 
-    entry = _lower_c(source)
+    ast = parse_c_string(source)
+    _, stats = lower(ast)
+    assert stats.skipped_functions == 0, (
+        f"lowering skipped functions: {stats.skip_reasons}"
+    )
+    all_fns = stats.function_ops
+    root = reduce(lambda a, b: ChainOp(lhs=a, rhs=b, type=a.type), all_fns)
     pipeline = Compiler(
         [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM(), ControlFlowToGoto()],
         IdentityPass(),
     )
     token = verify_passes.set(False)
     try:
-        return pipeline.run(entry)
+        return pipeline.run(root)
     finally:
         verify_passes.reset(token)
 
@@ -617,15 +623,17 @@ class TestSessionFrontendFixes:
     ) -> None:
         # Pre-fix: "indirect function calls not yet supported"
         from dgen.dialects import function as _function
-        from dcc.dialects.c import CallOp as CCallOp
+        from dgen.block import BlockArgument
 
         m = _lower_c("int f(int (*p)(int)) { return p(5); }")
-        # Function pointer parameter: expect function.CallOp, not c.CallOp.
-        assert _contains_op(m, _function.CallOp), (
-            "indirect call should become function.CallOp"
-        )
-        assert not _contains_op(m, CCallOp), (
-            "calling a function-pointer local must not become c.CallOp"
+        # The call's callee must be a BlockArgument (the function
+        # pointer parameter), not a file-scope ExternOp/FunctionOp.
+        from dgen.graph import all_values
+
+        call_ops = [v for v in all_values(m) if isinstance(v, _function.CallOp)]
+        assert call_ops, "indirect call should become function.CallOp"
+        assert isinstance(call_ops[0].callee, BlockArgument), (
+            "calling a function-pointer local must dispatch through an SSA value"
         )
         assert m == ir_snapshot
 
