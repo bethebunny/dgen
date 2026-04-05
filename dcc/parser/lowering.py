@@ -210,6 +210,10 @@ class Parser:
         self.file_scope = Scope()
         self.stats = LoweringStats()
         self._current_return_type: dgen.Type | None = None
+        # (callee_name, return_type) for every named c.CallOp produced,
+        # including calls generated inside unreachable if/while bodies.
+        # Used to synthesise ExternOps for undefined callees.
+        self._named_calls: dict[str, dgen.Type] = {}
 
     def parse(self, ast: c_ast.FileAST) -> function.FunctionOp:
         # First pass: register types and function declarations
@@ -256,7 +260,7 @@ class Parser:
                     )
 
         self.stats.function_ops = functions
-        _resolve_callee_captures(functions)
+        _resolve_callee_captures(functions, self._named_calls)
         return functions[-1]
 
     def _return_type(self, node: c_ast.Node) -> dgen.Type:
@@ -826,6 +830,7 @@ class Parser:
                 ret_type = self.file_scope.lookup(callee).type
             else:
                 ret_type = c_int(32)
+            self._named_calls.setdefault(callee, ret_type)
             op = CallOp(callee=String().constant(callee), arguments=p, type=ret_type)
             yield op
             return op
@@ -881,24 +886,42 @@ class Parser:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_callee_captures(functions: list[function.FunctionOp]) -> None:
-    """Add called-by-name functions as captures of the calling function's body.
+def _resolve_callee_captures(
+    functions: list[function.FunctionOp],
+    named_calls: dict[str, dgen.Type],
+) -> None:
+    """Attach callee references as captures on every function's body.
 
     C's c.CallOp carries the callee as a string name, so callers don't
-    naturally reference callee FunctionOps in their use-def graph. To
-    make the whole program reachable from a single entry, scan each
-    function's body for CallOps and add the matching FunctionOp to the
-    caller's body captures.
+    naturally reference callees in their use-def graph. To make the
+    program reachable from a single entry, attach every defined
+    function and every undefined callee (as an ExternOp) as captures
+    on every caller.
+
+    ``named_calls`` is the complete set of called-by-name sites
+    collected during lowering, including calls inside unreachable
+    branch bodies (which the use-def walk would otherwise miss).
     """
     by_name: dict[str, function.FunctionOp] = {f.name: f for f in functions if f.name}
+    extern_cache: dict[str, ExternOp] = {}
+    for name, ret_type in named_calls.items():
+        if name in by_name:
+            continue
+        extern_cache[name] = ExternOp(
+            name=name,
+            symbol=String().constant(name),
+            type=FunctionType(arguments=pack([]), result_type=ret_type),
+        )
+
     from dgen.graph import all_values
 
     for func in functions:
-        seen: set[function.FunctionOp] = set()
+        seen: set[dgen.Value] = set()
         captures = list(func.body.captures)
         for v in all_values(func):
             if isinstance(v, CallOp):
-                target = by_name.get(string_value(v.callee))
+                name = string_value(v.callee)
+                target: dgen.Value | None = by_name.get(name) or extern_cache.get(name)
                 if target is not None and target is not func and target not in seen:
                     seen.add(target)
                     captures.append(target)

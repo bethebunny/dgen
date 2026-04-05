@@ -655,6 +655,19 @@ class TestSessionCodegenFixes:
         # SSA-valued callees.
         _codegen_verifies("int f(int (*p)(int), int x) { return p(x); }")
 
+    def test_extern_callee_auto_declared(self) -> None:
+        # Pre-fix: calling a declared-but-not-defined function (e.g. any
+        # libc routine) produced `call i64 @malloc(...)` with no matching
+        # `declare`, so LLVM rejected the module with "use of undefined
+        # value '@malloc'". _resolve_callee_captures now synthesises an
+        # ExternOp for every named callee that doesn't correspond to a
+        # FunctionOp, and attaches it as a capture of every calling
+        # function's body. emit_llvm_ir picks up those ExternOps and
+        # emits `declare` lines.
+        _codegen_verifies(
+            "void *malloc(unsigned long);void *f(unsigned long n) { return malloc(n); }"
+        )
+
     def test_function_name_as_argument_value(self) -> None:
         # Pre-fix: a void-returning function used by name as an argument
         # (e.g. `h(g)`) was bound at file scope with type = its return
@@ -709,7 +722,7 @@ class TestKnownFailures:
         _lower_c("int f(int x) { return *x; }")
 
     @pytest.mark.xfail(
-        reason="codegen: use of undefined value — top bucket (~850 in sqlite3). "
+        reason="codegen: use of undefined value — local SSA (~34 in sqlite3). "
         "if/else with a written-in-both-branches local var loses its phi.",
         strict=True,
     )
@@ -942,7 +955,30 @@ class TestSqlite3:
             finally:
                 _emit_ctx.reset(ctx_token)
             emitted += 1
-            ir = preamble + "\n".join(lines)
+            # Collect extern declarations reachable from this function so
+            # string-named callees (libc, builtins, other sqlite3
+            # functions) have a `declare`.
+            from dgen.codegen import emit_extern, llvm_type
+            from dgen.graph import all_values
+            from dgen.dialects import builtin as _builtin
+            from dgen.dialects import function as _function
+
+            seen_syms: set[str] = set()
+            declares: list[str] = []
+            for v in all_values(func):
+                if isinstance(v, _builtin.ExternOp):
+                    sym = v.symbol.__constant__.to_json()
+                    if sym not in seen_syms:
+                        seen_syms.add(sym)
+                        declares.extend(emit_extern(v))
+                elif isinstance(v, _function.FunctionOp) and v is not func:
+                    if v.name and v.name not in seen_syms:
+                        seen_syms.add(v.name)
+                        ret_ty = llvm_type(v.result_type)
+                        arg_tys = ", ".join(llvm_type(a.type) for a in v.body.args)
+                        declares.append(f"declare {ret_ty} @{v.name}({arg_tys})")
+            extern_block = ("\n".join(declares) + "\n") if declares else ""
+            ir = preamble + extern_block + "\n".join(lines)
             try:
                 mod = llvm_binding.parse_assembly(ir)
                 parsed += 1
@@ -1000,4 +1036,4 @@ class TestSqlite3:
 
         # Ratchets — raise as we fix things
         assert emitted >= total - 20, f"emitted regressed: {emitted}/{total}\n{report}"
-        assert verified >= 1240, f"verified regressed: {verified}\n{report}"
+        assert verified >= 2050, f"verified regressed: {verified}\n{report}"
