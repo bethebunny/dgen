@@ -26,6 +26,8 @@ from dcc.dialects.c import (
     AssignOp,
     CompoundAssignOp,
     DereferenceOp,
+    ElementAddressOp,
+    FieldAddressOp,
     MemberAccessOp,
     PointerMemberAccessOp,
     PostDecrementOp,
@@ -33,6 +35,7 @@ from dcc.dialects.c import (
     PreDecrementOp,
     PreIncrementOp,
     ReadVariableOp,
+    StoreIndirectOp,
     SubscriptOp,
     VariableDeclarationOp,
 )
@@ -169,7 +172,9 @@ class CToMemory(Pass):
 
     def _lower_increment(self, op: dgen.Op, *, post: bool, negate: bool) -> dgen.Value:
         name = _variable_name(op)
-        alloca = self._alloca[name]
+        alloca = self._alloca.get(name)
+        if alloca is None:
+            return op.target
         mem = self._get_mem(name)
         elem_type = op.type
         load = memory.LoadOp(mem=mem, ptr=alloca, type=elem_type)
@@ -211,3 +216,18 @@ class CToMemory(Pass):
         ref_type = memory.Reference(element_type=op.type)
         offset = memory.OffsetOp(ptr=op.base, index=op.index, type=ref_type)
         return memory.LoadOp(mem=offset, ptr=offset, type=op.type)
+
+    @lowering_for(ElementAddressOp)
+    def lower_element_address(self, op: ElementAddressOp) -> dgen.Value | None:
+        return memory.OffsetOp(ptr=op.base, index=op.index, type=op.type)
+
+    @lowering_for(FieldAddressOp)
+    def lower_field_address(self, op: FieldAddressOp) -> dgen.Value | None:
+        # TODO: use real struct field offsets. PointerMemberAccessOp has the
+        # same placeholder — GEP with index 0 just returns the base pointer.
+        zero = ConstantOp(value=0, type=llvm.Int(bits=Index().constant(64)))
+        return llvm.GepOp(base=op.base, index=zero)
+
+    @lowering_for(StoreIndirectOp)
+    def lower_store_indirect(self, op: StoreIndirectOp) -> dgen.Value | None:
+        return memory.StoreOp(mem=op.target, value=op.value, ptr=op.target)

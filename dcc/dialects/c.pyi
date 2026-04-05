@@ -92,6 +92,18 @@ class SubscriptOp(Op):
     type: Type
 
 @dataclass(eq=False, kw_only=True)
+class ElementAddressOp(Op):
+    base: Value
+    index: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class StoreIndirectOp(Op):
+    target: Value
+    value: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
 class MemberAccessOp(Op):
     field_name: Value[String]
     base: Value
@@ -99,6 +111,12 @@ class MemberAccessOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class PointerMemberAccessOp(Op):
+    field_name: Value[String]
+    base: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class FieldAddressOp(Op):
     field_name: Value[String]
     base: Value
     type: Type

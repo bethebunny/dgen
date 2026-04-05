@@ -34,6 +34,8 @@ from dcc.dialects.c import (
     CompoundAssignOp,
     ContinueOp,
     DereferenceOp,
+    ElementAddressOp,
+    FieldAddressOp,
     LogicalNotOp,
     MemberAccessOp,
     ModuloOp,
@@ -47,6 +49,7 @@ from dcc.dialects.c import (
     ShiftLeftOp,
     ShiftRightOp,
     SizeofOp,
+    StoreIndirectOp,
     SubscriptOp,
     VariableDeclarationOp,
 )
@@ -370,32 +373,90 @@ class Parser:
         scope.bind(node.name, decl)
 
     def _assign(self, node: c_ast.Assignment, scope: Scope) -> Iterator[dgen.Op]:
-        if not isinstance(node.lvalue, c_ast.ID):
-            raise LoweringError(f"unsupported lvalue: {type(node.lvalue).__name__}")
-        name = node.lvalue.name
-        target = scope.lookup(name)
+        if isinstance(node.lvalue, c_ast.ID):
+            name = node.lvalue.name
+            target = scope.lookup(name)
+            if node.op in _COMPOUND_OPS:
+                rhs = yield from self._expr(node.rvalue, scope)
+                op = CompoundAssignOp(
+                    variable_name=String().constant(name),
+                    operator=String().constant(_COMPOUND_OPS[node.op]),
+                    target=target,
+                    operand=rhs,
+                    type=target.type,
+                )
+                yield op
+                scope.bind(name, op)
+            else:
+                rhs = yield from self._expr(node.rvalue, scope)
+                op = AssignOp(
+                    variable_name=String().constant(name),
+                    target=target,
+                    value=rhs,
+                    type=target.type,
+                )
+                yield op
+                scope.bind(name, op)
+            return
 
+        # Non-ID lvalue: compute its address and store through it.
+        addr = yield from self._address_of(node.lvalue, scope)
+        elem_type = self._pointee(addr.type)
         if node.op in _COMPOUND_OPS:
+            load = DereferenceOp(pointer=addr, type=elem_type)
+            yield load
             rhs = yield from self._expr(node.rvalue, scope)
-            op = CompoundAssignOp(
-                variable_name=String().constant(name),
-                operator=String().constant(_COMPOUND_OPS[node.op]),
-                target=target,
-                operand=rhs,
-                type=target.type,
-            )
-            yield op
-            scope.bind(name, op)
+            cls = _ALL_BINOPS.get(_COMPOUND_OPS[node.op])
+            if cls is None:
+                raise LoweringError(f"unsupported compound op: {node.op}")
+            combined = _binop(cls, load, rhs, elem_type)
+            yield combined
+            store = StoreIndirectOp(target=addr, value=combined, type=elem_type)
         else:
             rhs = yield from self._expr(node.rvalue, scope)
-            op = AssignOp(
-                variable_name=String().constant(name),
-                target=target,
-                value=rhs,
-                type=target.type,
+            store = StoreIndirectOp(target=addr, value=rhs, type=elem_type)
+        yield store
+
+    def _address_of(self, node: c_ast.Node, scope: Scope) -> Iterator[dgen.Op]:
+        """Yield ops to compute the address of an lvalue. Returns a pointer Value."""
+        if isinstance(node, c_ast.ID):
+            val = scope.lookup(node.name)
+            op = AddressOfOp(operand=val, type=Reference(element_type=val.type))
+            yield op
+            return op
+        if isinstance(node, c_ast.UnaryOp) and node.op == "*":
+            # &*p == p
+            return (yield from self._expr(node.expr, scope))
+        if isinstance(node, c_ast.ArrayRef):
+            base = yield from self._expr(node.name, scope)
+            idx = yield from self._expr(node.subscript, scope)
+            elem = self._pointee(base.type)
+            op = ElementAddressOp(
+                base=base, index=idx, type=Reference(element_type=elem)
             )
             yield op
-            scope.bind(name, op)
+            return op
+        if isinstance(node, c_ast.StructRef):
+            field = node.field.name
+            if node.type == "->":
+                base = yield from self._expr(node.name, scope)
+                field_type = self.types.get_struct_field_type(
+                    self._pointee(base.type), field
+                )
+            else:
+                # obj.field — take address of obj, then field offset
+                base = yield from self._address_of(node.name, scope)
+                field_type = self.types.get_struct_field_type(
+                    self._pointee(base.type), field
+                )
+            op = FieldAddressOp(
+                field_name=String().constant(field),
+                base=base,
+                type=Reference(element_type=field_type),
+            )
+            yield op
+            return op
+        raise LoweringError(f"unsupported lvalue: {type(node).__name__}")
 
     def _ret(self, node: c_ast.Return, scope: Scope) -> Iterator[dgen.Op]:
         if node.expr is None:
@@ -526,7 +587,12 @@ class Parser:
         """Assignment used as an expression — returns the assigned value."""
         yield from self._assign(node, scope)
         if not isinstance(node.lvalue, c_ast.ID):
-            raise LoweringError("assign-as-expression on non-variable")
+            # For non-ID lvalues, re-read via the same address.
+            addr = yield from self._address_of(node.lvalue, scope)
+            elem_type = self._pointee(addr.type)
+            load = DereferenceOp(pointer=addr, type=elem_type)
+            yield load
+            return load
         name = node.lvalue.name
         val = scope.lookup(name)
         read = ReadVariableOp(
@@ -656,16 +722,29 @@ class Parser:
             yield op
             return op
         if node.op in _INCREMENTS:
-            if not isinstance(node.expr, c_ast.ID):
-                raise LoweringError("increment/decrement on non-variable")
-            target = scope.lookup(node.expr.name)
-            op = _INCREMENTS[node.op](
-                variable_name=String().constant(node.expr.name),
-                target=target,
-                type=target.type,
-            )
-            yield op
-            return op
+            if isinstance(node.expr, c_ast.ID):
+                target = scope.lookup(node.expr.name)
+                op = _INCREMENTS[node.op](
+                    variable_name=String().constant(node.expr.name),
+                    target=target,
+                    type=target.type,
+                )
+                yield op
+                return op
+            # Non-ID target (e.g. p->x, *p, arr[i]): desugar via _address_of.
+            addr = yield from self._address_of(node.expr, scope)
+            elem_type = self._pointee(addr.type)
+            load = DereferenceOp(pointer=addr, type=elem_type)
+            yield load
+            one = ConstantOp(value=1, type=elem_type)
+            yield one
+            is_dec = node.op in ("--", "p--")
+            cls = algebra.SubtractOp if is_dec else algebra.AddOp
+            updated = _binop(cls, load, one, elem_type)
+            yield updated
+            store = StoreIndirectOp(target=addr, value=updated, type=elem_type)
+            yield store
+            return load if node.op.startswith("p") else updated
         inner = yield from self._expr(node.expr, scope)
         if node.op == "+":
             return inner
