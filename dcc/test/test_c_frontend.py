@@ -539,7 +539,7 @@ class TestSqlite3:
         """
         import sys
 
-        from dgen.codegen import _emit_func
+        from dgen.codegen import EmitContext, _emit_ctx, emit, prepare_function
         from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
         import llvmlite.binding as llvm_binding
@@ -575,10 +575,15 @@ class TestSqlite3:
         verified = 0
         preamble = "declare void @print_memref(ptr, i64)\ndeclare ptr @malloc(i64)\n\n"
         for func in module.functions:
+            ctx = EmitContext()
+            ctx_token = _emit_ctx.set(ctx)
             try:
-                lines = list(_emit_func(func, []))
+                prepare_function(func, ctx)
+                lines = list(emit(func))
             except Exception:
                 continue
+            finally:
+                _emit_ctx.reset(ctx_token)
             emitted += 1
             ir = preamble + "\n".join(lines)
             try:
