@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil, Pointer, Span, String
+from dgen.dialects.builtin import Nil, String
 from dgen.dialects.index import Index
-from dgen.dialects.number import Float64
 
 llvm = Dialect("llvm")
 
@@ -125,6 +123,16 @@ class FcmpOp(Op):
 class ZextOp(Op):
     input: Value
     type: Type = Int(bits=Index().constant(64))
+
+@dataclass(eq=False, kw_only=True)
+class PtrtointOp(Op):
+    input: Value
+    type: Type = Int(bits=Index().constant(64))
+
+@dataclass(eq=False, kw_only=True)
+class InttoptrOp(Op):
+    input: Value
+    type: Type = Ptr()
 
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):

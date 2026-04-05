@@ -568,8 +568,10 @@ def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
         arg_types = ", ".join(llvm_type(arg) for arg in extern.type.arguments)
         yield f"declare {result_type} @{sym}({arg_types})"
     else:
-        result_type = llvm_type(extern.type)
-        yield f"declare {result_type} @{sym}"
+        # Global variable: `@name = external global <type>`. LLVM treats
+        # the symbol itself as a pointer; the value must be loaded.
+        ty = llvm_type(extern.type)
+        yield f"@{sym} = external global {ty}"
 
 
 def value_reference(v: dgen.Value) -> str:
@@ -592,6 +594,8 @@ def value_reference(v: dgen.Value) -> str:
         return f"{format_float(raw) if isinstance(raw, float) else raw}"
     if isinstance(v, builtin.ChainOp):
         return value_reference(v.lhs)
+    if isinstance(v, builtin.ExternOp):
+        return f"@{string_value(v.symbol)}"
     # Self parameters resolve to their owning RegionOp/LabelOp name
     # (the label target for back-edges). Exit parameters keep their own
     # name — they are separate LLVM basic blocks.
@@ -666,6 +670,18 @@ def emit_fneg(op: llvm.FnegOp) -> Iterator[str]:
 def emit_zext(op: llvm.ZextOp) -> Iterator[str]:
     ty = llvm_type(op.type)
     yield f"  zext i1 {vr(op.input)} to {ty}"
+
+
+@emitter_for(llvm.PtrtointOp)
+def emit_ptrtoint(op: llvm.PtrtointOp) -> Iterator[str]:
+    ty = llvm_type(op.type)
+    yield f"  ptrtoint ptr {vr(op.input)} to {ty}"
+
+
+@emitter_for(llvm.InttoptrOp)
+def emit_inttoptr(op: llvm.InttoptrOp) -> Iterator[str]:
+    src_ty = llvm_type(op.input.type)
+    yield f"  inttoptr {src_ty} {vr(op.input)} to ptr"
 
 
 # ---------------------------------------------------------------------------

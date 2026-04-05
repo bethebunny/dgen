@@ -655,6 +655,44 @@ class TestSessionCodegenFixes:
         # SSA-valued callees.
         _codegen_verifies("int f(int (*p)(int), int x) { return p(x); }")
 
+    def test_function_name_as_argument_value(self) -> None:
+        # Pre-fix: a void-returning function used by name as an argument
+        # (e.g. `h(g)`) was bound at file scope with type = its return
+        # type, so codegen emitted `call void @h(void %g)` — LLVM
+        # rejects with "void type only allowed for function results".
+        # _id now promotes bare file-scope function values to ExternOps
+        # with a Function-typed signature, yielding `ptr @g`.
+        _codegen_verifies(
+            "void g(void); void h(void (*cb)(void)) { cb(); } void f(void) { h(g); }"
+        )
+
+    def test_implicit_int_to_pointer_return(self) -> None:
+        # Pre-fix: `int *f(long x) { return x; }` emitted `ret ptr %x`
+        # where %x has type i64, rejected as "'%x' defined with type
+        # 'i64' but expected 'ptr'". _ret now inserts a CastOp to the
+        # function's declared return type when it differs; the cast
+        # lowers to inttoptr.
+        _codegen_verifies("int *f(long x) { return x; }")
+
+    def test_explicit_pointer_int_casts(self) -> None:
+        # Pre-fix: algebra.CastOp for ptr↔int was a pass-through, so
+        # `(long)a & (long)b` left the ptr operands on `and`, rejected
+        # with "instruction requires integer operands" / "ptr but
+        # expected iN". lower_cast now emits ptrtoint/inttoptr.
+        _codegen_verifies("long f(int *a, int *b) { return (long)a & (long)b; }")
+        _codegen_verifies("int *f(long x) { return (int*)x; }")
+
+    def test_icmp_pointer_against_integer_zero(self) -> None:
+        # Pre-fix: the C frontend lowered `p == 0` into icmp with a ptr
+        # lhs and an i64 ConstantOp(0) rhs, emitting
+        #   icmp eq ptr %p, 0
+        # which LLVM rejects with "integer constant must have integer
+        # type". emit_icmp now renders the zero constant as `null` when
+        # the other operand is pointer-typed.
+        _codegen_verifies("int f(int *p) { return p == 0; }")
+        _codegen_verifies("int f(int *p) { return 0 == p; }")
+        _codegen_verifies("int f(int *p) { return p != 0; }")
+
 
 # ---------------------------------------------------------------------------
 # Outstanding bugs — xfailed so they'll turn green automatically when fixed.
@@ -695,32 +733,6 @@ class TestKnownFailures:
         _codegen_verifies("int f(void) { int arr[4]; arr[0] = 1; return arr[0]; }")
 
     @pytest.mark.xfail(
-        reason="codegen: 'integer constant must have integer type' (93 in sqlite3). "
-        "icmp ptr with the integer literal 0 instead of `null`.",
-        strict=True,
-    )
-    def test_codegen_pointer_null_compare(self) -> None:
-        _codegen_verifies("int f(int *p) { return p == 0; }")
-
-    @pytest.mark.xfail(
-        reason="codegen: value 'iN' used where 'ptr' expected (78 in sqlite3). "
-        "Integer returned from a ptr-returning function with no inttoptr cast.",
-        strict=True,
-    )
-    def test_codegen_int_returned_as_pointer(self) -> None:
-        _codegen_verifies("int *f(long x) { return x; }")
-
-    @pytest.mark.xfail(
-        reason="codegen: 'void type only allowed for function results' (17 in sqlite3). "
-        "Void-returning function used by name as an argument emits `void %g`.",
-        strict=True,
-    )
-    def test_codegen_void_function_as_argument(self) -> None:
-        _codegen_verifies(
-            "void g(void); void h(void (*cb)(void)); void f(void) { h(g); }"
-        )
-
-    @pytest.mark.xfail(
         reason="codegen: ternary result as rvalue emits the block label instead of "
         "the phi — '%ifN defined with type label but expected iN/ptr' "
         "(~22 in sqlite3). Assigning a ternary through an lvalue triggers it.",
@@ -728,15 +740,6 @@ class TestKnownFailures:
     )
     def test_codegen_ternary_rvalue_assignment(self) -> None:
         _codegen_verifies("void f(int *p, int x) { *p = x ? 1 : 2; }")
-
-    @pytest.mark.xfail(
-        reason="codegen: bitwise op on pointer operands — 'instruction requires "
-        "integer operands' / 'ptr but expected iN' (~13 in sqlite3). "
-        "The (long) cast isn't lowered to ptrtoint.",
-        strict=True,
-    )
-    def test_codegen_bitwise_and_of_pointer_casts(self) -> None:
-        _codegen_verifies("long f(int *a, int *b) { return (long)a & (long)b; }")
 
 
 def _generate_sqlite_scale_c(n_functions: int, seed: int = 42) -> str:
@@ -997,4 +1000,4 @@ class TestSqlite3:
 
         # Ratchets — raise as we fix things
         assert emitted >= total - 20, f"emitted regressed: {emitted}/{total}\n{report}"
-        assert verified >= 1180, f"verified regressed: {verified}\n{report}"
+        assert verified >= 1240, f"verified regressed: {verified}\n{report}"
