@@ -414,7 +414,8 @@ def test_externs_multiple_distinct():
 
 def test_call_invokes_jit_function():
     """jit_function returns a ConstantOp[Function]; call invokes it."""
-    from dgen.codegen import call, compile as codegen_compile
+    from dgen.codegen import call
+    from dgen.testing import llvm_compile as codegen_compile
 
     module = asm.parse(
         strip_prefix("""
@@ -437,7 +438,8 @@ def test_call_invokes_jit_function():
 
 def test_call_function_constant_keeps_engine_alive():
     """The returned ConstantOp[Function] can be called after the Executable is gone."""
-    from dgen.codegen import call, compile as codegen_compile
+    from dgen.codegen import call
+    from dgen.testing import llvm_compile as codegen_compile
 
     module = asm.parse(
         strip_prefix("""

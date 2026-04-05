@@ -8,6 +8,8 @@ designed so that incorrect ordering would produce the wrong result.
 from dgen.asm.parser import parse_module
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.testing import strip_prefix
@@ -17,7 +19,8 @@ def _jit(ir: str, *args: object) -> object:
     """Parse IR, compile through memory pipeline, JIT-run, return JSON result."""
     module = parse_module(strip_prefix(ir))
     compiler: Compiler[Executable] = Compiler(
-        [ControlFlowToGoto(), MemoryToLLVM()], LLVMCodegen()
+        [ControlFlowToGoto(), MemoryToLLVM(), BuiltinToLLVM(), AlgebraToLLVM()],
+        LLVMCodegen(),
     )
     exe = compiler.compile(module)
     return exe.run(*args).to_json()

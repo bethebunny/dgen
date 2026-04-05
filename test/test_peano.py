@@ -17,18 +17,20 @@ from typing import ClassVar
 
 import dgen
 from dgen import Dialect, Op, Trait, Type, Value, layout
-from dgen import codegen
 from dgen.asm.parser import parse_module
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
-from dgen.codegen import LLVMCodegen
+from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects.function import FunctionOp
 from dgen.module import ConstantOp, Module
 from dgen.verify import CycleError, verify_dag
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Fields, TypeType, type_constant
-from dgen.testing import strip_prefix
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.testing import llvm_compile, strip_prefix
 
 # ============================================================================
 # Dialect
@@ -122,8 +124,13 @@ def lower_peano(module: Module) -> Module:
     return Compiler([PeanoLowering()], IdentityPass()).run(module)
 
 
-peano_compiler: Compiler[codegen.Executable] = Compiler(
-    passes=[PeanoLowering()],
+peano_compiler: Compiler[Executable] = Compiler(
+    passes=[
+        PeanoLowering(),
+        ControlFlowToGoto(),
+        BuiltinToLLVM(),
+        AlgebraToLLVM(),
+    ],
     exit=LLVMCodegen(),
 )
 
@@ -322,7 +329,7 @@ def test_subtract_jit():
         |     %sub : index.Index = algebra.subtract(%n, 1)
     """)
     module = parse_module(ir)
-    exe = codegen.compile(module)
+    exe = llvm_compile(module)
     assert exe.run(5).to_json() == 4
 
 
@@ -368,7 +375,7 @@ def test_if_else_jit():
         |         %val : index.Index = algebra.subtract(%n, 1)
     """)
     module = parse_module(ir)
-    exe = codegen.compile(module)
+    exe = llvm_compile(module)
     assert exe.run(0).to_json() == 1
     assert exe.run(5).to_json() == 4
     assert exe.run(1).to_json() == 0
@@ -409,7 +416,7 @@ def test_call_jit():
         |     %result : index.Index = function.call<%add_one>([%x])
     """)
     module = parse_module(ir)
-    exe = codegen.compile(module)
+    exe = llvm_compile(module)
     assert exe.run(5).to_json() == 6
     assert exe.run(0).to_json() == 1
 
@@ -452,7 +459,7 @@ def test_equal_jit():
         |     %eq : index.Index = algebra.cast(%cmp)
     """)
     module = parse_module(ir)
-    exe = codegen.compile(module)
+    exe = llvm_compile(module)
     assert exe.run(0).to_json() == 1
     assert exe.run(5).to_json() == 0
 

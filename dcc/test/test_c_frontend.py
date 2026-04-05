@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from dgen.codegen import compile as llvm_compile
+from dgen.testing import llvm_compile
 from dgen.compiler import Compiler, IdentityPass
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.memory_to_llvm import MemoryToLLVM

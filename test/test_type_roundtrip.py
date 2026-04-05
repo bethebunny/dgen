@@ -16,7 +16,8 @@ from dgen.type import format_value
 from dgen.asm.parser import ASMParser, parse_module, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
-from dgen.codegen import Executable, LLVMCodegen, compile as compile_module
+from dgen.codegen import Executable, LLVMCodegen
+from dgen.testing import llvm_compile as compile_module
 from dgen.compiler import Compiler
 from dgen.dialects import builtin, llvm, number
 from dgen.dialects.builtin import String

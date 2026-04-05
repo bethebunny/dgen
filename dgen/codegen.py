@@ -15,7 +15,6 @@ import llvmlite.binding as llvmlite
 
 import dgen
 from dgen import Type
-from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import (
     builtin,
     function,
@@ -28,8 +27,6 @@ from dgen.dialects import (
 from dgen.graph import all_values
 from dgen.layout import Layout
 from dgen.module import ConstantOp, Module, PackOp, pack, string_value
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.type import Constant, Memory, TypeType, Value, type_constant
 from dgen.type import _format_float as format_float
 
@@ -797,26 +794,6 @@ class Executable:
         return call(self.func_constant, *args)
 
 
-def compile(module: Module) -> Executable:
-    """Lower a Module to LLVM IR and bundle with execution metadata."""
-    from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-
-    module = Compiler(
-        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()],
-        IdentityPass(),
-    ).run(module)
-    ir, host_buffers = emit_llvm_ir(module)
-    main = module.functions[-1]
-    assert main.name is not None
-    return Executable(
-        ir=ir,
-        input_types=[dgen.type.type_constant(arg.type) for arg in main.body.args],
-        main_name=main.name,
-        result_type=dgen.type.type_constant(main.result_type),
-        host_refs=host_buffers,
-    )
-
-
 def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
     """Parse, verify, and create an MCJIT engine from an Executable."""
     _ensure_initialized()
@@ -990,9 +967,14 @@ def build_callback_thunk(
             arguments=pack(arg.type for arg in thunk_args), result_type=result_type
         ),
     )
-    thunk_module = Module(ops=[thunk_func])
-
-    exe = compile(thunk_module)
+    ir, host_buffers = emit_llvm_ir(Module(ops=[thunk_func]))
+    exe = Executable(
+        ir=ir,
+        input_types=orig_types,
+        main_name=func_op.name,
+        result_type=result_type,
+        host_refs=host_buffers,
+    )
     exe.host_refs.append(callback_func)  # prevent GC
     return exe
 
@@ -1003,7 +985,16 @@ def build_callback_thunk(
 
 
 class LLVMCodegen:
-    """Exit pass: lower to LLVM, emit IR, bundle as Executable."""
+    """Exit pass: emit LLVM IR and bundle as Executable."""
 
     def run(self, module: Module) -> Executable:
-        return compile(module)
+        ir, host_buffers = emit_llvm_ir(module)
+        main = module.functions[-1]
+        assert main.name is not None
+        return Executable(
+            ir=ir,
+            input_types=[type_constant(arg.type) for arg in main.body.args],
+            main_name=main.name,
+            result_type=type_constant(main.result_type),
+            host_refs=host_buffers,
+        )

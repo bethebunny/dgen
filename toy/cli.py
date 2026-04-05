@@ -11,6 +11,8 @@ from dgen import Dialect
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler
 from dgen.module import Module
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
@@ -33,6 +35,8 @@ toy_compiler: Compiler[Executable] = Compiler(
         ControlFlowToGoto(),
         NDBufferToMemory(),
         MemoryToLLVM(),
+        BuiltinToLLVM(),
+        AlgebraToLLVM(),
     ],
     exit=LLVMCodegen(),
 )

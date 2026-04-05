@@ -12,8 +12,10 @@ from dgen.asm.parser import parse_module
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import control_flow
-from dgen.testing import assert_ir_equivalent, strip_prefix
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
 # -- ASM round-trip tests --
@@ -122,7 +124,9 @@ def test_while_lowering_to_goto(ir_snapshot):
 def test_while_llvm_ir(snapshot):
     """WhileOp all the way to LLVM IR."""
     m = parse_module(SIMPLE_WHILE)
-    exe = Compiler([ControlFlowToGoto()], LLVMCodegen()).compile(m)
+    exe = Compiler(
+        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
+    ).compile(m)
     assert exe.ir == snapshot
 
 
@@ -161,5 +165,7 @@ def test_nested_while_lowering(ir_snapshot):
 def test_nested_while_llvm_ir(snapshot):
     """Nested while loops all the way to LLVM IR."""
     m = parse_module(NESTED_WHILE)
-    exe = Compiler([ControlFlowToGoto()], LLVMCodegen()).compile(m)
+    exe = Compiler(
+        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
+    ).compile(m)
     assert exe.ir == snapshot
