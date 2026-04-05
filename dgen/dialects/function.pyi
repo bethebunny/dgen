@@ -26,4 +26,3 @@ class CallOp(Op):
     callee: Value[Function]
     arguments: Value
     type: Type
-

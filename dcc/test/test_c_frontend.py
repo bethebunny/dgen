@@ -533,7 +533,7 @@ class TestSqlite3:
             for reason, count in top:
                 print(f"  {count:5d}  {reason[:120]}")
 
-        assert lowered >= 2380, f"lowered regressed: {lowered}"
+        assert lowered >= 2560, f"lowered regressed: {lowered}"
         assert elapsed < 120, f"Lowering took {elapsed:.1f}s"
 
     def test_codegen_sqlite3(self, sqlite3_ast: object) -> None:
@@ -654,4 +654,4 @@ class TestSqlite3:
 
         # Ratchets — raise as we fix things
         assert emitted >= total - 20, f"emitted regressed: {emitted}/{total}\n{report}"
-        assert verified >= 1000, f"verified regressed: {verified}\n{report}"
+        assert verified >= 1180, f"verified regressed: {verified}\n{report}"
