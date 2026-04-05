@@ -8,7 +8,7 @@ WhileOp semantics:
 """
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import control_flow
@@ -38,8 +38,8 @@ def test_while_basic_roundtrip():
         |         %one : index.Index = 1
         |         %next : index.Index = algebra.add(%i, %one)
     """)
-    module = parse_module(ir)
-    fn = module.ops[0]
+    module = parse(ir)
+    fn = module
     assert isinstance(fn, control_flow.WhileOp) is False  # it's a FunctionOp
     while_op = fn.body.result
     assert isinstance(while_op, control_flow.WhileOp)
@@ -66,8 +66,8 @@ def test_while_with_capture_roundtrip():
         |         %one : index.Index = 1
         |         %next : index.Index = algebra.add(%i, %one)
     """)
-    module = parse_module(ir)
-    while_op = module.ops[0].body.result
+    module = parse(ir)
+    while_op = module.body.result
     assert isinstance(while_op, control_flow.WhileOp)
     assert len(while_op.condition.args) == 1
     assert len(while_op.body.args) == 1
@@ -86,8 +86,8 @@ def test_while_no_ivs_roundtrip():
         |     body():
         |         %nop : index.Index = 0
     """)
-    module = parse_module(ir)
-    while_op = module.ops[0].body.result
+    module = parse(ir)
+    while_op = module.body.result
     assert isinstance(while_op, control_flow.WhileOp)
     assert while_op.condition.args == []
     assert while_op.body.args == []
@@ -116,14 +116,14 @@ SIMPLE_WHILE = strip_prefix("""
 
 def test_while_lowering_to_goto(ir_snapshot):
     """WhileOp lowered to goto labels produces expected IR."""
-    m = parse_module(SIMPLE_WHILE)
+    m = parse(SIMPLE_WHILE)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
     assert lowered == ir_snapshot
 
 
 def test_while_llvm_ir(snapshot):
     """WhileOp all the way to LLVM IR."""
-    m = parse_module(SIMPLE_WHILE)
+    m = parse(SIMPLE_WHILE)
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
     ).compile(m)
@@ -157,14 +157,14 @@ NESTED_WHILE = strip_prefix("""
 
 def test_nested_while_lowering(ir_snapshot):
     """Nested WhileOps lowered to goto labels."""
-    m = parse_module(NESTED_WHILE)
+    m = parse(NESTED_WHILE)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
     assert lowered == ir_snapshot
 
 
 def test_nested_while_llvm_ir(snapshot):
     """Nested while loops all the way to LLVM IR."""
-    m = parse_module(NESTED_WHILE)
+    m = parse(NESTED_WHILE)
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
     ).compile(m)

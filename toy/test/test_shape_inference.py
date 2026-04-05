@@ -1,20 +1,20 @@
 """Ch4 tests: Shape inference pass."""
 
-from dgen import asm
-from dgen.asm.parser import parse_module
+import dgen
+from dgen.asm.parser import parse
 from dgen.compiler import Compiler, IdentityPass
-from dgen.module import Module
+from dgen.module import asm_with_imports
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.shape_inference import ShapeInference
 from toy.test.helpers import strip_prefix
 
 
-def infer_shapes(m: Module) -> Module:
-    return Compiler([ShapeInference()], IdentityPass()).run(m)
+def infer_shapes(v: dgen.Value) -> dgen.Value:
+    return Compiler([ShapeInference()], IdentityPass()).run(v)
 
 
-def compile_and_infer(source: str) -> Module:
+def compile_and_infer(source: str) -> dgen.Value:
     ast = parse_toy(source)
     ir = lower(ast)
     return infer_shapes(ir)
@@ -103,7 +103,7 @@ def test_concat(ir_snapshot):
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert infer_shapes(module) == ir_snapshot
 
 
@@ -122,7 +122,7 @@ def test_concat_axis1(ir_snapshot):
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<1>(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert infer_shapes(module) == ir_snapshot
 
 
@@ -141,7 +141,7 @@ def test_tile_with_constant_count(ir_snapshot):
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.tile<%1>(%0)
         |     %3 : Nil = toy.print(%2)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert infer_shapes(module) == ir_snapshot
 
 
@@ -167,14 +167,12 @@ def test_tile_with_computed_count():
         |     %4 : toy.InferredShapeTensor<number.Float64> = toy.tile<%3>(%0)
         |     %5 : Nil = toy.print(%4)
     """)
-    module = parse_module(ir)
+    func = parse(ir)
     # Run shape inference directly (no verification) — this test intentionally
     # produces unresolved InferredShapeTensor, which verify_postconditions rejects.
-    func = module.functions[0]
     si = ShapeInference()
     result_func = si.run(func, Compiler([], IdentityPass()))
-    result = Module(ops=[result_func])
-    out = asm.format(result)
+    out = "\n".join(asm_with_imports(result_func))
     # Shape inference cannot resolve %4 — it stays InferredShapeTensor
     # because the count (%3) is not a constant, it's a computed value.
     # Resolving this requires a staging evaluator.

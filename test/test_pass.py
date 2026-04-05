@@ -3,7 +3,7 @@
 import pytest
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.block import BlockArgument
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
@@ -11,7 +11,7 @@ from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.dialects.builtin import Nil
 from dgen.dialects.function import FunctionOp
-from dgen.module import ConstantOp, Module
+from dgen.module import ConstantOp
 import dgen
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.staging import ConstantFold
@@ -72,8 +72,8 @@ def test_block_replace_uses_of(ir_snapshot):
         |     %2 : index.Index = llvm.add(%0, %0)
         |     %3 : index.Index = chain(%2, %1)
     """)
-    m = parse_module(ir_text)
-    func = m.functions[0]
+    m = parse(ir_text)
+    func = m
     ops_by_name = {op.name: op for op in func.body.ops}
     old = ops_by_name["0"]  # %0 = 1
     new = ops_by_name["1"]  # %1 = 2
@@ -187,7 +187,7 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
                 return None
             return op.input.input
 
-    m = parse_module(ir_text)
+    m = parse(ir_text)
     compiler = Compiler(passes=[ElimTranspose()], exit=IdentityPass())
     result = compiler.run(m)
     assert result == ir_snapshot
@@ -210,7 +210,7 @@ def test_pass_unregistered_ops_error():
     class StrictPass(Pass):
         allow_unregistered_ops = False
 
-    m = parse_module(ir_text)
+    m = parse(ir_text)
     compiler = Compiler(passes=[StrictPass()], exit=IdentityPass())
     with pytest.raises(TypeError, match="No handler for"):
         compiler.run(m)
@@ -240,7 +240,7 @@ def test_pass_multiple_handlers_first_wins():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    m = parse_module(ir_text)
+    m = parse(ir_text)
     compiler = Compiler(passes=[MultiPass()], exit=IdentityPass())
     compiler.run(m)
     assert call_log == ["first"]
@@ -274,7 +274,7 @@ def test_compiler_run_verification_catches_closed_block_violation():
                 value.body.result = BlockArgument(type=Nil())
             return value
 
-    m = parse_module(ir_text)
+    m = parse(ir_text)
     compiler_inst: Compiler = Compiler(passes=[CorruptPass()], exit=IdentityPass())
     with pytest.raises(ClosedBlockError):
         compiler_inst.run(m)
@@ -302,10 +302,8 @@ def test_constant_fold_resolves_stage0_boundary():
         |     %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
         |         %y : %rt = algebra.add(%x, %x)
     """)
-    module = parse_module(ir)
-    inner_func = next(
-        op for op in module.functions[0].body.ops if isinstance(op, FunctionOp)
-    )
+    module = parse(ir)
+    inner_func = next(op for op in module.body.ops if isinstance(op, FunctionOp))
 
     # Before constant folding: result is a ConstantOp SSA ref, not a Type
     assert isinstance(inner_func.result_type, ConstantOp)
@@ -327,7 +325,7 @@ def test_constant_fold_resolves_stage0_boundary():
         ],
         exit=LLVMCodegen(),
     )
-    exe = compiler.compile(Module(ops=[inner_func]))
+    exe = compiler.compile(inner_func)
     assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
 
 
@@ -340,7 +338,7 @@ def test_constant_fold_is_noop_without_boundaries():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    m = parse_module(ir_text)
+    m = parse(ir_text)
     before = asm.format(m)
     compiler = Compiler(passes=[ConstantFold()], exit=IdentityPass())
     result = compiler.run(m)
@@ -366,7 +364,7 @@ def test_pass_run_receives_continuation_compiler():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    m = parse_module(ir_text)
+    m = parse(ir_text)
     compiler = Compiler(passes=[SpyPass(), SpyPass(), SpyPass()], exit=IdentityPass())
     compiler.run(m)
     # First pass sees 2 remaining, second sees 1, third sees 0

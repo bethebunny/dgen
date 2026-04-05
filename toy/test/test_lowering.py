@@ -1,12 +1,12 @@
 """Phase 3 tests: Toy source -> IR -> text, compare against expected."""
 
-from dgen.module import Module
+import dgen
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.test.helpers import strip_prefix
 
 
-def compile_toy(source: str) -> Module:
+def compile_toy(source: str) -> dgen.Value:
     ast = parse_toy(source)
     return lower(ast)
 

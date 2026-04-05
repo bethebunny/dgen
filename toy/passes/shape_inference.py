@@ -4,29 +4,29 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import function
-from dgen.graph import all_blocks
-from dgen.module import ConstantOp, Module, PackOp, _walk_all_ops
+from dgen.graph import all_blocks, all_values
+from dgen.module import ConstantOp, PackOp
 from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import shape_constant, toy
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from dgen.compiler import Compiler
+    pass
 
 
 class ShapeInference(Pass):
     allow_unregistered_ops = True
 
-    def verify_postconditions(self, module: Module) -> None:
-        super().verify_postconditions(module)
-        for func in module.functions:
-            for op in _walk_all_ops(func):
-                if isinstance(op, tuple(toy.toy.ops.values())):
-                    assert not isinstance(op.type, toy.InferredShapeTensor), (
-                        f"{type(op).__name__} still typed as InferredShapeTensor "
-                        "after ShapeInference"
-                    )
+    def verify_postconditions(self, value: dgen.Value) -> None:
+        super().verify_postconditions(value)
+        toy_op_types = tuple(toy.toy.ops.values())
+        for op in all_values(value):
+            if isinstance(op, toy_op_types):
+                assert not isinstance(op.type, toy.InferredShapeTensor), (
+                    f"{type(op).__name__} still typed as InferredShapeTensor "
+                    "after ShapeInference"
+                )
 
     def _shape(self, val: dgen.Value) -> list[int] | None:
         """Return the concrete shape of val if its type is a resolved Tensor."""

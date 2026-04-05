@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import dgen
-from dgen import asm
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialect import Dialect
 from dgen.gen.ast import HasTraitConstraint
-from dgen.module import Module, _walk_all_ops
+from dgen.graph import all_blocks, all_values
+from dgen.module import asm_with_imports
 from dgen.trait import Trait
 from dgen.type import type_constant
 
@@ -28,9 +28,9 @@ class CycleError(VerificationError):
     """The use-def graph contains a cycle."""
 
 
-def _annotated_module(module: Module, target: dgen.Value) -> str:
-    """Format a module as ASM, annotating the line containing target with ^^^."""
-    text = asm.format(module)
+def _annotated_asm(root: dgen.Value, target: dgen.Value) -> str:
+    """Format root as ASM, annotating the line containing target with ^^^."""
+    text = "\n".join(asm_with_imports(root))
     target_name = target.name
     if target_name is None:
         return text
@@ -53,7 +53,7 @@ def _annotated_module(module: Module, target: dgen.Value) -> str:
 
 def _verify_block(
     block: Block,
-    module: Module,
+    root: dgen.Value,
     visited: set[Block],
 ) -> None:
     if block in visited:
@@ -68,7 +68,7 @@ def _verify_block(
         if isinstance(value, (BlockArgument, BlockParameter)) and value not in local:
             raise ClosedBlockError(
                 f"block contains foreign {type(value).__name__} "
-                f"%{value.name}\n\n" + _annotated_module(module, value)
+                f"%{value.name}\n\n" + _annotated_asm(root, value)
             )
 
     # Captures must chain: every capture of a child block must be
@@ -81,40 +81,57 @@ def _verify_block(
                     raise ClosedBlockError(
                         f"child block captures out-of-scope "
                         f"{type(capture).__name__} %{capture.name}\n\n"
-                        + _annotated_module(module, capture)
+                        + _annotated_asm(root, capture)
                     )
-            _verify_block(child_block, module, visited)
+            _verify_block(child_block, root, visited)
 
 
-def verify_closed_blocks(module: Module) -> None:
-    """Assert the closed-block invariant holds for all blocks in the module."""
+def verify_closed_blocks(root: dgen.Value) -> None:
+    """Assert the closed-block invariant holds for all blocks reachable from root."""
     visited: set[Block] = set()
-    for func in module.functions:
-        _verify_block(func.body, module, visited)
-    # Verify no op appears in multiple blocks.
-    _verify_unique_ownership(module)
+    for block in all_blocks(root):
+        _verify_block(block, root, visited)
+    _verify_unique_ownership(root)
 
 
-def _verify_unique_ownership(module: Module) -> None:
-    """Assert every op belongs to exactly one block's block.ops."""
+def _verify_unique_ownership(root: dgen.Value) -> None:
+    """Assert every op belongs to exactly one block's block.ops.
+
+    Walks from every reachable FunctionOp as a top-level starting point,
+    recursing into nested blocks. If a FunctionOp is referenced from
+    another block without being captured, its body ops will be walked twice
+    (once under the referencer, once as a top-level), which manifests as
+    a duplicate-owner error.
+    """
+    from dgen.dialects.function import FunctionOp
+
     owner: dict[int, str] = {}  # op id → block description
 
-    def _check_block(block: Block, name: str) -> None:
+    def _describe(op: dgen.Op) -> str:
+        return f"{type(op).__name__} %{op.name}"
+
+    def _check_block(block: Block, scope: str) -> None:
         for op in block.ops:
             op_id = id(op)
             if op_id in owner:
                 raise ClosedBlockError(
-                    f"{type(op).__name__} %{op.name} appears in both "
-                    f"{owner[op_id]} and {name}\n\n" + _annotated_module(module, op)
+                    f"{_describe(op)} appears in both {owner[op_id]} and {scope}"
                 )
-            owner[op_id] = name
+            owner[op_id] = scope
             if isinstance(op, dgen.Op):
                 for _, child_block in op.blocks:
-                    child_name = op.name or type(op).__name__
-                    _check_block(child_block, child_name)
+                    _check_block(child_block, op.name or type(op).__name__)
 
-    for func in module.functions:
-        _check_block(func.body, func.name or "function")
+    # Walk from every reachable FunctionOp as its own scope, plus the root.
+    reachable_fns: list[dgen.Op] = [
+        v for v in all_values(root) if isinstance(v, FunctionOp)
+    ]
+    # Ensure root itself is included even if it isn't a FunctionOp.
+    if isinstance(root, dgen.Op) and root not in reachable_fns:
+        reachable_fns.append(root)
+    for fn in reachable_fns:
+        for _, block in fn.blocks:
+            _check_block(block, fn.name or type(fn).__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +139,7 @@ def _verify_unique_ownership(module: Module) -> None:
 # ---------------------------------------------------------------------------
 
 
-def verify_dag(module: Module) -> None:
+def verify_dag(root: dgen.Value) -> None:
     """Assert the use-def graph is a DAG (no cycles).
 
     Uses the same traversal as block.ops but with DFS path tracking:
@@ -138,9 +155,9 @@ def verify_dag(module: Module) -> None:
         if value in visited:
             return
         if value in path:
+            # Don't dump ASM — the graph has a cycle, formatting would loop.
             raise CycleError(
-                f"Use-def cycle detected at %{value.name} "
-                f"({type(value).__name__})\n\n" + _annotated_module(module, value)
+                f"Use-def cycle detected at %{value.name} ({type(value).__name__})"
             )
         path.add(value)
         for _, operand in value.operands:
@@ -152,8 +169,7 @@ def verify_dag(module: Module) -> None:
         path.remove(value)
         visited.add(value)
 
-    for func in module.functions:
-        visit(func)
+    visit(root)
 
 
 # ---------------------------------------------------------------------------
@@ -161,21 +177,15 @@ def verify_dag(module: Module) -> None:
 # ---------------------------------------------------------------------------
 
 
-def verify_all_ready(module: Module) -> None:
-    """Assert every op is ready (all compile-time data is known).
-
-    An op is ready when its type, all operand types, and all parameters are
-    resolved constants. This means it's safe for a pass to inspect any
-    compile-time property of the op without encountering unresolved values.
-    """
-    for func in module.functions:
-        for op in _walk_all_ops(func):
-            if not op.ready:
-                raise VerificationError(
-                    f"{type(op).__name__} %{op.name} is not ready "
-                    f"(has unresolved parameter dependencies)\n\n"
-                    + _annotated_module(module, op)
-                )
+def verify_all_ready(root: dgen.Value) -> None:
+    """Assert every op reachable from root is ready."""
+    for value in all_values(root):
+        if isinstance(value, dgen.Op) and not value.ready:
+            raise VerificationError(
+                f"{type(value).__name__} %{value.name} is not ready "
+                f"(has unresolved parameter dependencies)\n\n"
+                + _annotated_asm(root, value)
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +231,7 @@ def _subject_type(subject: dgen.Value) -> dgen.Type:
 
 
 def _verify_has_trait(
-    constraint: HasTraitConstraint, op: dgen.Op, module: Module
+    constraint: HasTraitConstraint, op: dgen.Op, root: dgen.Value
 ) -> None:
     """Verify a single has-trait constraint on an op."""
     subject = _resolve_subject(constraint.lhs, op)
@@ -232,19 +242,15 @@ def _verify_has_trait(
             f"{type(op).__name__} %{op.name}: "
             f"subject {constraint.lhs!r} ({type(subject_type).__name__}) "
             f"does not implement trait {constraint.trait}\n\n"
-            + _annotated_module(module, op)
+            + _annotated_asm(root, op)
         )
 
 
-def verify_constraints(module: Module) -> None:
-    """Check trait constraints on all ops in the module.
-
-    For each op with ``__constraints__``, verifies that trait constraints
-    are satisfied: the subject's type must be an instance of the trait class.
-    Other constraint kinds (match, expression) are not yet verified.
-    """
-    for func in module.functions:
-        for op in _walk_all_ops(func):
-            for constraint in op.__constraints__:
-                if isinstance(constraint, HasTraitConstraint):
-                    _verify_has_trait(constraint, op, module)
+def verify_constraints(root: dgen.Value) -> None:
+    """Check trait constraints on all ops reachable from root."""
+    for value in all_values(root):
+        if not isinstance(value, dgen.Op):
+            continue
+        for constraint in value.__constraints__:
+            if isinstance(constraint, HasTraitConstraint):
+                _verify_has_trait(constraint, value, root)

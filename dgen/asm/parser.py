@@ -15,7 +15,7 @@ from dgen import Block, Constant, Op, Type, Value
 from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, Module, PackOp
+from dgen.module import ConstantOp, PackOp
 
 
 class ParseError(RuntimeError):
@@ -56,17 +56,7 @@ class Scope(dict[str, "Scope | type[Op] | type[Type]"]):
         return result
 
 
-def parse_module(text: str) -> Module:
-    parser = ASMParser(text)
-    while (name := parser.try_read(_import_line)) is not None:
-        parser.scope.import_dialect(Dialect.get(name))
-    ops: list[Op] = []
-    while not parser.done:
-        ops.append(parser.read(op_statement))
-    return Module(ops=ops)
-
-
-def parse_value(text: str) -> Value:
+def parse(text: str) -> Value:
     """Parse IR text — imports and one or more statements, interleavable — and return the last value.
 
     Statements and imports may appear in any order. Each statement defines an
@@ -82,8 +72,12 @@ def parse_value(text: str) -> Value:
         else:
             value = parser.read(op_statement)
     if value is None:
-        raise ParseError("parse_value: no statements in input")
+        raise ParseError("parse: no statements in input")
     return value
+
+
+# Backwards-compat alias.
+parse_value = parse
 
 
 class ASMParser:

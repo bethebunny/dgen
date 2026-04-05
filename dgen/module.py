@@ -1,4 +1,4 @@
-"""Framework-level IR items: Module, ConstantOp, and helpers.
+"""Framework-level IR items: ConstantOp, PackOp, and helpers.
 
 These complement the generated builtin dialect but live outside the dialect
 file to keep it purely generated.
@@ -18,7 +18,6 @@ from dgen.dialects.builtin import (
     String,
     builtin,
 )
-from dgen.dialects.function import FunctionOp
 from dgen.type import Fields, Memory, SlotFn, _default_slot, format_value, type_constant
 
 # ===----------------------------------------------------------------------=== #
@@ -106,68 +105,6 @@ def string_value(v: Value[String]) -> str:
     result = v.__constant__.to_json()
     assert isinstance(result, str)
     return result
-
-
-# ===----------------------------------------------------------------------=== #
-# Module (top-level container)
-# ===----------------------------------------------------------------------=== #
-
-
-def _walk_all_ops(op: Op, _visited: set[int] | None = None) -> Iterable[Op]:
-    """Recursively yield all ops, descending into op bodies.
-
-    Tracks visited ops to avoid infinite recursion when label bodies
-    reference other labels (e.g. loops with back-edges).
-    """
-    if _visited is None:
-        _visited = set()
-    oid = id(op)
-    if oid in _visited:
-        return
-    _visited.add(oid)
-    yield op
-    for _, block in op.blocks:
-        for child in block.ops:
-            yield from _walk_all_ops(child, _visited)
-
-
-@dataclass
-class Module:
-    ops: list[Op]
-
-    @property
-    def functions(self) -> list[FunctionOp]:
-        return [op for op in self.ops if isinstance(op, FunctionOp)]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        from .asm.formatting import SlotTracker, op_asm
-        from .graph import transitive_dependencies
-
-        # Format ops first, then collect dialects from the IR graph.
-        formatted: set[int] = set()
-        op_lines: list[str] = []
-        for op in self.ops:
-            tracker = SlotTracker()
-            op_lines.extend(op_asm(op, tracker, formatted=formatted))
-            op_lines.append("")
-
-        # Collect dialects by walking every op and all its value dependencies.
-        builtin_dialect = Dialect.get("builtin")
-        dialects: set[Dialect] = set()
-        for op in self.ops:
-            for inner in _walk_all_ops(op):
-                for v in transitive_dependencies(inner):
-                    if hasattr(v, "dialect"):
-                        dialects.add(v.dialect)
-        dialects.discard(builtin_dialect)
-
-        for d in sorted(dialects, key=lambda d: d.name):
-            yield f"import {d.name}"
-        if dialects:
-            yield ""
-
-        yield from op_lines
 
 
 def asm_with_imports(value: Value) -> Iterator[str]:

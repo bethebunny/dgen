@@ -8,7 +8,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function as FunctionType
-from dgen.module import ConstantOp, Module, pack
+from dgen.module import ConstantOp, pack
 from toy.dialects import shape_constant, toy
 from toy.parser.ast import (
     BinaryOp,
@@ -34,10 +34,10 @@ class Lowering:
         self.has_value_return: bool = False
         self.return_value: dgen.Value | None = None
 
-    def lower_module(self, tm: ToyModule) -> Module:
+    def lower_module(self, tm: ToyModule) -> function.FunctionOp:
         functions = [self.lower_function(f) for f in tm.functions]
         _resolve_callee_captures(functions)
-        return Module(ops=functions)
+        return functions[-1]
 
     def lower_function(self, f: Function) -> function.FunctionOp:
         self.scope = {}
@@ -280,6 +280,6 @@ def _resolve_callee_captures(functions: list[function.FunctionOp]) -> None:
         func.body.captures = captures
 
 
-def lower(tm: ToyModule) -> Module:
+def lower(tm: ToyModule) -> function.FunctionOp:
     lowering = Lowering()
     return lowering.lower_module(tm)

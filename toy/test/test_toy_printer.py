@@ -3,11 +3,10 @@
 from collections.abc import Sequence
 
 import dgen
-from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function
-from dgen.module import ConstantOp, Module, PackOp, pack
+from dgen.module import ConstantOp, PackOp, pack
 from toy.dialects import shape_constant, toy
 
 
@@ -26,7 +25,7 @@ def test_constant_op():
         type=ranked([2, 3]),
     )
     assert (
-        asm.format(op)
+        "\n".join(op.asm)
         == "%0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
     )
 
@@ -35,7 +34,7 @@ def test_transpose_op():
     a = dgen.Value(name="a", type=builtin.Nil())
     op = toy.TransposeOp(name="0", input=a, type=inferred())
     assert (
-        asm.format(op)
+        "\n".join(op.asm)
         == "%0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)"
     )
 
@@ -44,7 +43,7 @@ def test_reshape_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
     assert (
-        asm.format(op)
+        "\n".join(op.asm)
         == "%1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)"
     )
 
@@ -54,7 +53,7 @@ def test_mul_op():
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.MulOp(name="2", lhs=v0, rhs=v1, type=inferred())
     assert (
-        asm.format(op)
+        "\n".join(op.asm)
         == "%2 : toy.InferredShapeTensor<number.Float64> = toy.mul(%0, %1)"
     )
 
@@ -64,7 +63,7 @@ def test_add_op():
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.AddOp(name="2", lhs=v0, rhs=v1, type=inferred())
     assert (
-        asm.format(op)
+        "\n".join(op.asm)
         == "%2 : toy.InferredShapeTensor<number.Float64> = toy.add(%0, %1)"
     )
 
@@ -85,7 +84,7 @@ def test_call_op():
         type=inferred(),
     )
     assert (
-        asm.format(op)
+        "\n".join(op.asm)
         == "%4 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%1, %3])"
     )
 
@@ -94,7 +93,7 @@ def test_print_op():
     v5 = dgen.Value(name="5", type=builtin.Nil())
     op = toy.PrintOp(input=v5)
     # PrintOp has no name -> auto-numbered as %0
-    assert asm.format(op) == "%0 : Nil = toy.print(%5)"
+    assert "\n".join(op.asm) == "%0 : Nil = toy.print(%5)"
 
 
 def test_concat_op():
@@ -108,7 +107,7 @@ def test_concat_op():
         type=inferred(),
     )
     assert (
-        asm.format(op)
+        "\n".join(op.asm)
         == "%2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)"
     )
 
@@ -118,7 +117,7 @@ def test_tile_op():
     n = dgen.Value(name="n", type=index.Index())
     op = toy.TileOp(name="1", input=v0, count=n, type=inferred())
     assert (
-        asm.format(op)
+        "\n".join(op.asm)
         == "%1 : toy.InferredShapeTensor<number.Float64> = toy.tile<%n>(%0)"
     )
 
@@ -127,7 +126,7 @@ def test_add_index_op():
     x = dgen.Value(name="x", type=index.Index())
     y = dgen.Value(name="y", type=index.Index())
     op = algebra.AddOp(name="0", left=x, right=y, type=index.Index())
-    assert asm.format(op) == "%0 : index.Index = algebra.add(%x, %y)"
+    assert "\n".join(op.asm) == "%0 : index.Index = algebra.add(%x, %y)"
 
 
 def test_full_module(ir_snapshot):
@@ -180,6 +179,5 @@ def test_full_module(ir_snapshot):
         type=Function(arguments=pack(), result_type=builtin.Nil()),
     )
 
-    module = Module(ops=[mt_func, main_func])
-
-    assert module == ir_snapshot
+    # main_func captures mt_func, so it is the single root.
+    assert main_func == ir_snapshot

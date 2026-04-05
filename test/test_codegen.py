@@ -48,7 +48,7 @@ def test_emitter_for_label_registered():
 def _parse(text: str):
     """Parse IR and return the first function's body block."""
     module = asm.parse(strip_prefix(text))
-    return module.functions[0].body
+    return module.body
 
 
 def test_runtime_dependencies_follows_operands():
@@ -260,7 +260,7 @@ def test_emit_linearized_nested_loop():
         """)
     )
 
-    emitted = list(emit(module.functions[0]))
+    emitted = list(emit(module))
     # Should produce some output lines (labels, instructions)
     assert len(emitted) > 0
 
@@ -355,7 +355,6 @@ def test_externs_dedup_distinct_instances_same_symbol():
     """
     from dgen.dialects.builtin import ExternOp, String
     from dgen.dialects.function import Function
-    from dgen.module import Module
 
     malloc1 = ExternOp(
         symbol=String().constant("malloc"),
@@ -380,7 +379,7 @@ def test_externs_dedup_distinct_instances_same_symbol():
         result_type=llvm.Ptr(),
         type=Function(arguments=pack([index.Index()]), result_type=llvm.Ptr()),
     )
-    module = Module(ops=[func])
+    module = func
 
     externs = _externs(module)
     assert len(externs) == 1

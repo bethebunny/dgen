@@ -1,7 +1,7 @@
 """Round-trip tests for mixed-dialect parsing using import headers."""
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.dialects import index as _index  # noqa: F401 — register index dialect
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
@@ -20,7 +20,7 @@ def test_llvm_via_imports():
         |     %1 : number.Float64 = 1.0
         |     %store : Nil = memory.store(%0, %1, %0)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -49,5 +49,5 @@ def test_llvm_full_loop():
         |     %br : Nil = goto.branch<%loop_header>([%init])
         |     %_ : Nil = chain(%0, %br)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

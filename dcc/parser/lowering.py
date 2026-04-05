@@ -21,7 +21,7 @@ from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64
-from dgen.module import ConstantOp, Module, pack
+from dgen.module import ConstantOp, pack
 from dgen.dialects import function
 
 from dcc.dialects import c_int
@@ -205,7 +205,7 @@ class Parser:
         self.file_scope = Scope()
         self.stats = LoweringStats()
 
-    def parse(self, ast: c_ast.FileAST) -> Module:
+    def parse(self, ast: c_ast.FileAST) -> function.FunctionOp:
         # First pass: register types and function declarations
         for ext in ast.ext:
             if isinstance(ext, c_ast.Typedef):
@@ -231,7 +231,7 @@ class Parser:
                 except LoweringError:
                     self.stats.skipped_functions += 1
 
-        return Module(ops=functions)
+        return functions[-1]
 
     def _return_type(self, node: c_ast.Node) -> dgen.Type:
         if isinstance(node, c_ast.FuncDecl):
@@ -710,7 +710,7 @@ class Parser:
 # ---------------------------------------------------------------------------
 
 
-def lower(ast: c_ast.FileAST) -> tuple[Module, LoweringStats]:
+def lower(ast: c_ast.FileAST) -> tuple[function.FunctionOp, LoweringStats]:
     parser = Parser()
-    module = parser.parse(ast)
-    return module, parser.stats
+    entry = parser.parse(ast)
+    return entry, parser.stats

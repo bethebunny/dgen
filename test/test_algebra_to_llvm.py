@@ -1,12 +1,12 @@
 """Tests for AlgebraToLLVM: every algebra op lowers and JITs correctly."""
 
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.testing import llvm_compile, strip_prefix
 
 
 def _jit(ir: str, *args: object) -> object:
     """Parse IR, compile, run with args, return JSON result."""
-    module = parse_module(strip_prefix(ir))
+    module = parse(strip_prefix(ir))
     exe = llvm_compile(module)
     return exe.run(*args).to_json()
 

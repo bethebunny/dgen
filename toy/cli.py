@@ -10,7 +10,7 @@ import click
 from dgen import Dialect
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler
-from dgen.module import Module
+from dgen.dialects.function import FunctionOp
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
@@ -47,13 +47,12 @@ def _parse_arg(arg: str) -> object:
     return ast.literal_eval(arg)
 
 
-def _set_param_types(ir: Module, args: Sequence[object]) -> None:
+def _set_param_types(func: FunctionOp, args: Sequence[object]) -> None:
     """Set function parameter types from runtime argument values.
 
     For list arguments, sets the parameter type to a 1-D Tensor
     with the list's length as the shape dimension.
     """
-    func = ir.functions[0]
     for arg, param in zip(args, func.body.args):
         if isinstance(arg, list):
             param.type = Tensor(shape=shape_constant([len(arg)]))

@@ -83,30 +83,25 @@ class ControlFlowToGoto(Pass):
     def __init__(self) -> None:
         self._loop_counter = 0
 
-    def verify_preconditions(self, module: dgen.module.Module) -> None:
-        super().verify_preconditions(module)
+    def verify_preconditions(self, root: dgen.Value) -> None:
+        super().verify_preconditions(root)
         from dgen.graph import all_values
 
-        for top_level in module.ops:
-            for value in all_values(top_level):
-                if not isinstance(value, control_flow.IfOp):
-                    continue
-                then_type = value.then_body.result.type
-                else_type = value.else_body.result.type
-                if then_type is not value.type and type(then_type) is not type(
-                    value.type
-                ):
-                    raise TypeError(
-                        f"IfOp then-branch result type {then_type} "
-                        f"does not match declared type {value.type}"
-                    )
-                if else_type is not value.type and type(else_type) is not type(
-                    value.type
-                ):
-                    raise TypeError(
-                        f"IfOp else-branch result type {else_type} "
-                        f"does not match declared type {value.type}"
-                    )
+        for value in all_values(root):
+            if not isinstance(value, control_flow.IfOp):
+                continue
+            then_type = value.then_body.result.type
+            else_type = value.else_body.result.type
+            if then_type is not value.type and type(then_type) is not type(value.type):
+                raise TypeError(
+                    f"IfOp then-branch result type {then_type} "
+                    f"does not match declared type {value.type}"
+                )
+            if else_type is not value.type and type(else_type) is not type(value.type):
+                raise TypeError(
+                    f"IfOp else-branch result type {else_type} "
+                    f"does not match declared type {value.type}"
+                )
 
     @lowering_for(control_flow.IfOp)
     def lower_if(self, op: control_flow.IfOp) -> dgen.Value | None:

@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from dgen import Dialect, layout
 from dgen.type import format_value as type_asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.dialects import builtin, number
 from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
 from dgen.module import string_value
@@ -365,4 +365,4 @@ def test_parse_type_with_pointer_array_param():
         | %f : function.Function<[], _test_pa.Wrapper<Pointer<Array<number.Float64, 3>>([10, 20, 30])>> = function.function<_test_pa.Wrapper<Pointer<Array<number.Float64, 3>>([10, 20, 30])>>() body():
         |     %_ : Nil = ()
     """)
-    parse_module(ir)
+    parse(ir)

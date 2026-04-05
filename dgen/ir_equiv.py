@@ -14,8 +14,10 @@ import struct
 
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
-from dgen.module import Module, PackOp
 from dgen.dialects.builtin import Nil
+from dgen.dialects.function import FunctionOp
+from dgen.graph import all_values
+from dgen.module import PackOp
 from dgen.type import Constant, Type, Value
 
 
@@ -124,26 +126,32 @@ class Fingerprinter:
         return _hash_parts(b"block", self.fingerprint(block.result))
 
 
-def _module_fingerprints(module: Module) -> dict[str, bytes]:
-    """Fingerprint all functions in a module using a shared Fingerprinter.
+def _function_fingerprints(root: Value) -> dict[str | None, bytes]:
+    """Fingerprint all functions reachable from root using a shared Fingerprinter.
 
     A single Fingerprinter is used so that cross-function callee references
     (where a CallOp's callee parameter is the actual FunctionOp object) can
     be fingerprinted without KeyErrors: all block args from all functions are
     registered before any fingerprinting begins.
     """
+    seen: set[int] = set()
+    functions: list[FunctionOp] = []
+    for v in all_values(root):
+        if isinstance(v, FunctionOp) and id(v) not in seen:
+            seen.add(id(v))
+            functions.append(v)
     fp = Fingerprinter()
-    for func in module.functions:
+    for func in functions:
         for _, block in func.blocks:
             fp.register_block(block)
-    return {f.name: fp.fingerprint(f) for f in module.functions}
+    return {f.name: fp.fingerprint(f) for f in functions}
 
 
-def graph_equivalent(actual: Module, expected: Module) -> bool:
+def graph_equivalent(actual: Value, expected: Value) -> bool:
     """Return True if actual and expected compute the same IR graph.
 
     Matches functions by name. Two functions are equivalent if their
     use-def graphs are structurally isomorphic — same ops, same operand
     structure, up to op ordering and SSA name assignment.
     """
-    return _module_fingerprints(actual) == _module_fingerprints(expected)
+    return _function_fingerprints(actual) == _function_fingerprints(expected)

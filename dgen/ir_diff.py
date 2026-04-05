@@ -1,6 +1,6 @@
-"""Fingerprint-guided unified diff for IR modules.
+"""Fingerprint-guided unified diff for IR values.
 
-Matches ops across two IR modules using Merkle fingerprints (order- and
+Matches ops across two IR values using Merkle fingerprints (order- and
 label-insensitive), then emits a unified diff showing only semantic changes
 with configurable context lines.
 
@@ -19,28 +19,48 @@ from pathlib import Path
 
 import click
 
+import dgen
 from dgen import Dialect, asm
 from dgen.asm.formatting import SlotTracker, op_asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.dialects.function import FunctionOp
+from dgen.graph import all_values
 from dgen.ir_equiv import Fingerprinter
-from dgen.module import Module
 
 
-def structural_diff(actual: Module, expected: Module) -> str:
+def structural_diff(actual: dgen.Value, expected: dgen.Value) -> str:
     """Return a human-readable fingerprint-guided diff between two IRs."""
-    return diff_modules(actual, expected)
+    return diff_values(actual, expected)
 
 
-def diff_modules(actual: Module, expected: Module, context: int = 3) -> str:
-    """Return a standard unified diff comparing two modules semantically.
+def _reachable_functions(
+    root: dgen.Value | None,
+) -> dict[str | None, FunctionOp]:
+    """FunctionOps reachable from root, keyed by name, deduped by identity."""
+    if root is None:
+        return {}
+    seen: set[int] = set()
+    out: dict[str | None, FunctionOp] = {}
+    for v in all_values(root):
+        if isinstance(v, FunctionOp) and id(v) not in seen:
+            seen.add(id(v))
+            out[v.name] = v
+    return out
+
+
+def diff_values(
+    actual: dgen.Value | None,
+    expected: dgen.Value | None,
+    context: int = 3,
+) -> str:
+    """Return a standard unified diff comparing two IR values semantically.
 
     Uses single-char prefixes (``-``, ``+``, `` ``) and includes
     ``---``/``+++`` file headers so the output can be piped to external
     diff renderers like ``delta``.
     """
-    actual_funcs = {f.name: f for f in actual.functions}
-    expected_funcs = {f.name: f for f in expected.functions}
+    actual_funcs = _reachable_functions(actual)
+    expected_funcs = _reachable_functions(expected)
 
     hunks: list[str] = []
 
@@ -188,10 +208,10 @@ def diff(
     for d in include_dirs:
         Dialect.paths.append(d)
 
-    expected_module = parse_module(expected.read())
-    actual_module = parse_module(actual.read())
+    expected_value = parse(expected.read())
+    actual_value = parse(actual.read())
 
-    diff_text = diff_modules(actual_module, expected_module, context=context)
+    diff_text = diff_values(actual_value, expected_value, context=context)
     if not diff_text:
         return
 

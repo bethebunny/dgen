@@ -6,9 +6,9 @@ JIT tests verify actual execution output.
 
 import llvmlite.binding as llvm_binding
 
+import dgen
 from dgen.codegen import emit_llvm_ir
 from dgen.compiler import Compiler, IdentityPass
-from dgen.module import Module
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
@@ -33,7 +33,7 @@ compiler = Compiler(
 )
 
 
-def compile(source: str) -> Module:
+def compile(source: str) -> dgen.Value:
     ast = parse_toy(source)
     ir = lower(ast)
     return compiler.run(ir)
@@ -175,8 +175,8 @@ def test_multiply_transpose_inlined(ir_snapshot):
 
 
 class LowerLLVMToLLVMIR:
-    def run(self, module: Module) -> str:
-        llvm_ir, _ = emit_llvm_ir(module)
+    def run(self, value: dgen.Value) -> str:
+        llvm_ir, _ = emit_llvm_ir(value)
         return llvm_ir
 
 

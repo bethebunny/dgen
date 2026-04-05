@@ -7,7 +7,7 @@ distinct list and are emitted with ``block_name<%param: T>`` syntax.
 """
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.dialects import goto
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
@@ -20,8 +20,8 @@ def test_roundtrip_label_with_self_param():
         | %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    module = parse_module(ir)
-    (label,) = module.ops
+    module = parse(ir)
+    label = module
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.parameters) == 1
     assert label.body.parameters[0].name == "self"
@@ -40,8 +40,8 @@ def test_roundtrip_label_no_params():
         | %loop : goto.Label = goto.label([]) body(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    module = parse_module(ir)
-    (label,) = module.ops
+    module = parse(ir)
+    label = module
     assert isinstance(label, goto.LabelOp)
     assert label.body.parameters == []
     assert len(label.body.args) == 1
@@ -57,7 +57,7 @@ def test_roundtrip_label_self_param_and_args():
         | %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -69,8 +69,8 @@ def test_roundtrip_label_params_no_args():
         | %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
         |     %zero : index.Index = 0
     """)
-    module = parse_module(ir)
-    (label,) = module.ops
+    module = parse(ir)
+    label = module
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.parameters) == 1
     assert label.body.args == []
@@ -91,5 +91,5 @@ def test_verify_block_param_in_scope():
     """)
     from dgen.verify import verify_closed_blocks
 
-    module = parse_module(ir)
+    module = parse(ir)
     verify_closed_blocks(module)  # Should not raise

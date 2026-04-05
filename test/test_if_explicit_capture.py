@@ -6,7 +6,7 @@ blocks, making each branch a closed term.
 """
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects import control_flow, function
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
@@ -28,8 +28,8 @@ def test_if_no_capture_roundtrip():
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    module = parse_module(ir)
-    fn = module.ops[0]
+    module = parse(ir)
+    fn = module
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
@@ -52,8 +52,8 @@ def test_if_with_capture_roundtrip():
         |     else_body(%x: number.Float64):
         |         %b : number.Float64 = 2.0
     """)
-    module = parse_module(ir)
-    fn = module.ops[0]
+    module = parse(ir)
+    fn = module
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
@@ -77,8 +77,8 @@ def test_if_python_api_no_capture():
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    module = parse_module(ir)
-    fn = module.ops[0]
+    module = parse(ir)
+    fn = module
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
@@ -105,7 +105,7 @@ def test_if_value_lowering(ir_snapshot):
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
     assert lowered == ir_snapshot
 
@@ -128,7 +128,7 @@ def test_if_void_lowering(ir_snapshot):
         |         %_ : Nil = memory.store(%alloc, %f, %alloc)
         |     %result : index.Index = memory.load(%if, %alloc)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
     assert lowered == ir_snapshot
 
@@ -149,7 +149,7 @@ def test_if_with_body_captures_lowering(ir_snapshot):
         |         %two : number.Float64 = 2.0
         |         %b : number.Float64 = algebra.add(%x, %two)
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
     assert lowered == ir_snapshot
 
@@ -169,7 +169,7 @@ def test_if_type_mismatch_then():
         |     else_body():
         |         %b : index.Index = 20
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     import pytest
 
     with pytest.raises(TypeError, match="then-branch result type"):
@@ -191,7 +191,7 @@ def test_if_type_mismatch_else():
         |     else_body():
         |         %b : number.Float64 = 2.0
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     import pytest
 
     with pytest.raises(TypeError, match="else-branch result type"):

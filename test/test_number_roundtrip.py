@@ -1,7 +1,7 @@
 """Roundtrip tests for number dialect types."""
 
 from dgen import asm
-from dgen.asm.parser import parse_module
+from dgen.asm.parser import parse
 from dgen.dialects import number  # noqa: F401 — registers the dialect for parsing
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
@@ -15,7 +15,7 @@ def test_roundtrip_boolean():
         | %f : function.Function<[number.Boolean], Nil> = function.function<Nil>() body(%x: number.Boolean):
         |     %0 : index.Index = 0
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -28,7 +28,7 @@ def test_roundtrip_signed_integer():
         | %f : function.Function<[number.SignedInteger<64>], Nil> = function.function<Nil>() body(%x: number.SignedInteger<64>):
         |     %0 : index.Index = 0
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -41,7 +41,7 @@ def test_roundtrip_unsigned_integer():
         | %f : function.Function<[number.UnsignedInteger<32>], Nil> = function.function<Nil>() body(%x: number.UnsignedInteger<32>):
         |     %0 : index.Index = 0
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))
 
 
@@ -54,5 +54,5 @@ def test_roundtrip_float64():
         | %f : function.Function<[number.Float64], Nil> = function.function<Nil>() body(%x: number.Float64):
         |     %0 : index.Index = 0
     """)
-    module = parse_module(ir)
+    module = parse(ir)
     assert_ir_equivalent(module, asm.parse(asm.format(module)))

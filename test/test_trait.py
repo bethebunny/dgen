@@ -16,7 +16,7 @@ from dgen.gen.ast import (
     TypeRef,
 )
 from dgen.gen.parser import parse
-from dgen.module import Module, pack
+from dgen.module import pack
 from dgen.type import Fields
 from dgen.verify import ConstraintError, verify_constraints
 
@@ -112,16 +112,15 @@ class NoConstraintsOp(Op):
     __operands__: ClassVar[Fields] = (("input", Type),)
 
 
-def _make_module(*body_ops: Op) -> Module:
-    """Build a minimal Module wrapping ops inside a function body."""
+def _make_module(*body_ops: Op) -> FunctionOp:
+    """Build a minimal FunctionOp wrapping ops inside a function body."""
     result = body_ops[-1] if body_ops else MyInt().constant(0)
-    func = FunctionOp(
+    return FunctionOp(
         name="test_fn",
         body=Block(result=result, args=[]),
         result_type=MyInt(),
         type=Function(arguments=pack(), result_type=MyInt()),
     )
-    return Module(ops=[func])
 
 
 # -- Trait base class --------------------------------------------------------
