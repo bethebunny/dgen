@@ -122,12 +122,6 @@ class FieldAddressOp(Op):
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class CallOp(Op):
-    callee: Value[String]
-    arguments: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
 class ReturnOp(Op):
     value: Value
     type: Type = Nil()
@@ -195,3 +189,4 @@ class CommaOp(Op):
     lhs: Value
     rhs: Value
     type: Type
+

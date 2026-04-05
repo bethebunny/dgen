@@ -159,7 +159,13 @@ def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
     try:
 
         def _lines() -> Iterator[str]:
+            defined = {f.name for f in _reachable_functions(root)}
             for extern in _externs(root).values():
+                sym = string_value(extern.symbol)
+                # Skip ExternOp if a FunctionOp with the same name
+                # provides the definition (avoids duplicate symbols).
+                if sym in defined:
+                    continue
                 yield from emit_extern(extern)
             yield ""
             for func in _reachable_functions(root):
@@ -370,6 +376,10 @@ _NO_ASSIGN_OPS: tuple[type[dgen.Op], ...] = (
 
 def emit_linearized(block: dgen.Block) -> Iterator[str]:
     for op in block.ops:
+        # FunctionOps and ExternOps reachable as operands (e.g. a call's
+        # callee) are top-level declarations, not block instructions.
+        if isinstance(op, (function.FunctionOp, builtin.ExternOp)):
+            continue
         yield from emit(op)
         if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
             return True
@@ -596,6 +606,8 @@ def value_reference(v: dgen.Value) -> str:
         return value_reference(v.lhs)
     if isinstance(v, builtin.ExternOp):
         return f"@{string_value(v.symbol)}"
+    if isinstance(v, function.FunctionOp) and v.name:
+        return f"@{v.name}"
     # Self parameters resolve to their owning RegionOp/LabelOp name
     # (the label target for back-edges). Exit parameters keep their own
     # name — they are separate LLVM basic blocks.

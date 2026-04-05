@@ -15,7 +15,6 @@ from dgen.passes.pass_ import Pass, lowering_for
 
 from dcc.dialects.c import (
     BreakOp,
-    CallOp,
     CommaOp,
     DoWhileOp,
     LogicalNotOp,
@@ -51,10 +50,6 @@ class CToLLVM(Pass):
         zero = ConstantOp(value=0, type=op.operand.type)
         eq = algebra.EqualOp(left=op.operand, right=zero, type=op.operand.type)
         return algebra.CastOp(input=eq, type=op.type)
-
-    @lowering_for(CallOp)
-    def lower_call(self, op: CallOp) -> dgen.Value | None:
-        return llvm.CallOp(callee=op.callee, args=op.arguments, type=op.type)
 
     @lowering_for(ReturnOp)
     def lower_return(self, op: ReturnOp) -> dgen.Value | None:

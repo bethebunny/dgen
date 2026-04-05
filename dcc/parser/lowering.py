@@ -21,7 +21,7 @@ from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64
-from dgen.module import ConstantOp, pack, string_value
+from dgen.module import ConstantOp, pack
 from dgen.dialects import function
 
 from dcc.dialects import c_int
@@ -30,7 +30,6 @@ from dcc.dialects.c import (
     AddressOfOp,
     AssignOp,
     BreakOp,
-    CallOp,
     CompoundAssignOp,
     ContinueOp,
     DereferenceOp,
@@ -210,13 +209,12 @@ class Parser:
         self.file_scope = Scope()
         self.stats = LoweringStats()
         self._current_return_type: dgen.Type | None = None
-        # (callee_name, return_type) for every named c.CallOp produced,
-        # including calls generated inside unreachable if/while bodies.
-        # Used to synthesise ExternOps for undefined callees.
-        self._named_calls: dict[str, dgen.Type] = {}
 
     def parse(self, ast: c_ast.FileAST) -> function.FunctionOp:
-        # First pass: register types and function declarations
+        # First pass: register types, globals, and an ExternOp for every
+        # file-scope function (decl AND def). Calls reference the
+        # ExternOp directly. FunctionOps with the matching name provide
+        # the body; codegen deduplicates the declare + define.
         for ext in ast.ext:
             if isinstance(ext, c_ast.Typedef):
                 if ext.name is not None:
@@ -224,14 +222,10 @@ class Parser:
                     self.stats.typedefs += 1
             elif isinstance(ext, c_ast.Decl):
                 if isinstance(ext.type, c_ast.FuncDecl) and ext.name:
-                    self.file_scope.bind(
-                        ext.name,
-                        dgen.Value(name=ext.name, type=self._return_type(ext.type)),
-                    )
+                    self._bind_extern_function(ext.name, ext.type)
                 elif isinstance(ext.type, (c_ast.Struct, c_ast.Union, c_ast.Enum)):
                     self.types.resolve(ext.type)
                 elif ext.name is not None:
-                    # Global variable declaration — register as extern symbol.
                     try:
                         var_type = self.types.resolve(ext.type)
                     except Exception:
@@ -244,8 +238,11 @@ class Parser:
                             type=var_type,
                         ),
                     )
+            elif isinstance(ext, c_ast.FuncDef) and ext.decl.name:
+                self._bind_extern_function(ext.decl.name, ext.decl.type)
 
-        # Second pass: lower function definitions
+        # Second pass: lower function definitions. Each function's body
+        # may call other functions via their ExternOp handles.
         functions: list[function.FunctionOp] = []
         for ext in ast.ext:
             if isinstance(ext, c_ast.FuncDef):
@@ -259,9 +256,42 @@ class Parser:
                         self.stats.skip_reasons.get(key, 0) + 1
                     )
 
+        # Closed-block invariant: every callee ExternOp referenced from
+        # a function's body must be a capture.
+        _add_callee_captures(functions)
+
         self.stats.function_ops = functions
-        _resolve_callee_captures(functions, self._named_calls)
-        return functions[-1]
+        return functions[-1] if functions else dgen.Value(type=Nil())
+
+    def _bind_extern_function(self, name: str, type_node: c_ast.Node) -> None:
+        """Bind a file-scope function name to an ExternOp stub. Idempotent
+        across repeated declarations and forward declarations."""
+        if self.file_scope.has(name):
+            return
+        try:
+            fn_type = self._function_type(type_node)
+        except Exception:
+            return
+        self.file_scope.bind(
+            name,
+            ExternOp(
+                name=name,
+                symbol=String().constant(name),
+                type=fn_type,
+            ),
+        )
+
+    def _bind_extern_function_unknown(self, name: str) -> None:
+        """Bind `name` to an ExternOp with an unknown signature (empty
+        args, i32 return). Used for implicit K&R-style declarations."""
+        self.file_scope.bind(
+            name,
+            ExternOp(
+                name=name,
+                symbol=String().constant(name),
+                type=FunctionType(arguments=pack([]), result_type=c_int(32)),
+            ),
+        )
 
     def _return_type(self, node: c_ast.Node) -> dgen.Type:
         if isinstance(node, c_ast.FuncDecl):
@@ -270,13 +300,35 @@ class Parser:
             return Reference(element_type=self._return_type(node.type))
         return self.types.resolve(node)
 
+    def _function_type(self, node: c_ast.Node) -> FunctionType:
+        """Extract a `function.Function` from a FuncDecl (optionally
+        wrapped in PtrDecls). Callers pass `ext.type` or
+        `funcdef.decl.type`; the node's shape is identical for both."""
+        ret = self._return_type(node)
+        func_decl: c_ast.Node = node
+        while isinstance(func_decl, c_ast.PtrDecl):
+            func_decl = func_decl.type
+        arg_types: list[dgen.Type] = []
+        if isinstance(func_decl, c_ast.FuncDecl) and func_decl.args:
+            for param in func_decl.args.params:
+                if isinstance(param, c_ast.EllipsisParam):
+                    continue
+                if isinstance(param, c_ast.Decl):
+                    try:
+                        arg_types.append(self.types.resolve(param.type))
+                    except Exception:
+                        # Unresolvable param type — fall back to leaving it
+                        # off the signature. LLVM opaque ptrs tolerate a
+                        # declare that omits args at the callsite.
+                        return FunctionType(arguments=pack([]), result_type=ret)
+        return FunctionType(arguments=pack(arg_types), result_type=ret)
+
     # --- Functions ---
 
     def _function(self, node: c_ast.FuncDef) -> function.FunctionOp:
         scope = self.file_scope.child()
         name = node.decl.name
         ret = self._return_type(node.decl.type)
-        self.file_scope.bind(name, dgen.Value(name=name, type=ret))
 
         args: list[BlockArgument] = []
         if isinstance(node.decl.type, c_ast.FuncDecl) and node.decl.type.args:
@@ -366,9 +418,7 @@ class Parser:
                 self.types.resolve(node.type)
             return
         if isinstance(node.type, c_ast.FuncDecl):
-            self.file_scope.bind(
-                node.name, dgen.Value(name=node.name, type=self._return_type(node.type))
-            )
+            self._bind_extern_function(node.name, node.type)
             return
         var_type = self.types.resolve(node.type)
         if node.init is not None:
@@ -819,32 +869,31 @@ class Parser:
                 args.append((yield from self._expr(arg, scope)))
         p = pack(args) if args else pack([])
         yield p
-        # Named-function call only if the name resolves (or is unknown)
-        # at file scope. A same-named local variable/parameter means we're
-        # calling through a function-pointer value.
+        # Resolve the callee to an SSA value. Direct named calls use the
+        # file-scope ExternOp/FunctionOp binding; indirect calls evaluate
+        # the expression.
         if isinstance(node.name, c_ast.ID) and not (
             scope.has(node.name.name) and not self.file_scope.has(node.name.name)
         ):
-            callee = node.name.name
-            if self.file_scope.has(callee):
-                ret_type = self.file_scope.lookup(callee).type
-            else:
-                ret_type = c_int(32)
-            self._named_calls.setdefault(callee, ret_type)
-            op = CallOp(callee=String().constant(callee), arguments=p, type=ret_type)
-            yield op
-            return op
-        # Indirect call through a function-pointer value.
-        fn_ptr = yield from self._expr(node.name, scope)
-        fn_ty = fn_ptr.type
-        # Unwrap one level of pointer/reference if present.
+            name = node.name.name
+            if not self.file_scope.has(name):
+                # Implicit declaration: synthesise an ExternOp so the
+                # callsite is still well-formed. The signature is
+                # unknown; use i32 return (K&R-style default) and empty
+                # args. LLVM opaque ptrs tolerate mismatched signatures
+                # at declare time.
+                self._bind_extern_function_unknown(name)
+            callee = self.file_scope.lookup(name)
+        else:
+            callee = yield from self._expr(node.name, scope)
+        fn_ty = callee.type
         if isinstance(fn_ty, Reference) and isinstance(fn_ty.element_type, dgen.Type):
             fn_ty = fn_ty.element_type
         if isinstance(fn_ty, FunctionType) and isinstance(fn_ty.result_type, dgen.Type):
             ret_type = fn_ty.result_type
         else:
             ret_type = c_int(32)
-        op = function.CallOp(callee=fn_ptr, arguments=p, type=ret_type)
+        op = function.CallOp(callee=callee, arguments=p, type=ret_type)
         yield op
         return op
 
@@ -886,46 +935,26 @@ class Parser:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_callee_captures(
-    functions: list[function.FunctionOp],
-    named_calls: dict[str, dgen.Type],
-) -> None:
-    """Attach callee references as captures on every function's body.
+def _add_callee_captures(functions: list[function.FunctionOp]) -> None:
+    """Ensure ExternOp callees referenced by function.CallOps in each
+    body are listed as block captures (the closed-block invariant).
 
-    C's c.CallOp carries the callee as a string name, so callers don't
-    naturally reference callees in their use-def graph. To make the
-    program reachable from a single entry, attach every defined
-    function and every undefined callee (as an ExternOp) as captures
-    on every caller.
-
-    ``named_calls`` is the complete set of called-by-name sites
-    collected during lowering, including calls inside unreachable
-    branch bodies (which the use-def walk would otherwise miss).
+    Callees are always ExternOps (not FunctionOps), so adding them as
+    captures doesn't create cycles in the DAG.
     """
-    by_name: dict[str, function.FunctionOp] = {f.name: f for f in functions if f.name}
-    extern_cache: dict[str, ExternOp] = {}
-    for name, ret_type in named_calls.items():
-        if name in by_name:
-            continue
-        extern_cache[name] = ExternOp(
-            name=name,
-            symbol=String().constant(name),
-            type=FunctionType(arguments=pack([]), result_type=ret_type),
-        )
-
     from dgen.graph import all_values
 
     for func in functions:
-        seen: set[dgen.Value] = set()
-        captures = list(func.body.captures)
+        seen: set[dgen.Value] = set(func.body.captures)
+        extras: list[dgen.Value] = []
         for v in all_values(func):
-            if isinstance(v, CallOp):
-                name = string_value(v.callee)
-                target: dgen.Value | None = by_name.get(name) or extern_cache.get(name)
-                if target is not None and target is not func and target not in seen:
-                    seen.add(target)
-                    captures.append(target)
-        func.body.captures = captures
+            if isinstance(v, function.CallOp) and isinstance(v.callee, ExternOp):
+                callee = v.callee
+                if callee not in seen:
+                    seen.add(callee)
+                    extras.append(callee)
+        if extras:
+            func.body.captures = list(func.body.captures) + extras
 
 
 def lower(ast: c_ast.FileAST) -> tuple[function.FunctionOp, LoweringStats]:
