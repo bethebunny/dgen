@@ -766,7 +766,12 @@ class Parser:
                 args.append((yield from self._expr(arg, scope)))
         p = pack(args) if args else pack([])
         yield p
-        if isinstance(node.name, c_ast.ID):
+        # Named-function call only if the name resolves (or is unknown)
+        # at file scope. A same-named local variable/parameter means we're
+        # calling through a function-pointer value.
+        if isinstance(node.name, c_ast.ID) and not (
+            scope.has(node.name.name) and not self.file_scope.has(node.name.name)
+        ):
             callee = node.name.name
             if self.file_scope.has(callee):
                 ret_type = self.file_scope.lookup(callee).type
@@ -775,7 +780,7 @@ class Parser:
             op = CallOp(callee=String().constant(callee), arguments=p, type=ret_type)
             yield op
             return op
-        # Indirect call through a function-pointer expression.
+        # Indirect call through a function-pointer value.
         fn_ptr = yield from self._expr(node.name, scope)
         fn_ty = fn_ptr.type
         # Unwrap one level of pointer/reference if present.
