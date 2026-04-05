@@ -30,7 +30,7 @@ NESTED_FOR = strip_prefix("""
 def test_nested_loop_after_control_flow_lowering(ir_snapshot):
     """Nested ForOps lowered to goto labels."""
     m = parse_module(NESTED_FOR)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile_module(m)
     assert lowered == ir_snapshot
 
 
@@ -39,5 +39,5 @@ def test_nested_loop_llvm_ir(snapshot):
     m = parse_module(NESTED_FOR)
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
-    ).compile(m)
+    ).compile_module(m)
     assert exe.ir == snapshot

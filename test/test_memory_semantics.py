@@ -22,7 +22,7 @@ def _jit(ir: str, *args: object) -> object:
         [ControlFlowToGoto(), MemoryToLLVM(), BuiltinToLLVM(), AlgebraToLLVM()],
         LLVMCodegen(),
     )
-    exe = compiler.compile(module)
+    exe = compiler.compile_module(module)
     return exe.run(*args).to_json()
 
 

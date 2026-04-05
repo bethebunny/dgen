@@ -67,7 +67,7 @@ _PIPELINE_IR = strip_prefix("""
 def test_fused_pipeline() -> None:
     """Two actors with equal rates. input * 2 + 1 per element."""
     module = asm.parse(_PIPELINE_IR)
-    exe = actor_compiler.compile(module)
+    exe = actor_compiler.compile_module(module)
     memref = exe.input_types[0]
     f64x4 = builtin.Array(element_type=Float64(), n=builtin.Index().constant(4))
     input_data = Memory.from_value(f64x4, [1.0, 2.0, 3.0, 4.0])
@@ -112,7 +112,7 @@ def test_unfused_pipeline() -> None:
         |             %24 : Nil = actor.produce(%23)
     """)
     )
-    exe = actor_compiler.compile(module)
+    exe = actor_compiler.compile_module(module)
     memref = exe.input_types[0]
     f64x4 = builtin.Array(element_type=Float64(), n=builtin.Index().constant(4))
     f64x2 = builtin.Array(element_type=Float64(), n=builtin.Index().constant(2))

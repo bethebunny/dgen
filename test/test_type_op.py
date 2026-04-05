@@ -148,5 +148,5 @@ def test_type_op_staging_short_circuit():
         passes=[BuiltinToLLVM(), AlgebraToLLVM()],
         exit=LLVMCodegen(),
     )
-    exe = compiler.compile(module)
+    exe = compiler.compile_module(module)
     assert exe.run().to_json() == 42

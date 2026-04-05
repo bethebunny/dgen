@@ -166,7 +166,7 @@ def resolve_stage0(
             _stage_num, op, field_name, value = boundaries[0]
             if stages.get(value, 0) != 0:
                 continue
-            setattr(op, field_name, compiler.compile_value(value))
+            setattr(op, field_name, compiler.compile(value))
             resolved_any = True
             break  # re-iterate from the start after each resolution
         if not resolved_any:
@@ -198,7 +198,7 @@ def _resolve_with_runtime_args(
         if not boundaries:
             break
         _stage_num, op, field_name, value = boundaries[0]
-        setattr(op, field_name, compiler.compile_value(value))
+        setattr(op, field_name, compiler.compile(value))
 
 
 def _build_callback_thunk(
@@ -228,7 +228,7 @@ def _build_callback_thunk(
         # nested blocks can have params that reference the nested block's
         # own args (not our outer block_args) — those still need staging.
         if _has_nested_boundaries(s2_func):
-            exe = compiler.compile(func_module)  # full pipeline incl. staging
+            exe = compiler.compile_module(func_module)  # full pipeline incl. staging
         else:
             exe = compiler.run(func_module)  # skip redundant staging pass
         assert isinstance(exe, Executable)

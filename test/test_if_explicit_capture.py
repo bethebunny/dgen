@@ -106,7 +106,7 @@ def test_if_value_lowering(ir_snapshot):
         |         %twenty : index.Index = 20
     """)
     module = parse_module(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile_module(module)
     assert lowered == ir_snapshot
 
 
@@ -129,7 +129,7 @@ def test_if_void_lowering(ir_snapshot):
         |     %result : index.Index = memory.load(%if, %alloc)
     """)
     module = parse_module(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile_module(module)
     assert lowered == ir_snapshot
 
 
@@ -150,7 +150,7 @@ def test_if_with_body_captures_lowering(ir_snapshot):
         |         %b : number.Float64 = algebra.add(%x, %two)
     """)
     module = parse_module(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile_module(module)
     assert lowered == ir_snapshot
 
 
@@ -173,7 +173,7 @@ def test_if_type_mismatch_then():
     import pytest
 
     with pytest.raises(TypeError, match="then-branch result type"):
-        Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile_module(module)
 
 
 def test_if_type_mismatch_else():
@@ -195,4 +195,4 @@ def test_if_type_mismatch_else():
     import pytest
 
     with pytest.raises(TypeError, match="else-branch result type"):
-        Compiler([ControlFlowToGoto()], IdentityPass()).compile(module)
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile_module(module)

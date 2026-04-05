@@ -327,7 +327,7 @@ def test_constant_fold_resolves_stage0_boundary():
         ],
         exit=LLVMCodegen(),
     )
-    exe = compiler.compile(Module(ops=[inner_func]))
+    exe = compiler.compile_module(Module(ops=[inner_func]))
     assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
 
 

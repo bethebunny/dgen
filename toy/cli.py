@@ -66,7 +66,7 @@ def run(source: str, *, args: Sequence[object | str] = ()) -> object:
     parsed_args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
     if parsed_args:
         _set_param_types(ir, parsed_args)
-    exe = toy_compiler.compile(ir)
+    exe = toy_compiler.compile_module(ir)
     return exe.run(*parsed_args)
 
 

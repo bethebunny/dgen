@@ -204,7 +204,7 @@ def test_transpose_phi_emission():
         ],
         exit=LowerLLVMToLLVMIR(),
     )
-    llvm_ir = jit_compiler.compile(ir)
+    llvm_ir = jit_compiler.compile_module(ir)
     llvm_binding.initialize_native_target()
     mod = llvm_binding.parse_assembly(llvm_ir)
     mod.verify()

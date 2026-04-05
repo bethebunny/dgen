@@ -287,7 +287,7 @@ def test_peano_constant():
     module = parse_module(ir)
 
     print("\n=== Compile ===")
-    exe = peano_compiler.compile(module)
+    exe = peano_compiler.compile_module(module)
 
     print("\n=== Run ===")
     result = exe.run()
@@ -441,7 +441,7 @@ def test_multi_function_staged():
         |     %result : index.Index = function.call<%add_one>([%n])
     """)
     module = parse_module(ir)
-    exe = peano_compiler.compile(module)
+    exe = peano_compiler.compile_module(module)
     result = exe.run()
     assert result.to_json() == 2  # value(Successor(Zero)) = 1, then add 1 = 2
 
@@ -524,7 +524,7 @@ def test_recursive_peano():
         |         %s : peano.Natural = peano.successor<%predecessor>()
     """)
     module = parse_module(ir)
-    exe = peano_compiler.compile(module)
+    exe = peano_compiler.compile_module(module)
 
     # natural(0) = Successor(Zero) → value = 1, so main(0) = 1
     assert exe.run(0).to_json() == 1

@@ -117,7 +117,7 @@ SIMPLE_WHILE = strip_prefix("""
 def test_while_lowering_to_goto(ir_snapshot):
     """WhileOp lowered to goto labels produces expected IR."""
     m = parse_module(SIMPLE_WHILE)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile_module(m)
     assert lowered == ir_snapshot
 
 
@@ -126,7 +126,7 @@ def test_while_llvm_ir(snapshot):
     m = parse_module(SIMPLE_WHILE)
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
-    ).compile(m)
+    ).compile_module(m)
     assert exe.ir == snapshot
 
 
@@ -158,7 +158,7 @@ NESTED_WHILE = strip_prefix("""
 def test_nested_while_lowering(ir_snapshot):
     """Nested WhileOps lowered to goto labels."""
     m = parse_module(NESTED_WHILE)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile_module(m)
     assert lowered == ir_snapshot
 
 
@@ -167,5 +167,5 @@ def test_nested_while_llvm_ir(snapshot):
     m = parse_module(NESTED_WHILE)
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
-    ).compile(m)
+    ).compile_module(m)
     assert exe.ir == snapshot

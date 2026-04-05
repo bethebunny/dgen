@@ -454,3 +454,53 @@ def test_call_function_constant_keeps_engine_alive():
     fc = codegen_compile(module).func_constant
     # Executable is now unreachable; engine lives in fc.value.origins.
     assert call(fc, 21).to_json() == 42
+
+
+# ---------------------------------------------------------------------------
+# Compiler.compile(value) + Compiler.run_value(value)
+# ---------------------------------------------------------------------------
+
+
+def test_compiler_compile_value_returns_constant():
+    """Compiler.compile(value) evaluates the value and returns a Constant."""
+    from dgen.codegen import LLVMCodegen
+    from dgen.compiler import Compiler
+    from dgen.dialects import algebra, index
+    from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+    from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+    from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+    from dgen.module import ConstantOp as MakeConstant
+
+    # Build: add(3, 4) = 7.
+    three = MakeConstant(value=3, type=index.Index())
+    four = MakeConstant(value=4, type=index.Index())
+    seven = algebra.AddOp(left=three, right=four, type=index.Index())
+
+    compiler = Compiler(
+        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()],
+        LLVMCodegen(),
+    )
+    result = compiler.compile(seven)
+    assert result.__constant__.to_json() == 7
+
+
+def test_compiler_run_value_threads_value_through_passes():
+    """Compiler.run_value(value) returns the value after each pass transforms it."""
+    from dgen.codegen import LLVMCodegen
+    from dgen.compiler import Compiler
+    from dgen.dialects import algebra, index, llvm
+    from dgen.passes.pass_ import Pass, lowering_for
+    from dgen.module import ConstantOp as MakeConstant
+
+    class LowerAlgebraAdd(Pass):
+        @lowering_for(algebra.AddOp)
+        def lower_add(self, op: algebra.AddOp) -> llvm.AddOp:
+            return llvm.AddOp(name=op.name, lhs=op.left, rhs=op.right, type=op.type)
+
+    lhs = MakeConstant(value=3, type=index.Index())
+    rhs = MakeConstant(value=4, type=index.Index())
+    op = algebra.AddOp(left=lhs, right=rhs, type=index.Index())
+
+    compiler = Compiler([LowerAlgebraAdd()], LLVMCodegen())
+    result = compiler.run_value(op)
+    assert isinstance(result, llvm.AddOp)

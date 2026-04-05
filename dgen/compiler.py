@@ -9,6 +9,7 @@ import dgen
 from dgen.dialects.function import Function, FunctionOp
 from dgen.module import ConstantOp, Module, pack
 from dgen.passes.pass_ import Pass
+from dgen.type import Constant
 
 verify_passes: ContextVar[bool] = ContextVar("dgen.verify_passes", default=False)
 
@@ -42,28 +43,28 @@ class Compiler(Generic[T]):
         self.passes = passes
         self.exit = exit
 
-    def compile(self, module: Module) -> T:
-        """Full pipeline: staging → passes → exit."""
-        from dgen.staging import compile_module
+    def compile(self, value: dgen.Value) -> Constant:
+        """Evaluate ``value`` and return it as a ``Constant``.
 
-        return compile_module(module, self)
-
-    def compile_value(self, value: dgen.Value) -> ConstantOp:
-        """Compile a stage-0 value to a constant: wrap in function, JIT, execute.
-
-        The value must have no runtime (BlockArgument) dependencies. Callers
-        with runtime values should substitute them as ConstantOps in the IR
-        before calling this.
+        Wraps ``value`` in a zero-arg function that returns it, runs the
+        compiler's passes + exit pass to produce an ``Executable``, invokes
+        the executable, and wraps the resulting ``Memory`` as a ``ConstantOp``.
         """
-        func = FunctionOp(
+        wrapper = FunctionOp(
             name="main",
             body=dgen.Block(result=value),
             result_type=value.type,
             type=Function(arguments=pack([]), result_type=value.type),
         )
-        exe = self.run(Module(ops=[func]))
-        result = exe.run()  # type: ignore[attr-defined]
-        return ConstantOp(value=result.to_json(), type=value.type)
+        exe = self.run(Module(ops=[wrapper]))
+        mem = exe.run()  # type: ignore[attr-defined]
+        return ConstantOp(type=value.type, value=mem)
+
+    def compile_module(self, module: Module) -> T:
+        """Full pipeline on a Module: staging → passes → exit."""
+        from dgen.staging import compile_module
+
+        return compile_module(module, self)
 
     def run(self, module: Module) -> T:
         """Run passes + exit (no staging)."""
@@ -75,3 +76,14 @@ class Compiler(Generic[T]):
             if verify_passes.get():
                 p.verify_postconditions(module)
         return self.exit.run(module)
+
+    def run_value(self, value: dgen.Value) -> dgen.Value:
+        """Run passes on a single root value (no module, no exit pass).
+
+        Each pass runs on ``value`` with a continuation whose passes are the
+        remaining ones, and the output of each pass feeds the next.
+        """
+        for i, p in enumerate(self.passes):
+            continuation = Compiler(self.passes[i + 1 :], self.exit)
+            value = p.run(value, continuation)
+        return value

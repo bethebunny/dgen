@@ -490,7 +490,7 @@ def test_staging_resolves_block_arg_type():
         passes=[CountingLowerToLLVM(), BuiltinToLLVM(), AlgebraToLLVM()],
         exit=LLVMCodegen(),
     )
-    exe = compiler.compile(module)
+    exe = compiler.compile_module(module)
     compile_time_calls = lower_calls
 
     # Each run() triggers runtime JIT — lower is called for each invocation
@@ -579,7 +579,7 @@ def test_staging_with_ssa_result_type():
     compiler: Compiler[Executable] = Compiler(
         passes=[LowerToLLVMPass(), BuiltinToLLVM(), AlgebraToLLVM()], exit=LLVMCodegen()
     )
-    exe = compiler.compile(Module(ops=[inner_func]))
+    exe = compiler.compile_module(Module(ops=[inner_func]))
     assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
 
 
@@ -612,5 +612,5 @@ def test_staging_resolves_type_value():
     compiler: Compiler[Executable] = Compiler(
         passes=[LowerAlgebraAdd()], exit=LLVMCodegen()
     )
-    exe = compiler.compile(module)
+    exe = compiler.compile_module(module)
     assert exe.run({"tag": "index.Index"}, 21).to_json() == 42

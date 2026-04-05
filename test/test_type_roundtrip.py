@@ -430,11 +430,11 @@ def test_string_param_staging():
     identity_compiler: Compiler[Executable] = Compiler(passes=[], exit=LLVMCodegen())
 
     # "slt": 5 < 10 = true → 1
-    exe = identity_compiler.compile(module)
+    exe = identity_compiler.compile_module(module)
     assert exe.run("slt", 5, 10).to_json() == 1
 
     # "sge": 5 >= 10 = false → 0
-    exe = identity_compiler.compile(module)
+    exe = identity_compiler.compile_module(module)
     assert exe.run("sge", 5, 10).to_json() == 0
 
 
@@ -459,7 +459,7 @@ def test_compile_once_run_twice():
 
     identity_compiler: Compiler[Executable] = Compiler(passes=[], exit=LLVMCodegen())
 
-    exe = identity_compiler.compile(module)
+    exe = identity_compiler.compile_module(module)
 
     # Same executable, different arguments — each run JITs a specialized stage-2
     assert exe.run("slt", 5, 10).to_json() == 1  # 5 < 10 = true → 1
