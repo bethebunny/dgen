@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from dgen.module import Module
+import dgen
 from dgen.testing import llvm_compile
 from dgen.compiler import Compiler, IdentityPass
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
@@ -75,9 +75,9 @@ _GCC_COMPAT_DEFINES = [
 def run_c(source: str, *args: int) -> int:
     """Compile a C source string, JIT the first function, return the result."""
     ast = parse_c_string(source)
-    module, _stats = lower(ast)
-    module = _c_compiler.run(module)
-    exe = llvm_compile(module)
+    entry, _stats = lower(ast)
+    lowered = _c_compiler.run(entry)
+    exe = llvm_compile(lowered)
     result = exe.run(*args)
     return result.to_json()
 
@@ -336,8 +336,8 @@ class TestLowering:
                 else return x;
             }
         """)
-        module, _ = lower(ast)
-        assert len(module.functions) == 1
+        _, stats = lower(ast)
+        assert len(stats.function_ops) == 1
 
     def test_while_loop(self) -> None:
         ast = parse_c_string("""
@@ -347,8 +347,8 @@ class TestLowering:
                 return s;
             }
         """)
-        module, _ = lower(ast)
-        assert len(module.functions) == 1
+        _, stats = lower(ast)
+        assert len(stats.function_ops) == 1
 
     def test_for_loop(self) -> None:
         ast = parse_c_string("""
@@ -358,8 +358,8 @@ class TestLowering:
                 return r;
             }
         """)
-        module, _ = lower(ast)
-        assert len(module.functions) == 1
+        _, stats = lower(ast)
+        assert len(stats.function_ops) == 1
 
     def test_typedef(self) -> None:
         ast = parse_c_string("""
@@ -374,29 +374,29 @@ class TestLowering:
             struct P { int x; int y; };
             int f(struct P *p) { return p->x; }
         """)
-        module, _ = lower(ast)
-        assert len(module.functions) == 1
+        _, stats = lower(ast)
+        assert len(stats.function_ops) == 1
 
     def test_enum(self) -> None:
         ast = parse_c_string("""
             enum Color { RED, GREEN, BLUE };
             int f() { return GREEN; }
         """)
-        module, _ = lower(ast)
-        assert len(module.functions) == 1
+        _, stats = lower(ast)
+        assert len(stats.function_ops) == 1
 
     def test_ternary(self) -> None:
         ast = parse_c_string("int f(int a, int b) { return a > b ? a : b; }")
-        module, _ = lower(ast)
-        assert len(module.functions) == 1
+        _, stats = lower(ast)
+        assert len(stats.function_ops) == 1
 
     def test_function_call(self) -> None:
         ast = parse_c_string("""
             int add(int a, int b) { return a + b; }
             int f() { return add(1, 2); }
         """)
-        module, _ = lower(ast)
-        assert len(module.functions) == 2
+        _, stats = lower(ast)
+        assert len(stats.function_ops) == 2
 
     def test_goto_label(self) -> None:
         ast = parse_c_string("""
@@ -407,8 +407,8 @@ class TestLowering:
                 return x;
             }
         """)
-        module, stats = lower(ast)
-        assert len(module.functions) == 1
+        _, stats = lower(ast)
+        assert len(stats.function_ops) == 1
         assert stats.skipped_functions == 0
 
 
@@ -420,29 +420,29 @@ class TestLowering:
 # ---------------------------------------------------------------------------
 
 
-def _lower_c(source: str) -> Module:
+def _lower_c(source: str) -> dgen.Value:
+    """Lower C source; assert nothing got skipped. Returns the entry FunctionOp."""
     ast = parse_c_string(source)
-    module, stats = lower(ast)
+    entry, stats = lower(ast)
     assert stats.skipped_functions == 0, (
         f"lowering skipped functions: {stats.skip_reasons}"
     )
-    return module
+    return entry
 
 
-def _lower_to_llvm(source: str) -> Module:
-    """Run the full frontend pipeline, returning the lowered Module."""
+def _lower_to_llvm(source: str) -> dgen.Value:
+    """Run the full frontend pipeline on the entry function."""
     from dgen.passes.control_flow_to_goto import ControlFlowToGoto
     from dgen.compiler import verify_passes
 
-    ast = parse_c_string(source)
-    module, _ = lower(ast)
+    entry = _lower_c(source)
     pipeline = Compiler(
         [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM(), ControlFlowToGoto()],
         IdentityPass(),
     )
     token = verify_passes.set(False)
     try:
-        return pipeline.run(module)
+        return pipeline.run(entry)
     finally:
         verify_passes.reset(token)
 
@@ -455,26 +455,22 @@ def _codegen_verifies(source: str) -> None:
     llvm_binding.initialize_native_target()
     llvm_binding.initialize_native_asmprinter()
 
-    module = _lower_to_llvm(source)
-    ir, _ = emit_llvm_ir(module)
+    value = _lower_to_llvm(source)
+    ir, _ = emit_llvm_ir(value)
     mod = llvm_binding.parse_assembly(ir)
     mod.verify()
 
 
-def _contains_op(module: Module, op_type: type) -> bool:
+def _contains_op(value: dgen.Value, op_type: type) -> bool:
     from dgen.graph import all_values
 
-    for top in module.ops:
-        for v in all_values(top):
-            if isinstance(v, op_type):
-                return True
-    return False
+    return any(isinstance(v, op_type) for v in all_values(value))
 
 
-def _count_ops(module: Module, op_type: type) -> int:
+def _count_ops(value: dgen.Value, op_type: type) -> int:
     from dgen.graph import all_values
 
-    return sum(isinstance(v, op_type) for top in module.ops for v in all_values(top))
+    return sum(isinstance(v, op_type) for v in all_values(value))
 
 
 class TestSessionFrontendFixes:
@@ -482,7 +478,7 @@ class TestSessionFrontendFixes:
 
     Every test asserts the specific IR structure that distinguishes a
     correct lowering from the pre-fix behavior, then snapshots the full
-    Module. Regressions show up as a structural assertion failure; purely
+    FunctionOp.  Regressions show up as a structural assertion failure; purely
     cosmetic IR shifts only update the snapshot.
     """
 
@@ -590,22 +586,25 @@ class TestSessionFrontendFixes:
             "struct Fwd; struct Outer { struct Fwd *p; };"
             "int f(struct Outer *o) { return o->p->x; }"
         )
-        # Ratchet: this used to skip the function; presence of the
-        # function is the structural signal.
-        assert len(m.functions) == 1
+        # Pre-fix the inner -> failed to resolve (unknown field returned
+        # SignedInteger(64) instead of a pointer). Now a chained -> emits
+        # two PointerMemberAccessOps.
+        from dcc.dialects.c import PointerMemberAccessOp
+
+        assert _count_ops(m, PointerMemberAccessOp) == 2
         assert m == ir_snapshot
 
     def test_long_long_int_literal(self, ir_snapshot: SnapshotAssertion) -> None:
         # Pre-fix: "unsupported constant type: long long int"
         from dgen.dialects.number import SignedInteger
+        from dgen.graph import all_values
         from dgen.module import ConstantOp
 
         m = _lower_c("long long f(void) { return 1LL + 2LL; }")
         # Both constants should land as 64-bit signed integers.
         consts = [
             v
-            for top in m.ops
-            for v in __import__("dgen.graph", fromlist=["all_values"]).all_values(top)
+            for v in all_values(m)
             if isinstance(v, ConstantOp) and isinstance(v.type, SignedInteger)
         ]
         assert consts, "no signed-integer constants found"
@@ -765,22 +764,22 @@ class TestScale:
     def test_1500_functions(self) -> None:
         source = _generate_sqlite_scale_c(1500)
         ast = parse_c_string(source)
-        module, stats = lower(ast)
+        _, stats = lower(ast)
         assert stats.functions == 1500
         assert stats.skipped_functions == 0
-        assert len(module.functions) == 1500
+        assert len(stats.function_ops) == 1500
 
     @pytest.mark.slow
     def test_5000_functions(self) -> None:
         source = _generate_sqlite_scale_c(5000)
         t0 = time.perf_counter()
         ast = parse_c_string(source)
-        module, stats = lower(ast)
+        _, stats = lower(ast)
         elapsed = time.perf_counter() - t0
         assert elapsed < 60, f"Pipeline took {elapsed:.1f}s"
         assert stats.functions == 5000
         assert stats.skipped_functions == 0
-        assert len(module.functions) == 5000
+        assert len(stats.function_ops) == 5000
 
 
 # ---------------------------------------------------------------------------
@@ -799,10 +798,10 @@ class TestSqlite3:
     def test_lower_sqlite3(self, sqlite3_ast: object) -> None:
         """Lower sqlite3.c to dgen IR."""
         t0 = time.perf_counter()
-        module, stats = lower(sqlite3_ast)
+        _, stats = lower(sqlite3_ast)
         elapsed = time.perf_counter() - t0
 
-        lowered = len(module.functions)
+        lowered = len(stats.function_ops)
         skipped = stats.skipped_functions
         total = stats.functions
         print(
@@ -836,7 +835,15 @@ class TestSqlite3:
         old_limit = sys.getrecursionlimit()
         sys.setrecursionlimit(max(old_limit, 50000))
 
-        module, _ = lower(sqlite3_ast)
+        from functools import reduce
+        from dgen.dialects.builtin import ChainOp
+
+        _, stats = lower(sqlite3_ast)
+        all_fns = stats.function_ops
+        # Chain all functions into a single root so the pipeline walks them
+        # in one call. Each function's body is mutated in place, so we can
+        # iterate all_fns after the pipeline run.
+        root = reduce(lambda a, b: ChainOp(lhs=a, rhs=b, type=a.type), all_fns)
         pipeline = Compiler(
             [
                 CToMemory(),
@@ -852,19 +859,19 @@ class TestSqlite3:
         from dgen.compiler import verify_passes
 
         token = verify_passes.set(False)
-        module = pipeline.run(module)
+        pipeline.run(root)
         verify_passes.reset(token)
 
         import re
 
-        total = len(module.functions)
+        total = len(all_fns)
         emitted = 0
         parsed = 0
         verified = 0
         emit_errors: dict[str, int] = {}
         parse_errors: dict[str, int] = {}
         preamble = "declare void @print_memref(ptr, i64)\ndeclare ptr @malloc(i64)\n\n"
-        for func in module.functions:
+        for func in all_fns:
             ctx = EmitContext()
             ctx_token = _emit_ctx.set(ctx)
             try:
