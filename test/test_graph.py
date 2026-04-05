@@ -53,8 +53,8 @@ def test_transitive_dependencies_does_not_descend_into_blocks():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    module = parse(ir)
-    func = module
+    value = parse(ir)
+    func = value
     inner = next(func.body.ops)
     deps = list(transitive_dependencies(func))
     assert func in deps
@@ -106,14 +106,14 @@ def _parse(text: str):
 
 def test_all_values_includes_nested_block_ops():
     """all_values descends into nested blocks, unlike transitive_dependencies."""
-    module = _parse("""
+    value = _parse("""
         | import function
         | import index
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    func = module
+    func = value
     inner_const = next(func.body.ops)
     # transitive_dependencies does NOT include inner ops
     assert inner_const not in list(transitive_dependencies(func))
@@ -123,7 +123,7 @@ def test_all_values_includes_nested_block_ops():
 
 def test_all_values_includes_deeply_nested():
     """all_values reaches ops inside nested label/region bodies."""
-    module = _parse("""
+    value = _parse("""
         | import function
         | import goto
         | import index
@@ -133,7 +133,7 @@ def test_all_values_includes_deeply_nested():
         |     %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
         |         %inner : index.Index = 42
     """)
-    func = module
+    func = value
     vals = list(all_values(func))
     names = [v.name for v in vals if hasattr(v, "name") and v.name is not None]
     assert "inner" in names
@@ -142,14 +142,14 @@ def test_all_values_includes_deeply_nested():
 
 def test_interior_values_yields_block_contents():
     """interior_values yields values from a value's blocks, not the value itself."""
-    module = _parse("""
+    value = _parse("""
         | import function
         | import index
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    func = module
+    func = value
     inner = list(interior_values(func))
     op_names = [v.name for v in inner if isinstance(v, Op)]
     assert "0" in op_names

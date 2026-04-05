@@ -132,26 +132,18 @@ def _ensure_initialized() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _externs(root: dgen.Value) -> list[builtin.ExternOp]:
+def _externs(root: dgen.Value) -> dict[str, builtin.ExternOp]:
     """Discover extern declarations reachable from root, deduped by symbol."""
-    seen: dict[str, builtin.ExternOp] = {}
-    for value in all_values(root):
-        if isinstance(value, builtin.ExternOp):
-            sym = string_value(value.symbol)
-            if sym not in seen:
-                seen[sym] = value
-    return list(seen.values())
+    return {
+        string_value(v.symbol): v
+        for v in all_values(root)
+        if isinstance(v, builtin.ExternOp)
+    }
 
 
 def _reachable_functions(root: dgen.Value) -> list[function.FunctionOp]:
-    """All FunctionOps reachable from root, in topological order, deduped by identity."""
-    seen: set[int] = set()
-    funcs: list[function.FunctionOp] = []
-    for value in all_values(root):
-        if isinstance(value, function.FunctionOp) and id(value) not in seen:
-            seen.add(id(value))
-            funcs.append(value)
-    return funcs
+    """All FunctionOps reachable from root, in topological order."""
+    return [v for v in all_values(root) if isinstance(v, function.FunctionOp)]
 
 
 def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
@@ -166,7 +158,7 @@ def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
     try:
 
         def _lines() -> Iterator[str]:
-            for extern in _externs(root):
+            for extern in _externs(root).values():
                 yield from emit_extern(extern)
             yield ""
             for func in _reachable_functions(root):
@@ -996,12 +988,14 @@ def build_callback_thunk(
 class LLVMCodegen:
     """Exit pass: emit LLVM IR and bundle as Executable.
 
-    If the input value is a FunctionOp, it's used as the entry. Otherwise
-    the value is wrapped in a synthesized nil-arg FunctionOp named ``main``.
+    If the input value already has Function type, it's used as the entry.
+    Otherwise the value is wrapped in a synthesized nil-arg FunctionOp
+    named ``main``.
     """
 
     def run(self, value: dgen.Value) -> Executable:
-        if isinstance(value, function.FunctionOp):
+        if isinstance(value.type, function.Function):
+            assert isinstance(value, function.FunctionOp)
             entry = value
         else:
             entry = function.FunctionOp(

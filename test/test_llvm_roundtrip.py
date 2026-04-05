@@ -15,8 +15,8 @@ def test_roundtrip_alloca():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : Nil = llvm.alloca<3>()
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_gep_load_store():
@@ -35,8 +35,8 @@ def test_roundtrip_gep_load_store():
         |     %4 : Nil = memory.store(%2, %3, %2)
         |     %5 : Nil = memory.load(%4, %2)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_fadd_fmul():
@@ -53,8 +53,8 @@ def test_roundtrip_fadd_fmul():
         |     %3 : Nil = llvm.fmul(%0, %1)
         |     %_ : Nil = chain(%2, %3)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_add_mul_int():
@@ -70,8 +70,8 @@ def test_roundtrip_add_mul_int():
         |     %3 : Nil = llvm.mul(%0, %1)
         |     %_ : Nil = chain(%2, %3)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_icmp_condbr():
@@ -92,8 +92,8 @@ def test_roundtrip_icmp_condbr():
         |         %_ : Nil = ()
         |     %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [], [])
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_label_br():
@@ -107,8 +107,8 @@ def test_roundtrip_label_br():
         |         %_0 : Nil = ()
         |     %_ : Nil = goto.branch<%loop_header>([])
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_call_with_result():
@@ -120,8 +120,8 @@ def test_roundtrip_call_with_result():
         | %f : function.Function<[index.Index, index.Index], ()> = function.function<Nil>() body(%a: index.Index, %b: index.Index):
         |     %0 : Nil = llvm.call<"foo">([%a, %b])
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_call_void():
@@ -133,8 +133,8 @@ def test_roundtrip_call_void():
         | %f : function.Function<[index.Index, index.Index], ()> = function.function<Nil>() body(%ptr: index.Index, %size: index.Index):
         |     %0 : Nil = llvm.call<"print_memref">([%ptr, %size])
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_return_value():
@@ -145,8 +145,8 @@ def test_roundtrip_return_value():
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %0 : number.Float64 = 42.0
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_loop_pattern():
@@ -173,5 +173,5 @@ def test_roundtrip_loop_pattern():
         |         %_ : Nil = goto.conditional_branch<%loop_body, %loop_exit>(%cmp, [%i, %p], [])
         |     %_ : Nil = goto.branch<%loop_header>([%init, %alloc])
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))

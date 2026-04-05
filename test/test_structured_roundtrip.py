@@ -28,8 +28,8 @@ def test_roundtrip_alloc():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
         |     %dealloc : Nil = ndbuffer.dealloc(%0, %0)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_store_load():
@@ -47,8 +47,8 @@ def test_roundtrip_store_load():
         |     %store : Nil = ndbuffer.store(%0, %1, %0, [%2])
         |     %3 : number.Float64 = ndbuffer.load(%store, %0, [%2])
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_arith():
@@ -65,8 +65,8 @@ def test_roundtrip_arith():
         |     %3 : number.Float64 = algebra.add(%0, %1)
         |     %4 : number.Float64 = chain(%2, %3)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_index_constant():
@@ -77,8 +77,8 @@ def test_roundtrip_index_constant():
         | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_print_memref():
@@ -92,8 +92,8 @@ def test_roundtrip_print_memref():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
         |     %print : Nil = ndbuffer.print_memref(%0)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_for_op():
@@ -113,8 +113,8 @@ def test_roundtrip_for_op():
         |     %3 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = chain(%0, %loop)
         |     %print : Nil = ndbuffer.print_memref(%3)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_nested_for():
@@ -134,8 +134,8 @@ def test_roundtrip_nested_for():
         |             %_ : Nil = ndbuffer.store(%0, %1, %0, [%2, %2])
         |     %3 : Nil = chain(%loop, %0)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_return_value():
@@ -146,8 +146,8 @@ def test_roundtrip_return_value():
         | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : number.Float64 = 1.0
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_multi_index_load_store():
@@ -166,8 +166,8 @@ def test_roundtrip_multi_index_load_store():
         |     %store : Nil = ndbuffer.store(%0, %1, %0, [%2, %3])
         |     %4 : number.Float64 = ndbuffer.load(%store, %0, [%2, %3])
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_ssa_in_op_arg():
@@ -182,8 +182,8 @@ def test_roundtrip_ssa_in_op_arg():
         |     %shape : ndbuffer.Shape<2> = [2, 3]
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(%shape)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_ssa_in_type_param():
@@ -198,8 +198,8 @@ def test_roundtrip_ssa_in_type_param():
         |     %shape : ndbuffer.Shape<2> = [2, 3]
         |     %0 : ndbuffer.NDBuffer<%shape, number.Float64> = ndbuffer.alloc(%shape)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_ssa_shape_through_lowering():
@@ -220,9 +220,9 @@ def test_ssa_shape_through_lowering():
         |     %3 : number.Float64 = ndbuffer.load(%store, %0, [%2, %2])
         |     %dealloc : Nil = ndbuffer.dealloc(%3, %0)
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
-    llvm_module = lower_to_llvm(module)
+    llvm_module = lower_to_llvm(value)
     result = asm.format(llvm_module)
     assert 'extern<"malloc">' in result

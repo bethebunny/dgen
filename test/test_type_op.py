@@ -41,12 +41,12 @@ def test_type_op_asm_roundtrip():
         |     %x : index.Index = 42
         |     %t : Type = type(%x)
     """)
-    module = parse(ir)
-    func = module
+    value = parse(ir)
+    func = value
     type_op = func.body.result
     assert isinstance(type_op, TypeOp)
     assert isinstance(type_op.type, TypeType)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_type_op_result_is_type_dependency():
@@ -60,8 +60,8 @@ def test_type_op_result_is_type_dependency():
         |     %t : Type = type(%x)
         |     %y : %t = 7
     """)
-    module = parse(ir)
-    ops = list(module.body.ops)
+    value = parse(ir)
+    ops = list(value.body.ops)
     type_op = ops[1]
     y_op = ops[2]
     assert isinstance(type_op, TypeOp)
@@ -84,8 +84,8 @@ def test_type_op_jit_returns_type():
         |     %x : index.Index = 42
         |     %t : Type = type(%x)
     """)
-    module = parse(ir)
-    exe = compile_module(module)
+    value = parse(ir)
+    exe = compile_module(value)
     result = exe.run()
     assert result.to_json() == {"tag": "index.Index"}
 
@@ -99,8 +99,8 @@ def test_type_op_jit_with_argument():
         | %main : function.Function<[index.Index], Type> = function.function<Type>() body(%x: index.Index):
         |     %t : Type = type(%x)
     """)
-    module = parse(ir)
-    exe = compile_module(module)
+    value = parse(ir)
+    exe = compile_module(value)
     result = exe.run(99)
     assert result.to_json() == {"tag": "index.Index"}
 
@@ -116,8 +116,8 @@ def test_type_op_jit_used_as_annotation():
         |     %t : Type = type(%x)
         |     %y : %t = algebra.add(%x, %x)
     """)
-    module = parse(ir)
-    exe = compile_module(module)
+    value = parse(ir)
+    exe = compile_module(value)
     assert exe.run(21).to_json() == 42
 
 
@@ -143,10 +143,10 @@ def test_type_op_staging_short_circuit():
         |     %t : Type = type(%x)
         |     %y : %t = algebra.add(%x, %x)
     """)
-    module = parse(ir)
+    value = parse(ir)
     compiler: Compiler[Executable] = Compiler(
         passes=[BuiltinToLLVM(), AlgebraToLLVM()],
         exit=LLVMCodegen(),
     )
-    exe = compiler.compile(module)
+    exe = compiler.compile(value)
     assert exe.run().to_json() == 42

@@ -46,8 +46,8 @@ IR_DIFFERENT = strip_prefix("""
 def test_serialize_produces_ir_text(ir_snapshot):
     """serialize() formats the Module as IR text."""
     ext = IRSnapshotExtension()
-    module = parse(IR)
-    result = ext.serialize(module)
+    value = parse(IR)
+    result = ext.serialize(value)
     assert "toy.print" in result
     assert "function" in result
 
@@ -90,10 +90,10 @@ def test_serialize_rejects_non_module(ir_snapshot):
     """serialize() raises AssertionError for non-Module input."""
     ext = IRSnapshotExtension()
     with pytest.raises(AssertionError, match="IRSnapshotExtension expects a Value"):
-        ext.serialize("not a module")
+        ext.serialize("not a value")
 
 
 def test_ir_snapshot_fixture_end_to_end(ir_snapshot):
-    """Snapshot round-trip: generate then verify against same module."""
-    module = parse(IR)
-    assert module == ir_snapshot
+    """Snapshot round-trip: generate then verify against same value."""
+    value = parse(IR)
+    assert value == ir_snapshot

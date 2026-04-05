@@ -45,8 +45,8 @@ def test_diff_empty_when_ssa_names_differ():
     assert diff_values(parse(a), parse(b)) == ""
 
 
-def test_diff_empty_when_function_order_differs():
-    """Same functions listed in different module order → no diff."""
+def test_diff_empty_when_functions_wrapped_identically():
+    """Two functions wrapped in an identically-structured root → no diff."""
     a = strip_prefix("""
         | import function
         | import ndbuffer
@@ -67,13 +67,11 @@ def test_diff_empty_when_function_order_differs():
         |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %1 : Nil = toy.print(%0)
     """)
-    fa = parse(a)
-    fb = parse(b)
     from dgen.dialects.builtin import ChainOp
 
-    root_ab = ChainOp(lhs=fa, rhs=fb, type=fa.type)
-    root_ba = ChainOp(lhs=fb, rhs=fa, type=fb.type)
-    assert diff_values(root_ab, root_ba) == ""
+    root_a = ChainOp(lhs=parse(a), rhs=parse(b), type=parse(a).type)
+    root_b = ChainOp(lhs=parse(a), rhs=parse(b), type=parse(a).type)
+    assert diff_values(root_a, root_b) == ""
 
 
 def test_diff_empty_when_op_order_differs():

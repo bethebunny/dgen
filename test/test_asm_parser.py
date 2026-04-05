@@ -8,7 +8,7 @@ import pytest
 
 import toy.dialects.toy  # noqa: F401 — registers dialect
 
-from dgen.asm.parser import ASMParser, ParseError, parse, parse_value
+from dgen.asm.parser import ASMParser, ParseError, parse
 from dgen.dialects.function import FunctionOp
 from dgen.graph import transitive_dependencies
 from dgen.module import asm_with_imports
@@ -144,7 +144,7 @@ class TestParseErrors:
 
 class TestParseValue:
     def test_parses_single_statement(self) -> None:
-        value = parse_value(
+        value = parse(
             strip_prefix("""
             | import function
             | import index
@@ -157,7 +157,7 @@ class TestParseValue:
 
     def test_returns_last_statement_with_earlier_as_deps(self) -> None:
         """Multiple statements: later statements can reference earlier ones by name."""
-        value = parse_value(
+        value = parse(
             strip_prefix("""
             | import index
             | import algebra
@@ -174,7 +174,7 @@ class TestParseValue:
 
     def test_interleaved_imports_and_statements(self) -> None:
         """Imports may appear between statements, not only at the top."""
-        value = parse_value(
+        value = parse(
             strip_prefix("""
             | import index
             |
@@ -189,10 +189,10 @@ class TestParseValue:
 
     def test_empty_input_raises(self) -> None:
         with pytest.raises(ParseError):
-            parse_value("")
+            parse("")
 
     def test_roundtrips_with_asm_with_imports(self) -> None:
-        """parse_value + asm_with_imports → stable formatted text."""
+        """parse + asm_with_imports → stable formatted text."""
         text = strip_prefix("""
             | import function
             | import index
@@ -201,8 +201,8 @@ class TestParseValue:
             | %f : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
             |     %r : index.Index = algebra.add(%a, %b)
         """)
-        first = "\n".join(asm_with_imports(parse_value(text)))
-        second = "\n".join(asm_with_imports(parse_value(first)))
+        first = "\n".join(asm_with_imports(parse(text)))
+        second = "\n".join(asm_with_imports(parse(first)))
         assert first == second
 
     def test_roundtrips_multi_statement(self) -> None:
@@ -215,8 +215,8 @@ class TestParseValue:
             | %b : index.Index = 4
             | %c : index.Index = algebra.add(%a, %b)
         """)
-        first = "\n".join(asm_with_imports(parse_value(text)))
-        second = "\n".join(asm_with_imports(parse_value(first)))
+        first = "\n".join(asm_with_imports(parse(text)))
+        second = "\n".join(asm_with_imports(parse(first)))
         assert first == second
 
 
@@ -224,7 +224,7 @@ class TestAsmWithImports:
     def test_collects_dialects_from_nested_blocks(self) -> None:
         """asm_with_imports walks into block bodies to find every dialect used."""
         # `algebra.add` is only reachable inside the function body.
-        func = parse_value(
+        func = parse(
             strip_prefix("""
             | import function
             | import index
@@ -241,7 +241,7 @@ class TestAsmWithImports:
 
     def test_emits_transitive_dep_statements(self) -> None:
         """Root's transitive dep ops show up as their own SSA statements."""
-        root = parse_value(
+        root = parse(
             strip_prefix("""
             | import index
             | import algebra

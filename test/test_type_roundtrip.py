@@ -425,16 +425,16 @@ def test_string_param_staging():
         |     %cmp : llvm.Int<1> = llvm.icmp<%pred>(%x, %y)
         |     %ext : llvm.Int<64> = llvm.zext(%cmp)
     """)
-    module = parse(ir)
+    value = parse(ir)
 
     identity_compiler: Compiler[Executable] = Compiler(passes=[], exit=LLVMCodegen())
 
     # "slt": 5 < 10 = true → 1
-    exe = identity_compiler.compile(module)
+    exe = identity_compiler.compile(value)
     assert exe.run("slt", 5, 10).to_json() == 1
 
     # "sge": 5 >= 10 = false → 0
-    exe = identity_compiler.compile(module)
+    exe = identity_compiler.compile(value)
     assert exe.run("sge", 5, 10).to_json() == 0
 
 
@@ -455,11 +455,11 @@ def test_compile_once_run_twice():
         |     %cmp : llvm.Int<1> = llvm.icmp<%pred>(%x, %y)
         |     %ext : llvm.Int<64> = llvm.zext(%cmp)
     """)
-    module = parse(ir)
+    value = parse(ir)
 
     identity_compiler: Compiler[Executable] = Compiler(passes=[], exit=LLVMCodegen())
 
-    exe = identity_compiler.compile(module)
+    exe = identity_compiler.compile(value)
 
     # Same executable, different arguments — each run JITs a specialized stage-2
     assert exe.run("slt", 5, 10).to_json() == 1  # 5 < 10 = true → 1
@@ -506,9 +506,9 @@ def test_deepcopy_span_of_spans():
 
 
 def test_deepcopy_module_with_span_constant():
-    """Deepcopy an entire module containing a List constant.
+    """Deepcopy an entire value containing a List constant.
 
-    This is what staging does — deepcopy the module, then JIT subgraphs.
+    This is what staging does — deepcopy the value, then JIT subgraphs.
     The list constant's backing data must survive the copy.
     """
     ir = strip_prefix("""
@@ -518,10 +518,10 @@ def test_deepcopy_module_with_span_constant():
         | %main : function.Function<[], Span<index.Index>> = function.function<Span<index.Index>>() body():
         |     %0 : Span<index.Index> = [3, 5, 7]
     """)
-    module = parse(ir)
-    copied = deepcopy(module)
+    value = parse(ir)
+    copied = deepcopy(value)
 
-    # The copied module's constant should still be readable
+    # The copied value's constant should still be readable
     copied_const = list(copied.body.ops)[0]
     assert isinstance(copied_const, ConstantOp)
     assert copied_const.memory.to_json() == [3, 5, 7]

@@ -36,7 +36,7 @@ def test_emitter_for_registers_handler():
 
 
 def test_emitter_for_label_registered():
-    """goto.LabelOp has a registered emitter (from the @emitter_for decorator at module level)."""
+    """goto.LabelOp has a registered emitter (from the @emitter_for decorator at value level)."""
     assert goto.LabelOp in EMITTERS
 
 
@@ -47,8 +47,8 @@ def test_emitter_for_label_registered():
 
 def _parse(text: str):
     """Parse IR and return the first function's body block."""
-    module = asm.parse(strip_prefix(text))
-    return module.body
+    value = asm.parse(strip_prefix(text))
+    return value.body
 
 
 def test_runtime_dependencies_follows_operands():
@@ -226,7 +226,7 @@ def test_emit_dispatches_by_value_class():
 
 def test_emit_linearized_nested_loop():
     """emit_linearized handles nested loop IR (lowered to LLVM ops) without crashing."""
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import function
         | import goto
@@ -260,7 +260,7 @@ def test_emit_linearized_nested_loop():
         """)
     )
 
-    emitted = list(emit(module))
+    emitted = list(emit(value))
     # Should produce some output lines (labels, instructions)
     assert len(emitted) > 0
 
@@ -272,7 +272,7 @@ def test_emit_linearized_nested_loop():
 
 def test_externs_function_with_typed_args():
     """_externs discovers a function extern with real argument/return types (malloc)."""
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import function
         | import index
@@ -285,13 +285,13 @@ def test_externs_function_with_typed_args():
         |     %ptr : llvm.Ptr = function.call<%malloc>([%size])
     """)
     )
-    externs = _externs(module)
+    externs = _externs(value)
     assert len(externs) == 1
 
 
 def test_externs_non_function():
     """_externs discovers a non-function extern (global value)."""
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import function
         |
@@ -299,13 +299,13 @@ def test_externs_non_function():
         |     %greeting : String = extern<"hello_world">()
     """)
     )
-    externs = _externs(module)
+    externs = _externs(value)
     assert len(externs) == 1
 
 
 def test_externs_nested_in_region():
     """_externs finds externs nested inside a region body."""
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import function
         | import goto
@@ -323,13 +323,13 @@ def test_externs_nested_in_region():
         |         %_ : Nil = goto.branch<%self>([%next2])
     """)
     )
-    externs = _externs(module)
+    externs = _externs(value)
     assert len(externs) == 1
 
 
 def test_externs_no_duplicates():
     """_externs deduplicates: same ExternOp referenced twice appears once."""
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import function
         | import index
@@ -343,7 +343,7 @@ def test_externs_no_duplicates():
         |     %_ : Nil = chain(%0, %1)
     """)
     )
-    externs = _externs(module)
+    externs = _externs(value)
     assert len(externs) == 1
 
 
@@ -379,15 +379,15 @@ def test_externs_dedup_distinct_instances_same_symbol():
         result_type=llvm.Ptr(),
         type=Function(arguments=pack([index.Index()]), result_type=llvm.Ptr()),
     )
-    module = func
+    value = func
 
-    externs = _externs(module)
+    externs = _externs(value)
     assert len(externs) == 1
 
 
 def test_externs_multiple_distinct():
     """_externs finds multiple distinct externs."""
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import function
         | import index
@@ -402,7 +402,7 @@ def test_externs_multiple_distinct():
         |     %_ : Nil = chain(%ptr, %0)
     """)
     )
-    externs = _externs(module)
+    externs = _externs(value)
     assert len(externs) == 2
 
 
@@ -416,7 +416,7 @@ def test_call_invokes_jit_function():
     from dgen.codegen import call
     from dgen.testing import llvm_compile as codegen_compile
 
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import function
         | import index
@@ -426,7 +426,7 @@ def test_call_invokes_jit_function():
         |     %r : index.Index = algebra.add(%a, %b)
     """)
     )
-    exe = codegen_compile(module)
+    exe = codegen_compile(value)
     # Classic path.
     assert exe.run(3, 4).to_json() == 7
     # New path: the func_constant behaves like a ConstantOp[Function].
@@ -440,7 +440,7 @@ def test_call_function_constant_keeps_engine_alive():
     from dgen.codegen import call
     from dgen.testing import llvm_compile as codegen_compile
 
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import function
         | import index
@@ -450,6 +450,6 @@ def test_call_function_constant_keeps_engine_alive():
         |     %r : index.Index = algebra.add(%x, %x)
     """)
     )
-    fc = codegen_compile(module).func_constant
+    fc = codegen_compile(value).func_constant
     # Executable is now unreachable; engine lives in fc.value.origins.
     assert call(fc, 21).to_json() == 42

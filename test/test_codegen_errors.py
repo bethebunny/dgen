@@ -17,11 +17,11 @@ def test_unhandled_op_raises():
         | %main : function.Function<[], ()> = function.function<Nil>() body():
         |     %a : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([2]))
     """)
-    module = parse(ir)
+    value = parse(ir)
     # ndbuffer.alloc has no lowering in codegen (needs NDBufferToMemory first),
     # so it should raise, not silently drop it.
     with pytest.raises(ValueError, match="ndbuffer.*alloc"):
-        Compiler([], LLVMCodegen()).compile(module)
+        Compiler([], LLVMCodegen()).compile(value)
 
 
 def test_empty_non_label_group_in_mixed_block():
@@ -43,8 +43,8 @@ def test_empty_non_label_group_in_mixed_block():
         |         %next : index.Index = algebra.add(%iv, %one)
         |         %br : Nil = goto.branch<%self>([%next])
     """)
-    module = parse(ir)
+    value = parse(ir)
     from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
-    exe = Compiler([ControlFlowToGoto()], LLVMCodegen()).compile(module)
+    exe = Compiler([ControlFlowToGoto()], LLVMCodegen()).compile(value)
     assert "define" in exe.ir

@@ -66,8 +66,8 @@ _PIPELINE_IR = strip_prefix("""
 @pytest.mark.xfail(reason="JIT malloc return pointer read-back needs investigation")
 def test_fused_pipeline() -> None:
     """Two actors with equal rates. input * 2 + 1 per element."""
-    module = asm.parse(_PIPELINE_IR)
-    exe = actor_compiler.compile(module)
+    value = asm.parse(_PIPELINE_IR)
+    exe = actor_compiler.compile(value)
     memref = exe.input_types[0]
     f64x4 = builtin.Array(element_type=Float64(), n=builtin.Index().constant(4))
     input_data = Memory.from_value(f64x4, [1.0, 2.0, 3.0, 4.0])
@@ -80,7 +80,7 @@ def test_fused_pipeline() -> None:
 @pytest.mark.xfail(reason="JIT malloc return pointer read-back needs investigation")
 def test_unfused_pipeline() -> None:
     """Two actors with different rates. input * 2, then first 2 elements + 1."""
-    module = asm.parse(
+    value = asm.parse(
         strip_prefix("""
         | import actor
         | import algebra
@@ -112,7 +112,7 @@ def test_unfused_pipeline() -> None:
         |             %24 : Nil = actor.produce(%23)
     """)
     )
-    exe = actor_compiler.compile(module)
+    exe = actor_compiler.compile(value)
     memref = exe.input_types[0]
     f64x4 = builtin.Array(element_type=Float64(), n=builtin.Index().constant(4))
     f64x2 = builtin.Array(element_type=Float64(), n=builtin.Index().constant(2))
@@ -125,6 +125,6 @@ def test_unfused_pipeline() -> None:
 
 def test_lowering_ir(ir_snapshot: object) -> None:
     """Pipeline lowers to inlined actor bodies."""
-    module = asm.parse(_PIPELINE_IR)
-    lowered = Compiler(passes=[ActorToAffine()], exit=IdentityPass()).run(module)
+    value = asm.parse(_PIPELINE_IR)
+    lowered = Compiler(passes=[ActorToAffine()], exit=IdentityPass()).run(value)
     assert lowered == ir_snapshot

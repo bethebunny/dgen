@@ -20,15 +20,15 @@ def test_roundtrip_label_with_self_param():
         | %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    module = parse(ir)
-    label = module
+    value = parse(ir)
+    label = value
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.parameters) == 1
     assert label.body.parameters[0].name == "self"
     assert isinstance(label.body.parameters[0].type, goto.Label)
     assert len(label.body.args) == 1
     assert label.body.args[0].name == "i"
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_label_no_params():
@@ -40,12 +40,12 @@ def test_roundtrip_label_no_params():
         | %loop : goto.Label = goto.label([]) body(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    module = parse(ir)
-    label = module
+    value = parse(ir)
+    label = value
     assert isinstance(label, goto.LabelOp)
     assert label.body.parameters == []
     assert len(label.body.args) == 1
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_label_self_param_and_args():
@@ -57,8 +57,8 @@ def test_roundtrip_label_self_param_and_args():
         | %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    module = parse(ir)
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    value = parse(ir)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_roundtrip_label_params_no_args():
@@ -69,12 +69,12 @@ def test_roundtrip_label_params_no_args():
         | %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
         |     %zero : index.Index = 0
     """)
-    module = parse(ir)
-    label = module
+    value = parse(ir)
+    label = value
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.parameters) == 1
     assert label.body.args == []
-    assert_ir_equivalent(module, asm.parse(asm.format(module)))
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
 
 
 def test_verify_block_param_in_scope():
@@ -91,5 +91,5 @@ def test_verify_block_param_in_scope():
     """)
     from dgen.verify import verify_closed_blocks
 
-    module = parse(ir)
-    verify_closed_blocks(module)  # Should not raise
+    value = parse(ir)
+    verify_closed_blocks(value)  # Should not raise

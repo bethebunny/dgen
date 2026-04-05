@@ -5,6 +5,7 @@ from __future__ import annotations
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialect import Dialect
+from dgen.dialects.function import FunctionOp
 from dgen.gen.ast import HasTraitConstraint
 from dgen.graph import all_blocks, all_values
 from dgen.module import asm_with_imports
@@ -95,43 +96,36 @@ def verify_closed_blocks(root: dgen.Value) -> None:
 
 
 def _verify_unique_ownership(root: dgen.Value) -> None:
-    """Assert every op belongs to exactly one block's block.ops.
+    """Assert every op belongs to exactly one scope.
 
-    Walks from every reachable FunctionOp as a top-level starting point,
-    recursing into nested blocks. If a FunctionOp is referenced from
-    another block without being captured, its body ops will be walked twice
-    (once under the referencer, once as a top-level), which manifests as
-    a duplicate-owner error.
+    Walks each reachable FunctionOp (plus the root) as an independent
+    top-level scope, recursing through its body's nested blocks. If an op
+    is reached via two such walks, raise — this manifests when a
+    FunctionOp is referenced from another block without being captured,
+    since the referencer then drags that FunctionOp's body into its own
+    scope as well.
     """
-    from dgen.dialects.function import FunctionOp
+    owner: dict[dgen.Op, str] = {}
 
-    owner: dict[int, str] = {}  # op id → block description
-
-    def _describe(op: dgen.Op) -> str:
-        return f"{type(op).__name__} %{op.name}"
-
-    def _check_block(block: Block, scope: str) -> None:
+    def _check(block: Block, scope: str) -> None:
         for op in block.ops:
-            op_id = id(op)
-            if op_id in owner:
+            if op in owner:
                 raise ClosedBlockError(
-                    f"{_describe(op)} appears in both {owner[op_id]} and {scope}"
+                    f"{type(op).__name__} %{op.name} appears in both "
+                    f"{owner[op]} and {scope}"
                 )
-            owner[op_id] = scope
-            if isinstance(op, dgen.Op):
-                for _, child_block in op.blocks:
-                    _check_block(child_block, op.name or type(op).__name__)
+            owner[op] = scope
+            for _, child in op.blocks:
+                _check(child, op.name or type(op).__name__)
 
-    # Walk from every reachable FunctionOp as its own scope, plus the root.
-    reachable_fns: list[dgen.Op] = [
+    starts: list[dgen.Value] = [
         v for v in all_values(root) if isinstance(v, FunctionOp)
     ]
-    # Ensure root itself is included even if it isn't a FunctionOp.
-    if isinstance(root, dgen.Op) and root not in reachable_fns:
-        reachable_fns.append(root)
-    for fn in reachable_fns:
-        for _, block in fn.blocks:
-            _check_block(block, fn.name or type(fn).__name__)
+    if root not in starts:
+        starts.append(root)
+    for v in starts:
+        for _, block in v.blocks:
+            _check(block, v.name or type(v).__name__)
 
 
 # ---------------------------------------------------------------------------

@@ -103,8 +103,8 @@ def test_concat(ir_snapshot):
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
-    module = parse(ir)
-    assert infer_shapes(module) == ir_snapshot
+    value = parse(ir)
+    assert infer_shapes(value) == ir_snapshot
 
 
 def test_concat_axis1(ir_snapshot):
@@ -122,8 +122,8 @@ def test_concat_axis1(ir_snapshot):
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<1>(%0, %1)
         |     %3 : Nil = toy.print(%2)
     """)
-    module = parse(ir)
-    assert infer_shapes(module) == ir_snapshot
+    value = parse(ir)
+    assert infer_shapes(value) == ir_snapshot
 
 
 def test_tile_with_constant_count(ir_snapshot):
@@ -141,8 +141,8 @@ def test_tile_with_constant_count(ir_snapshot):
         |     %2 : toy.InferredShapeTensor<number.Float64> = toy.tile<%1>(%0)
         |     %3 : Nil = toy.print(%2)
     """)
-    module = parse(ir)
-    assert infer_shapes(module) == ir_snapshot
+    value = parse(ir)
+    assert infer_shapes(value) == ir_snapshot
 
 
 def test_tile_with_computed_count():

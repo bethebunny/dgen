@@ -6,8 +6,8 @@ from dgen.testing import llvm_compile, strip_prefix
 
 def _jit(ir: str, *args: object) -> object:
     """Parse IR, compile, run with args, return JSON result."""
-    module = parse(strip_prefix(ir))
-    exe = llvm_compile(module)
+    value = parse(strip_prefix(ir))
+    exe = llvm_compile(value)
     return exe.run(*args).to_json()
 
 
