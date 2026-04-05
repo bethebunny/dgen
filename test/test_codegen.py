@@ -504,3 +504,37 @@ def test_compiler_run_value_threads_value_through_passes():
     compiler = Compiler([LowerAlgebraAdd()], LLVMCodegen())
     result = compiler.run_value(op)
     assert isinstance(result, llvm.AddOp)
+
+
+def test_compiler_compile_value_function():
+    """Compiler.compile(value) handles Value[Function] — returns a Constant[Function]."""
+    from dgen import Block
+    from dgen.block import BlockArgument
+    from dgen.codegen import LLVMCodegen, call
+    from dgen.compiler import Compiler
+    from dgen.dialects import algebra, index
+    from dgen.dialects.function import Function, FunctionOp
+    from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+    from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+    from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+
+    a = BlockArgument(name="a", type=index.Index())
+    b = BlockArgument(name="b", type=index.Index())
+    add = algebra.AddOp(left=a, right=b, type=index.Index())
+    add_func = FunctionOp(
+        name="add",
+        body=Block(result=add, args=[a, b]),
+        result_type=index.Index(),
+        type=Function(
+            arguments=pack([index.Index(), index.Index()]),
+            result_type=index.Index(),
+        ),
+    )
+
+    compiler = Compiler(
+        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()],
+        LLVMCodegen(),
+    )
+    fc = compiler.compile(add_func)
+    assert isinstance(fc.type, Function)
+    assert call(fc, 20, 22).to_json() == 42

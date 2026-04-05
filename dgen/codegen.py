@@ -6,7 +6,7 @@ import _ctypes
 import contextvars
 import ctypes
 import functools
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Any
@@ -144,28 +144,57 @@ def _externs(module: Module) -> list[builtin.ExternOp]:
     return list(seen.values())
 
 
-def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
-    """Emit LLVM IR text for a module.
-
-    Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
-    alive for the lifetime of the JIT engine.
-    """
+def _emit_module_ir(
+    externs: Iterable[builtin.ExternOp], functions: Iterable[function.FunctionOp]
+) -> tuple[str, list[Memory]]:
+    """Shared core: emit LLVM IR text for a list of externs and functions."""
     ctx = EmitContext()
     token = _emit_ctx.set(ctx)
-
     try:
 
         def _lines() -> Iterator[str]:
-            for extern in _externs(module):
+            for extern in externs:
                 yield from emit_extern(extern)
             yield ""
-            for func in module.functions:
+            for func in functions:
                 prepare_function(func, ctx)
                 yield from emit(func)
 
         return "\n".join(_lines()), ctx.host_buffers
     finally:
         _emit_ctx.reset(token)
+
+
+def emit_llvm_ir(module: Module) -> tuple[str, list[Memory]]:
+    """Emit LLVM IR text for a module.
+
+    Includes every ``FunctionOp`` and ``ExternOp`` reachable from any
+    top-level op — not just ``module.functions`` — so operands that
+    reference functions defined elsewhere in the value graph are emitted
+    at top level and can be referenced via ``@name``.
+
+    Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
+    alive for the lifetime of the JIT engine.
+    """
+    externs: dict[str, builtin.ExternOp] = {}
+    functions: list[function.FunctionOp] = []
+    seen: set[int] = set()
+    # Preserve module.functions ordering (matters for snapshot tests and
+    # LLVMCodegen's "main is functions[-1]" convention).
+    for f in module.functions:
+        if id(f) not in seen:
+            seen.add(id(f))
+            functions.append(f)
+    for root in module.ops:
+        for v in all_values(root):
+            if isinstance(v, builtin.ExternOp):
+                sym = string_value(v.symbol)
+                if sym not in externs:
+                    externs[sym] = v
+            elif isinstance(v, function.FunctionOp) and id(v) not in seen:
+                seen.add(id(v))
+                functions.append(v)
+    return _emit_module_ir(externs.values(), functions)
 
 
 def unpack(val: Value) -> list[Value]:
@@ -367,6 +396,12 @@ _NO_ASSIGN_OPS: tuple[type[dgen.Op], ...] = (
 
 def emit_linearized(block: dgen.Block) -> Iterator[str]:
     for op in block.ops:
+        # FunctionOps are emitted as top-level `define`s, never inline in
+        # another block's body. When they appear as values here (e.g. as
+        # the result of a wrapper that returns a function pointer), they
+        # are referenced by name via value_reference — no code emitted.
+        if isinstance(op, function.FunctionOp):
+            continue
         yield from emit(op)
         if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
             return True
@@ -578,6 +613,10 @@ def value_reference(v: dgen.Value) -> str:
             return f"inttoptr (i64 {mem.address} to ptr)"
         raw = mem.unpack()[0]
         return f"{format_float(raw) if isinstance(raw, float) else raw}"
+    if isinstance(v, function.FunctionOp):
+        return f"@{v.name}"
+    if isinstance(v, builtin.ExternOp):
+        return f"@{string_value(v.symbol)}"
     if isinstance(v, builtin.ChainOp):
         return value_reference(v.lhs)
     # Self parameters resolve to their owning RegionOp/LabelOp name
@@ -865,7 +904,12 @@ def call(func_constant: Value, *args: Memory | object) -> Memory:
     ]
     raw_result = cfunc(*raw_args)
     if result_type.__layout__.register_passable:
-        result = Memory.from_value(result_type, raw_result)
+        # raw_result is the value's bits (scalar or pointer); pack directly.
+        # Don't go through from_value/from_json — for pointer layouts, from_json
+        # treats the int as a pointee value rather than a raw address.
+        result = Memory(result_type)
+        if result.layout.byte_size:
+            result.layout.struct.pack_into(result.buffer, 0, raw_result)
     else:
         result = Memory.from_raw(result_type, raw_result)
     # Keep the JIT engine, input memories, and any callback closures alive
