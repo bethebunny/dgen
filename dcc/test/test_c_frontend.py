@@ -574,10 +574,14 @@ class TestSqlite3:
         module = pipeline.run(module)
         verify_passes.reset(token)
 
+        import re
+
         total = len(module.functions)
         emitted = 0
         parsed = 0
         verified = 0
+        emit_errors: dict[str, int] = {}
+        parse_errors: dict[str, int] = {}
         preamble = "declare void @print_memref(ptr, i64)\ndeclare ptr @malloc(i64)\n\n"
         for func in module.functions:
             ctx = EmitContext()
@@ -585,7 +589,18 @@ class TestSqlite3:
             try:
                 prepare_function(func, ctx)
                 lines = list(emit(func))
-            except Exception:
+            except Exception as e:
+                import traceback
+
+                first = (str(e).splitlines() or [""])[0][:100]
+                tb = traceback.extract_tb(e.__traceback__)
+                site = (
+                    f"{tb[-1].filename.rsplit('/', 1)[-1]}:{tb[-1].lineno}"
+                    if tb
+                    else "?"
+                )
+                key = f"{type(e).__name__}@{site}: {first}"
+                emit_errors[key] = emit_errors.get(key, 0) + 1
                 continue
             finally:
                 _emit_ctx.reset(ctx_token)
@@ -596,8 +611,26 @@ class TestSqlite3:
                 parsed += 1
                 mod.verify()
                 verified += 1
-            except Exception:
-                pass
+            except Exception as e:
+                # llvmlite puts the real diagnostic on subsequent lines.
+                # Pick the first line that looks like a diagnostic.
+                lines_ = str(e).splitlines()
+                msg = ""
+                for line in lines_:
+                    if "error:" in line or "<string>:" in line:
+                        msg = line
+                        break
+                if not msg and lines_:
+                    msg = lines_[-1]
+                # Strip llvmlite's leading "<string>:L:C: error:" prefix
+                msg = re.sub(r"^<string>:\d+:\d+:\s*", "", msg)
+                msg = re.sub(r"^error:\s*", "", msg)
+                # Normalise away specific %names, @names, numeric ids
+                norm = re.sub(r"[%@][\w.]+", "%X", msg)
+                norm = re.sub(r"\bi\d+\b", "iN", norm)
+                norm = re.sub(r"\b\d+\b", "N", norm)
+                norm = norm[:140]
+                parse_errors[norm] = parse_errors.get(norm, 0) + 1
 
         report = (
             f"\nsqlite3 codegen progress:\n"
@@ -607,6 +640,14 @@ class TestSqlite3:
             f"  LLVM verified: {verified:5d} ({100 * verified / total:5.1f}%)\n"
         )
         print(report)
+        if emit_errors:
+            print("top emit errors:")
+            for key, n in sorted(emit_errors.items(), key=lambda x: -x[1])[:10]:
+                print(f"  {n:5d}  {key}")
+        if parse_errors:
+            print("top LLVM parse/verify errors:")
+            for key, n in sorted(parse_errors.items(), key=lambda x: -x[1])[:15]:
+                print(f"  {n:5d}  {key}")
 
         # Ratchets — raise these as we fix things
         sys.setrecursionlimit(old_limit)
