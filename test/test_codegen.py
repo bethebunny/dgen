@@ -453,3 +453,31 @@ def test_call_function_constant_keeps_engine_alive():
     fc = codegen_compile(value).func_constant
     # Executable is now unreachable; engine lives in fc.value.origins.
     assert call(fc, 21).to_json() == 42
+
+
+def test_llvm_codegen_on_extern():
+    """``LLVMCodegen().run`` on an ExternOp builds a trampoline that invokes it.
+
+    An ``ExternOp`` has ``Function`` type but no body, so it can't be used
+    directly as the entry. The codegen wraps it in a nil-body trampoline
+    that forwards args to the extern symbol — making the resulting
+    Executable callable with the extern's signature.
+    """
+    from dgen.codegen import LLVMCodegen
+
+    value = asm.parse(
+        strip_prefix("""
+        | import function
+        | import index
+        | import llvm
+        | %m : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
+    """)
+    )
+    exe = LLVMCodegen().run(value)
+    assert "declare ptr @malloc(i64)" in exe.ir
+    assert "define ptr @main(i64" in exe.ir
+    assert exe.main_name == "main"
+    # malloc actually runs and returns a non-zero pointer.
+    result = exe.run(16)
+    (raw,) = result.unpack()
+    assert isinstance(raw, int) and raw != 0
