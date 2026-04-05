@@ -15,6 +15,7 @@ import llvmlite.binding as llvmlite
 
 import dgen
 from dgen import Type
+from dgen.block import BlockArgument
 from dgen.dialects import (
     builtin,
     function,
@@ -988,15 +989,21 @@ def build_callback_thunk(
 class LLVMCodegen:
     """Exit pass: emit LLVM IR and bundle as Executable.
 
-    If the input value already has Function type, it's used as the entry.
-    Otherwise the value is wrapped in a synthesized nil-arg FunctionOp
-    named ``main``.
+    The entry is always a ``FunctionOp`` with an emitted body. Non-FunctionOp
+    inputs are wrapped:
+      - ``Value[Function]`` (e.g. ``ExternOp``, ``Constant[Function]``) is
+        wrapped in a trampoline that forwards its args to the callable.
+      - Any other value is wrapped in a nil-arg function that returns it.
+
+    Signature (input/result types) comes from the entry FunctionOp's
+    ``Function`` type, not from its body — which keeps wrapping uniform.
     """
 
     def run(self, value: dgen.Value) -> Executable:
-        if isinstance(value.type, function.Function):
-            assert isinstance(value, function.FunctionOp)
+        if isinstance(value, function.FunctionOp):
             entry = value
+        elif isinstance(value.type, function.Function):
+            entry = _wrap_callable(value)
         else:
             entry = function.FunctionOp(
                 name="main",
@@ -1004,12 +1011,40 @@ class LLVMCodegen:
                 result_type=value.type,
                 type=function.Function(arguments=pack([]), result_type=value.type),
             )
-        ir, host_buffers = emit_llvm_ir(entry)
+
+        func_type = entry.type
+        assert isinstance(func_type, function.Function)
+        input_types = [type_constant(v) for v in unpack(func_type.arguments)]
+        result_type = type_constant(func_type.result_type)
         assert entry.name is not None
+
+        ir, host_buffers = emit_llvm_ir(entry)
         return Executable(
             ir=ir,
-            input_types=[type_constant(arg.type) for arg in entry.body.args],
+            input_types=input_types,
             main_name=entry.name,
-            result_type=type_constant(entry.result_type),
+            result_type=result_type,
             host_refs=host_buffers,
         )
+
+
+def _wrap_callable(callable_value: dgen.Value) -> function.FunctionOp:
+    """Wrap a ``Value[Function]`` (e.g. ExternOp) in a trampoline function
+    that forwards its args to the callable."""
+    func_type = callable_value.type
+    assert isinstance(func_type, function.Function)
+    arg_types = unpack(func_type.arguments)
+    result_type_value = func_type.result_type
+    result_type = type_constant(result_type_value)
+    args = [BlockArgument(name=f"a{i}", type=t) for i, t in enumerate(arg_types)]
+    call_op = function.CallOp(
+        callee=callable_value,
+        arguments=pack(args),
+        type=result_type,
+    )
+    return function.FunctionOp(
+        name="main",
+        body=dgen.Block(result=call_op, args=args, captures=[callable_value]),
+        result_type=result_type_value,
+        type=func_type,
+    )
