@@ -20,15 +20,14 @@ def test_roundtrip_label_with_self_param():
         | %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    value = parse(ir)
-    label = value
+    label = parse(ir)
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.parameters) == 1
     assert label.body.parameters[0].name == "self"
     assert isinstance(label.body.parameters[0].type, goto.Label)
     assert len(label.body.args) == 1
     assert label.body.args[0].name == "i"
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(label, asm.parse(asm.format(label)))
 
 
 def test_roundtrip_label_no_params():
@@ -40,12 +39,11 @@ def test_roundtrip_label_no_params():
         | %loop : goto.Label = goto.label([]) body(%i: index.Index):
         |     %zero : index.Index = 0
     """)
-    value = parse(ir)
-    label = value
+    label = parse(ir)
     assert isinstance(label, goto.LabelOp)
     assert label.body.parameters == []
     assert len(label.body.args) == 1
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(label, asm.parse(asm.format(label)))
 
 
 def test_roundtrip_label_self_param_and_args():
@@ -69,12 +67,11 @@ def test_roundtrip_label_params_no_args():
         | %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
         |     %zero : index.Index = 0
     """)
-    value = parse(ir)
-    label = value
+    label = parse(ir)
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.parameters) == 1
     assert label.body.args == []
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(label, asm.parse(asm.format(label)))
 
 
 def test_verify_block_param_in_scope():

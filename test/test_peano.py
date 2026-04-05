@@ -170,8 +170,7 @@ def test_zero_type_has_natural_trait_via_asm():
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : Type = peano.zero()
     """)
-    value = parse(ir)
-    func = value
+    func = parse(ir)
     zero_op = list(func.body.ops)[0]
     assert isinstance(zero_op, ZeroOp)
     # ZeroOp produces a type value — the result type is TypeType.
@@ -209,8 +208,7 @@ def test_trait_in_asm_type_annotation():
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %z : peano.Natural = peano.zero()
     """)
-    value = parse(ir)
-    func = value
+    func = parse(ir)
     zero_op = list(func.body.ops)[0]
     assert isinstance(zero_op, ZeroOp)
     assert isinstance(zero_op.type, Natural)
@@ -252,8 +250,7 @@ def test_trait_as_block_argument_type():
         |     %s : peano.Natural = peano.successor<%z>()
         |     %v : index.Index = peano.value<%s>()
     """)
-    value = parse(ir)
-    func = value
+    func = parse(ir)
     ops = func.body.ops
     for op in ops:
         if isinstance(op, (ZeroOp, SuccessorOp)):
@@ -310,9 +307,7 @@ def test_equal_and_subtract_roundtrip():
         |     %sub : index.Index = algebra.subtract(%n, 1)
         |     %result : index.Index = algebra.add(%eq_i, %sub)
     """)
-    value = parse(ir)
-    asm_lines = list(value.asm)
-    asm_text = "\n".join(asm_lines)
+    asm_text = asm.format(parse(ir))
     assert "algebra.equal" in asm_text
     assert "algebra.subtract" in asm_text
 
@@ -470,7 +465,7 @@ def test_verify_dag_detects_cycle():
     We construct a cycle by parsing valid IR and then mutating it: the
     function body result references the function itself via a ChainOp.
     """
-    value = parse(
+    func = parse(
         strip_prefix("""
         | import function
         | import index
@@ -479,7 +474,6 @@ def test_verify_dag_detects_cycle():
         |     %0 : Nil = {}
     """)
     )
-    func = value
     assert isinstance(func, FunctionOp)
     # Create cycle: func.body.result → ChainOp → func
     chain = ChainOp(lhs=func.body.result, rhs=func, type=Nil())

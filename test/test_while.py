@@ -38,8 +38,7 @@ def test_while_basic_roundtrip():
         |         %one : index.Index = 1
         |         %next : index.Index = algebra.add(%i, %one)
     """)
-    value = parse(ir)
-    fn = value
+    fn = parse(ir)
     assert isinstance(fn, control_flow.WhileOp) is False  # it's a FunctionOp
     while_op = fn.body.result
     assert isinstance(while_op, control_flow.WhileOp)
@@ -47,7 +46,7 @@ def test_while_basic_roundtrip():
     assert while_op.condition.args[0].name == "i"
     assert len(while_op.body.args) == 1
     assert while_op.body.args[0].name == "i"
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(fn, asm.parse(asm.format(fn)))
 
 
 def test_while_with_capture_roundtrip():
