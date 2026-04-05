@@ -1,9 +1,9 @@
 """Ch4 tests: Shape inference pass."""
 
 import dgen
+from dgen import asm
 from dgen.asm.parser import parse
 from dgen.compiler import Compiler, IdentityPass
-from dgen.module import asm_with_imports
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.shape_inference import ShapeInference
@@ -172,7 +172,7 @@ def test_tile_with_computed_count():
     # produces unresolved InferredShapeTensor, which verify_postconditions rejects.
     si = ShapeInference()
     result_func = si.run(func, Compiler([], IdentityPass()))
-    out = "\n".join(asm_with_imports(result_func))
+    out = asm.format(result_func)
     # Shape inference cannot resolve %4 — it stays InferredShapeTensor
     # because the count (%3) is not a constant, it's a computed value.
     # Resolving this requires a staging evaluator.

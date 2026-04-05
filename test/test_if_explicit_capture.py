@@ -28,14 +28,13 @@ def test_if_no_capture_roundtrip():
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    value = parse(ir)
-    fn = value
+    fn = parse(ir)
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
     assert if_op.then_body.args == []
     assert if_op.else_body.args == []
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(fn, asm.parse(asm.format(fn)))
 
 
 def test_if_with_capture_roundtrip():
@@ -52,8 +51,7 @@ def test_if_with_capture_roundtrip():
         |     else_body(%x: number.Float64):
         |         %b : number.Float64 = 2.0
     """)
-    value = parse(ir)
-    fn = value
+    fn = parse(ir)
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
@@ -61,7 +59,7 @@ def test_if_with_capture_roundtrip():
     assert len(if_op.else_body.args) == 1
     assert if_op.then_body.args[0].name == "x"
     assert if_op.else_body.args[0].name == "x"
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(fn, asm.parse(asm.format(fn)))
 
 
 def test_if_python_api_no_capture():
@@ -77,14 +75,13 @@ def test_if_python_api_no_capture():
         |     else_body():
         |         %twenty : index.Index = 20
     """)
-    value = parse(ir)
-    fn = value
+    fn = parse(ir)
     assert isinstance(fn, function.FunctionOp)
     if_op = fn.body.result
     assert isinstance(if_op, control_flow.IfOp)
     assert if_op.then_body.args == []
     assert if_op.else_body.args == []
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(fn, asm.parse(asm.format(fn)))
 
 
 # -- Lowering to goto --

@@ -25,13 +25,12 @@ def test_roundtrip_captures():
         |     %loop : goto.Label = goto.label([]) body<%self: goto.Label>(%i: index.Index) captures(%x):
         |         %zero : index.Index = 0
     """)
-    value = parse(ir)
-    func = value
+    func = parse(ir)
     label = func.body.result
     assert isinstance(label, goto.LabelOp)
     assert len(label.body.captures) == 1
     assert label.body.captures[0].name == "x"
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(func, asm.parse(asm.format(func)))
 
 
 def test_roundtrip_empty_captures():
@@ -240,8 +239,7 @@ def test_replace_uses_updates_captures():
         |         %0 : index.Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%old, %0)
     """)
-    value = parse(ir)
-    func = value
+    func = parse(ir)
     old_arg, new_arg = func.body.args
 
     func.body.replace_uses_of(old_arg, new_arg)
@@ -270,8 +268,7 @@ def test_replace_uses_updates_chained_captures():
         |             %0 : index.Index = 0
         |             %1 : llvm.Int<64> = llvm.add(%old, %0)
     """)
-    value = parse(ir)
-    func = value
+    func = parse(ir)
     old_arg, new_arg = func.body.args
 
     func.body.replace_uses_of(old_arg, new_arg)
@@ -282,7 +279,7 @@ def test_replace_uses_updates_chained_captures():
     assert new_arg in inner_label.body.captures
     assert inner_label.body.result.lhs is new_arg
 
-    verify_closed_blocks(value)
+    verify_closed_blocks(func)
 
 
 # ---------------------------------------------------------------------------
@@ -306,13 +303,12 @@ def test_constant_must_be_captured():
         |     %lbl : goto.Label = goto.label([]) body(%x: index.Index) captures(%c):
         |         %use : index.Index = chain(%x, %c)
     """)
-    value = parse(ir)
-    verify_closed_blocks(value)
+    func = parse(ir)
+    verify_closed_blocks(func)
 
     # The ConstantOp %c is in the parent's ops (reachable from the label
     # via block captures) and is a capture boundary in the label body
     # (not in the body's ops).
-    func = value
     label = func.body.result
     assert any(op.name == "c" for op in func.body.ops)
     # %c is NOT in the label body's ops — it's a capture boundary

@@ -3,10 +3,12 @@
 from collections.abc import Sequence
 
 import dgen
+from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function
 from dgen.module import ConstantOp, PackOp, pack
+from dgen.testing import strip_prefix
 from toy.dialects import shape_constant, toy
 
 
@@ -24,55 +26,69 @@ def test_constant_op():
         value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         type=ranked([2, 3]),
     )
-    assert (
-        "\n".join(op.asm)
-        == "%0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]"
-    )
+    assert asm.format(op) == strip_prefix("""
+        | import index
+        | import ndbuffer
+        | import number
+        | import toy
+        |
+        | %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    """)
 
 
 def test_transpose_op():
     a = dgen.Value(name="a", type=builtin.Nil())
     op = toy.TransposeOp(name="0", input=a, type=inferred())
-    assert (
-        "\n".join(op.asm)
-        == "%0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)"
-    )
+    assert asm.format(op) == strip_prefix("""
+        | import number
+        | import toy
+        |
+        | %0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)
+    """)
 
 
 def test_reshape_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     op = toy.ReshapeOp(name="1", input=v0, type=ranked([2, 3]))
-    assert (
-        "\n".join(op.asm)
-        == "%1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)"
-    )
+    assert asm.format(op) == strip_prefix("""
+        | import index
+        | import ndbuffer
+        | import number
+        | import toy
+        |
+        | %1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)
+    """)
 
 
 def test_mul_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.MulOp(name="2", lhs=v0, rhs=v1, type=inferred())
-    assert (
-        "\n".join(op.asm)
-        == "%2 : toy.InferredShapeTensor<number.Float64> = toy.mul(%0, %1)"
-    )
+    assert asm.format(op) == strip_prefix("""
+        | import number
+        | import toy
+        |
+        | %2 : toy.InferredShapeTensor<number.Float64> = toy.mul(%0, %1)
+    """)
 
 
 def test_add_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     v1 = dgen.Value(name="1", type=builtin.Nil())
     op = toy.AddOp(name="2", lhs=v0, rhs=v1, type=inferred())
-    assert (
-        "\n".join(op.asm)
-        == "%2 : toy.InferredShapeTensor<number.Float64> = toy.add(%0, %1)"
-    )
+    assert asm.format(op) == strip_prefix("""
+        | import number
+        | import toy
+        |
+        | %2 : toy.InferredShapeTensor<number.Float64> = toy.add(%0, %1)
+    """)
 
 
 def test_call_op():
     v1 = dgen.Value(name="1", type=builtin.Nil())
     v3 = dgen.Value(name="3", type=builtin.Nil())
     callee = dgen.Value(name="multiply_transpose", type=builtin.Nil())
-    pack = PackOp(
+    p = PackOp(
         name="p",
         values=[v1, v3],
         type=builtin.Span(pointee=inferred()),
@@ -80,20 +96,28 @@ def test_call_op():
     op = function.CallOp(
         name="4",
         callee=callee,
-        arguments=pack,
+        arguments=p,
         type=inferred(),
     )
-    assert (
-        "\n".join(op.asm)
-        == "%4 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%1, %3])"
-    )
+    assert asm.format(op) == strip_prefix("""
+        | import function
+        | import number
+        | import toy
+        |
+        | %4 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%1, %3])
+    """)
 
 
 def test_print_op():
     v5 = dgen.Value(name="5", type=builtin.Nil())
     op = toy.PrintOp(input=v5)
-    # PrintOp has no name -> auto-numbered as %0
-    assert "\n".join(op.asm) == "%0 : Nil = toy.print(%5)"
+    # %5 is registered first (name is numeric "5", bumps counter past it),
+    # then the unnamed PrintOp gets the next counter slot %6.
+    assert asm.format(op) == strip_prefix("""
+        | import toy
+        |
+        | %6 : Nil = toy.print(%5)
+    """)
 
 
 def test_concat_op():
@@ -106,27 +130,38 @@ def test_concat_op():
         rhs=v1,
         type=inferred(),
     )
-    assert (
-        "\n".join(op.asm)
-        == "%2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)"
-    )
+    assert asm.format(op) == strip_prefix("""
+        | import index
+        | import number
+        | import toy
+        |
+        | %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)
+    """)
 
 
 def test_tile_op():
     v0 = dgen.Value(name="0", type=builtin.Nil())
     n = dgen.Value(name="n", type=index.Index())
     op = toy.TileOp(name="1", input=v0, count=n, type=inferred())
-    assert (
-        "\n".join(op.asm)
-        == "%1 : toy.InferredShapeTensor<number.Float64> = toy.tile<%n>(%0)"
-    )
+    assert asm.format(op) == strip_prefix("""
+        | import index
+        | import number
+        | import toy
+        |
+        | %1 : toy.InferredShapeTensor<number.Float64> = toy.tile<%n>(%0)
+    """)
 
 
 def test_add_index_op():
     x = dgen.Value(name="x", type=index.Index())
     y = dgen.Value(name="y", type=index.Index())
     op = algebra.AddOp(name="0", left=x, right=y, type=index.Index())
-    assert "\n".join(op.asm) == "%0 : index.Index = algebra.add(%x, %y)"
+    assert asm.format(op) == strip_prefix("""
+        | import algebra
+        | import index
+        |
+        | %0 : index.Index = algebra.add(%x, %y)
+    """)
 
 
 def test_full_module(ir_snapshot):

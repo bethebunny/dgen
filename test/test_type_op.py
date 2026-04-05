@@ -41,12 +41,11 @@ def test_type_op_asm_roundtrip():
         |     %x : index.Index = 42
         |     %t : Type = type(%x)
     """)
-    value = parse(ir)
-    func = value
+    func = parse(ir)
     type_op = func.body.result
     assert isinstance(type_op, TypeOp)
     assert isinstance(type_op.type, TypeType)
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(func, asm.parse(asm.format(func)))
 
 
 def test_type_op_result_is_type_dependency():

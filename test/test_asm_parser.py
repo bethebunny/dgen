@@ -8,6 +8,7 @@ import pytest
 
 import toy.dialects.toy  # noqa: F401 — registers dialect
 
+from dgen import asm
 from dgen.asm.parser import ASMParser, ParseError, parse
 from dgen.dialects.function import FunctionOp
 from dgen.graph import transitive_dependencies
@@ -201,8 +202,8 @@ class TestParseValue:
             | %f : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
             |     %r : index.Index = algebra.add(%a, %b)
         """)
-        first = "\n".join(asm_with_imports(parse(text)))
-        second = "\n".join(asm_with_imports(parse(first)))
+        first = asm.format(parse(text))
+        second = asm.format(parse(first))
         assert first == second
 
     def test_roundtrips_multi_statement(self) -> None:
@@ -215,8 +216,8 @@ class TestParseValue:
             | %b : index.Index = 4
             | %c : index.Index = algebra.add(%a, %b)
         """)
-        first = "\n".join(asm_with_imports(parse(text)))
-        second = "\n".join(asm_with_imports(parse(first)))
+        first = asm.format(parse(text))
+        second = asm.format(parse(first))
         assert first == second
 
 
