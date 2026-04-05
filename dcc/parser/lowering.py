@@ -9,14 +9,14 @@ compound assignment expansion) belong in passes, not here.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pycparser import c_ast
 
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra
-from dgen.dialects.builtin import Nil, String
+from dgen.dialects.builtin import ExternOp, Nil, String
 from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
@@ -183,6 +183,7 @@ class LoweringStats:
     statements: int = 0
     expressions: int = 0
     skipped_functions: int = 0
+    skip_reasons: dict[str, int] = field(default_factory=dict)
 
     def summary(self) -> str:
         return (
@@ -220,6 +221,20 @@ class Parser:
                     )
                 elif isinstance(ext.type, (c_ast.Struct, c_ast.Union, c_ast.Enum)):
                     self.types.resolve(ext.type)
+                elif ext.name is not None:
+                    # Global variable declaration — register as extern symbol.
+                    try:
+                        var_type = self.types.resolve(ext.type)
+                    except Exception:
+                        continue
+                    self.file_scope.bind(
+                        ext.name,
+                        ExternOp(
+                            name=ext.name,
+                            symbol=String().constant(ext.name),
+                            type=var_type,
+                        ),
+                    )
 
         # Second pass: lower function definitions
         functions: list[function.FunctionOp] = []
@@ -228,8 +243,12 @@ class Parser:
                 self.stats.functions += 1
                 try:
                     functions.append(self._function(ext))
-                except LoweringError:
+                except LoweringError as e:
                     self.stats.skipped_functions += 1
+                    key = str(e)
+                    self.stats.skip_reasons[key] = (
+                        self.stats.skip_reasons.get(key, 0) + 1
+                    )
 
         return functions[-1]
 
