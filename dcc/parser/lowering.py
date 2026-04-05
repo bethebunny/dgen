@@ -639,7 +639,14 @@ class Parser:
     def _constant(
         self, node: c_ast.Constant, target_type: dgen.Type | None = None
     ) -> Iterator[dgen.Op]:
-        if node.type == "int":
+        if node.type in (
+            "int",
+            "unsigned int",
+            "long int",
+            "unsigned long int",
+            "long long int",
+            "unsigned long long int",
+        ):
             val = parse_c_int(node.value)
             ty = target_type or self._int_type_from_suffix(node.value)
             op = ConstantOp(value=val, type=ty)

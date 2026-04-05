@@ -198,7 +198,10 @@ class TypeResolver:
             for fname, ftype in fields:
                 if fname == field_name:
                     return ftype
-        return c_int(64, signed=True)
+        # Unknown field — return an opaque pointer so chained -> accesses
+        # and subscripts can continue. sqlite3 forward-declares structs
+        # and uses nested field access heavily.
+        return c_ptr(c_void())
 
     def _eval_array_dim(self, dim: c_ast.Node | None) -> int:
         if dim is None:
