@@ -527,8 +527,13 @@ class TestSqlite3:
         print(
             f"\nsqlite3 lowering: {lowered} lowered, {skipped} skipped, {total} total"
         )
+        if stats.skip_reasons:
+            top = sorted(stats.skip_reasons.items(), key=lambda x: -x[1])[:10]
+            print("top skip reasons:")
+            for reason, count in top:
+                print(f"  {count:5d}  {reason[:120]}")
 
-        assert lowered >= 900, f"lowered regressed: {lowered}"
+        assert lowered >= 980, f"lowered regressed: {lowered}"
         assert elapsed < 120, f"Lowering took {elapsed:.1f}s"
 
     def test_codegen_sqlite3(self, sqlite3_ast: object) -> None:
@@ -608,4 +613,4 @@ class TestSqlite3:
 
         # Ratchets — raise as we fix things
         assert emitted >= total - 20, f"emitted regressed: {emitted}/{total}\n{report}"
-        assert verified >= 250, f"verified regressed: {verified}\n{report}"
+        assert verified >= 320, f"verified regressed: {verified}\n{report}"
