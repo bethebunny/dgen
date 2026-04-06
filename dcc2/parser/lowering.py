@@ -208,9 +208,12 @@ class Parser:
         ret_type = fn_type.result_type
         self._current_return_type = ret_type
 
-        # Create block args for function parameters.
+        # Create block args for function parameters, then bind each as
+        # a local variable (LvalueVarOp + AssignOp) so _id can treat
+        # parameters and locals uniformly.
         scope = self.file_scope.child()
         args: list[BlockArgument] = []
+        param_ops: list[dgen.Op] = []
         if isinstance(funcdef.decl.type, c_ast.FuncDecl):
             func_decl = funcdef.decl.type
             if func_decl.args:
@@ -221,8 +224,16 @@ class Parser:
                         arg = BlockArgument(
                             name=param.name, type=self.types.resolve(param.type)
                         )
-                        scope.bind(param.name, arg)
                         args.append(arg)
+                        lv = LvalueVarOp(
+                            var_name=String().constant(param.name),
+                            source=arg,
+                            type=arg.type,
+                        )
+                        param_ops.append(lv)
+                        assign = AssignOp(lvalue=lv, rvalue=arg, type=arg.type)
+                        param_ops.append(assign)
+                        scope.bind(param.name, assign)
 
         # Rebuild fn_type from actual resolved args.
         fn_type = FunctionType(
@@ -388,26 +399,26 @@ class Parser:
     def _id(self, node: c_ast.ID, scope: Scope) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an identifier reference.
 
-        For local variables (bound to an AssignOp), emits lvalue_var +
-        lvalue_to_rvalue to load the current value. For parameters and
-        other values, returns the binding directly.
+        Variables (parameters and locals) are all bound as AssignOps
+        and emit lvalue_var + lvalue_to_rvalue. Non-variables (ExternOps,
+        enum constants) pass through directly.
         """
         if node.name in self.types.enum_constants:
             op = ConstantOp(value=self.types.enum_constants[node.name], type=c_int(32))
             yield op
             return op
         binding = scope.lookup(node.name)
-        if isinstance(binding, AssignOp):
-            lv = LvalueVarOp(
-                var_name=String().constant(node.name),
-                source=binding,
-                type=binding.type,
-            )
-            yield lv
-            load = LvalueToRvalueOp(lvalue=lv, type=binding.type)
-            yield load
-            return load
-        return binding
+        if not isinstance(binding, AssignOp):
+            return binding
+        lv = LvalueVarOp(
+            var_name=String().constant(node.name),
+            source=binding,
+            type=binding.type,
+        )
+        yield lv
+        load = LvalueToRvalueOp(lvalue=lv, type=binding.type)
+        yield load
+        return load
 
     def _binary(
         self, node: c_ast.BinaryOp, scope: Scope

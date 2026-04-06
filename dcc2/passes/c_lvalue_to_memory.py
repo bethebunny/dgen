@@ -45,7 +45,7 @@ class CLvalueToMemory(Pass):
             return None
         name = _var_name(op.lvalue)
         alloca = self._ensure_alloca(name, op.rvalue.type)
-        mem = self._get_mem(name)
+        mem = self._mem_for(name)
         store = memory.StoreOp(mem=mem, value=op.rvalue, ptr=alloca)
         self._mem[name] = store
         return store
@@ -57,10 +57,9 @@ class CLvalueToMemory(Pass):
         name = _var_name(op.lvalue)
         alloca = self._alloca.get(name)
         if alloca is None:
-            # Variable not yet allocated — it's a function parameter.
-            # The lvalue source is the parameter value itself.
+            # No alloca for this name — the source value is the value itself.
             return op.lvalue.source
-        mem = self._get_mem(name)
+        mem = self._mem_for(name)
         return memory.LoadOp(mem=mem, ptr=alloca, type=op.type)
 
     def _ensure_alloca(self, name: str, elem_type: dgen.Type) -> memory.StackAllocateOp:
@@ -75,9 +74,6 @@ class CLvalueToMemory(Pass):
         self._alloca[name] = alloca
         return alloca
 
-    def _get_mem(self, name: str) -> dgen.Value:
+    def _mem_for(self, name: str) -> dgen.Value:
         """Get the current memory token for a variable (alloca if no prior store)."""
-        mem = self._mem.get(name)
-        if mem is not None:
-            return mem
-        return self._alloca[name]
+        return self._mem.get(name) or self._alloca[name]
