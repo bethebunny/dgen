@@ -41,15 +41,32 @@ class Scope:
     Each compound statement ({}) creates a child scope. Variable
     declarations bind in the current scope. Lookups walk the parent
     chain. Captures track cross-scope references for block construction.
+
+    Variables (names in _variables) have their bindings updated after
+    every read and write, so LvalueVarOp.source always chains to the
+    prior operation on that variable. This encodes statement ordering
+    into the use-def graph.
     """
 
     def __init__(self, parent: Scope | None = None) -> None:
         self._bindings: dict[str, dgen.Value] = {}
+        self._variables: set[str] = set()
         self._parent = parent
         self.captures: list[dgen.Value] = []
 
     def bind(self, name: str, value: dgen.Value) -> None:
         self._bindings[name] = value
+
+    def declare_variable(self, name: str, value: dgen.Value) -> None:
+        """Bind a name as a mutable variable (parameter or local)."""
+        self._bindings[name] = value
+        self._variables.add(name)
+
+    def is_variable(self, name: str) -> bool:
+        """Check if a name is a declared variable (not an extern/constant)."""
+        if name in self._variables:
+            return True
+        return self._parent.is_variable(name) if self._parent is not None else False
 
     def lookup(self, name: str) -> dgen.Value:
         if name in self._bindings:
@@ -233,7 +250,7 @@ class Parser:
                         param_ops.append(lv)
                         assign = AssignOp(lvalue=lv, rvalue=arg, type=arg.type)
                         param_ops.append(assign)
-                        scope.bind(param.name, assign)
+                        scope.declare_variable(param.name, assign)
 
         # Rebuild fn_type from actual resolved args.
         fn_type = FunctionType(
@@ -332,7 +349,7 @@ class Parser:
         yield lv
         assign = AssignOp(lvalue=lv, rvalue=init_val, type=var_type)
         yield assign
-        scope.bind(node.name, assign)
+        scope.declare_variable(node.name, assign)
 
     def _assignment_stmt(
         self, node: c_ast.Assignment, scope: Scope
@@ -399,17 +416,19 @@ class Parser:
     def _id(self, node: c_ast.ID, scope: Scope) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an identifier reference.
 
-        Variables (parameters and locals) are all bound as AssignOps
-        and emit lvalue_var + lvalue_to_rvalue. Non-variables (ExternOps,
-        enum constants) pass through directly.
+        Variables emit lvalue_var + lvalue_to_rvalue, then update the
+        scope binding so the next operation on this variable chains
+        through this read. This encodes C statement order into the
+        use-def graph: read(x) → write(x) forces the read before the
+        write, even though they're on the same alloca.
         """
         if node.name in self.types.enum_constants:
             op = ConstantOp(value=self.types.enum_constants[node.name], type=c_int(32))
             yield op
             return op
+        if not scope.is_variable(node.name):
+            return scope.lookup(node.name)
         binding = scope.lookup(node.name)
-        if not isinstance(binding, AssignOp):
-            return binding
         lv = LvalueVarOp(
             var_name=String().constant(node.name),
             source=binding,
@@ -418,6 +437,8 @@ class Parser:
         yield lv
         load = LvalueToRvalueOp(lvalue=lv, type=binding.type)
         yield load
+        # Update binding: next operation on this variable depends on this read.
+        scope.bind(node.name, load)
         return load
 
     def _binary(
