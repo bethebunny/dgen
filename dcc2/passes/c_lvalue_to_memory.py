@@ -3,8 +3,12 @@
 This pass eliminates lvalue ops by converting them to stack allocations,
 loads, and stores with mem-token threading for precise ordering.
 
-LvalueVarOp + LvalueToRvalueOp → StackAllocateOp + LoadOp
-AssignOp (on LvalueVarOp)       → StoreOp (updates mem token)
+AssignOp (on LvalueVarOp)       → StackAllocateOp + StoreOp
+LvalueToRvalueOp (on LvalueVarOp) → LoadOp
+
+Variables are identified by name. Nested-scope shadowing (two variables
+named "x" in different scopes) is a Brick 6 concern — it requires inner
+blocks where each block has its own pass state.
 """
 
 from __future__ import annotations
@@ -16,9 +20,9 @@ from dgen.passes.pass_ import Pass, lowering_for
 from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 
 
-def _var_name(op: LvalueVarOp) -> str:
+def _var_name(lvalue: LvalueVarOp) -> str:
     """Extract the variable name string from a LvalueVarOp."""
-    return op.var_name.__constant__.to_json()
+    return lvalue.var_name.__constant__.to_json()
 
 
 class CLvalueToMemory(Pass):

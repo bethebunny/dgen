@@ -136,6 +136,7 @@ class Parser:
         c_ast.Return: "_return",
         c_ast.Decl: "_decl_stmt",
         c_ast.Assignment: "_assignment_stmt",
+        c_ast.Compound: "_compound_stmt",
     }
 
     def __init__(self) -> None:
@@ -281,6 +282,15 @@ class Parser:
         val = _run_gen(self._expr(node.expr, scope))
         return _Return(val)
 
+    def _compound_stmt(
+        self, node: c_ast.Compound, scope: Scope
+    ) -> list[dgen.Op] | _Return:
+        """Lower a nested compound statement (child scope)."""
+        return_value, ops = self._compound(node, scope.child())
+        if return_value is not None:
+            return _Return(return_value)
+        return ops
+
     def _decl_stmt(self, node: c_ast.Decl, scope: Scope) -> list[dgen.Op]:
         """Lower a declaration statement."""
         return list(self._decl(node, scope))
@@ -288,9 +298,8 @@ class Parser:
     def _decl(self, node: c_ast.Decl, scope: Scope) -> Iterator[dgen.Op]:
         """Lower a declaration (e.g. int x = 5;).
 
-        Emits lvalue_var + assign for initialized variables. The lvalue
-        elimination pass (CLvalueToMemory) converts these to stack
-        allocations and stores.
+        Emits lvalue_var + assign. The lvalue elimination pass
+        (CLvalueToMemory) converts these to stack allocations and stores.
         """
         if node.name is None:
             # Type-only declaration (struct/union/enum definition).
@@ -298,29 +307,21 @@ class Parser:
                 self.types.resolve(node.type)
             return
         var_type = self.types.resolve(node.type)
+        init_val: dgen.Value
         if node.init is not None:
             init_val = _run_gen(self._expr(node.init, scope))
-            lv = LvalueVarOp(
-                var_name=String().constant(node.name),
-                source=init_val,
-                type=var_type,
-            )
-            yield lv
-            assign = AssignOp(lvalue=lv, rvalue=init_val, type=var_type)
-            yield assign
-            scope.bind(node.name, assign)
         else:
-            zero = ConstantOp(value=0, type=var_type)
-            yield zero
-            lv = LvalueVarOp(
-                var_name=String().constant(node.name),
-                source=zero,
-                type=var_type,
-            )
-            yield lv
-            assign = AssignOp(lvalue=lv, rvalue=zero, type=var_type)
-            yield assign
-            scope.bind(node.name, assign)
+            init_val = ConstantOp(value=0, type=var_type)
+            yield init_val
+        lv = LvalueVarOp(
+            var_name=String().constant(node.name),
+            source=init_val,
+            type=var_type,
+        )
+        yield lv
+        assign = AssignOp(lvalue=lv, rvalue=init_val, type=var_type)
+        yield assign
+        scope.bind(node.name, assign)
 
     def _assignment_stmt(
         self, node: c_ast.Assignment, scope: Scope
@@ -340,7 +341,6 @@ class Parser:
                 f"unsupported assignment target: {type(node.lvalue).__name__}"
             )
         var_name = node.lvalue.name
-        # Look up the previous binding to get the variable type.
         prev = scope.lookup(var_name)
         lv = LvalueVarOp(
             var_name=String().constant(var_name),
