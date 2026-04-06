@@ -1,5 +1,8 @@
 # C Frontend Redesign: Design & Implementation Plan
 
+*Draft v2 — revised after review by three agents (dgen architectural
+fit, C11 spec coverage, implementation feasibility).*
+
 ## Problem Statement
 
 The current C frontend is a single-pass AST→IR translator that conflates
@@ -26,30 +29,33 @@ it matters for correct compilation.
 5. **Correctness over completeness.** Get the common subset right before
    chasing corner cases. But design the architecture so corner cases
    slot in without hacks.
+6. **Incremental migration.** New ops coexist with old ops. Migrate
+   one construct at a time. The sqlite3 ratchet must not regress.
 
 ## Architecture Overview
 
 ```
 pycparser AST (untyped, unresolved)
       │
-      ▼  Phase 1: Type-annotated lowering
-C dialect IR  (lvalue ops, unresolved promotions, explicit decay)
+      ▼  Parser: thin 1:1 lowering
+C dialect IR  (lvalue ops, raw arithmetic, no implicit conversions)
       │
-      ▼  Pass: Implicit conversion insertion
-C dialect IR  (all casts explicit, types consistent)
+      ▼  Pass: Struct layout (compute field offsets)
+      ▼  Pass: Implicit conversion insertion (promotions, decay, casts)
+      ▼  Pass: Lvalue elimination → memory ops (alloca hoisting)
+      ▼  Pass: C arithmetic → algebra/LLVM (signed/unsigned dispatch)
       │
-      ▼  Pass: Lvalue elimination → memory ops
-Memory dialect IR  (alloca/load/store, GEP with real offsets)
-      │
-      ▼  Pass: C arithmetic → algebra/LLVM
-Algebra + LLVM dialect IR
-      │
-      ▼  Pass: Control flow → goto
-Goto dialect IR
-      │
-      ▼  Codegen
-LLVM IR text → JIT
+      ▼  Existing passes: ControlFlowToGoto, MemoryToLLVM, AlgebraToLLVM
+      ▼  Codegen: LLVM IR text → JIT
 ```
+
+### Pass Ordering Rationale
+
+Struct layout **must precede** lvalue elimination because GEP indices
+require field offsets. Implicit conversions **must precede** lvalue
+elimination because the types of loads/stores depend on promotion
+results. Integer promotions are part of implicit conversions, not a
+separate late phase — every binary op's result type depends on them.
 
 ## C Dialect Design (`dcc/dialects/c.dgen`)
 
@@ -62,35 +68,49 @@ from builtin import Index, Nil, String, Span, Pointer
 from number import SignedInteger, UnsignedInteger, Float64
 
 # Integers carry their C-level width. Layout uses the declared width.
-# The existing number.SignedInteger/UnsignedInteger work for this;
-# we alias for readability.
+# The existing number.SignedInteger/UnsignedInteger work for this.
 
-# Struct type: carries field names, types, and offsets.
+# Float32 for C's `float` (distinct from Float64 / `double`).
+type Float32:
+    data: Float64  # layout: 32-bit float (needs a Float32 layout primitive)
+
+# Struct: tag + field metadata. Frozen — offsets are computed by the
+# struct layout pass, which constructs NEW Struct types with offsets
+# filled in (frozen types cannot be mutated in place).
 type Struct<tag: String, fields: Span<StructField>>:
-    data: Index  # total size
+    data: Index  # total size in bytes
 
 type StructField<name: String, field_type: Type, offset: Index>:
     data: Nil
 
-# Enum: underlying integer type + named constants
+# Union: tag + field metadata. Size = max field size.
+type Union<tag: String, fields: Span<StructField>>:
+    data: Index
+
+# Enum: underlying integer type + named constants.
 type Enum<tag: String, underlying: Type>:
     data: Index
 
-# Function type is already provided by function.Function.
-# Qualified types (const/volatile) are tracked via wrapper types
-# or metadata — defer to v2.
+# Function type: reuse function.Function, but add variadic tracking.
+# is_variadic: whether the function has `...` parameters.
+# n_fixed_params: number of positional parameters before `...`.
+# The implicit conversion pass uses these to decide whether to apply
+# default argument promotions (variadic positions) vs parameter-type
+# conversion (fixed positions).
+type CFunctionType<arguments: Span<Type>, result_type: Type,
+                   is_variadic: Index, n_fixed_params: Index>:
+    data: Nil
 ```
 
 ### Lvalue Ops
 
-The key insight: C has two "worlds" of values. An **lvalue** designates
-a storage location; an **rvalue** is a plain value. Most expressions
-produce rvalues. Variables, dereferences, subscripts, and field accesses
-produce lvalues. An implicit "lvalue-to-rvalue conversion" (a load)
-happens whenever an lvalue appears in rvalue context.
+C has two "worlds" of values. An **lvalue** designates a storage
+location; an **rvalue** is a plain value. Variables, dereferences,
+subscripts, and field accesses produce lvalues. An implicit
+"lvalue-to-rvalue conversion" (a load) happens whenever an lvalue
+appears in rvalue context.
 
-Rather than tracking lvalue-ness as a type property, model it as
-**explicit ops in the IR**:
+Model lvalue-ness as **explicit ops in the IR**:
 
 ```dgen
 # Lvalue-producing ops
@@ -99,262 +119,344 @@ op lvalue_deref(ptr)                         # *ptr → lvalue
 op lvalue_subscript(base, index)             # base[index] → lvalue
 op lvalue_member<field: String>(base)        # base.field → lvalue
 op lvalue_arrow<field: String>(ptr)          # ptr->field → lvalue
+op lvalue_compound_literal(init)             # (struct S){...} → lvalue
 
 # Lvalue-consuming ops
 op lvalue_to_rvalue(lvalue)                  # the "load" — implicit in C
 op address_of(lvalue)                        # &lvalue → pointer rvalue
 op assign(lvalue, rvalue)                    # lvalue = rvalue
-op compound_assign<operator: String>(lvalue, rvalue)  # lvalue op= rvalue
+op compound_assign<operator: String>(lvalue, rvalue)
 op pre_increment(lvalue)
 op post_increment(lvalue)
 op pre_decrement(lvalue)
 op post_decrement(lvalue)
 ```
 
-This makes every load/store explicit in the IR. The "lvalue elimination"
-pass lowers `lvalue_to_rvalue` → `memory.load`, `assign` → `memory.store`,
-etc. But until that pass runs, the IR preserves C's lvalue semantics —
-which means passes can reason about aliasing, const-correctness, and
-volatile access at the C level.
+**Closed-block interaction:** When lvalue elimination hoists allocas to
+function entry, inner blocks (if-bodies, loop-bodies) that reference
+the alloca must list it as a **capture**. The lvalue elimination pass
+is responsible for threading captures correctly — it scans the function
+body, creates allocas, then for each inner block that references an
+alloca, adds it to that block's capture list.
 
 ### Implicit Conversion Ops
 
-C requires implicit conversions at specific points (assignments, function
-args, returns, comparisons). Rather than inserting these in the parser,
-the parser emits raw ops and a dedicated pass inserts conversion ops:
-
 ```dgen
 # Inserted by the implicit-conversion pass, not the parser
-op integer_promote(input)           # char/short → int
-op arithmetic_convert(input)        # usual arithmetic conversions
-op array_decay(array)               # array → pointer to first element
-op function_decay(func)             # function → pointer to function
-op null_to_pointer(zero)            # integer 0 → null pointer
-op pointer_to_bool(ptr)             # pointer → _Bool (for conditions)
+op integer_promote(input)           # char/short → int (C11 6.3.1.1)
+op arithmetic_convert(input)        # usual arithmetic conversions (6.3.1.8)
+op array_decay(array)               # T[] → T* (6.3.2.1p3)
+op function_decay(func)             # f → &f (6.3.2.1p4)
+op null_to_pointer(zero)            # 0 → null pointer (6.3.2.3p3)
+op scalar_to_bool(val)              # any scalar → _Bool (6.3.1.2)
+op bitfield_promote(input)          # bit-field → int (6.3.1.1)
 ```
-
-Each of these is lowered trivially by later passes (e.g., `integer_promote`
-→ `llvm.sext` or no-op if already `int`-width).
 
 ### Control Flow
 
 Reuse `control_flow.IfOp`, `control_flow.WhileOp`, and
-`control_flow.ForOp` from the existing dgen dialects. These already
-lower to `goto.label`/`goto.branch` via `ControlFlowToGoto`.
+`control_flow.ForOp` from dgen. These lower to goto labels via
+`ControlFlowToGoto`.
 
-Add C-specific:
+**Short-circuit `&&`/`||`:** These are NOT bitwise operations. They
+require short-circuit evaluation (C11 6.5.13-14). The parser must
+lower them to `control_flow.IfOp`:
+
+```python
+# a && b  →  if (a) then b else 0
+# a || b  →  if (a) then 1 else b
+```
+
+This is the parser's job (not a pass) because the AST structure
+directly determines control flow.
+
+C-specific control flow ops:
 
 ```dgen
 op c_return(value) -> Nil
 op c_switch<case_values: Span<Index>>(selector) -> Nil:
     block default_body
-# break/continue are handled by control-flow-to-goto lowering
+op c_goto<label: String>() -> Nil
+op c_label<name: String>() -> Nil
 ```
+
+**`c_return` and ChainOp interaction:** The lowering of `c_return`
+must preserve the side-effect chain. When the parser emits
+`ChainOp(lhs=return_val, rhs=prior_effects)`, the `c_return` wraps
+this chain, and `lower_return` extracts the chain (not just the bare
+value). The block's result IS the `c_return` op, which carries the
+full chain.
 
 ### Calls
 
-Follow the architecture from the current refactor: `function.CallOp`
-with `ExternOp` or `FunctionOp` callee. No string-named calls.
+`function.CallOp` with `ExternOp` callee for ALL cross-function calls
+(even to functions defined in the same translation unit). This avoids
+DAG cycles from mutual recursion — ExternOps are leaf nodes with no
+body to recurse into. FunctionOps provide definitions; ExternOps
+provide callable handles. Codegen deduplicates `declare` vs `define`
+for the same symbol.
 
 ## Passes
 
-### Pass 1: Implicit Conversion Insertion (`c_implicit_conversions.py`)
+### Pass 1: Struct Layout (`c_struct_layout.py`)
 
-**Input:** Raw C dialect IR from the parser.
-**Output:** C dialect IR with all conversions explicit.
+**Runs first** because both implicit conversions and lvalue elimination
+need offset/size information.
 
-Walk every op. At each "conversion point" (per C11 spec):
-- **Binary ops:** Apply usual arithmetic conversions to both operands.
-- **Assignments:** Convert RHS to LHS type.
-- **Function args:** Convert each arg to parameter type (or apply default
-  promotions for variadic/unprototyped).
-- **Return:** Convert to function's declared return type.
-- **Conditions (if/while/for):** Convert to `_Bool` (non-zero test).
-- **Comparisons:** Apply usual arithmetic conversions.
-
-For pointer operands in comparisons, insert `null_to_pointer` when
-comparing to integer 0.
-
-This pass replaces ALL of the current inline isinstance-based conversion
-logic in `_binary`, `_ret`, etc.
-
-### Pass 2: Lvalue Elimination (`c_lvalue_to_memory.py`)
-
-**Input:** C dialect IR with explicit lvalue ops.
-**Output:** Memory dialect IR (alloca/load/store/GEP).
-
-For each function body:
-1. **Alloca hoisting:** Scan all `lvalue_var` ops. Create ONE
-   `memory.StackAllocateOp` per unique variable name at function entry.
-   This is the "slot" for the variable, shared across all branches.
-2. **Lower lvalue ops:**
-   - `lvalue_var(source)` → the alloca ptr
-   - `lvalue_deref(ptr)` → ptr itself
-   - `lvalue_subscript(base, idx)` → `llvm.GepOp(base, idx)`
-   - `lvalue_member<field>(base)` → `llvm.GepOp(base, field_offset)`
-   - `lvalue_arrow<field>(ptr)` → `llvm.GepOp(ptr, field_offset)`
-3. **Lower lvalue consumers:**
-   - `lvalue_to_rvalue(lv)` → `memory.LoadOp(ptr=lv)`
-   - `assign(lv, rv)` → `memory.StoreOp(ptr=lv, value=rv)`
-   - `address_of(lv)` → lv itself (it's already a pointer)
-   - `pre_increment(lv)` → load + add 1 + store, return new value
-   - `post_increment(lv)` → load + add 1 + store, return old value
-
-**Alloca hoisting solves the slot-collision bug** (#2 bucket, ~240 errors).
-Currently, each branch body creates its own alloca for the same variable.
-With hoisting, there's exactly one alloca per variable per function.
-
-### Pass 3: Struct Layout (`c_struct_layout.py`)
-
-Compute field offsets from the struct's field types and alignment rules.
-Attach offsets to `StructField` metadata. This runs before lvalue
-elimination so GEP indices are available.
-
-Rules (System V AMD64 ABI):
-- Each field placed at next offset satisfying its alignment.
+Compute field offsets using System V AMD64 ABI rules:
+- Each field at next offset satisfying its alignment.
 - Struct alignment = max field alignment.
 - Struct size padded to alignment multiple.
+- Union: all fields at offset 0, size = max field size.
+
+Since dgen types are `frozen=True` dataclasses, the pass constructs
+**new** `Struct`/`Union` type instances with offsets filled in and
+uses `block.replace_uses_of(old_type, new_type)` to swap them
+throughout the IR.
+
+**Deferred:** Bit-field layout, flexible array members, `_Alignas`.
+These are documented limitations, not silent stubs.
+
+### Pass 2: Implicit Conversion Insertion (`c_implicit_conversions.py`)
+
+Walk every op. At each "conversion point" (per C11 spec):
+
+- **Binary arithmetic ops:** Apply integer promotions to both operands
+  (6.3.1.1), then usual arithmetic conversions (6.3.1.8). The full
+  algorithm: float types dominate → else promote both to int → then
+  reconcile signed/unsigned by rank.
+- **Assignments (6.5.16.1):** Convert RHS to LHS type.
+- **Function args (6.5.2.2):** For fixed positions, convert to parameter
+  type. For variadic positions (and unprototyped functions), apply
+  default argument promotions: integer promotions + `float` → `double`.
+  Uses `CFunctionType.is_variadic` and `n_fixed_params` to distinguish.
+- **Return (6.8.6.4):** Convert to function's declared return type.
+- **Conditions (if/while/for):** Insert `scalar_to_bool`.
+- **Pointer comparisons:** Insert `null_to_pointer` when comparing
+  pointer to integer 0.
+
+**Array decay (6.3.2.1p3):** Insert `array_decay` for array-typed
+values in expression context, EXCEPT:
+- Operand of `sizeof` → parser resolves `sizeof` on the undecayed
+  type BEFORE this pass runs (sizeof is a compile-time computation
+  resolved in the parser using type layout).
+- Operand of `address_of` → no decay (address-of an array gives
+  a pointer to the array, not a pointer to the first element).
+- String literal initializing `char[]` → no decay.
+
+**Function decay (6.3.2.1p4):** Insert `function_decay` for
+function-typed values, EXCEPT operand of `address_of`.
+
+### Pass 3: Lvalue Elimination (`c_lvalue_to_memory.py`)
+
+For each function body:
+
+1. **Alloca hoisting:** Scan all `lvalue_var` ops (across all nested
+   blocks, including if/loop bodies). Create ONE
+   `memory.StackAllocateOp` per unique variable name, placed as a
+   dependency of the function body's result (not "at function entry"
+   — in dgen's sea-of-nodes, allocas with no operands naturally sort
+   first in topological order).
+2. **Capture threading:** For each inner block that references a
+   hoisted alloca, add the alloca to that block's captures list.
+3. **Lower lvalue ops** to memory ops (load/store/GEP).
 
 ### Pass 4: C Arithmetic → LLVM (`c_to_llvm.py`)
 
-Lower remaining C-specific ops:
-- `c.modulo` → `llvm.srem` (signed) or `llvm.urem` (unsigned)
+Lower remaining C-specific ops with correct signed/unsigned dispatch:
+- `c.modulo` → `llvm.srem` or `llvm.urem`
 - `c.shift_left` → `llvm.shl`
 - `c.shift_right` → `llvm.ashr` (signed) or `llvm.lshr` (unsigned)
 - `c.logical_not` → `icmp eq %x, 0`
-- `c.sizeof<T>` → constant (layout.size)
-
-The signed/unsigned dispatch uses the operand type's signedness,
-which is available from the type (SignedInteger vs UnsignedInteger).
-
-### Existing passes (reused as-is)
-
-- `AlgebraToLLVM` — algebra ops → LLVM ops
-- `MemoryToLLVM` — memory.load/store → llvm.load/store
-- `ControlFlowToGoto` — structured control flow → goto labels
-- `LLVMCodegen` — LLVM IR emission and JIT
+- `c.sizeof<T>` → constant (T's layout size)
+- `c.c_return` → extract value from chain, return it (chain kept
+  alive by being the block result's dependency)
 
 ## Parser Design (`dcc/parser/lowering.py`)
 
-The parser becomes a **thin, dumb translator** from pycparser AST to
-C dialect IR. It does NOT:
-- Insert implicit conversions
-- Resolve type promotions
-- Compute struct offsets
-- Decide load vs store (that's lvalue elimination's job)
+The parser is a **thin, mechanical translator** from pycparser AST to
+C dialect IR. It does NOT insert implicit conversions, resolve type
+promotions, compute struct offsets, or decide load vs store.
 
 It DOES:
 - Create scope bindings (reuse existing Scope class)
-- Emit lvalue ops for lvalue expressions, rvalue ops for rvalue expressions
-- Emit `function.CallOp` with resolved ExternOp/FunctionOp callees
+- Emit lvalue ops for lvalue-producing expressions
+- Wrap lvalues in `lvalue_to_rvalue` in rvalue context
+- Suppress `lvalue_to_rvalue` for: LHS of `=`, operand of `&`,
+  operand of `sizeof` (and later `_Alignof`)
+- Lower `&&`/`||` to `IfOp` (short-circuit control flow)
+- Chain all statements via `ChainOp` (solves unreachable-ops problem)
+- Resolve `sizeof(expr)` to the expression's undecayed type before
+  any pass runs, using the type's layout size directly
+- Emit `function.CallOp` with resolved ExternOp callees
 - Track the current function's return type for `c_return` ops
-- Emit control flow ops (`IfOp`, `WhileOp`, `ForOp`)
 
 ### Lvalue/Rvalue Decision
 
-The parser knows which AST nodes produce lvalues:
+The parser knows which AST nodes produce lvalues (C11 6.5):
 - `c_ast.ID` (variable reference) → `lvalue_var`
 - `c_ast.UnaryOp("*", ...)` (dereference) → `lvalue_deref`
 - `c_ast.ArrayRef` (subscript) → `lvalue_subscript`
 - `c_ast.StructRef(".", ...)` → `lvalue_member`
 - `c_ast.StructRef("->", ...)` → `lvalue_arrow`
+- `c_ast.CompoundLiteral` → `lvalue_compound_literal`
+- String literals → lvalue of `char[N]` type
 - Everything else → rvalue
-
-When an lvalue appears in rvalue context (e.g., RHS of `+`), the parser
-wraps it in `lvalue_to_rvalue`. When it appears in lvalue context (LHS
-of `=`, operand of `&`), the parser does NOT wrap it.
-
-This is a **mechanical decision** based on AST position, not a semantic
-analysis. The parser doesn't need to understand type rules.
 
 ## Type Resolver
 
-Mostly reused. Fix:
-- **Struct field metadata:** Store `(name, type, offset_placeholder)` tuples
-  in `CStruct`. Offset is `None` until the struct layout pass runs.
-- **Integer widths:** Track actual C widths (8, 16, 32, 64) via
-  `SignedInteger`/`UnsignedInteger` bits parameter.
-- **Qualification:** Track const/volatile as boolean flags on types (v2).
+Mostly reused. Changes:
+- **Struct field metadata:** `StructField(name, type, offset=0)` tuples.
+  Offset filled in by struct layout pass (via type replacement since
+  types are frozen).
+- **Integer widths:** Track actual C widths. `char` = 8, `short` = 16,
+  `int` = 32, `long`/`long long` = 64.
+- **`float` vs `double`:** Distinct types (`Float32` vs `Float64`).
+- **Function types:** `CFunctionType` with `is_variadic` and
+  `n_fixed_params`. `EllipsisParam` records the variadic boundary
+  instead of being silently skipped.
+- **Parameter type adjustment (6.7.6.3p7-8):** Array parameters
+  adjusted to pointer, function parameters adjusted to pointer-to-function.
 
 ## Side Effect Chaining
 
 The "unreachable ops" problem (lessons.md) is solved by the parser
-chaining all statements via `ChainOp`:
+chaining all statements via `ChainOp`. `ChainOp(lhs=X, rhs=Y)` has
+runtime value = `lhs`, with a dependency on `rhs`. The accumulation
+pattern:
 
 ```python
 def _compound(self, node, scope):
-    result = None
+    chain = None
     for stmt in node.block_items:
         val = yield from self._stmt(stmt, scope)
-        if result is not None and val is not None:
-            val = ChainOp(lhs=val, rhs=result, type=val.type)
-        if val is not None:
-            result = val
-    return result
+        if val is None:
+            continue
+        if chain is not None:
+            val = ChainOp(lhs=val, rhs=chain, type=val.type)
+        chain = val
+    return chain
 ```
 
-Every statement's result is chained to the next. Side-effecting ops
-(stores, calls) are always reachable from the block's result.
+Every statement's value chains to all prior statements. The final
+value is the block's result, with every side effect reachable via
+`rhs` edges.
 
 ## Implementation Plan
 
-### Phase 1: Foundation (types + lvalue model + parser rewrite)
+### Strategy: Incremental Migration (Not Big-Bang)
 
-1. Rewrite `c.dgen` with lvalue ops, explicit conversion ops, and
-   proper struct type.
-2. Rewrite `lowering.py` as a thin AST→IR translator. Emit lvalue ops,
-   chain all statements, use ExternOp callees.
-3. Write the implicit conversion pass (handles promotions, decay,
-   null-to-pointer).
-4. Write the lvalue elimination pass (alloca hoisting, load/store).
-5. Compute struct field offsets.
-6. Existing tests should pass with updated snapshots.
+New lvalue ops are added to `c.dgen` **alongside** existing ops. The
+parser is migrated **one expression kind at a time** (variables first,
+then assignments, then struct access). Old `@lowering_for` handlers
+and new ones coexist in the pipeline. At each step, the full test
+suite passes. Only after all constructs are migrated do we delete the
+old ops.
 
-### Phase 2: Arithmetic + control flow
+### Step 0: Preparation
 
-7. Proper shift/modulo with signed/unsigned dispatch.
-8. Verify control flow lowering works with new IR shape.
-9. Run sqlite3 codegen — target >90% verified.
+- Add new lvalue ops and conversion ops to `c.dgen` (additive, no
+  existing code changes).
+- Add `Float32` type, `CFunctionType` with variadic tracking.
+- Add `llvm.shl`, `llvm.ashr`, `llvm.lshr`, `llvm.srem`, `llvm.urem`
+  to `llvm.dgen`.
 
-### Phase 3: Polish
+### Step 1: Variable read/write via lvalues
 
-10. Integer promotion pass (char/short → int).
-11. Volatile access support.
-12. Improved error messages (reject undefined functions, type mismatches).
-13. Run sqlite3 codegen — target >95% verified.
+Change `_id` to emit `lvalue_var` + `lvalue_to_rvalue` (in rvalue
+context) instead of `ReadVariableOp`. Add `@lowering_for(LvalueVarOp)`
+in `CToMemory` that does what `lower_read_variable` does today.
+
+**First test:** `test_local_variable` — `int f(void) { int x = 5; return x; }`
+
+### Step 2: Assignment via lvalues
+
+Change `_assign` to emit `assign(lvalue, rvalue)` instead of `AssignOp`.
+Add `@lowering_for(AssignOp_new)` handler.
+
+**Test:** `test_local_mutation`
+
+### Step 3: Struct access via lvalues
+
+Change `_struct` to emit `lvalue_member`/`lvalue_arrow`. Add struct
+layout computation for GEP offsets.
+
+**Test:** `test_struct_field_access`
+
+### Step 4: `&&`/`||` as IfOp
+
+Replace `MeetOp`/`JoinOp` mapping for `&&`/`||` with `IfOp`-based
+short-circuit evaluation.
+
+**Test:** new test for `int f(int *p) { return p && *p; }`
+
+### Step 5: Implicit conversion pass
+
+Add `c_implicit_conversions.py`. Handle integer promotions, usual
+arithmetic conversions, and array/function decay.
+
+### Step 6: Side-effect chaining
+
+Add `ChainOp` threading in `_compound`. Fix `c_return` to preserve
+chains.
+
+### Step 7: Cleanup
+
+Remove old ops from `c.dgen`. Delete `ReadVariableOp`, old `AssignOp`,
+old `CallOp` (already done), old `CompoundAssignOp` handlers. Update
+snapshots.
+
+### Step 8: sqlite3 push
+
+Run sqlite3 codegen with new pipeline. Target >90% verified.
+Add proper sizeof, switch, do_while, goto, break/continue.
+
+## Known Limitations (v1)
+
+These are **documented** limitations, not silent stubs:
+- No bit-field layout (fields after a bit-field will have wrong offsets)
+- No `_Alignas` / `_Alignof`
+- No `_Atomic`
+- No `_Generic`
+- No VLA (variable-length arrays)
+- No `restrict` optimization
+- No complex number support (`_Complex`)
+- No `goto` across scopes (computed goto)
+- Flexible array members not sized
 
 ## What We Keep
 
 | Component | Status |
 |-----------|--------|
 | `Scope` class | Keep as-is |
-| `TypeResolver` | Keep structure, fix struct metadata |
-| `type_resolver.py` | Keep ~80%, fix struct and qualification |
-| `c_to_memory.py` (memory token threading) | Rewrite as lvalue elimination |
-| `c_to_llvm.py` | Rewrite with signed/unsigned dispatch |
+| `TypeResolver` structure | Keep ~80%, fix struct + float + variadic |
+| Test suite + sqlite3 infrastructure | Keep as-is |
 | `algebra_to_llvm.py` (ptrtoint/inttoptr) | Keep |
-| Test suite | Keep all tests, update snapshots |
-| sqlite3 test infrastructure | Keep as-is |
 | `DUMP_IR_FOR`, ratchets, xfails | Keep |
+| ExternOp-based callee architecture | Keep (from this session's refactor) |
 
-## What We Delete
+## What We Delete (after migration)
 
 | Component | Reason |
 |-----------|--------|
-| Inline isinstance conversion checks in parser | Replaced by conversion pass |
+| `ReadVariableOp` / old `AssignOp` | Replaced by lvalue ops |
+| Inline isinstance conversion checks | Replaced by conversion pass |
 | `_promote()` | Replaced by conversion pass |
-| `_named_calls` tracking | Already removed |
-| `_resolve_callee_captures` | Already removed |
-| String-named `c.CallOp` | Already removed |
-| Struct field offset stubs (GEP index=0) | Replaced by layout pass |
-| Shift-as-multiply/divide | Replaced by proper llvm.shl/ashr/lshr |
+| `&&`/`||` → MeetOp/JoinOp | Replaced by IfOp short-circuit |
+| GEP index=0 struct stub | Replaced by layout pass |
+| Shift-as-multiply/divide | Replaced by llvm.shl/ashr/lshr |
+| sizeof = 8 | Replaced by layout-based sizeof |
 
 ## Risks
 
 1. **Snapshot churn.** Every test's IR snapshot changes. Mitigated by
-   `--snapshot-update` and graph-equivalence checking.
-2. **Scope of rewrite.** Phase 1 touches parser + 3 new passes + dialect.
-   Mitigated by keeping existing tests as the correctness oracle.
+   incremental migration + `--snapshot-update` + graph-equivalence.
+2. **Alloca hoisting + captures.** Threading hoisted allocas as
+   captures into inner blocks is the riskiest piece — prototype it
+   on `test_local_variable` with an if-branch early.
 3. **Struct layout complexity.** Alignment/padding rules are fiddly.
-   Mitigated by following System V AMD64 ABI exactly, which is
-   well-documented and matches what gcc -E produces.
+   Mitigated by following System V AMD64 ABI exactly. Bit-fields are
+   an explicit deferral.
+4. **Frozen types.** Struct layout pass must construct new type
+   instances (not mutate). This is unusual for a dgen pass but
+   architecturally sound (type replacement via `replace_uses_of`).
