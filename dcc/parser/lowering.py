@@ -36,6 +36,14 @@ from dcc.dialects.c import (
     ElementAddressOp,
     FieldAddressOp,
     LogicalNotOp,
+    LvalueAssignOp,
+    LvalueCompoundAssignOp,
+    LvaluePostDecrementOp,
+    LvaluePostIncrementOp,
+    LvaluePreDecrementOp,
+    LvaluePreIncrementOp,
+    LvalueToRvalueOp,
+    LvalueVarOp,
     MemberAccessOp,
     ModuloOp,
     PointerMemberAccessOp,
@@ -43,7 +51,6 @@ from dcc.dialects.c import (
     PostIncrementOp,
     PreDecrementOp,
     PreIncrementOp,
-    ReadVariableOp,
     ReturnOp,
     ShiftLeftOp,
     ShiftRightOp,
@@ -149,6 +156,13 @@ _INCREMENTS = {
     "p++": PostIncrementOp,
     "--": PreDecrementOp,
     "p--": PostDecrementOp,
+}
+
+_LVALUE_INCREMENTS: dict[str, type[dgen.Op]] = {
+    "++": LvaluePreIncrementOp,
+    "p++": LvaluePostIncrementOp,
+    "--": LvaluePreDecrementOp,
+    "p--": LvaluePostDecrementOp,
 }
 
 # Unary ops that take an evaluated inner operand
@@ -426,38 +440,33 @@ class Parser:
         else:
             init = ConstantOp(value=0, type=var_type)
             yield init
-        decl = VariableDeclarationOp(
+        lv = LvalueVarOp(
             variable_name=String().constant(node.name),
-            variable_type=var_type,
-            initializer=init,
+            source=init,
             type=var_type,
         )
-        yield decl
-        scope.bind(node.name, decl)
+        yield lv
+        assign = LvalueAssignOp(lvalue=lv, rvalue=init, type=var_type)
+        yield assign
+        scope.bind(node.name, assign)
 
     def _assign(self, node: c_ast.Assignment, scope: Scope) -> Iterator[dgen.Op]:
         if isinstance(node.lvalue, c_ast.ID):
             name = node.lvalue.name
-            target = scope.lookup(name)
+            lv = yield from self._lvalue(node.lvalue, scope)
             if node.op in _COMPOUND_OPS:
                 rhs = yield from self._expr(node.rvalue, scope)
-                op = CompoundAssignOp(
-                    variable_name=String().constant(name),
+                op = LvalueCompoundAssignOp(
                     operator=String().constant(_COMPOUND_OPS[node.op]),
-                    target=target,
-                    operand=rhs,
-                    type=target.type,
+                    lvalue=lv,
+                    rvalue=rhs,
+                    type=lv.type,
                 )
                 yield op
                 scope.bind(name, op)
             else:
                 rhs = yield from self._expr(node.rvalue, scope)
-                op = AssignOp(
-                    variable_name=String().constant(name),
-                    target=target,
-                    value=rhs,
-                    type=target.type,
-                )
+                op = LvalueAssignOp(lvalue=lv, rvalue=rhs, type=lv.type)
                 yield op
                 scope.bind(name, op)
             return
@@ -668,11 +677,8 @@ class Parser:
             load = DereferenceOp(pointer=addr, type=elem_type)
             yield load
             return load
-        name = node.lvalue.name
-        val = scope.lookup(name)
-        read = ReadVariableOp(
-            variable_name=String().constant(name), source=val, type=val.type
-        )
+        lv = yield from self._lvalue(node.lvalue, scope)
+        read = LvalueToRvalueOp(lvalue=lv, type=lv.type)
         yield read
         return read
 
@@ -750,18 +756,43 @@ class Parser:
             return c_int(32, signed=False)
         return c_int(32)
 
+    def _lvalue(self, node: c_ast.Node, scope: Scope) -> Iterator[dgen.Op]:
+        """Emit an lvalue op for an lvalue expression. Returns the lvalue Value."""
+        if isinstance(node, c_ast.ID):
+            name = node.name
+            val = scope.lookup(name)
+            lv = LvalueVarOp(
+                variable_name=String().constant(name), source=val, type=val.type
+            )
+            yield lv
+            return lv
+        raise LoweringError(f"unsupported lvalue for new path: {type(node).__name__}")
+
     def _id(self, node: c_ast.ID, scope: Scope) -> Iterator[dgen.Op]:
         if node.name in self.types.enum_constants:
             op = ConstantOp(value=self.types.enum_constants[node.name], type=c_int(32))
             yield op
             return op
         val = scope.lookup(node.name)
-        if isinstance(val, (VariableDeclarationOp, AssignOp, CompoundAssignOp)):
-            read = ReadVariableOp(
-                variable_name=String().constant(node.name),
-                source=val,
-                type=val.type,
+        if isinstance(
+            val,
+            (
+                VariableDeclarationOp,
+                AssignOp,
+                CompoundAssignOp,
+                LvalueAssignOp,
+                LvalueCompoundAssignOp,
+                LvaluePreIncrementOp,
+                LvaluePostIncrementOp,
+                LvaluePreDecrementOp,
+                LvaluePostDecrementOp,
+            ),
+        ):
+            lv = LvalueVarOp(
+                variable_name=String().constant(node.name), source=val, type=val.type
             )
+            yield lv
+            read = LvalueToRvalueOp(lvalue=lv, type=val.type)
             yield read
             return read
         # File-scope function references used as values (e.g. passed as a
@@ -833,13 +864,10 @@ class Parser:
             return op
         if node.op in _INCREMENTS:
             if isinstance(node.expr, c_ast.ID):
-                target = scope.lookup(node.expr.name)
-                op = _INCREMENTS[node.op](
-                    variable_name=String().constant(node.expr.name),
-                    target=target,
-                    type=target.type,
-                )
+                lv = yield from self._lvalue(node.expr, scope)
+                op = _LVALUE_INCREMENTS[node.op](lvalue=lv, type=lv.type)
                 yield op
+                scope.bind(node.expr.name, op)
                 return op
             # Non-ID target (e.g. p->x, *p, arr[i]): desugar via _address_of.
             addr = yield from self._address_of(node.expr, scope)

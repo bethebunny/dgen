@@ -61,6 +61,19 @@ op switch<case_values: Span<Index>>(selector) -> Nil:
 op break() -> Nil
 op continue() -> Nil
 
+# --- Lvalue ops ---
+# Lvalue-producing and consuming ops for the redesigned variable model.
+# These coexist with the old variable ops during incremental migration.
+
+op lvalue_var<variable_name: String>(source)
+op lvalue_to_rvalue(lvalue)
+op lvalue_assign(lvalue, rvalue)
+op lvalue_compound_assign<operator: String>(lvalue, rvalue)
+op lvalue_pre_increment(lvalue)
+op lvalue_post_increment(lvalue)
+op lvalue_pre_decrement(lvalue)
+op lvalue_post_decrement(lvalue)
+
 # --- Misc ---
 
 op sizeof<target_type: Type>()

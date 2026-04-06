@@ -180,6 +180,50 @@ class ContinueOp(Op):
     type: Type = Nil()
 
 @dataclass(eq=False, kw_only=True)
+class LvalueVarOp(Op):
+    variable_name: Value[String]
+    source: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class LvalueToRvalueOp(Op):
+    lvalue: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class LvalueAssignOp(Op):
+    lvalue: Value
+    rvalue: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class LvalueCompoundAssignOp(Op):
+    operator: Value[String]
+    lvalue: Value
+    rvalue: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class LvaluePreIncrementOp(Op):
+    lvalue: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class LvaluePostIncrementOp(Op):
+    lvalue: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class LvaluePreDecrementOp(Op):
+    lvalue: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class LvaluePostDecrementOp(Op):
+    lvalue: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
 class SizeofOp(Op):
     target_type: Value[dgen.TypeType]
     type: Type
@@ -189,4 +233,3 @@ class CommaOp(Op):
     lhs: Value
     rhs: Value
     type: Type
-

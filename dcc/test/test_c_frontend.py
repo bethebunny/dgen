@@ -24,13 +24,15 @@ from dcc.dialects.c import CStruct
 from dcc.parser.c_parser import parse_c_string
 from dcc.parser.lowering import lower
 from dcc.parser.type_resolver import TypeResolver
+from dcc.passes.c_lvalue_to_memory import CLvalueToMemory
 from dcc.passes.c_to_llvm import CToLLVM
 from dcc.passes.c_to_memory import CToMemory
 
 TESTDATA = Path(__file__).parent / "testdata"
 
 _c_compiler = Compiler(
-    [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM()], IdentityPass()
+    [CLvalueToMemory(), CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM()],
+    IdentityPass(),
 )
 
 _SQLITE3_URL = (
@@ -322,6 +324,78 @@ class TestEndToEnd:
 
 
 # ---------------------------------------------------------------------------
+# Lvalue ops (correctness tests for the redesigned variable model)
+# ---------------------------------------------------------------------------
+
+
+class TestLvalueOps:
+    """Correctness tests for the lvalue variable model.
+
+    Each test JIT-compiles C source and asserts on the returned integer value,
+    proving the lvalue → memory lowering produces correct code.
+    """
+
+    def test_variable_read(self) -> None:
+        assert run_c("int f(void) { int x = 42; return x; }") == 42
+
+    def test_variable_mutation(self) -> None:
+        assert run_c("int f(void) { int x = 1; x = 2; return x; }") == 2
+
+    def test_variable_multiple_mutations(self) -> None:
+        assert run_c("int f(void) { int x = 1; x = 2; x = 3; return x; }") == 3
+
+    def test_two_variables(self) -> None:
+        assert run_c("int f(void) { int x = 10; int y = 20; return x + y; }") == 30
+
+    def test_variable_from_parameter(self) -> None:
+        assert run_c("int f(int x) { int y = x + 1; return y; }", 5) == 6
+
+    def test_compound_assign(self) -> None:
+        assert run_c("int f(void) { int x = 10; x += 5; return x; }") == 15
+
+    def test_compound_assign_subtract(self) -> None:
+        assert run_c("int f(void) { int x = 10; x -= 3; return x; }") == 7
+
+    def test_pre_increment(self) -> None:
+        assert run_c("int f(void) { int x = 5; return ++x; }") == 6
+
+    def test_post_increment(self) -> None:
+        assert run_c("int f(void) { int x = 5; return x++; }") == 5
+
+    def test_pre_decrement(self) -> None:
+        assert run_c("int f(void) { int x = 5; return --x; }") == 4
+
+    def test_post_decrement(self) -> None:
+        assert run_c("int f(void) { int x = 5; return x--; }") == 5
+
+    @pytest.mark.xfail(
+        reason="cross-block mutation requires alloca hoisting + ChainOp for "
+        "if/loop bodies — the if-body's store is unreachable from block.result",
+        strict=True,
+    )
+    def test_if_branch_mutation(self) -> None:
+        assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 1) == 1
+        assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 0) == 0
+
+    @pytest.mark.xfail(
+        reason="cross-block mutation requires alloca hoisting + ChainOp for "
+        "loop bodies — same issue as test_if_branch_mutation",
+        strict=True,
+    )
+    def test_loop_mutation(self) -> None:
+        assert (
+            run_c(
+                "int f(void) { int s = 0; int i = 0;"
+                "while (i < 5) { s = s + i; i = i + 1; } return s; }"
+            )
+            == 10
+        )
+
+    def test_assign_as_expression(self) -> None:
+        assert run_c("int f(void) { int x; int y = (x = 42); return y; }") == 42
+
+
+# ---------------------------------------------------------------------------
 # Lowering (verify C constructs lower without crashing)
 # ---------------------------------------------------------------------------
 
@@ -443,7 +517,14 @@ def _lower_to_llvm(source: str) -> dgen.Value:
     all_fns = stats.function_ops
     root = reduce(lambda a, b: ChainOp(lhs=a, rhs=b, type=a.type), all_fns)
     pipeline = Compiler(
-        [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM(), ControlFlowToGoto()],
+        [
+            CLvalueToMemory(),
+            CToMemory(),
+            CToLLVM(),
+            AlgebraToLLVM(),
+            MemoryToLLVM(),
+            ControlFlowToGoto(),
+        ],
         IdentityPass(),
     )
     token = verify_passes.set(False)
