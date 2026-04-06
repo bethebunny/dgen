@@ -412,6 +412,32 @@ class TestEndToEnd:
 
     def test_literal_and_param_types_match(self) -> None:
         """Integer literals and parameters should both be i32 (C int = 32-bit)."""
-        # This caught a real bug: literals were c_int(64) but params c_int(32).
         assert run_c("int f(int x) { return x + 1; }", 5) == 6
         assert run_c("int f(int x) { return 10 - x; }", 3) == 7
+
+    # --- Brick 5: Local variables (lvalue model) ---
+
+    def test_local_variable(self) -> None:
+        assert run_c("int f(int x) { int y = x + 1; return y; }", 5) == 6
+
+    def test_local_mutation(self) -> None:
+        assert run_c("int f(int x) { int y = x; y = y + 10; return y; }", 5) == 15
+
+    def test_multiple_locals(self) -> None:
+        assert (
+            run_c(
+                "int f(int a, int b) { int s = a + b; int d = a - b; return s * d; }",
+                7,
+                3,
+            )
+            == 40
+        )
+
+    def test_uninitialized_local(self) -> None:
+        assert run_c("int f() { int x; x = 42; return x; }") == 42
+
+    def test_reassign_multiple_times(self) -> None:
+        assert run_c("int f() { int x = 1; x = 2; x = 3; return x; }") == 3
+
+    def test_local_from_param_arithmetic(self) -> None:
+        assert run_c("int f(int a, int b) { int r = a * b + 1; return r; }", 6, 7) == 43

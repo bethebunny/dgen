@@ -21,6 +21,7 @@ from dgen.dialects.number import Float64
 from dgen.module import ConstantOp, pack
 
 from dcc2.dialects import c_int
+from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 from dcc2.parser.c_literals import parse_c_char, parse_c_int
 from dcc2.parser.type_resolver import TypeResolver
 
@@ -127,12 +128,14 @@ class Parser:
         c_ast.UnaryOp: "_unary",
         c_ast.Cast: "_cast",
         c_ast.TernaryOp: "_ternary",
+        c_ast.Assignment: "_assignment",
     }
 
     # Maps pycparser statement node type -> handler method name.
     _STMT_DISPATCH: dict[type[c_ast.Node], str] = {
         c_ast.Return: "_return",
         c_ast.Decl: "_decl_stmt",
+        c_ast.Assignment: "_assignment_stmt",
     }
 
     def __init__(self) -> None:
@@ -283,7 +286,12 @@ class Parser:
         return list(self._decl(node, scope))
 
     def _decl(self, node: c_ast.Decl, scope: Scope) -> Iterator[dgen.Op]:
-        """Lower a declaration (e.g. int x = 5;)."""
+        """Lower a declaration (e.g. int x = 5;).
+
+        Emits lvalue_var + assign for initialized variables. The lvalue
+        elimination pass (CLvalueToMemory) converts these to stack
+        allocations and stores.
+        """
         if node.name is None:
             # Type-only declaration (struct/union/enum definition).
             if node.type is not None:
@@ -291,13 +299,59 @@ class Parser:
             return
         var_type = self.types.resolve(node.type)
         if node.init is not None:
-            val = _run_gen(self._expr(node.init, scope))
-            scope.bind(node.name, val)
+            init_val = _run_gen(self._expr(node.init, scope))
+            lv = LvalueVarOp(
+                var_name=String().constant(node.name),
+                source=init_val,
+                type=var_type,
+            )
+            yield lv
+            assign = AssignOp(lvalue=lv, rvalue=init_val, type=var_type)
+            yield assign
+            scope.bind(node.name, assign)
         else:
-            # Uninitialized -- bind a zero constant as placeholder.
             zero = ConstantOp(value=0, type=var_type)
             yield zero
-            scope.bind(node.name, zero)
+            lv = LvalueVarOp(
+                var_name=String().constant(node.name),
+                source=zero,
+                type=var_type,
+            )
+            yield lv
+            assign = AssignOp(lvalue=lv, rvalue=zero, type=var_type)
+            yield assign
+            scope.bind(node.name, assign)
+
+    def _assignment_stmt(
+        self, node: c_ast.Assignment, scope: Scope
+    ) -> list[dgen.Op] | _Return:
+        """Lower an assignment statement (e.g. x = 5;)."""
+        return list(self._assignment(node, scope))
+
+    def _assignment(
+        self, node: c_ast.Assignment, scope: Scope
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        """Lower an assignment expression."""
+        rhs = yield from self._expr(node.rvalue, scope)
+
+        # For now, only handle direct variable assignment (ID on LHS).
+        if not isinstance(node.lvalue, c_ast.ID):
+            raise LoweringError(
+                f"unsupported assignment target: {type(node.lvalue).__name__}"
+            )
+        var_name = node.lvalue.name
+        # Look up the previous binding to get the variable type.
+        prev = scope.lookup(var_name)
+        lv = LvalueVarOp(
+            var_name=String().constant(var_name),
+            source=prev,
+            type=prev.type,
+        )
+        yield lv
+        assign = AssignOp(lvalue=lv, rvalue=rhs, type=prev.type)
+        yield assign
+        scope.bind(var_name, assign)
+        return assign
 
     # --- Expressions ---
 
@@ -332,12 +386,28 @@ class Parser:
         return op
 
     def _id(self, node: c_ast.ID, scope: Scope) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower an identifier reference."""
+        """Lower an identifier reference.
+
+        For local variables (bound to an AssignOp), emits lvalue_var +
+        lvalue_to_rvalue to load the current value. For parameters and
+        other values, returns the binding directly.
+        """
         if node.name in self.types.enum_constants:
             op = ConstantOp(value=self.types.enum_constants[node.name], type=c_int(32))
             yield op
             return op
-        return scope.lookup(node.name)
+        binding = scope.lookup(node.name)
+        if isinstance(binding, AssignOp):
+            lv = LvalueVarOp(
+                var_name=String().constant(node.name),
+                source=binding,
+                type=binding.type,
+            )
+            yield lv
+            load = LvalueToRvalueOp(lvalue=lv, type=binding.type)
+            yield load
+            return load
+        return binding
 
     def _binary(
         self, node: c_ast.BinaryOp, scope: Scope
