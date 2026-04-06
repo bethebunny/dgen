@@ -14,15 +14,19 @@ from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 
+from dcc2.passes.c_lvalue_to_memory import CLvalueToMemory
+
 # Make dcc2 dialects discoverable for IR parsing round-trips.
 Dialect.paths.append(Path(__file__).parent / "dialects")
 
+# Pass ordering: lvalue elimination must precede memory-to-LLVM.
+# See dcc/docs/plans/c-frontend-redesign.md for full rationale.
 c_compiler: Compiler[Executable] = Compiler(
     passes=[
-        # CStructLayout(),         # Brick 8
-        # CImplicitConversions(),  # Brick 9
-        # CLvalueToMemory(),       # Brick 5
-        # CToLLVM(),               # Brick 10
+        # CStructLayout(),         # Brick 8: before lvalue elimination
+        # CImplicitConversions(),  # Brick 9: before lvalue elimination
+        CLvalueToMemory(),
+        # CToLLVM(),               # Brick 10: after lvalue elimination
         ControlFlowToGoto(),
         MemoryToLLVM(),
         BuiltinToLLVM(),
