@@ -13,12 +13,12 @@ from pycparser import c_ast
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import algebra
+from dgen.dialects import algebra, function
 from dgen.dialects.builtin import ExternOp, String
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
+from dgen.dialects.number import Float64
 from dgen.module import ConstantOp, pack
-from dgen.dialects import function
 
 from dcc2.dialects import c_int
 from dcc2.parser.c_literals import parse_c_char, parse_c_int
@@ -240,14 +240,7 @@ class Parser:
         if isinstance(node, c_ast.Decl):
             return list(self._decl(node, scope))
         # Expression statement -- evaluate for side effects.
-        gen = self._expr(node, scope)
-        ops: list[dgen.Op] = []
-        try:
-            while True:
-                ops.append(next(gen))
-        except StopIteration:
-            pass
-        return ops
+        return list(self._expr(node, scope))
 
     def _return(self, node: c_ast.Return, scope: Scope) -> _Return:
         """Lower a return statement."""
@@ -304,7 +297,7 @@ class Parser:
         """Lower a literal constant."""
         if node.type == "int":
             val = parse_c_int(node.value)
-            op = ConstantOp(value=val, type=c_int(64))
+            op = ConstantOp(value=val, type=c_int(32))
             yield op
             return op
         if node.type == "char":
@@ -313,14 +306,12 @@ class Parser:
             yield op
             return op
         if node.type in ("float", "double"):
-            from dgen.dialects.number import Float64
-
             val = float(node.value.rstrip("fFlL"))
             op = ConstantOp(value=val, type=Float64())
             yield op
             return op
         # Default: integer 0.
-        op = ConstantOp(value=0, type=c_int(64))
+        op = ConstantOp(value=0, type=c_int(32))
         yield op
         return op
 
@@ -344,11 +335,11 @@ class Parser:
         lhs = yield from self._expr(node.left, scope)
         rhs = yield from self._expr(node.right, scope)
 
-        # Comparisons produce a boolean; wrap in CastOp to widen to i64.
+        # Comparisons produce a boolean; wrap in CastOp to widen to int.
         if node.op in _COMPARISONS:
             cmp_op = _binop(cls, lhs, rhs, lhs.type)
             yield cmp_op
-            cast = algebra.CastOp(input=cmp_op, type=c_int(64))
+            cast = algebra.CastOp(input=cmp_op, type=c_int(32))
             yield cast
             return cast
 
@@ -378,13 +369,8 @@ class Parser:
     def _ternary(
         self, node: c_ast.TernaryOp, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower a ternary (a ? b : c) as an if expression."""
-        # For now, evaluate all three -- proper IfOp comes in Brick 6.
-        yield from self._expr(node.cond, scope)
-        then_val = yield from self._expr(node.iftrue, scope)
-        yield from self._expr(node.iffalse, scope)
-        # Placeholder: just return then_val. Proper control flow in Brick 6.
-        return then_val
+        """Lower a ternary (a ? b : c) -- requires IfOp (Brick 6)."""
+        raise LoweringError("ternary operator (?:) not yet supported")
 
 
 # ---------------------------------------------------------------------------
