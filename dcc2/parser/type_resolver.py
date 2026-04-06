@@ -166,6 +166,24 @@ def _eval_ternary(node: c_ast.TernaryOp, ec: dict[str, int]) -> int:
 # ---------------------------------------------------------------------------
 
 
+_RESOLVE_DISPATCH: dict[type[c_ast.Node], Callable[..., dgen.Type]] = {}
+
+
+def _resolver(
+    node_type: type[c_ast.Node],
+) -> Callable[
+    [Callable[..., dgen.Type]],
+    Callable[..., dgen.Type],
+]:
+    """Register a TypeResolver method as the handler for a pycparser node type."""
+
+    def decorator(fn: Callable[..., dgen.Type]) -> Callable[..., dgen.Type]:
+        _RESOLVE_DISPATCH[node_type] = fn
+        return fn
+
+    return decorator
+
+
 class TypeResolver:
     """Resolve pycparser type AST nodes to dgen types.
 
@@ -173,19 +191,6 @@ class TypeResolver:
     Struct field metadata is stored in the Struct type itself via StructField
     instances, not in a side-channel dict.
     """
-
-    # Maps pycparser node type -> resolver method name.
-    _RESOLVE_DISPATCH: dict[type[c_ast.Node], str] = {
-        c_ast.TypeDecl: "_resolve_type_decl",
-        c_ast.IdentifierType: "_resolve_identifier_type",
-        c_ast.PtrDecl: "_resolve_ptr",
-        c_ast.ArrayDecl: "_resolve_array",
-        c_ast.FuncDecl: "_resolve_func_decl",
-        c_ast.Struct: "_resolve_struct",
-        c_ast.Union: "_resolve_union",
-        c_ast.Enum: "_resolve_enum",
-        c_ast.Typename: "_resolve_typename",
-    }
 
     def __init__(self) -> None:
         self.typedefs: dict[str, dgen.Type] = {}
@@ -196,19 +201,22 @@ class TypeResolver:
 
     def resolve(self, node: c_ast.Node) -> dgen.Type:
         """Resolve a pycparser type node to a dgen type."""
-        method_name = self._RESOLVE_DISPATCH.get(type(node))
-        if method_name is not None:
-            return getattr(self, method_name)(node)
+        handler = _RESOLVE_DISPATCH.get(type(node))
+        if handler is not None:
+            return handler(self, node)
         return c_void()
 
     # --- Dispatch targets ---
 
+    @_resolver(c_ast.TypeDecl)
     def _resolve_type_decl(self, node: c_ast.TypeDecl) -> dgen.Type:
         return self.resolve(node.type)
 
+    @_resolver(c_ast.Typename)
     def _resolve_typename(self, node: c_ast.Typename) -> dgen.Type:
         return self.resolve(node.type)
 
+    @_resolver(c_ast.IdentifierType)
     def _resolve_identifier_type(self, node: c_ast.IdentifierType) -> dgen.Type:
         names = node.names
         joined = " ".join(names)
@@ -226,14 +234,17 @@ class TypeResolver:
 
         raise TypeResolverError(f"unknown type: {joined}")
 
+    @_resolver(c_ast.PtrDecl)
     def _resolve_ptr(self, node: c_ast.PtrDecl) -> dgen.Type:
         return c_ptr(self.resolve(node.type))
 
+    @_resolver(c_ast.ArrayDecl)
     def _resolve_array(self, node: c_ast.ArrayDecl) -> dgen.Type:
         element = self.resolve(node.type)
         count = self._eval_array_dim(node.dim)
         return Array(element_type=element, n=Index().constant(count))
 
+    @_resolver(c_ast.FuncDecl)
     def _resolve_func_decl(self, node: c_ast.FuncDecl) -> dgen.Type:
         """Resolve a FuncDecl to a CFunctionType."""
         ret_type = self.resolve(node.type)
@@ -265,6 +276,7 @@ class TypeResolver:
             n_fixed_params=idx.constant(n_fixed),
         )
 
+    @_resolver(c_ast.Struct)
     def _resolve_struct(self, node: c_ast.Struct) -> dgen.Type:
         """Resolve a struct definition or forward reference."""
         tag = node.name or self._unique_anon_tag()
@@ -281,6 +293,7 @@ class TypeResolver:
         self.structs[tag] = struct_type
         return struct_type
 
+    @_resolver(c_ast.Union)
     def _resolve_union(self, node: c_ast.Union) -> dgen.Type:
         """Resolve a union definition or forward reference."""
         tag = node.name or self._unique_anon_tag()
@@ -296,6 +309,7 @@ class TypeResolver:
         self.unions[tag] = union_type
         return union_type
 
+    @_resolver(c_ast.Enum)
     def _resolve_enum(self, node: c_ast.Enum) -> dgen.Type:
         """Resolve an enum -- enums are lowered to int."""
         if node.values is not None:
