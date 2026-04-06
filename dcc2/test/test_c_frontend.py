@@ -455,3 +455,14 @@ class TestEndToEnd:
     def test_assign_to_parameter(self) -> None:
         """Parameters are mutable local variables in C."""
         assert run_c("int f(int x) { x = 10; return x; }", 5) == 10
+
+    def test_read_then_reassign_same_variable(self) -> None:
+        """Read x, then reassign x — read must see original value."""
+        assert run_c("int f(int x) { int y = x; x = 10; return x + y; }", 5) == 15
+
+    def test_multiple_reads_between_writes(self) -> None:
+        """Multiple reads of x between writes must see correct values."""
+        assert (
+            run_c("int f() { int x = 1; int a = x; x = 2; int b = x; return a + b; }")
+            == 3
+        )
