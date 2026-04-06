@@ -14,6 +14,8 @@ Not responsible for:
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from pycparser import c_ast
 
 import dgen
@@ -26,7 +28,16 @@ from dcc2.dialects import c_int, c_ptr, c_void
 from dcc2.dialects.c import CFunctionType, Struct, StructField, Union
 from dcc2.parser.c_literals import CONST_BINOPS, CONST_UNARY, parse_c_char, parse_c_int
 
-# Standard C integer type widths (LP64 model).
+
+class TypeResolverError(Exception):
+    """An unresolvable C type."""
+
+
+# ---------------------------------------------------------------------------
+# Builtin C type tables (LP64 model)
+# ---------------------------------------------------------------------------
+
+# Maps C type-specifier strings to (bits, signed).
 _INT_WIDTHS: dict[str, tuple[int, bool]] = {
     "char": (8, True),
     "signed char": (8, True),
@@ -45,17 +56,8 @@ _INT_WIDTHS: dict[str, tuple[int, bool]] = {
     "unsigned long long": (64, False),
     "signed": (32, True),
     "unsigned": (32, False),
-}
-
-# Fixed-width integer typedefs.
-_FIXED_WIDTH: dict[str, tuple[int, bool]] = {}
-for _prefix, _signed in [("int", True), ("uint", False)]:
-    for _bits in (8, 16, 32, 64):
-        _FIXED_WIDTH[f"{_prefix}{_bits}_t"] = (_bits, _signed)
-
-_FLOAT_KINDS: set[str] = {"float", "double", "long double"}
-
-_PLATFORM_TYPES: dict[str, tuple[int, bool]] = {
+    "_Bool": (1, False),
+    "bool": (1, False),
     "size_t": (64, False),
     "uintptr_t": (64, False),
     "ssize_t": (64, True),
@@ -63,9 +65,105 @@ _PLATFORM_TYPES: dict[str, tuple[int, bool]] = {
     "intptr_t": (64, True),
 }
 
+# Fixed-width integer typedefs (int8_t .. uint64_t).
+for _prefix, _signed in [("int", True), ("uint", False)]:
+    for _bits in (8, 16, 32, 64):
+        _INT_WIDTHS[f"{_prefix}{_bits}_t"] = (_bits, _signed)
 
-class TypeResolverError(Exception):
-    """An unresolvable C type."""
+# Non-integer builtin types: name -> constructor.
+_BUILTIN_TYPES: dict[str, Callable[[], dgen.Type]] = {
+    "void": c_void,
+    "float": Float64,
+    "double": Float64,
+    "long double": Float64,
+}
+
+
+# ---------------------------------------------------------------------------
+# Constant expression evaluator
+# ---------------------------------------------------------------------------
+
+# Maps pycparser node type to evaluation function.
+_CONST_EXPR_EVAL: dict[
+    type[c_ast.Node],
+    Callable[[c_ast.Node, dict[str, int]], int],
+] = {}
+
+
+def _const_eval_handler(
+    node_type: type[c_ast.Node],
+) -> Callable[
+    [Callable[[c_ast.Node, dict[str, int]], int]],
+    Callable[[c_ast.Node, dict[str, int]], int],
+]:
+    """Register a constant-expression evaluator for a pycparser node type."""
+
+    def decorator(
+        fn: Callable[[c_ast.Node, dict[str, int]], int],
+    ) -> Callable[[c_ast.Node, dict[str, int]], int]:
+        _CONST_EXPR_EVAL[node_type] = fn
+        return fn
+
+    return decorator
+
+
+def eval_const_expr(node: c_ast.Node, enum_constants: dict[str, int]) -> int:
+    """Evaluate a compile-time constant expression to int.
+
+    Raises TypeResolverError on unsupported expressions.
+    """
+    handler = _CONST_EXPR_EVAL.get(type(node))
+    if handler is not None:
+        return handler(node, enum_constants)
+    raise TypeResolverError(f"unsupported constant expression: {type(node).__name__}")
+
+
+@_const_eval_handler(c_ast.Constant)
+def _eval_constant(node: c_ast.Constant, _ec: dict[str, int]) -> int:
+    if node.type == "int":
+        return parse_c_int(node.value)
+    if node.type == "char":
+        return parse_c_char(node.value)
+    return 0
+
+
+@_const_eval_handler(c_ast.UnaryOp)
+def _eval_unary(node: c_ast.UnaryOp, ec: dict[str, int]) -> int:
+    fn = CONST_UNARY.get(node.op)
+    if fn is not None:
+        return fn(eval_const_expr(node.expr, ec))
+    raise TypeResolverError(f"unsupported unary op in constant expression: {node.op}")
+
+
+@_const_eval_handler(c_ast.BinaryOp)
+def _eval_binary(node: c_ast.BinaryOp, ec: dict[str, int]) -> int:
+    fn = CONST_BINOPS.get(node.op)
+    if fn is not None:
+        return fn(eval_const_expr(node.left, ec), eval_const_expr(node.right, ec))
+    raise TypeResolverError(f"unsupported binary op in constant expression: {node.op}")
+
+
+@_const_eval_handler(c_ast.Cast)
+def _eval_cast(node: c_ast.Cast, ec: dict[str, int]) -> int:
+    return eval_const_expr(node.expr, ec)
+
+
+@_const_eval_handler(c_ast.ID)
+def _eval_id(node: c_ast.ID, ec: dict[str, int]) -> int:
+    if node.name in ec:
+        return ec[node.name]
+    raise TypeResolverError(f"unknown constant: {node.name}")
+
+
+@_const_eval_handler(c_ast.TernaryOp)
+def _eval_ternary(node: c_ast.TernaryOp, ec: dict[str, int]) -> int:
+    cond = eval_const_expr(node.cond, ec)
+    return eval_const_expr(node.iftrue if cond else node.iffalse, ec)
+
+
+# ---------------------------------------------------------------------------
+# TypeResolver
+# ---------------------------------------------------------------------------
 
 
 class TypeResolver:
@@ -76,6 +174,19 @@ class TypeResolver:
     instances, not in a side-channel dict.
     """
 
+    # Maps pycparser node type -> resolver method name.
+    _RESOLVE_DISPATCH: dict[type[c_ast.Node], str] = {
+        c_ast.TypeDecl: "_resolve_type_decl",
+        c_ast.IdentifierType: "_resolve_identifier_type",
+        c_ast.PtrDecl: "_resolve_ptr",
+        c_ast.ArrayDecl: "_resolve_array",
+        c_ast.FuncDecl: "_resolve_func_decl",
+        c_ast.Struct: "_resolve_struct",
+        c_ast.Union: "_resolve_union",
+        c_ast.Enum: "_resolve_enum",
+        c_ast.Typename: "_resolve_typename",
+    }
+
     def __init__(self) -> None:
         self.typedefs: dict[str, dgen.Type] = {}
         self.structs: dict[str, Struct] = {}
@@ -85,40 +196,21 @@ class TypeResolver:
 
     def resolve(self, node: c_ast.Node) -> dgen.Type:
         """Resolve a pycparser type node to a dgen type."""
-        if isinstance(node, c_ast.TypeDecl):
-            return self.resolve(node.type)
-
-        if isinstance(node, c_ast.IdentifierType):
-            return self._resolve_identifier_type(node.names)
-
-        if isinstance(node, c_ast.PtrDecl):
-            pointee = self.resolve(node.type)
-            return c_ptr(pointee)
-
-        if isinstance(node, c_ast.ArrayDecl):
-            element = self.resolve(node.type)
-            count = self._eval_array_dim(node.dim)
-            return Array(element_type=element, n=Index().constant(count))
-
-        if isinstance(node, c_ast.FuncDecl):
-            return self._resolve_func_decl(node)
-
-        if isinstance(node, c_ast.Struct):
-            return self._resolve_struct(node)
-
-        if isinstance(node, c_ast.Union):
-            return self._resolve_union(node)
-
-        if isinstance(node, c_ast.Enum):
-            return self._resolve_enum(node)
-
-        if isinstance(node, c_ast.Typename):
-            return self.resolve(node.type)
-
+        method_name = self._RESOLVE_DISPATCH.get(type(node))
+        if method_name is not None:
+            return getattr(self, method_name)(node)
         return c_void()
 
-    def _resolve_identifier_type(self, names: list[str]) -> dgen.Type:
-        """Resolve an IdentifierType (e.g. ['unsigned', 'int'])."""
+    # --- Dispatch targets ---
+
+    def _resolve_type_decl(self, node: c_ast.TypeDecl) -> dgen.Type:
+        return self.resolve(node.type)
+
+    def _resolve_typename(self, node: c_ast.Typename) -> dgen.Type:
+        return self.resolve(node.type)
+
+    def _resolve_identifier_type(self, node: c_ast.IdentifierType) -> dgen.Type:
+        names = node.names
         joined = " ".join(names)
 
         if len(names) == 1 and names[0] in self.typedefs:
@@ -128,32 +220,19 @@ class TypeResolver:
             bits, signed = _INT_WIDTHS[joined]
             return c_int(bits, signed)
 
-        if joined in _FLOAT_KINDS:
-            return Float64()
-
-        if joined == "void":
-            return c_void()
-
-        if joined in ("_Bool", "bool"):
-            return c_int(1, signed=False)
-
-        if joined in _PLATFORM_TYPES:
-            bits, signed = _PLATFORM_TYPES[joined]
-            return c_int(bits, signed)
-
-        if joined in _FIXED_WIDTH:
-            bits, signed = _FIXED_WIDTH[joined]
-            return c_int(bits, signed)
+        ctor = _BUILTIN_TYPES.get(joined)
+        if ctor is not None:
+            return ctor()
 
         raise TypeResolverError(f"unknown type: {joined}")
 
-    def _adjust_param_type(self, ptype: dgen.Type) -> dgen.Type:
-        """C11 6.7.6.3p7-8: array params -> pointer, function params -> pointer-to-function."""
-        if isinstance(ptype, Array):
-            return c_ptr(ptype.element_type)
-        if isinstance(ptype, CFunctionType):
-            return c_ptr(ptype)
-        return ptype
+    def _resolve_ptr(self, node: c_ast.PtrDecl) -> dgen.Type:
+        return c_ptr(self.resolve(node.type))
+
+    def _resolve_array(self, node: c_ast.ArrayDecl) -> dgen.Type:
+        element = self.resolve(node.type)
+        count = self._eval_array_dim(node.dim)
+        return Array(element_type=element, n=Index().constant(count))
 
     def _resolve_func_decl(self, node: c_ast.FuncDecl) -> dgen.Type:
         """Resolve a FuncDecl to a CFunctionType."""
@@ -185,28 +264,6 @@ class TypeResolver:
             is_variadic=idx.constant(int(is_variadic)),
             n_fixed_params=idx.constant(n_fixed),
         )
-
-    def _unique_anon_tag(self) -> str:
-        """Generate a unique tag for anonymous struct/union."""
-        self._anon_counter += 1
-        return f"_anon_{self._anon_counter}"
-
-    def _resolve_fields(self, decls: list[c_ast.Node]) -> list[StructField]:
-        """Resolve struct/union field declarations to StructField instances."""
-        fields: list[StructField] = []
-        idx = Index()
-        for decl in decls:
-            if isinstance(decl, c_ast.Decl):
-                fname = decl.name or "_pad"
-                ftype = self.resolve(decl.type)
-                fields.append(
-                    StructField(
-                        field_name=String().constant(fname),
-                        field_type=ftype,
-                        offset=idx.constant(0),  # filled by layout pass
-                    )
-                )
-        return fields
 
     def _resolve_struct(self, node: c_ast.Struct) -> dgen.Type:
         """Resolve a struct definition or forward reference."""
@@ -251,6 +308,38 @@ class TypeResolver:
 
         return c_int(32, signed=True)
 
+    # --- Helpers ---
+
+    def _adjust_param_type(self, ptype: dgen.Type) -> dgen.Type:
+        """C11 6.7.6.3p7-8: array params -> pointer, function params -> pointer-to-function."""
+        if isinstance(ptype, Array):
+            return c_ptr(ptype.element_type)
+        if isinstance(ptype, CFunctionType):
+            return c_ptr(ptype)
+        return ptype
+
+    def _unique_anon_tag(self) -> str:
+        """Generate a unique tag for anonymous struct/union."""
+        self._anon_counter += 1
+        return f"_anon_{self._anon_counter}"
+
+    def _resolve_fields(self, decls: list[c_ast.Node]) -> list[StructField]:
+        """Resolve struct/union field declarations to StructField instances."""
+        fields: list[StructField] = []
+        idx = Index()
+        for decl in decls:
+            if isinstance(decl, c_ast.Decl):
+                fname = decl.name or "_pad"
+                ftype = self.resolve(decl.type)
+                fields.append(
+                    StructField(
+                        field_name=String().constant(fname),
+                        field_type=ftype,
+                        offset=idx.constant(0),  # filled by layout pass
+                    )
+                )
+        return fields
+
     def register_typedef(self, name: str, target_type: dgen.Type) -> None:
         self.typedefs[name] = target_type
 
@@ -258,44 +347,3 @@ class TypeResolver:
         if dim is None:
             return 0
         return eval_const_expr(dim, self.enum_constants)
-
-
-def eval_const_expr(node: c_ast.Node, enum_constants: dict[str, int]) -> int:
-    """Evaluate a compile-time constant expression to int.
-
-    Extracted from TypeResolver so it can be reused and tested independently.
-    Raises TypeResolverError on unsupported expressions.
-    """
-    if isinstance(node, c_ast.Constant):
-        if node.type == "int":
-            return parse_c_int(node.value)
-        if node.type == "char":
-            return parse_c_char(node.value)
-        return 0
-    if isinstance(node, c_ast.UnaryOp):
-        fn = CONST_UNARY.get(node.op)
-        if fn is not None:
-            return fn(eval_const_expr(node.expr, enum_constants))
-        raise TypeResolverError(
-            f"unsupported unary op in constant expression: {node.op}"
-        )
-    if isinstance(node, c_ast.BinaryOp):
-        fn = CONST_BINOPS.get(node.op)
-        if fn is not None:
-            return fn(
-                eval_const_expr(node.left, enum_constants),
-                eval_const_expr(node.right, enum_constants),
-            )
-        raise TypeResolverError(
-            f"unsupported binary op in constant expression: {node.op}"
-        )
-    if isinstance(node, c_ast.Cast):
-        return eval_const_expr(node.expr, enum_constants)
-    if isinstance(node, c_ast.ID):
-        if node.name in enum_constants:
-            return enum_constants[node.name]
-        raise TypeResolverError(f"unknown constant: {node.name}")
-    if isinstance(node, c_ast.TernaryOp):
-        cond = eval_const_expr(node.cond, enum_constants)
-        return eval_const_expr(node.iftrue if cond else node.iffalse, enum_constants)
-    raise TypeResolverError(f"unsupported constant expression: {type(node).__name__}")
