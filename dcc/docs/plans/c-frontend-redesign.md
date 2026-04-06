@@ -1,7 +1,7 @@
 # C Frontend Redesign: Design & Implementation Plan
 
-*Draft v2 — revised after review by three agents (dgen architectural
-fit, C11 spec coverage, implementation feasibility).*
+*Draft v3 — v2 revised for mem-token threading (not blanket ChainOp)
+and correctness-first testing strategy.*
 
 ## Problem Statement
 
@@ -269,8 +269,9 @@ Lower remaining C-specific ops with correct signed/unsigned dispatch:
 - `c.shift_right` → `llvm.ashr` (signed) or `llvm.lshr` (unsigned)
 - `c.logical_not` → `icmp eq %x, 0`
 - `c.sizeof<T>` → constant (T's layout size)
-- `c.c_return` → extract value from chain, return it (chain kept
-  alive by being the block result's dependency)
+- `c.c_return` → the return value itself (mem-token dependencies
+  keep prior stores reachable; void-call chains are reachable if
+  they fed into a mem token or were ChainOp'd to the return path)
 
 ## Parser Design (`dcc/parser/lowering.py`)
 
@@ -285,7 +286,9 @@ It DOES:
 - Suppress `lvalue_to_rvalue` for: LHS of `=`, operand of `&`,
   operand of `sizeof` (and later `_Alignof`)
 - Lower `&&`/`||` to `IfOp` (short-circuit control flow)
-- Chain all statements via `ChainOp` (solves unreachable-ops problem)
+- Chain void calls in statement position to `block.result` via
+  `ChainOp` (the only case where the parser needs chains — see
+  "Side Effect Ordering" below)
 - Resolve `sizeof(expr)` to the expression's undecayed type before
   any pass runs, using the type's layout size directly
 - Emit `function.CallOp` with resolved ExternOp callees
@@ -318,29 +321,130 @@ Mostly reused. Changes:
 - **Parameter type adjustment (6.7.6.3p7-8):** Array parameters
   adjusted to pointer, function parameters adjusted to pointer-to-function.
 
-## Side Effect Chaining
+## Side Effect Ordering: Mem Tokens, Not Blanket Chains
 
-The "unreachable ops" problem (lessons.md) is solved by the parser
-chaining all statements via `ChainOp`. `ChainOp(lhs=X, rhs=Y)` has
-runtime value = `lhs`, with a dependency on `rhs`. The accumulation
-pattern:
+The "unreachable ops" problem (lessons.md) is **not** solved by chaining
+every statement with `ChainOp`. That works against dgen's design — it
+adds spurious dependencies between independent operations, preventing
+the sea-of-nodes from reordering pure expressions.
 
-```python
-def _compound(self, node, scope):
-    chain = None
-    for stmt in node.block_items:
-        val = yield from self._stmt(stmt, scope)
-        if val is None:
-            continue
-        if chain is not None:
-            val = ChainOp(lhs=val, rhs=chain, type=val.type)
-        chain = val
-    return chain
+Instead, dgen already has the right mechanism: **mem tokens**. The
+`memory.StoreOp` and `memory.LoadOp` take a `mem` operand — the return
+value of the prior memory operation on that variable. This creates a
+precise ordering chain for mutations WITHOUT coupling unrelated
+operations.
+
+### How mem-token threading works
+
+The lvalue elimination pass (CToMemory today) maintains a per-variable
+dict mapping variable names to their latest memory token:
+
+```
+# C source: x = 1; y = x + 2; return y;
+
+%alloc_x = stack_allocate()
+%st_x    = store(mem=%alloc_x, value=1, ptr=%alloc_x)     # _mem["x"] = %st_x
+%ld_x    = load(mem=%st_x, ptr=%alloc_x)                  # reads after write
+%sum     = add(%ld_x, 2)                                   # pure — no mem needed
+
+%alloc_y = stack_allocate()
+%st_y    = store(mem=%alloc_y, value=%sum, ptr=%alloc_y)   # _mem["y"] = %st_y
+%ld_y    = load(mem=%st_y, ptr=%alloc_y)                   # reads after write
+return(%ld_y)
 ```
 
-Every statement's value chains to all prior statements. The final
-value is the block's result, with every side effect reachable via
-`rhs` edges.
+**Every operation is correctly ordered** through a combination of data
+dependencies (the `add` needs `%ld_x`'s value) and mem-token dependencies
+(each load depends on the prior store to that variable). No ChainOp
+anywhere. Pure expressions like `add` are free to be reordered, hoisted,
+or eliminated by passes.
+
+### When ChainOp IS needed
+
+ChainOp is reserved for side effects that **don't produce or consume
+a tracked memory token**:
+
+- **Calls with side effects** (I/O, global mutation) that don't write
+  to a local variable: the call result doesn't naturally feed into
+  a subsequent mem operand. Use `ChainOp(lhs=next_val, rhs=call_result)`
+  to keep the call reachable.
+- **Volatile reads** where the read itself is a side effect and the
+  result may be unused.
+- **Ordering between independent call chains** where neither call
+  writes to a tracked variable.
+
+The parser should NOT chain pure statements. It should emit lvalue/rvalue
+ops and let the lvalue elimination pass thread mem tokens naturally.
+The only parser-level responsibility is ensuring that side-effecting
+calls that don't flow into a variable get chained to the block's result
+via the caller's return path.
+
+### The "unreachable ops" problem
+
+With mem-token threading, most ops ARE reachable from `block.result`
+through data or mem dependencies. The remaining unreachable case is
+a void function call in statement position whose result is unused:
+
+```c
+void side_effect(void);
+int f(void) { side_effect(); return 0; }
+```
+
+Here `side_effect()` produces no value and writes to no tracked variable.
+It must be ChainOp'd to the return. This is the **only** case where the
+parser needs ChainOp — not every statement, just void calls in
+statement position and similar "fire-and-forget" side effects.
+
+## Testing Strategy: Correctness First
+
+The current approach treats correctness as an afterthought — we
+optimize for "LLVM accepts the IR" (the sqlite3 verified count) rather
+than "the generated code computes the right thing." The redesign
+inverts this: **every feature is proven correct with a JIT test that
+checks the computed value before moving on.**
+
+### Pattern: One feature, one correctness proof
+
+Each implementation step adds an end-to-end test via `run_c()` that
+JIT-compiles C source and asserts on the **returned integer value**.
+This is the Toy dialect's pattern (`toy/cli.py` tests check output
+values, not IR shape).
+
+```python
+def test_variable_read_write(self) -> None:
+    assert run_c("int f(void) { int x = 5; return x; }") == 5
+
+def test_variable_mutation(self) -> None:
+    assert run_c("int f(void) { int x = 1; x = 2; return x; }") == 2
+
+def test_if_branch_mutation(self) -> None:
+    assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 1) == 1
+    assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 0) == 0
+
+def test_struct_second_field(self) -> None:
+    # Verifies struct field offsets are correct — not just that IR parses
+    assert run_c(
+        "struct P { int x; int y; };"
+        "int f(void) { struct P p; p.x = 10; p.y = 20; return p.y; }"
+    ) == 20  # Would return 10 with the old GEP-index-0 stub
+
+def test_short_circuit_and(self) -> None:
+    # Verifies && doesn't evaluate RHS when LHS is 0
+    assert run_c(
+        "int f(int *p) { return p && *p; }",
+        0  # null pointer — must NOT dereference
+    ) == 0
+```
+
+**The sqlite3 verified count becomes a secondary metric.** The primary
+metric is: does every feature compute correctly?
+
+### The sqlite3 ratchet
+
+The sqlite3 test remains but shifts purpose: it measures **coverage**
+(how much of C we handle) not **correctness** (whether the generated
+code is right). We maintain the ratchet but don't chase it — it rises
+naturally as we implement more features correctly.
 
 ## Implementation Plan
 
@@ -349,9 +453,11 @@ value is the block's result, with every side effect reachable via
 New lvalue ops are added to `c.dgen` **alongside** existing ops. The
 parser is migrated **one expression kind at a time** (variables first,
 then assignments, then struct access). Old `@lowering_for` handlers
-and new ones coexist in the pipeline. At each step, the full test
-suite passes. Only after all constructs are migrated do we delete the
-old ops.
+and new ones coexist in the pipeline. At each step:
+1. The new feature has a `run_c()` correctness test that passes.
+2. All existing tests still pass.
+
+Only after all constructs are migrated do we delete the old ops.
 
 ### Step 0: Preparation
 
@@ -367,49 +473,98 @@ Change `_id` to emit `lvalue_var` + `lvalue_to_rvalue` (in rvalue
 context) instead of `ReadVariableOp`. Add `@lowering_for(LvalueVarOp)`
 in `CToMemory` that does what `lower_read_variable` does today.
 
-**First test:** `test_local_variable` — `int f(void) { int x = 5; return x; }`
+**Correctness test:**
+```python
+assert run_c("int f(void) { int x = 42; return x; }") == 42
+```
 
 ### Step 2: Assignment via lvalues
 
-Change `_assign` to emit `assign(lvalue, rvalue)` instead of `AssignOp`.
-Add `@lowering_for(AssignOp_new)` handler.
+Change `_assign` to emit `assign(lvalue, rvalue)`. Add handler.
 
-**Test:** `test_local_mutation`
+**Correctness test:**
+```python
+assert run_c("int f(void) { int x = 1; x = 2; return x; }") == 2
+assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 1) == 1
+assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 0) == 0
+```
+
+The if-branch test verifies alloca hoisting: `r` is one alloca
+shared across the outer scope and the if-body.
 
 ### Step 3: Struct access via lvalues
 
 Change `_struct` to emit `lvalue_member`/`lvalue_arrow`. Add struct
 layout computation for GEP offsets.
 
-**Test:** `test_struct_field_access`
+**Correctness test:**
+```python
+assert run_c(
+    "struct P { int x; int y; };"
+    "int f(void) { struct P p; p.x = 10; p.y = 20; return p.y; }"
+) == 20
+```
+
+This test **fails on the current codebase** (GEP index 0 returns
+`p.x` = 10 instead of `p.y` = 20). It becomes the proof that
+struct layout is correct.
 
 ### Step 4: `&&`/`||` as IfOp
 
 Replace `MeetOp`/`JoinOp` mapping for `&&`/`||` with `IfOp`-based
 short-circuit evaluation.
 
-**Test:** new test for `int f(int *p) { return p && *p; }`
+**Correctness test:**
+```python
+# Must not dereference null pointer
+assert run_c("int f(int *p) { return p && *p; }", 0) == 0
+# Short-circuit: 0 && anything = 0
+assert run_c("int f(int x, int y) { return x && y; }", 0, 42) == 0
+assert run_c("int f(int x, int y) { return x && y; }", 1, 42) == 1
+# || short-circuit
+assert run_c("int f(int x, int y) { return x || y; }", 1, 0) == 1
+assert run_c("int f(int x, int y) { return x || y; }", 0, 1) == 1
+```
 
 ### Step 5: Implicit conversion pass
 
 Add `c_implicit_conversions.py`. Handle integer promotions, usual
 arithmetic conversions, and array/function decay.
 
-### Step 6: Side-effect chaining
+**Correctness tests:**
+```python
+# Integer promotion: char arithmetic doesn't overflow at 127
+assert run_c("int f(void) { char a = 100; char b = 100; return a + b; }") == 200
+# Signed/unsigned: (unsigned)-1 > 0
+assert run_c("int f(void) { unsigned u = -1; return u > 0; }") == 1
+```
 
-Add `ChainOp` threading in `_compound`. Fix `c_return` to preserve
-chains.
+### Step 6: Sizeof, switch, do_while, goto, break
+
+Implement control flow constructs with correctness tests for each.
+
+**Correctness tests:**
+```python
+assert run_c("int f(void) { return sizeof(int); }") == 4
+assert run_c(
+    "int f(int x) { switch(x) { case 1: return 10; case 2: return 20;"
+    "default: return 0; } }", 2
+) == 20
+assert run_c(
+    "int f(void) { int s = 0; int i = 0;"
+    "do { s += i; i++; } while (i < 5); return s; }"
+) == 10
+```
 
 ### Step 7: Cleanup
 
 Remove old ops from `c.dgen`. Delete `ReadVariableOp`, old `AssignOp`,
-old `CallOp` (already done), old `CompoundAssignOp` handlers. Update
-snapshots.
+old `CompoundAssignOp` handlers. Update snapshots.
 
 ### Step 8: sqlite3 push
 
-Run sqlite3 codegen with new pipeline. Target >90% verified.
-Add proper sizeof, switch, do_while, goto, break/continue.
+Run sqlite3 codegen with new pipeline. The verified count should
+rise naturally from the features implemented in Steps 1-6.
 
 ## Known Limitations (v1)
 
