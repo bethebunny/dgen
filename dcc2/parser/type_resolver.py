@@ -204,7 +204,7 @@ class TypeResolver:
         handler = _RESOLVE_DISPATCH.get(type(node))
         if handler is not None:
             return handler(self, node)
-        return c_void()
+        raise TypeResolverError(f"unsupported type node: {type(node).__name__}")
 
     # --- Dispatch targets ---
 
