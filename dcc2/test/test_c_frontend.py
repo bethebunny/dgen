@@ -441,3 +441,13 @@ class TestEndToEnd:
 
     def test_local_from_param_arithmetic(self) -> None:
         assert run_c("int f(int a, int b) { int r = a * b + 1; return r; }", 6, 7) == 43
+
+    def test_nested_scope(self) -> None:
+        assert run_c("int f() { int x = 10; { int y = 20; } return x; }") == 10
+
+    def test_shadowed_variable(self) -> None:
+        """Inner x doesn't affect outer x."""
+        assert run_c("int f() { int x = 10; { int x = 99; } return x; }") == 10
+
+    def test_shadow_then_reassign_outer(self) -> None:
+        assert run_c("int f() { int x = 0; { int x = 99; } x = 2; return x; }") == 2
