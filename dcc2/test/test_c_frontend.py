@@ -451,3 +451,7 @@ class TestEndToEnd:
 
     def test_shadow_then_reassign_outer(self) -> None:
         assert run_c("int f() { int x = 0; { int x = 99; } x = 2; return x; }") == 2
+
+    def test_assign_to_parameter(self) -> None:
+        """Parameters are mutable local variables in C."""
+        assert run_c("int f(int x) { x = 10; return x; }", 5) == 10
