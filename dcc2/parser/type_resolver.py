@@ -191,10 +191,8 @@ class TypeResolver:
         self._anon_counter += 1
         return f"_anon_{self._anon_counter}"
 
-    def _resolve_fields(self, decls: list[c_ast.Node] | None) -> list[StructField]:
+    def _resolve_fields(self, decls: list[c_ast.Node]) -> list[StructField]:
         """Resolve struct/union field declarations to StructField instances."""
-        if decls is None:
-            return []
         fields: list[StructField] = []
         idx = Index()
         for decl in decls:
@@ -218,7 +216,7 @@ class TypeResolver:
         if tag in self.structs and node.decls is None:
             return self.structs[tag]
 
-        fields = self._resolve_fields(node.decls)
+        fields = self._resolve_fields(node.decls or [])
         struct_type = Struct(
             tag=String().constant(tag),
             fields=pack(fields),
@@ -233,7 +231,7 @@ class TypeResolver:
         if tag in self.unions and node.decls is None:
             return self.unions[tag]
 
-        fields = self._resolve_fields(node.decls)
+        fields = self._resolve_fields(node.decls or [])
         union_type = Union(
             tag=String().constant(tag),
             fields=pack(fields),

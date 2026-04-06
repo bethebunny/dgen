@@ -110,7 +110,7 @@ class Parser:
     def __init__(self) -> None:
         self.types = TypeResolver()
         self.file_scope = Scope()
-        self._current_return_type: dgen.Type | None = None
+        self._current_return_type: dgen.Type = c_int(32)
 
     def parse(self, ast: c_ast.FileAST) -> function.FunctionOp:
         """Lower a FileAST to IR. Returns the last function."""
@@ -245,9 +245,7 @@ class Parser:
     def _return(self, node: c_ast.Return, scope: Scope) -> _Return:
         """Lower a return statement."""
         if node.expr is None:
-            return _Return(
-                ConstantOp(value=0, type=self._current_return_type or c_int())
-            )
+            return _Return(ConstantOp(value=0, type=self._current_return_type))
         val = _run_gen(self._expr(node.expr, scope))
         return _Return(val)
 
@@ -389,14 +387,12 @@ class _Return:
 
 def _run_gen(gen: Generator[dgen.Op, None, dgen.Value]) -> dgen.Value:
     """Exhaust a generator and return its final value."""
-    result: dgen.Value | None = None
-    try:
-        while True:
-            result = next(gen)
-    except StopIteration as e:
-        result = e.value
-    assert result is not None
-    return result
+    # Consume all yielded ops, then capture the return value from StopIteration.
+    while True:
+        try:
+            next(gen)
+        except StopIteration as e:
+            return e.value
 
 
 # ---------------------------------------------------------------------------
