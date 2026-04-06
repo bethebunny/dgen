@@ -1,11 +1,23 @@
-"""Resolve pycparser type AST nodes to dgen types."""
+"""Resolve pycparser type AST nodes to dgen types.
+
+Responsibility:
+- Map C type syntax to dgen type values
+- Track typedef/struct/union/enum definitions
+- Resolve forward references for struct/union
+- Apply C11 6.7.6.3 parameter type adjustments
+
+Not responsible for:
+- Type checking (compatibility, assignability)
+- Struct layout computation (offsets are 0; filled by layout pass)
+- Type qualifiers (const, volatile, restrict)
+"""
 
 from __future__ import annotations
 
 from pycparser import c_ast
 
 import dgen
-from dgen.dialects.builtin import Array, String
+from dgen.dialects.builtin import Array, Nil, String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.module import pack
@@ -35,7 +47,25 @@ _INT_WIDTHS: dict[str, tuple[int, bool]] = {
     "unsigned": (32, False),
 }
 
+# Fixed-width integer typedefs.
+_FIXED_WIDTH: dict[str, tuple[int, bool]] = {}
+for _prefix, _signed in [("int", True), ("uint", False)]:
+    for _bits in (8, 16, 32, 64):
+        _FIXED_WIDTH[f"{_prefix}{_bits}_t"] = (_bits, _signed)
+
 _FLOAT_KINDS: set[str] = {"float", "double", "long double"}
+
+_PLATFORM_TYPES: dict[str, tuple[int, bool]] = {
+    "size_t": (64, False),
+    "uintptr_t": (64, False),
+    "ssize_t": (64, True),
+    "ptrdiff_t": (64, True),
+    "intptr_t": (64, True),
+}
+
+
+class TypeResolverError(Exception):
+    """An unresolvable C type."""
 
 
 class TypeResolver:
@@ -50,8 +80,8 @@ class TypeResolver:
         self.typedefs: dict[str, dgen.Type] = {}
         self.structs: dict[str, Struct] = {}
         self.unions: dict[str, Union] = {}
-        self.enums: dict[str, dgen.Type] = {}
         self.enum_constants: dict[str, int] = {}
+        self._anon_counter: int = 0
 
     def resolve(self, node: c_ast.Node) -> dgen.Type:
         """Resolve a pycparser type node to a dgen type."""
@@ -107,18 +137,23 @@ class TypeResolver:
         if joined in ("_Bool", "bool"):
             return c_int(1, signed=False)
 
-        if joined in ("size_t", "uintptr_t"):
-            return c_int(64, signed=False)
-        if joined in ("ssize_t", "ptrdiff_t", "intptr_t"):
-            return c_int(64, signed=True)
+        if joined in _PLATFORM_TYPES:
+            bits, signed = _PLATFORM_TYPES[joined]
+            return c_int(bits, signed)
 
-        for prefix, s in [("int", True), ("uint", False)]:
-            for bits in (8, 16, 32, 64):
-                if joined == f"{prefix}{bits}_t":
-                    return c_int(bits, s)
+        if joined in _FIXED_WIDTH:
+            bits, signed = _FIXED_WIDTH[joined]
+            return c_int(bits, signed)
 
-        # Unknown -- treat as opaque i64.
-        return c_int(64, signed=True)
+        raise TypeResolverError(f"unknown type: {joined}")
+
+    def _adjust_param_type(self, ptype: dgen.Type) -> dgen.Type:
+        """C11 6.7.6.3p7-8: array params -> pointer, function params -> pointer-to-function."""
+        if isinstance(ptype, Array):
+            return c_ptr(ptype.element_type)
+        if isinstance(ptype, CFunctionType):
+            return c_ptr(ptype)
+        return ptype
 
     def _resolve_func_decl(self, node: c_ast.FuncDecl) -> dgen.Type:
         """Resolve a FuncDecl to a CFunctionType."""
@@ -126,36 +161,20 @@ class TypeResolver:
 
         arg_types: list[dgen.Type] = []
         is_variadic = False
-        n_fixed = 0
 
         if node.args is not None:
             for param in node.args.params or []:
                 if isinstance(param, c_ast.EllipsisParam):
                     is_variadic = True
                     continue
-                if isinstance(param, c_ast.Decl):
-                    ptype = self.resolve(param.type)
-                    # C11 6.7.6.3p7-8: array params adjusted to pointer,
-                    # function params adjusted to pointer-to-function.
-                    if isinstance(ptype, Array):
-                        ptype = c_ptr(ptype.element_type)
-                    elif isinstance(ptype, CFunctionType):
-                        ptype = c_ptr(ptype)
-                    arg_types.append(ptype)
-                elif isinstance(param, c_ast.Typename):
-                    ptype = self.resolve(param)
-                    if isinstance(ptype, Array):
-                        ptype = c_ptr(ptype.element_type)
-                    elif isinstance(ptype, CFunctionType):
-                        ptype = c_ptr(ptype)
-                    arg_types.append(ptype)
+                if isinstance(param, (c_ast.Decl, c_ast.Typename)):
+                    ptype = self.resolve(
+                        param.type if isinstance(param, c_ast.Decl) else param
+                    )
+                    arg_types.append(self._adjust_param_type(ptype))
 
-            # Check for f(void) -- single void param means no args.
-            if (
-                len(arg_types) == 1
-                and isinstance(arg_types[0], type(c_void()))
-                and arg_types[0].__class__.__name__ == "Nil"
-            ):
+            # C11: f(void) means no parameters.
+            if len(arg_types) == 1 and isinstance(arg_types[0], Nil):
                 arg_types = []
 
         n_fixed = len(arg_types)
@@ -167,28 +186,39 @@ class TypeResolver:
             n_fixed_params=idx.constant(n_fixed),
         )
 
+    def _unique_anon_tag(self) -> str:
+        """Generate a unique tag for anonymous struct/union."""
+        self._anon_counter += 1
+        return f"_anon_{self._anon_counter}"
+
+    def _resolve_fields(self, decls: list[c_ast.Node] | None) -> list[StructField]:
+        """Resolve struct/union field declarations to StructField instances."""
+        if decls is None:
+            return []
+        fields: list[StructField] = []
+        idx = Index()
+        for decl in decls:
+            if isinstance(decl, c_ast.Decl):
+                fname = decl.name or "_pad"
+                ftype = self.resolve(decl.type)
+                fields.append(
+                    StructField(
+                        field_name=String().constant(fname),
+                        field_type=ftype,
+                        offset=idx.constant(0),  # filled by layout pass
+                    )
+                )
+        return fields
+
     def _resolve_struct(self, node: c_ast.Struct) -> dgen.Type:
         """Resolve a struct definition or forward reference."""
-        tag = node.name or "_anon"
+        tag = node.name or self._unique_anon_tag()
 
+        # Forward reference to previously-defined struct.
         if tag in self.structs and node.decls is None:
             return self.structs[tag]
 
-        fields: list[StructField] = []
-        if node.decls is not None:
-            idx = Index()
-            for decl in node.decls:
-                if isinstance(decl, c_ast.Decl):
-                    fname = decl.name or "_pad"
-                    ftype = self.resolve(decl.type)
-                    fields.append(
-                        StructField(
-                            field_name=String().constant(fname),
-                            field_type=ftype,
-                            offset=idx.constant(0),  # filled by layout pass
-                        )
-                    )
-
+        fields = self._resolve_fields(node.decls)
         struct_type = Struct(
             tag=String().constant(tag),
             fields=pack(fields),
@@ -198,26 +228,12 @@ class TypeResolver:
 
     def _resolve_union(self, node: c_ast.Union) -> dgen.Type:
         """Resolve a union definition or forward reference."""
-        tag = node.name or "_anon"
+        tag = node.name or self._unique_anon_tag()
 
         if tag in self.unions and node.decls is None:
             return self.unions[tag]
 
-        fields: list[StructField] = []
-        if node.decls is not None:
-            idx = Index()
-            for decl in node.decls:
-                if isinstance(decl, c_ast.Decl):
-                    fname = decl.name or "_pad"
-                    ftype = self.resolve(decl.type)
-                    fields.append(
-                        StructField(
-                            field_name=String().constant(fname),
-                            field_type=ftype,
-                            offset=idx.constant(0),  # all fields at offset 0
-                        )
-                    )
-
+        fields = self._resolve_fields(node.decls)
         union_type = Union(
             tag=String().constant(tag),
             fields=pack(fields),
@@ -231,7 +247,7 @@ class TypeResolver:
             val = 0
             for enumerator in node.values.enumerators:
                 if enumerator.value is not None:
-                    val = self._eval_const_expr(enumerator.value)
+                    val = eval_const_expr(enumerator.value, self.enum_constants)
                 self.enum_constants[enumerator.name] = val
                 val += 1
 
@@ -243,31 +259,45 @@ class TypeResolver:
     def _eval_array_dim(self, dim: c_ast.Node | None) -> int:
         if dim is None:
             return 0
-        return self._eval_const_expr(dim)
+        return eval_const_expr(dim, self.enum_constants)
 
-    def _eval_const_expr(self, node: c_ast.Node) -> int:
-        """Evaluate a compile-time constant expression to int."""
-        if isinstance(node, c_ast.Constant):
-            if node.type == "int":
-                return parse_c_int(node.value)
-            if node.type == "char":
-                return parse_c_char(node.value)
-            return 0
-        if isinstance(node, c_ast.UnaryOp):
-            fn = CONST_UNARY.get(node.op)
-            return fn(self._eval_const_expr(node.expr)) if fn else 0
-        if isinstance(node, c_ast.BinaryOp):
-            fn = CONST_BINOPS.get(node.op)
-            if fn is not None:
-                return fn(
-                    self._eval_const_expr(node.left), self._eval_const_expr(node.right)
-                )
-            return 0
-        if isinstance(node, c_ast.Cast):
-            return self._eval_const_expr(node.expr)
-        if isinstance(node, c_ast.ID):
-            return self.enum_constants.get(node.name, 0)
-        if isinstance(node, c_ast.TernaryOp):
-            cond = self._eval_const_expr(node.cond)
-            return self._eval_const_expr(node.iftrue if cond else node.iffalse)
+
+def eval_const_expr(node: c_ast.Node, enum_constants: dict[str, int]) -> int:
+    """Evaluate a compile-time constant expression to int.
+
+    Extracted from TypeResolver so it can be reused and tested independently.
+    Raises TypeResolverError on unsupported expressions.
+    """
+    if isinstance(node, c_ast.Constant):
+        if node.type == "int":
+            return parse_c_int(node.value)
+        if node.type == "char":
+            return parse_c_char(node.value)
         return 0
+    if isinstance(node, c_ast.UnaryOp):
+        fn = CONST_UNARY.get(node.op)
+        if fn is not None:
+            return fn(eval_const_expr(node.expr, enum_constants))
+        raise TypeResolverError(
+            f"unsupported unary op in constant expression: {node.op}"
+        )
+    if isinstance(node, c_ast.BinaryOp):
+        fn = CONST_BINOPS.get(node.op)
+        if fn is not None:
+            return fn(
+                eval_const_expr(node.left, enum_constants),
+                eval_const_expr(node.right, enum_constants),
+            )
+        raise TypeResolverError(
+            f"unsupported binary op in constant expression: {node.op}"
+        )
+    if isinstance(node, c_ast.Cast):
+        return eval_const_expr(node.expr, enum_constants)
+    if isinstance(node, c_ast.ID):
+        if node.name in enum_constants:
+            return enum_constants[node.name]
+        raise TypeResolverError(f"unknown constant: {node.name}")
+    if isinstance(node, c_ast.TernaryOp):
+        cond = eval_const_expr(node.cond, enum_constants)
+        return eval_const_expr(node.iftrue if cond else node.iffalse, enum_constants)
+    raise TypeResolverError(f"unsupported constant expression: {type(node).__name__}")

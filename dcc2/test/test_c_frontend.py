@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from pycparser import c_ast
+
 import dgen
 from dgen import Dialect
 from dgen.block import BlockArgument
@@ -69,8 +72,8 @@ class TestDialect:
 
     def test_conversion_ops_exist(self) -> None:
         from dcc2.dialects.c import (
-            ArrayDecayOp,
             ArithmeticConvertOp,
+            ArrayDecayOp,
             FunctionDecayOp,
             IntegerPromoteOp,
             NullToPointerOp,
@@ -182,8 +185,6 @@ class TestTypeResolver:
         from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
-        from pycparser import c_ast
-
         signed = r.resolve(
             c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["int"]))
         )
@@ -202,8 +203,6 @@ class TestTypeResolver:
         from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
-        from pycparser import c_ast
-
         f = r.resolve(
             c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["float"]))
         )
@@ -220,8 +219,6 @@ class TestTypeResolver:
         from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
-        from pycparser import c_ast
-
         v = r.resolve(
             c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["void"]))
         )
@@ -233,8 +230,6 @@ class TestTypeResolver:
         from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
-        from pycparser import c_ast
-
         p = r.resolve(
             c_ast.PtrDecl(
                 None,
@@ -248,8 +243,6 @@ class TestTypeResolver:
         from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
-        from pycparser import c_ast
-
         decls = [
             c_ast.Decl(
                 "x",
@@ -275,13 +268,48 @@ class TestTypeResolver:
         node = c_ast.Struct("Point", decls)
         t = r.resolve(node)
         assert isinstance(t, Struct)
+        # Verify struct is cached and forward-referenceable.
+        assert r._resolve_struct(c_ast.Struct("Point", None)) is t
+
+    def test_anonymous_structs_are_unique(self) -> None:
+        from dcc2.dialects.c import Struct
+        from dcc2.parser.type_resolver import TypeResolver
+
+        r = TypeResolver()
+        decl_x = [
+            c_ast.Decl(
+                "x",
+                None,
+                None,
+                None,
+                None,
+                c_ast.TypeDecl("x", None, None, c_ast.IdentifierType(names=["int"])),
+                None,
+                None,
+            )
+        ]
+        decl_y = [
+            c_ast.Decl(
+                "y",
+                None,
+                None,
+                None,
+                None,
+                c_ast.TypeDecl("y", None, None, c_ast.IdentifierType(names=["int"])),
+                None,
+                None,
+            )
+        ]
+        s1 = r.resolve(c_ast.Struct(None, decl_x))
+        s2 = r.resolve(c_ast.Struct(None, decl_y))
+        assert isinstance(s1, Struct)
+        assert isinstance(s2, Struct)
+        assert s1 is not s2
 
     def test_enum_constants(self) -> None:
         from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
-        from pycparser import c_ast
-
         enumerators = c_ast.EnumeratorList(
             [
                 c_ast.Enumerator("A", None),
@@ -296,9 +324,43 @@ class TestTypeResolver:
         assert r.enum_constants["C"] == 10
         assert r.enum_constants["D"] == 11
 
-    def test_parse_c_string(self) -> None:
-        from dcc2.parser.c_parser import parse_c_string
+    def test_unknown_type_raises(self) -> None:
+        from dcc2.parser.type_resolver import TypeResolver, TypeResolverError
 
+        r = TypeResolver()
+        with pytest.raises(TypeResolverError, match="unknown type"):
+            r.resolve(
+                c_ast.TypeDecl(
+                    None, None, None, c_ast.IdentifierType(names=["mystery_t"])
+                )
+            )
+
+    def test_f_void_has_no_params(self) -> None:
+        """C11: f(void) should resolve to a function with zero parameters."""
+        from dcc2.dialects.c import CFunctionType
+        from dcc2.parser.type_resolver import TypeResolver
+
+        r = TypeResolver()
+        # int f(void)
+        func_decl = c_ast.FuncDecl(
+            c_ast.ParamList(
+                [
+                    c_ast.Typename(
+                        None,
+                        None,
+                        None,
+                        c_ast.TypeDecl(
+                            None, None, None, c_ast.IdentifierType(names=["void"])
+                        ),
+                    )
+                ]
+            ),
+            c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["int"])),
+        )
+        t = r.resolve(func_decl)
+        assert isinstance(t, CFunctionType)
+
+    def test_parse_c_string(self) -> None:
         ast = parse_c_string("int f(int x) { return x; }")
         assert ast is not None
         assert len(ast.ext) == 1
@@ -347,3 +409,9 @@ class TestEndToEnd:
     def test_comparison_equal(self) -> None:
         assert run_c("int f(int a, int b) { return a == b; }", 5, 5) == 1
         assert run_c("int f(int a, int b) { return a == b; }", 5, 3) == 0
+
+    def test_literal_and_param_types_match(self) -> None:
+        """Integer literals and parameters should both be i32 (C int = 32-bit)."""
+        # This caught a real bug: literals were c_int(64) but params c_int(32).
+        assert run_c("int f(int x) { return x + 1; }", 5) == 6
+        assert run_c("int f(int x) { return 10 - x; }", 3) == 7
