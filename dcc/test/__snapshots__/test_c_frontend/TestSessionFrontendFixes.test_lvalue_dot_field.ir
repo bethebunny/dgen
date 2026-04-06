@@ -12,3 +12,4 @@ import number
     %4 : memory.Reference<number.SignedInteger<32>> = c.field_address<"x">(%3)
     %5 : number.SignedInteger<32> = 7
     %6 : number.SignedInteger<32> = c.store_indirect(%4, %5)
+    %7 : number.SignedInteger<32> = chain(%6, %2)

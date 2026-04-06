@@ -28,9 +28,7 @@ from dcc.dialects import c_int
 from dcc.parser.c_literals import parse_c_char, parse_c_int
 from dcc.dialects.c import (
     AddressOfOp,
-    AssignOp,
     BreakOp,
-    CompoundAssignOp,
     ContinueOp,
     DereferenceOp,
     ElementAddressOp,
@@ -57,7 +55,6 @@ from dcc.dialects.c import (
     SizeofOp,
     StoreIndirectOp,
     SubscriptOp,
-    VariableDeclarationOp,
 )
 from dcc.parser.type_resolver import TypeResolver
 
@@ -77,15 +74,33 @@ class Scope:
     Each compound statement ({}) creates a child scope. Variable
     declarations bind in the current scope. Lookups walk the parent
     chain. Captures track cross-scope references for block construction.
+
+    ``mutated_parent_names`` tracks names that were re-bound in this
+    scope but originated in a parent scope.  The parser uses this after
+    if/while statements to propagate mutations upward.
     """
 
     def __init__(self, parent: Scope | None = None) -> None:
         self._bindings: dict[str, dgen.Value] = {}
         self._parent = parent
         self.captures: list[dgen.Value] = []
+        self._declared: dict[str, dgen.Type] = {}
+        self.mutated_parent_names: set[str] = set()
+
+    def declare(self, name: str, value: dgen.Value) -> None:
+        """Bind a newly declared variable (not a mutation of a parent var)."""
+        self._bindings[name] = value
+        self._declared[name] = value.type
 
     def bind(self, name: str, value: dgen.Value) -> None:
+        """Re-bind an existing variable.  Tracks parent-scope mutations."""
         self._bindings[name] = value
+        if (
+            name not in self._declared
+            and self._parent is not None
+            and self._parent.has(name)
+        ):
+            self.mutated_parent_names.add(name)
 
     def lookup(self, name: str) -> dgen.Value:
         if name in self._bindings:
@@ -101,6 +116,20 @@ class Scope:
         if name in self._bindings:
             return True
         return self._parent.has(name) if self._parent is not None else False
+
+    def is_variable(self, name: str) -> bool:
+        """True if ``name`` was introduced via ``declare()`` in this or a parent scope."""
+        if name in self._declared:
+            return True
+        return self._parent.is_variable(name) if self._parent is not None else False
+
+    def variable_type(self, name: str) -> dgen.Type:
+        """Return the declared type of a variable."""
+        if name in self._declared:
+            return self._declared[name]
+        if self._parent is not None:
+            return self._parent.variable_type(name)
+        raise LoweringError(f"no declared type for: {name}")
 
     def child(self) -> Scope:
         return Scope(parent=self)
@@ -353,7 +382,7 @@ class Parser:
                     arg = BlockArgument(
                         name=param.name, type=self.types.resolve(param.type)
                     )
-                    scope.bind(param.name, arg)
+                    scope.declare(param.name, arg)
                     args.append(arg)
 
         prev_ret = self._current_return_type
@@ -378,10 +407,26 @@ class Parser:
     # --- Statements ---
 
     def _compound(self, node: c_ast.Compound, scope: Scope) -> Iterator[dgen.Op]:
+        from dgen.dialects.builtin import ChainOp
+
         child = scope.child()
+        last: dgen.Value | None = None
         if node.block_items:
             for item in node.block_items:
-                yield from self._stmt(item, child)
+                ops = list(self._stmt(item, child))
+                yield from ops
+                if ops:
+                    current = ops[-1]
+                    # Chain the current statement's result through the
+                    # prior statement so side effects stay reachable.
+                    if last is not None and last is not current:
+                        chain = ChainOp(lhs=current, rhs=last, type=current.type)
+                        yield chain
+                        current = chain
+                    last = current
+        # Propagate parent-scope mutations upward so that enclosing
+        # control-flow ops (if/while) can rebind in the outer scope.
+        scope.mutated_parent_names.update(child.mutated_parent_names)
 
     _STMT_DISPATCH: dict[type, str] = {
         c_ast.Decl: "_decl",
@@ -448,7 +493,7 @@ class Parser:
         yield lv
         assign = LvalueAssignOp(lvalue=lv, rvalue=init, type=var_type)
         yield assign
-        scope.bind(node.name, assign)
+        scope.declare(node.name, assign)
 
     def _assign(self, node: c_ast.Assignment, scope: Scope) -> Iterator[dgen.Op]:
         if isinstance(node.lvalue, c_ast.ID):
@@ -571,7 +616,7 @@ class Parser:
             else_block = dgen.Block(result=dgen.Value(type=Nil()))
         empty = pack([])
         yield empty
-        yield IfOp(
+        if_op = IfOp(
             condition=cond,
             then_arguments=empty,
             else_arguments=empty,
@@ -579,6 +624,12 @@ class Parser:
             then_body=then_block,
             else_body=else_block,
         )
+        yield if_op
+        # Propagate variable mutations from child scopes to the parent.
+        # Rebinding to the IfOp creates a use-def edge so subsequent reads
+        # depend on the if, making the inner stores reachable.
+        for name in then_scope.mutated_parent_names | else_scope.mutated_parent_names:
+            scope.bind(name, if_op)
 
     def _while(self, node: c_ast.While, scope: Scope) -> Iterator[dgen.Op]:
         cond_scope = scope.child()
@@ -587,7 +638,10 @@ class Parser:
         body_block = self._block_from(self._stmt(node.stmt, body_scope), body_scope)
         p = pack([])
         yield p
-        yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
+        while_op = WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
+        yield while_op
+        for name in body_scope.mutated_parent_names | cond_scope.mutated_parent_names:
+            scope.bind(name, while_op)
 
     def _do_while(self, node: c_ast.DoWhile, scope: Scope) -> Iterator[dgen.Op]:
         from dcc.dialects.c import DoWhileOp
@@ -761,8 +815,9 @@ class Parser:
         if isinstance(node, c_ast.ID):
             name = node.name
             val = scope.lookup(name)
+            var_type = scope.variable_type(name)
             lv = LvalueVarOp(
-                variable_name=String().constant(name), source=val, type=val.type
+                variable_name=String().constant(name), source=val, type=var_type
             )
             yield lv
             return lv
@@ -774,25 +829,13 @@ class Parser:
             yield op
             return op
         val = scope.lookup(node.name)
-        if isinstance(
-            val,
-            (
-                VariableDeclarationOp,
-                AssignOp,
-                CompoundAssignOp,
-                LvalueAssignOp,
-                LvalueCompoundAssignOp,
-                LvaluePreIncrementOp,
-                LvaluePostIncrementOp,
-                LvaluePreDecrementOp,
-                LvaluePostDecrementOp,
-            ),
-        ):
+        if scope.is_variable(node.name):
+            var_type = scope.variable_type(node.name)
             lv = LvalueVarOp(
-                variable_name=String().constant(node.name), source=val, type=val.type
+                variable_name=String().constant(node.name), source=val, type=var_type
             )
             yield lv
-            read = LvalueToRvalueOp(lvalue=lv, type=val.type)
+            read = LvalueToRvalueOp(lvalue=lv, type=var_type)
             yield read
             return read
         # File-scope function references used as values (e.g. passed as a

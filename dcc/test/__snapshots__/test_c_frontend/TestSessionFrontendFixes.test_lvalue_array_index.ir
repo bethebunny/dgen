@@ -5,7 +5,9 @@ import memory
 import number
 
 %f : function.Function<[memory.Reference<number.SignedInteger<32>>], Nil> = function.function<Nil>() body(%a: memory.Reference<number.SignedInteger<32>>):
-    %0 : number.SignedInteger<32> = 3
-    %1 : memory.Reference<number.SignedInteger<32>> = c.element_address(%a, %0)
-    %2 : number.SignedInteger<32> = 42
-    %3 : number.SignedInteger<32> = c.store_indirect(%1, %2)
+    %0 : memory.Reference<number.SignedInteger<32>> = c.lvalue_var<"a">(%a)
+    %1 : memory.Reference<number.SignedInteger<32>> = c.lvalue_to_rvalue(%0)
+    %2 : number.SignedInteger<32> = 3
+    %3 : memory.Reference<number.SignedInteger<32>> = c.element_address(%1, %2)
+    %4 : number.SignedInteger<32> = 42
+    %5 : number.SignedInteger<32> = c.store_indirect(%3, %4)

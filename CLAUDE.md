@@ -156,7 +156,7 @@ python -m dgen.gen toy/dialects/toy.dgen > toy/dialects/toy.pyi
 - Avoid `for ... in range()`
 - Avoid `isinstance` specialization, this is generally design smell
 - Don't special case. Refuse to add special cases that aren't explicitly called out in designs. Explicitly ask before adding any special cases to a design.
-- **Never use `id()` for dict keys or set membership.** Object identity is not a stable identifier — objects can be garbage-collected and `id()` values reused. Use the object itself as the key, or use a meaningful stable identifier (e.g. a name string).
+- **Never use `id()` for dict keys or set membership.** `id()` is implicitly a weak reference — the object can be garbage-collected and the `id()` value reused by a different object. Using the object itself as a dict key is fine (the dict holds a strong reference, preventing collection). Using `id(obj)` as an int key is not.
 
 ## JIT, Staging, and the Memory System
 

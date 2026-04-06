@@ -368,18 +368,13 @@ class TestLvalueOps:
     def test_post_decrement(self) -> None:
         assert run_c("int f(void) { int x = 5; return x--; }") == 5
 
-    @pytest.mark.xfail(
-        reason="cross-block mutation requires alloca hoisting + ChainOp for "
-        "if/loop bodies — the if-body's store is unreachable from block.result",
-        strict=True,
-    )
     def test_if_branch_mutation(self) -> None:
         assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 1) == 1
         assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 0) == 0
 
     @pytest.mark.xfail(
-        reason="cross-block mutation requires alloca hoisting + ChainOp for "
-        "loop bodies — same issue as test_if_branch_mutation",
+        reason="WhileOp condition block doesn't re-read loop variable after "
+        "body mutation — off-by-one (returns 15 instead of 10)",
         strict=True,
     )
     def test_loop_mutation(self) -> None:
@@ -704,7 +699,6 @@ class TestSessionFrontendFixes:
     ) -> None:
         # Pre-fix: "indirect function calls not yet supported"
         from dgen.dialects import function as _function
-        from dgen.block import BlockArgument
 
         m = _lower_c("int f(int (*p)(int)) { return p(5); }")
         # The call's callee must be a BlockArgument (the function
@@ -713,7 +707,11 @@ class TestSessionFrontendFixes:
 
         call_ops = [v for v in all_values(m) if isinstance(v, _function.CallOp)]
         assert call_ops, "indirect call should become function.CallOp"
-        assert isinstance(call_ops[0].callee, BlockArgument), (
+        # The callee is an SSA value (lvalue-to-rvalue load of the
+        # function pointer parameter), not a file-scope ExternOp.
+        from dgen.dialects.builtin import ExternOp
+
+        assert not isinstance(call_ops[0].callee, ExternOp), (
             "calling a function-pointer local must dispatch through an SSA value"
         )
         assert m == ir_snapshot
@@ -818,11 +816,6 @@ class TestKnownFailures:
     def test_codegen_undefined_value_if_return(self) -> None:
         _codegen_verifies("int f(int x, int y) { if (x > 0) return y; else return x; }")
 
-    @pytest.mark.xfail(
-        reason="codegen: multiple definition of local value (~270 in sqlite3). "
-        "A local assigned inside an if gets a second alloca in the branch block.",
-        strict=True,
-    )
     def test_codegen_slot_collision_local_written_in_branch(self) -> None:
         _codegen_verifies("void f(int X) { long a = X; if (X > 0) { a = 1; } }")
 

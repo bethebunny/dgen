@@ -5,6 +5,8 @@ import memory
 import number
 
 %f : function.Function<[memory.Reference<function.Function<[], number.SignedInteger<32>>>], number.SignedInteger<32>> = function.function<number.SignedInteger<32>>() body(%p: memory.Reference<function.Function<[], number.SignedInteger<32>>>):
-    %0 : number.SignedInteger<32> = 5
-    %1 : number.SignedInteger<32> = function.call<%p>([%0])
-    %2 : Nil = c.return(%1)
+    %0 : memory.Reference<function.Function<[], number.SignedInteger<32>>> = c.lvalue_var<"p">(%p)
+    %1 : memory.Reference<function.Function<[], number.SignedInteger<32>>> = c.lvalue_to_rvalue(%0)
+    %2 : number.SignedInteger<32> = 5
+    %3 : number.SignedInteger<32> = function.call<%1>([%2])
+    %4 : Nil = c.return(%3)
