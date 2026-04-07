@@ -3,16 +3,14 @@
 Thin 1:1 lowering from pycparser AST to dgen ops. Semantic transforms
 (type promotions, struct layout, lvalue elimination) belong in passes.
 
-Every statement handler returns a single Value whose transitive
-dependencies contain every op the statement produced. Expression
-handlers use generators internally but the statement layer does not
-return lists — graph structure is preserved in the use-def edges.
+Every handler returns a single Value whose transitive dependencies
+contain every op it produced. No lists, no generators — graph
+structure is preserved in use-def edges.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Generator
 
 from pycparser import c_ast
 
@@ -352,12 +350,12 @@ class Parser:
         if handler_name is not None:
             return getattr(self, handler_name)(node, scope)
         # Expression statement -- evaluate for side effects.
-        return _run_gen(self._expression(node, scope))
+        return self._expression(node, scope)
 
     def _return_statement(self, node: c_ast.Return, scope: Scope) -> _Return:
         if node.expr is None:
             return _Return(ConstantOp(value=0, type=self._current_return_type))
-        return _Return(_run_gen(self._expression(node.expr, scope)))
+        return _Return(self._expression(node.expr, scope))
 
     def _compound_statement(
         self, node: c_ast.Compound, scope: Scope
@@ -377,7 +375,7 @@ class Parser:
             return ConstantOp(value=0, type=Nil())
         variable_type = self.types.resolve(node.type)
         if node.init is not None:
-            initial_value = _run_gen(self._expression(node.init, scope))
+            initial_value = self._expression(node.init, scope)
         else:
             initial_value = ConstantOp(value=0, type=variable_type)
         lvalue = LvalueVarOp(
@@ -396,7 +394,7 @@ class Parser:
 
     def _assignment(self, node: c_ast.Assignment, scope: Scope) -> dgen.Value:
         """Lower an assignment expression. Returns the AssignOp."""
-        rhs = _run_gen(self._expression(node.rvalue, scope))
+        rhs = self._expression(node.rvalue, scope)
 
         if not isinstance(node.lvalue, c_ast.ID):
             raise LoweringError(
@@ -415,13 +413,12 @@ class Parser:
 
     # --- Control flow ---
 
-    def _to_bool(self, value: dgen.Value) -> Generator[dgen.Op, None, dgen.Value]:
+    def _to_bool(self, value: dgen.Value) -> dgen.Value:
         """Convert a value to Boolean (for control flow conditions)."""
         if isinstance(value.type, Boolean):
             return value
-        yield (zero := ConstantOp(value=0, type=value.type))
-        yield (cmp := _binop(algebra.NotEqualOp, value, zero, value.type))
-        return cmp
+        zero = ConstantOp(value=0, type=value.type)
+        return _binop(algebra.NotEqualOp, value, zero, value.type)
 
     def _block_from(self, node: c_ast.Node, scope: Scope) -> dgen.Block:
         """Lower a statement into a Nil-typed Block for control flow bodies."""
@@ -487,8 +484,8 @@ class Parser:
                 scope.record_read(name, cf_op)
 
     def _if_statement(self, node: c_ast.If, scope: Scope) -> dgen.Value | _Return:
-        cond = _run_gen(self._expression(node.cond, scope))
-        bool_cond = _run_gen(self._to_bool(cond))
+        cond = self._expression(node.cond, scope)
+        bool_cond = self._to_bool(cond)
 
         then_scope = scope.child()
         then_block = self._block_from(node.iftrue, then_scope)
@@ -515,8 +512,8 @@ class Parser:
     def _while_statement(self, node: c_ast.While, scope: Scope) -> dgen.Value | _Return:
         # Condition block: evaluate condition in child scope, convert to bool.
         cond_scope = scope.child()
-        cond_val = _run_gen(self._expression(node.cond, cond_scope))
-        cond_result = _run_gen(self._to_bool(cond_val))
+        cond_val = self._expression(node.cond, cond_scope)
+        cond_result = self._to_bool(cond_val)
         cond_block = dgen.Block(result=cond_result, captures=cond_scope.captures)
 
         # Body block.
@@ -545,8 +542,8 @@ class Parser:
         # Condition block.
         cond_scope = scope.child()
         if node.cond is not None:
-            cond_val = _run_gen(self._expression(node.cond, cond_scope))
-            cond_result = _run_gen(self._to_bool(cond_val))
+            cond_val = self._expression(node.cond, cond_scope)
+            cond_result = self._to_bool(cond_val)
             cond_block = dgen.Block(result=cond_result, captures=cond_scope.captures)
         else:
             cond_block = dgen.Block(result=ConstantOp(value=1, type=c_int(32)))
@@ -571,39 +568,23 @@ class Parser:
 
     # --- Expressions ---
 
-    def _expression(
-        self, node: c_ast.Node, scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower an expression. Dispatches to handler by node type."""
-        # Assignment is a plain function, not a generator.
-        if isinstance(node, c_ast.Assignment):
-            return self._assignment(node, scope)
+    def _expression(self, node: c_ast.Node, scope: Scope) -> dgen.Value:
+        """Lower an expression. Returns a single Value."""
         handler_name = self._EXPR_DISPATCH.get(type(node))
         if handler_name is not None:
-            return (yield from getattr(self, handler_name)(node, scope))
+            return getattr(self, handler_name)(node, scope)
         raise LoweringError(f"unsupported expression: {type(node).__name__}")
 
-    def _constant(
-        self, node: c_ast.Constant, _scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
+    def _constant(self, node: c_ast.Constant, _scope: Scope) -> dgen.Value:
         literal = _LITERAL_TYPES.get(node.type)
         if literal is not None:
             parser_fn, bits, signed = literal
-            yield (
-                op := ConstantOp(value=parser_fn(node.value), type=c_int(bits, signed))
-            )
-            return op
+            return ConstantOp(value=parser_fn(node.value), type=c_int(bits, signed))
         if node.type in ("float", "double"):
-            yield (
-                op := ConstantOp(value=float(node.value.rstrip("fFlL")), type=Float64())
-            )
-            return op
-        yield (op := ConstantOp(value=0, type=c_int(32)))
-        return op
+            return ConstantOp(value=float(node.value.rstrip("fFlL")), type=Float64())
+        return ConstantOp(value=0, type=c_int(32))
 
-    def _identifier(
-        self, node: c_ast.ID, scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
+    def _identifier(self, node: c_ast.ID, scope: Scope) -> dgen.Value:
         """Lower an identifier reference.
 
         Variables emit lvalue_var + lvalue_to_rvalue. The source comes
@@ -611,68 +592,53 @@ class Parser:
         but we record the read so a subsequent write depends on it.
         """
         if node.name in self.types.enum_constants:
-            yield (
-                op := ConstantOp(
-                    value=self.types.enum_constants[node.name], type=c_int(32)
-                )
+            return ConstantOp(
+                value=self.types.enum_constants[node.name], type=c_int(32)
             )
-            return op
         if not scope.is_variable(node.name):
             return scope.lookup(node.name)
         variable_type = scope.lookup(node.name).type
-        yield (
-            lvalue := LvalueVarOp(
-                var_name=String().constant(node.name),
-                source=scope.read_source(node.name),
-                type=variable_type,
-            )
+        lvalue = LvalueVarOp(
+            var_name=String().constant(node.name),
+            source=scope.read_source(node.name),
+            type=variable_type,
         )
-        yield (load := LvalueToRvalueOp(lvalue=lvalue, type=variable_type))
+        load = LvalueToRvalueOp(lvalue=lvalue, type=variable_type)
         scope.record_read(node.name, load)
         return load
 
-    def _binary(
-        self, node: c_ast.BinaryOp, scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
+    def _binary(self, node: c_ast.BinaryOp, scope: Scope) -> dgen.Value:
         if node.op in ("&&", "||"):
-            return (yield from self._short_circuit(node, scope))
+            return self._short_circuit(node, scope)
 
-        lhs = yield from self._expression(node.left, scope)
-        rhs = yield from self._expression(node.right, scope)
+        lhs = self._expression(node.left, scope)
+        rhs = self._expression(node.right, scope)
 
         cls = _ALGEBRA.get(node.op)
         if cls is None:
             raise LoweringError(f"unsupported binary op: {node.op}")
 
         if node.op in _COMPARISONS:
-            yield (comparison := _binop(cls, lhs, rhs, lhs.type))
-            yield (cast := algebra.CastOp(input=comparison, type=c_int(32)))
-            return cast
+            comparison = _binop(cls, lhs, rhs, lhs.type)
+            return algebra.CastOp(input=comparison, type=c_int(32))
 
-        yield (op := _binop(cls, lhs, rhs, lhs.type))
-        return op
+        return _binop(cls, lhs, rhs, lhs.type)
 
-    def _short_circuit(
-        self, node: c_ast.BinaryOp, scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
+    def _short_circuit(self, node: c_ast.BinaryOp, scope: Scope) -> dgen.Value:
         """Lower && and || to expression-level IfOp (short-circuit)."""
-        lhs = yield from self._expression(node.left, scope)
-        yield from (bool_ops := list(self._to_bool(lhs)))
-        bool_lhs = bool_ops[-1] if bool_ops else lhs
+        lhs = self._expression(node.left, scope)
+        bool_lhs = self._to_bool(lhs)
 
         # RHS evaluated lazily inside a block.
         rhs_scope = scope.child()
-        rhs_val = _run_gen(self._expression(node.right, rhs_scope))
-        rhs_bool_ops = list(self._to_bool(rhs_val))
-        rhs_bool = rhs_bool_ops[-1] if rhs_bool_ops else rhs_val
-        rhs_cast = algebra.CastOp(input=rhs_bool, type=c_int(32))
+        rhs_val = self._expression(node.right, rhs_scope)
+        rhs_cast = algebra.CastOp(input=self._to_bool(rhs_val), type=c_int(32))
         rhs_block = dgen.Block(result=rhs_cast, captures=rhs_scope.captures)
 
         one_block = dgen.Block(result=ConstantOp(value=1, type=c_int(32)))
         zero_block = dgen.Block(result=ConstantOp(value=0, type=c_int(32)))
 
         empty = pack([])
-        yield empty
 
         if node.op == "&&":
             then_block = rhs_block
@@ -681,7 +647,7 @@ class Parser:
             then_block = one_block
             else_block = rhs_block
 
-        op = control_flow.IfOp(
+        return control_flow.IfOp(
             condition=bool_lhs,
             then_arguments=empty,
             else_arguments=empty,
@@ -689,30 +655,21 @@ class Parser:
             then_body=then_block,
             else_body=else_block,
         )
-        yield op
-        return op
 
-    def _unary(
-        self, node: c_ast.UnaryOp, scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
+    def _unary(self, node: c_ast.UnaryOp, scope: Scope) -> dgen.Value:
         entry = _UNARY.get(node.op)
         if entry is not None:
             cls, field_name = entry
-            inner = yield from self._expression(node.expr, scope)
-            yield (op := cls(**{field_name: inner, "type": inner.type}))
-            return op
+            inner = self._expression(node.expr, scope)
+            return cls(**{field_name: inner, "type": inner.type})
         if node.op == "+":
-            return (yield from self._expression(node.expr, scope))
+            return self._expression(node.expr, scope)
         raise LoweringError(f"unsupported unary op: {node.op}")
 
-    def _cast(
-        self, node: c_ast.Cast, scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
-        return (yield from self._expression(node.expr, scope))
+    def _cast(self, node: c_ast.Cast, scope: Scope) -> dgen.Value:
+        return self._expression(node.expr, scope)
 
-    def _ternary(
-        self, node: c_ast.TernaryOp, scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
+    def _ternary(self, node: c_ast.TernaryOp, scope: Scope) -> dgen.Value:
         raise LoweringError("ternary operator (?:) not yet supported")
 
 
@@ -728,15 +685,6 @@ class _Return:
 
     def __init__(self, value: dgen.Value) -> None:
         self.value = value
-
-
-def _run_gen(gen: Generator[dgen.Op, None, dgen.Value]) -> dgen.Value:
-    """Exhaust a generator and return its final value."""
-    while True:
-        try:
-            next(gen)
-        except StopIteration as e:
-            return e.value
 
 
 def _chain_all(values: list[dgen.Value]) -> dgen.Value:
