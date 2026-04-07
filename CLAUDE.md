@@ -152,7 +152,8 @@ python -m dgen.gen toy/dialects/toy.dgen > toy/dialects/toy.pyi
 
 ## Code style
 
-- **No function-level imports.** The only acceptable exception is breaking a genuine circular dependency between two modules (e.g. `type.py` ↔ `value.py`). If the import _can_ be top-level, it _must_ be top-level.
+- **No function-level imports**, even in tests. The only acceptable exception is breaking a genuine circular dependency between two modules (e.g. `type.py` ↔ `value.py`). If the import _can_ be top-level, it _must_ be top-level.
+- **Never use `id(value)` in sets or as dict keys.** `id()` is an untyped weak reference — the object can be garbage-collected and the id reused. Use the value itself.
 - Avoid `for ... in range()`
 - Avoid `isinstance` specialization, this is generally design smell
 - Don't special case. Refuse to add special cases that aren't explicitly called out in designs. Explicitly ask before adding any special cases to a design.
