@@ -20,41 +20,6 @@ from dgen.module import ConstantOp, pack
 
 from dcc2.cli import c_compiler
 from dcc2.dialects import c, c_double, c_float, c_int, c_ptr, c_void
-from dcc2.dialects.c import (
-    AssignOp,
-    CFunctionType,
-    LvalueToRvalueOp,
-    LvalueVarOp,
-    Struct,
-)
-from dcc2.dialects.c import (
-    AddressOfOp,
-    ArithmeticConvertOp,
-    ArrayDecayOp,
-    CommaOp,
-    CompoundAssignOp,
-    CReturnOp,
-    CSizeofOp,
-    Enum,
-    FunctionDecayOp,
-    IntegerPromoteOp,
-    LvalueArrowOp,
-    LvalueDerefOp,
-    LvalueMemberOp,
-    LvalueSubscriptOp,
-    LogicalNotOp,
-    ModuloOp,
-    NullToPointerOp,
-    PostDecrementOp,
-    PostIncrementOp,
-    PreDecrementOp,
-    PreIncrementOp,
-    ScalarToBoolOp,
-    ShiftLeftOp,
-    ShiftRightOp,
-    StructField,
-    Union,
-)
 from dcc2.parser.c_parser import parse_c_string
 from dcc2.parser.lowering import lower
 from dcc2.parser.type_resolver import TypeResolver, TypeResolverError
@@ -78,43 +43,43 @@ class TestDialect:
         assert c.c.name == "c"
 
     def test_lvalue_ops_exist(self) -> None:
-        assert LvalueVarOp is not None
-        assert LvalueDerefOp is not None
-        assert LvalueSubscriptOp is not None
-        assert LvalueMemberOp is not None
-        assert LvalueArrowOp is not None
-        assert LvalueToRvalueOp is not None
-        assert AddressOfOp is not None
-        assert AssignOp is not None
-        assert CompoundAssignOp is not None
-        assert PreIncrementOp is not None
-        assert PostIncrementOp is not None
-        assert PreDecrementOp is not None
-        assert PostDecrementOp is not None
+        assert c.LvalueVarOp is not None
+        assert c.LvalueDerefOp is not None
+        assert c.LvalueSubscriptOp is not None
+        assert c.LvalueMemberOp is not None
+        assert c.LvalueArrowOp is not None
+        assert c.LvalueToRvalueOp is not None
+        assert c.AddressOfOp is not None
+        assert c.AssignOp is not None
+        assert c.CompoundAssignOp is not None
+        assert c.PreIncrementOp is not None
+        assert c.PostIncrementOp is not None
+        assert c.PreDecrementOp is not None
+        assert c.PostDecrementOp is not None
 
     def test_conversion_ops_exist(self) -> None:
-        assert IntegerPromoteOp is not None
-        assert ArithmeticConvertOp is not None
-        assert ArrayDecayOp is not None
-        assert FunctionDecayOp is not None
-        assert NullToPointerOp is not None
-        assert ScalarToBoolOp is not None
+        assert c.IntegerPromoteOp is not None
+        assert c.ArithmeticConvertOp is not None
+        assert c.ArrayDecayOp is not None
+        assert c.FunctionDecayOp is not None
+        assert c.NullToPointerOp is not None
+        assert c.ScalarToBoolOp is not None
 
     def test_c_types_exist(self) -> None:
-        assert Struct is not None
-        assert StructField is not None
-        assert Union is not None
-        assert Enum is not None
-        assert CFunctionType is not None
+        assert c.Struct is not None
+        assert c.StructField is not None
+        assert c.Union is not None
+        assert c.Enum is not None
+        assert c.CFunctionType is not None
 
     def test_arithmetic_and_control_ops_exist(self) -> None:
-        assert CReturnOp is not None
-        assert CSizeofOp is not None
-        assert ModuloOp is not None
-        assert ShiftLeftOp is not None
-        assert ShiftRightOp is not None
-        assert LogicalNotOp is not None
-        assert CommaOp is not None
+        assert c.CReturnOp is not None
+        assert c.CSizeofOp is not None
+        assert c.ModuloOp is not None
+        assert c.ShiftLeftOp is not None
+        assert c.ShiftRightOp is not None
+        assert c.LogicalNotOp is not None
+        assert c.CommaOp is not None
 
     def test_type_constructors(self) -> None:
         signed = c_int(32)
@@ -242,7 +207,7 @@ class TestTypeResolver:
         ]
         node = c_ast.Struct("Point", decls)
         t = r.resolve(node)
-        assert isinstance(t, Struct)
+        assert isinstance(t, c.Struct)
         # Verify struct is cached and forward-referenceable.
         assert r._resolve_struct(c_ast.Struct("Point", None)) is t
 
@@ -275,8 +240,8 @@ class TestTypeResolver:
         ]
         s1 = r.resolve(c_ast.Struct(None, decl_x))
         s2 = r.resolve(c_ast.Struct(None, decl_y))
-        assert isinstance(s1, Struct)
-        assert isinstance(s2, Struct)
+        assert isinstance(s1, c.Struct)
+        assert isinstance(s2, c.Struct)
         assert s1 is not s2
 
     def test_enum_constants(self) -> None:
@@ -327,7 +292,7 @@ class TestTypeResolver:
             c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["int"])),
         )
         t = r.resolve(func_decl)
-        assert isinstance(t, CFunctionType)
+        assert isinstance(t, c.CFunctionType)
 
     def test_parse_c_string(self) -> None:
         ast = parse_c_string("int f(int x) { return x; }")
@@ -460,20 +425,20 @@ class TestMemoryOrdering:
         )
 
         # Collect ops by role.
-        assigns = [op for op in ir.body.ops if isinstance(op, AssignOp)]
-        reads = [op for op in ir.body.ops if isinstance(op, LvalueToRvalueOp)]
+        assigns = [op for op in ir.body.ops if isinstance(op, c.AssignOp)]
+        reads = [op for op in ir.body.ops if isinstance(op, c.LvalueToRvalueOp)]
 
         # Filter to x-variable ops only (skip a, b assignments/reads).
         x_assigns = [
             a
             for a in assigns
-            if isinstance(a.lvalue, LvalueVarOp)
+            if isinstance(a.lvalue, c.LvalueVarOp)
             and a.lvalue.var_name.__constant__.to_json() == "x"
         ]
         x_reads = [
             r
             for r in reads
-            if isinstance(r.lvalue, LvalueVarOp)
+            if isinstance(r.lvalue, c.LvalueVarOp)
             and r.lvalue.var_name.__constant__.to_json() == "x"
         ]
 
