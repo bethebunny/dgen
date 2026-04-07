@@ -466,3 +466,80 @@ class TestEndToEnd:
             run_c("int f() { int x = 1; int a = x; x = 2; int b = x; return a + b; }")
             == 3
         )
+
+
+class TestMemoryOrdering:
+    """Structural tests for the use-def ordering of memory operations."""
+
+    def test_diamond_read_write_dependencies(self) -> None:
+        """W1, R2, R3, W4: reads are independent, write fences both reads.
+
+        The use-def graph should be:
+            W1 ← R2  (read depends on write)
+            W1 ← R3  (read depends on write, independent of R2)
+            R2, R3 ← W4  (write depends on both reads via pack)
+            W4 ← R5  (final read depends on second write)
+
+        R2 must NOT be in the transitive dependencies of R3 (independent).
+        R2 and R3 must both be in the transitive dependencies of W4.
+        """
+        from dgen.graph import transitive_dependencies
+
+        from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
+
+        ir = lower(
+            parse_c_string(
+                "int f() { int x = 1; int a = x; int b = x; x = 2; return a + b + x; }"
+            )
+        )
+
+        # Collect ops by role.
+        assigns = [op for op in ir.body.ops if isinstance(op, AssignOp)]
+        reads = [op for op in ir.body.ops if isinstance(op, LvalueToRvalueOp)]
+
+        # Filter to x-variable ops only (skip a, b assignments/reads).
+        x_assigns = [
+            a
+            for a in assigns
+            if isinstance(a.lvalue, LvalueVarOp)
+            and a.lvalue.var_name.__constant__.to_json() == "x"
+        ]
+        x_reads = [
+            r
+            for r in reads
+            if isinstance(r.lvalue, LvalueVarOp)
+            and r.lvalue.var_name.__constant__.to_json() == "x"
+        ]
+
+        assert len(x_assigns) == 2  # W1 (x=1) and W4 (x=2)
+        assert len(x_reads) == 3  # R2 (for a), R3 (for b), R5 (for return x)
+
+        write_1, write_4 = x_assigns
+        read_2, read_3, read_5 = x_reads
+
+        def deps(value: dgen.Value) -> set[dgen.Value]:
+            return set(transitive_dependencies(value))
+
+        # R2 and R3 are independent: neither is in the other's dependencies.
+        assert read_2 not in deps(read_3)
+        assert read_3 not in deps(read_2)
+
+        # Both R2 and R3 depend on W1.
+        assert write_1 in deps(read_2)
+        assert write_1 in deps(read_3)
+
+        # W4 depends on both R2 and R3.
+        write_4_deps = deps(write_4)
+        assert read_2 in write_4_deps
+        assert read_3 in write_4_deps
+
+        # R5 (return x) depends on W4.
+        assert write_4 in deps(read_5)
+
+        # End-to-end correctness: a=1, b=1, x=2, total=4.
+        assert (
+            run_c(
+                "int f() { int x = 1; int a = x; int b = x; x = 2; return a + b + x; }"
+            )
+            == 4
+        )
