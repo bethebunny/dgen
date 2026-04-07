@@ -151,6 +151,40 @@ class ControlFlowToGoto(Pass):
                     f"does not match declared type {value.type}"
                 )
 
+    @staticmethod
+    def _make_branch_label(
+        name: str,
+        body: dgen.Block,
+        merge_self: BlockParameter,
+    ) -> goto.LabelOp:
+        """Build a label for one branch of an IfOp.
+
+        If the body is already terminated (contains a goto.BranchOp from
+        a prior pass like ResolveJumpMarkers or CReturnToGoto), use the
+        body as-is without adding a merge branch. Otherwise, append a
+        branch to the if's merge point.
+        """
+        # Check if body is already terminated by a prior goto.BranchOp.
+        terminated = any(isinstance(v, goto.BranchOp) for v in body.values)
+        if terminated:
+            return goto.LabelOp(
+                name=name,
+                initial_arguments=pack([]),
+                body=dgen.Block(
+                    result=body.result,
+                    captures=list(body.captures),
+                ),
+            )
+        merge_br = goto.BranchOp(target=merge_self, arguments=pack([body.result]))
+        return goto.LabelOp(
+            name=name,
+            initial_arguments=pack([]),
+            body=dgen.Block(
+                result=merge_br,
+                captures=[merge_self, *body.captures],
+            ),
+        )
+
     @lowering_for(control_flow.IfOp)
     def lower_if(self, op: control_flow.IfOp) -> dgen.Value | None:
         lid = self._loop_counter
@@ -160,30 +194,8 @@ class ControlFlowToGoto(Pass):
         merge_exit = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
         merge_result = BlockArgument(name=f"if_result{lid}", type=op.type)
 
-        # Both branches carry their body result to %self.
-        then_br = goto.BranchOp(
-            target=merge_self, arguments=pack([op.then_body.result])
-        )
-        then_label = goto.LabelOp(
-            name=f"if_then{lid}",
-            initial_arguments=pack([]),
-            body=dgen.Block(
-                result=then_br,
-                captures=[merge_self, *op.then_body.captures],
-            ),
-        )
-
-        else_br = goto.BranchOp(
-            target=merge_self, arguments=pack([op.else_body.result])
-        )
-        else_label = goto.LabelOp(
-            name=f"if_else{lid}",
-            initial_arguments=pack([]),
-            body=dgen.Block(
-                result=else_br,
-                captures=[merge_self, *op.else_body.captures],
-            ),
-        )
+        then_label = self._make_branch_label(f"if_then{lid}", op.then_body, merge_self)
+        else_label = self._make_branch_label(f"if_else{lid}", op.else_body, merge_self)
 
         cond_br = goto.ConditionalBranchOp(
             condition=op.condition,

@@ -552,6 +552,38 @@ class TestBreakContinue:
         )
 
 
+class TestEarlyReturn:
+    """Brick 6.5: early return inside control flow."""
+
+    def test_early_return_in_if(self) -> None:
+        """Return in then-branch, fallthrough in else."""
+        assert run_c("int f(int x) { if (x > 0) { return 1; } return 0; }", 5) == 1
+        assert run_c("int f(int x) { if (x > 0) { return 1; } return 0; }", -1) == 0
+
+    def test_early_return_in_loop(self) -> None:
+        """Return inside while body exits the function."""
+        assert (
+            run_c(
+                "int f() { int i = 0;"
+                " while (i < 10) { if (i == 5) { return i; } i = i + 1; }"
+                " return -1; }"
+            )
+            == 5
+        )
+
+    @pytest.mark.xfail(
+        reason="Codegen emits empty exit block when all IfOp branches diverge"
+    )
+    def test_early_return_both_branches(self) -> None:
+        """Both if branches return."""
+        assert (
+            run_c("int f(int x) { if (x) { return 42; } else { return 7; } }", 1) == 42
+        )
+        assert (
+            run_c("int f(int x) { if (x) { return 42; } else { return 7; } }", 0) == 7
+        )
+
+
 class TestMemoryOrdering:
     """Structural tests for the use-def ordering of memory operations."""
 

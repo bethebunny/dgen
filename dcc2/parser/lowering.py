@@ -386,12 +386,20 @@ class Parser:
 
         Stops processing on _Return sentinel (propagated upward) or jump
         ops (BreakOp, ContinueOp — remaining statements are dead code).
+        Preceding effects are chained into the return value so they
+        remain reachable in the use-def graph.
         """
         last: dgen.Value | None = None
         if node.block_items:
             for item in node.block_items:
                 result = self._statement(item, scope)
                 if isinstance(result, _Return):
+                    # Chain preceding effects into the return value.
+                    if last is not None:
+                        chained = ChainOp(
+                            lhs=result.value, rhs=last, type=result.value.type
+                        )
+                        return _Return(chained)
                     return result
                 last = result
                 if isinstance(result, (control_flow.BreakOp, control_flow.ContinueOp)):
