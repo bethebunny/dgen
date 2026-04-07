@@ -41,18 +41,22 @@ class Scope:
     Tracks per variable:
     - _bindings: the current value (latest write, for type resolution)
     - _variables: which names are mutable variables
-    - _mem_order: the latest operation (read or write) on each variable,
-      used as LvalueVarOp.source to encode statement order
+    - _last_write: the latest write on each variable (reads source from this)
+    - _pending_reads: reads since the last write (a write must depend on all)
 
-    Every operation on a variable chains through the previous one via
-    source, creating a total per-variable order matching C statement
-    semantics. Operations on different variables are independent.
+    Ordering rules:
+    - Reads depend on the latest write only. Back-to-back reads are
+      independent — they can execute in any order.
+    - A write depends on ALL pending reads (via a pack), ensuring every
+      read completes before the write overwrites the value.
+    - Operations on different variables are fully independent.
     """
 
     def __init__(self, parent: Scope | None = None) -> None:
         self._bindings: dict[str, dgen.Value] = {}
         self._variables: set[str] = set()
-        self._mem_order: dict[str, dgen.Value] = {}
+        self._last_write: dict[str, dgen.Value] = {}
+        self._pending_reads: dict[str, list[dgen.Value]] = {}
         self._parent = parent
         self.captures: list[dgen.Value] = []
 
@@ -63,25 +67,36 @@ class Scope:
         """Bind a name as a mutable variable and initialize ordering."""
         self._bindings[name] = value
         self._variables.add(name)
-        self._mem_order[name] = value
+        self._last_write[name] = value
+        self._pending_reads[name] = []
 
     def is_variable(self, name: str) -> bool:
         if name in self._variables:
             return True
         return self._parent.is_variable(name) if self._parent is not None else False
 
-    def var_source(self, name: str) -> dgen.Value:
-        """Source for the next operation on this variable: the latest op."""
-        return self._lookup_mem_order(name)
+    def var_source_for_read(self, name: str) -> dgen.Value:
+        """Source for a read: the latest write. Reads are independent."""
+        return self._lookup_last_write(name)
+
+    def var_source_for_write(self, name: str) -> dgen.Value:
+        """Source for a write: a pack of all pending reads (or the last
+        write if no reads have occurred). The write depends on all of
+        them, ensuring reads complete before the overwrite."""
+        reads = self._pending_reads.get(name, [])
+        if reads:
+            return pack(reads)
+        return self._lookup_last_write(name)
 
     def record_read(self, name: str, read_op: dgen.Value) -> None:
-        """Record a read as the latest memory operation."""
-        self._mem_order[name] = read_op
+        """Record a read. Does not advance the write chain."""
+        self._pending_reads.setdefault(name, []).append(read_op)
 
     def record_write(self, name: str, write_op: dgen.Value) -> None:
-        """Record a write as both the current value and latest operation."""
+        """Record a write. Clears pending reads and advances the chain."""
         self._bindings[name] = write_op
-        self._mem_order[name] = write_op
+        self._last_write[name] = write_op
+        self._pending_reads[name] = []
 
     def lookup(self, name: str) -> dgen.Value:
         return self._lookup_binding(name)
@@ -96,12 +111,12 @@ class Scope:
             return val
         raise LoweringError(f"undefined: {name}")
 
-    def _lookup_mem_order(self, name: str) -> dgen.Value:
-        if name in self._mem_order:
-            return self._mem_order[name]
+    def _lookup_last_write(self, name: str) -> dgen.Value:
+        if name in self._last_write:
+            return self._last_write[name]
         if self._parent is not None:
-            return self._parent._lookup_mem_order(name)
-        raise LoweringError(f"no mem order for: {name}")
+            return self._parent._lookup_last_write(name)
+        raise LoweringError(f"no write for: {name}")
 
     def has(self, name: str) -> bool:
         if name in self._bindings:
@@ -394,14 +409,15 @@ class Parser:
                 f"unsupported assignment target: {type(node.lvalue).__name__}"
             )
         var_name = node.lvalue.name
-        source = scope.var_source(var_name)
+        source = scope.var_source_for_write(var_name)
+        var_type = scope.lookup(var_name).type
         lv = LvalueVarOp(
             var_name=String().constant(var_name),
             source=source,
-            type=source.type,
+            type=var_type,
         )
         yield lv
-        assign = AssignOp(lvalue=lv, rvalue=rhs, type=source.type)
+        assign = AssignOp(lvalue=lv, rvalue=rhs, type=var_type)
         yield assign
         scope.record_write(var_name, assign)
         return assign
@@ -451,14 +467,15 @@ class Parser:
             return op
         if not scope.is_variable(node.name):
             return scope.lookup(node.name)
-        source = scope.var_source(node.name)
+        source = scope.var_source_for_read(node.name)
+        var_type = scope.lookup(node.name).type
         lv = LvalueVarOp(
             var_name=String().constant(node.name),
             source=source,
-            type=source.type,
+            type=var_type,
         )
         yield lv
-        load = LvalueToRvalueOp(lvalue=lv, type=source.type)
+        load = LvalueToRvalueOp(lvalue=lv, type=var_type)
         yield load
         scope.record_read(node.name, load)
         return load
