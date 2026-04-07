@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil, Span, String
+from dgen.dialects.builtin import Never, Nil, Span, String
 from dgen.dialects.index import Index
 
 c = Dialect("c")
@@ -144,7 +144,7 @@ class ScalarToBoolOp(Op):
 @dataclass(eq=False, kw_only=True)
 class CReturnOp(Op):
     value: Value
-    type: Type = Nil()
+    type: Type = Never()
 
 @dataclass(eq=False, kw_only=True)
 class CSizeofOp(Op):

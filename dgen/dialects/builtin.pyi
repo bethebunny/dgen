@@ -14,6 +14,9 @@ builtin = Dialect("builtin")
 class Nil(Type): ...
 
 @dataclass(frozen=True, eq=False)
+class Never(Type): ...
+
+@dataclass(frozen=True, eq=False)
 class String(Type): ...
 
 @dataclass(frozen=True, eq=False)

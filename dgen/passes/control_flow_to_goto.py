@@ -77,6 +77,54 @@ from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 
 
+class ResolveJumpMarkers(Pass):
+    """Replace break/continue markers with goto.branch ops.
+
+    Called by ControlFlowToGoto on loop bodies *before* constructing
+    the goto structure. Walks the body block tree and replaces:
+    - BreakOp → goto.branch<%exit>([])
+    - ContinueOp → goto.branch<%self>([])
+
+    The loop target parameters are added as captures of each block
+    the resolver enters, so the replacement BranchOps can reference
+    them. The caller is responsible for cleaning up these temporary
+    captures afterward.
+    """
+
+    allow_unregistered_ops = True
+
+    def __init__(
+        self,
+        self_param: BlockParameter,
+        exit_param: BlockParameter,
+    ) -> None:
+        self._self_param = self_param
+        self._exit_param = exit_param
+
+    def _lower_block(self, block: dgen.Block) -> None:
+        # Add loop targets as captures so replacement BranchOps can
+        # reference them (captures form the stop set for block.values).
+        block.captures = [self._self_param, self._exit_param, *block.captures]
+        # Use the standard _lower_block logic, but skip recursing into
+        # nested loop bodies — those belong to inner loops.
+        for v in block.values:
+            result = self._dispatch_handlers(v)
+            effective = result if result is not None else v
+            if not isinstance(effective, (control_flow.WhileOp, control_flow.ForOp)):
+                for _, child_block in effective.blocks:
+                    self._lower_block(child_block)
+            if result is not None:
+                block.replace_uses_of(v, result)
+
+    @lowering_for(control_flow.BreakOp)
+    def lower_break(self, op: control_flow.BreakOp) -> dgen.Value | None:
+        return goto.BranchOp(target=self._exit_param, arguments=pack([]))
+
+    @lowering_for(control_flow.ContinueOp)
+    def lower_continue(self, op: control_flow.ContinueOp) -> dgen.Value | None:
+        return goto.BranchOp(target=self._self_param, arguments=pack([]))
+
+
 class ControlFlowToGoto(Pass):
     allow_unregistered_ops = True
 
@@ -224,6 +272,13 @@ class ControlFlowToGoto(Pass):
         header_self = BlockParameter(name="self", type=goto.Label())
         header_exit = BlockParameter(name=f"exit{lid}", type=goto.Label())
 
+        # Resolve break/continue markers before constructing goto structure.
+        # The resolver adds temporary captures that we strip afterward.
+        ResolveJumpMarkers(header_self, header_exit)._lower_block(op.body)
+        original_captures = [
+            c for c in op.body.captures if c is not header_self and c is not header_exit
+        ]
+
         # --- Body label: remap body block args, append back-edge ---
         for orig, new in zip(op.body.args, body_args):
             op.body.replace_uses_of(orig, new)
@@ -240,7 +295,7 @@ class ControlFlowToGoto(Pass):
         body_block = dgen.Block(
             result=back_br,
             args=body_args,
-            captures=[header_self] + list(op.body.captures),
+            captures=[header_self, header_exit] + original_captures,
         )
         body_label = goto.LabelOp(
             name=f"while_body{lid}",
@@ -268,7 +323,7 @@ class ControlFlowToGoto(Pass):
                 result=cond_br,
                 parameters=[header_self, header_exit],
                 args=header_args,
-                captures=list(op.condition.captures) + list(op.body.captures),
+                captures=list(op.condition.captures) + original_captures,
             ),
         )
 

@@ -25,7 +25,7 @@ from dgen.dialects.number import Boolean, Float64
 from dgen.module import pack
 
 from dcc2.dialects import c_int
-from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
+from dcc2.dialects.c import AssignOp, CReturnOp, LvalueToRvalueOp, LvalueVarOp
 from dcc2.parser.c_literals import parse_c_char, parse_c_int
 from dcc2.parser.type_resolver import TypeResolver
 
@@ -382,7 +382,11 @@ class Parser:
         )
 
     def _compound(self, node: c_ast.Compound, scope: Scope) -> dgen.Value | _Return:
-        """Lower a compound statement. Returns the last statement's value."""
+        """Lower a compound statement. Returns the last statement's value.
+
+        Stops processing on _Return sentinel (propagated upward) or jump
+        ops (BreakOp, ContinueOp — remaining statements are dead code).
+        """
         last: dgen.Value | None = None
         if node.block_items:
             for item in node.block_items:
@@ -390,6 +394,8 @@ class Parser:
                 if isinstance(result, _Return):
                     return result
                 last = result
+                if isinstance(result, (control_flow.BreakOp, control_flow.ContinueOp)):
+                    break
         return last if last is not None else Nil().constant(None)
 
     # --- Statements ---
@@ -407,6 +413,16 @@ class Parser:
         if node.expr is None:
             return _Return(self._current_return_type.constant(0))
         return _Return(self._expression(node.expr, scope))
+
+    @_stmt(c_ast.Break)
+    def _break_statement(self, node: c_ast.Break, scope: Scope) -> control_flow.BreakOp:
+        return control_flow.BreakOp()
+
+    @_stmt(c_ast.Continue)
+    def _continue_statement(
+        self, node: c_ast.Continue, scope: Scope
+    ) -> control_flow.ContinueOp:
+        return control_flow.ContinueOp()
 
     @_stmt(c_ast.Compound)
     def _compound_statement(
@@ -488,22 +504,35 @@ class Parser:
 
         Returns a single value that transitively depends on every
         statement's result, keeping independent mutations alive.
+
+        Jump ops (BreakOp, ContinueOp, CReturnOp) terminate the statement
+        sequence. Preceding effects are chained through the jump op so it
+        becomes the block's effective result, detectable by the goto pass.
         """
         if isinstance(node, c_ast.Compound) and node.block_items:
             results: list[dgen.Value] = []
+            jump: dgen.Value | None = None
             for item in node.block_items:
                 result = self._statement(item, scope)
+                if isinstance(result, (control_flow.BreakOp, control_flow.ContinueOp)):
+                    jump = result
+                    break
                 if isinstance(result, _Return):
-                    raise LoweringError(
-                        "return inside control flow not yet supported (Brick 6.5)"
-                    )
+                    jump = CReturnOp(value=result.value)
+                    break
                 results.append(result)
+            if jump is not None:
+                # Chain effects before jump so they are scheduled first
+                # in topo order. The jump (rhs) is a dependency — it will
+                # be visited after effects (lhs) during linearization.
+                if results:
+                    effects = pack(results) if len(results) != 1 else results[0]
+                    return ChainOp(lhs=effects, rhs=jump, type=jump.type)
+                return jump
             return pack(results) if len(results) != 1 else results[0]
         result = self._statement(node, scope)
         if isinstance(result, _Return):
-            raise LoweringError(
-                "return inside control flow not yet supported (Brick 6.5)"
-            )
+            return CReturnOp(value=result.value)
         return result
 
     def _propagate_cf_ordering(
