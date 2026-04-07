@@ -2,13 +2,17 @@
 
 Thin 1:1 lowering from pycparser AST to dgen ops. Semantic transforms
 (type promotions, struct layout, lvalue elimination) belong in passes.
-Follows the Toy dialect pattern: generator methods yielding ops.
+
+Every statement handler returns a single Value whose transitive
+dependencies contain every op the statement produced. Expression
+handlers use generators internally but the statement layer does not
+return lists — graph structure is preserved in the use-def edges.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Generator, Iterator
+from collections.abc import Generator
 
 from pycparser import c_ast
 
@@ -206,7 +210,6 @@ class Parser:
         c_ast.UnaryOp: "_unary",
         c_ast.Cast: "_cast",
         c_ast.TernaryOp: "_ternary",
-        c_ast.Assignment: "_assignment",
     }
 
     # Maps pycparser statement node type -> handler method name.
@@ -320,14 +323,8 @@ class Parser:
             result_type=return_type,
         )
 
-        return_value, ops = self._compound(funcdef.body, scope)
-
-        if return_value is not None:
-            block_result = return_value
-        elif ops:
-            block_result = ops[-1]
-        else:
-            block_result = ConstantOp(value=0, type=return_type)
+        result = self._compound(funcdef.body, scope)
+        block_result = result.value if isinstance(result, _Return) else result
 
         return function.FunctionOp(
             name=name,
@@ -336,32 +333,26 @@ class Parser:
             type=function_type,
         )
 
-    def _compound(
-        self, node: c_ast.Compound, scope: Scope
-    ) -> tuple[dgen.Value | None, list[dgen.Op]]:
-        """Lower a compound statement. Returns (return_value, ops)."""
-        ops: list[dgen.Op] = []
-        return_value: dgen.Value | None = None
+    def _compound(self, node: c_ast.Compound, scope: Scope) -> dgen.Value | _Return:
+        """Lower a compound statement. Returns the last statement's value."""
+        last: dgen.Value | None = None
         if node.block_items:
             for item in node.block_items:
-                if return_value is not None:
-                    break
                 result = self._statement(item, scope)
                 if isinstance(result, _Return):
-                    return_value = result.value
-                else:
-                    ops.extend(result)
-        return return_value, ops
+                    return result
+                last = result
+        return last if last is not None else ConstantOp(value=0, type=Nil())
 
     # --- Statements ---
 
-    def _statement(self, node: c_ast.Node, scope: Scope) -> list[dgen.Op] | _Return:
-        """Lower a statement. Dispatches to handler by node type."""
+    def _statement(self, node: c_ast.Node, scope: Scope) -> dgen.Value | _Return:
+        """Lower a statement. Returns a single Value or _Return."""
         handler_name = self._STMT_DISPATCH.get(type(node))
         if handler_name is not None:
             return getattr(self, handler_name)(node, scope)
         # Expression statement -- evaluate for side effects.
-        return list(self._expression(node, scope))
+        return _run_gen(self._expression(node, scope))
 
     def _return_statement(self, node: c_ast.Return, scope: Scope) -> _Return:
         if node.expr is None:
@@ -370,48 +361,42 @@ class Parser:
 
     def _compound_statement(
         self, node: c_ast.Compound, scope: Scope
-    ) -> list[dgen.Op] | _Return:
-        return_value, ops = self._compound(node, scope.child())
-        if return_value is not None:
-            return _Return(return_value)
-        return ops
+    ) -> dgen.Value | _Return:
+        return self._compound(node, scope.child())
 
-    def _declaration_statement(self, node: c_ast.Decl, scope: Scope) -> list[dgen.Op]:
-        return list(self._declaration(node, scope))
+    def _declaration_statement(
+        self, node: c_ast.Decl, scope: Scope
+    ) -> dgen.Value | _Return:
+        return self._declaration(node, scope)
 
-    def _declaration(self, node: c_ast.Decl, scope: Scope) -> Iterator[dgen.Op]:
-        """Lower a declaration (e.g. int x = 5;)."""
+    def _declaration(self, node: c_ast.Decl, scope: Scope) -> dgen.Value:
+        """Lower a declaration (e.g. int x = 5;). Returns the AssignOp."""
         if node.name is None:
             if node.type is not None:
                 self.types.resolve(node.type)
-            return
+            return ConstantOp(value=0, type=Nil())
         variable_type = self.types.resolve(node.type)
         if node.init is not None:
             initial_value = _run_gen(self._expression(node.init, scope))
         else:
-            yield (initial_value := ConstantOp(value=0, type=variable_type))
-        yield (
-            lvalue := LvalueVarOp(
-                var_name=String().constant(node.name),
-                source=initial_value,
-                type=variable_type,
-            )
+            initial_value = ConstantOp(value=0, type=variable_type)
+        lvalue = LvalueVarOp(
+            var_name=String().constant(node.name),
+            source=initial_value,
+            type=variable_type,
         )
-        yield (
-            assign := AssignOp(lvalue=lvalue, rvalue=initial_value, type=variable_type)
-        )
+        assign = AssignOp(lvalue=lvalue, rvalue=initial_value, type=variable_type)
         scope.declare_variable(node.name, assign)
+        return assign
 
     def _assignment_statement(
         self, node: c_ast.Assignment, scope: Scope
-    ) -> list[dgen.Op] | _Return:
-        return list(self._assignment(node, scope))
+    ) -> dgen.Value | _Return:
+        return self._assignment(node, scope)
 
-    def _assignment(
-        self, node: c_ast.Assignment, scope: Scope
-    ) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower an assignment expression."""
-        rhs = yield from self._expression(node.rvalue, scope)
+    def _assignment(self, node: c_ast.Assignment, scope: Scope) -> dgen.Value:
+        """Lower an assignment expression. Returns the AssignOp."""
+        rhs = _run_gen(self._expression(node.rvalue, scope))
 
         if not isinstance(node.lvalue, c_ast.ID):
             raise LoweringError(
@@ -419,14 +404,12 @@ class Parser:
             )
         variable_name = node.lvalue.name
         variable_type = scope.lookup(variable_name).type
-        yield (
-            lvalue := LvalueVarOp(
-                var_name=String().constant(variable_name),
-                source=scope.write_source(variable_name),
-                type=variable_type,
-            )
+        lvalue = LvalueVarOp(
+            var_name=String().constant(variable_name),
+            source=scope.write_source(variable_name),
+            type=variable_type,
         )
-        yield (assign := AssignOp(lvalue=lvalue, rvalue=rhs, type=variable_type))
+        assign = AssignOp(lvalue=lvalue, rvalue=rhs, type=variable_type)
         scope.record_write(variable_name, assign)
         return assign
 
@@ -441,28 +424,23 @@ class Parser:
         return cmp
 
     def _block_from(self, node: c_ast.Node, scope: Scope) -> dgen.Block:
-        """Lower a statement into a Block (for control flow bodies).
+        """Lower a statement into a Nil-typed Block for control flow bodies."""
+        return self._nil_block(self._body_result(node, scope), scope)
+
+    def _nil_block(self, body: dgen.Value, scope: Scope) -> dgen.Block:
+        """Wrap a body value in a Nil-typed block result."""
+        nil = ConstantOp(value=0, type=Nil())
+        result = ChainOp(lhs=nil, rhs=body, type=Nil())
+        return dgen.Block(result=result, captures=scope.captures)
+
+    def _body_result(self, node: c_ast.Node, scope: Scope) -> dgen.Value:
+        """Lower control-flow body statements, chaining all results.
 
         For compound bodies, uses the provided scope directly (no extra
-        child scope) so that variable writes are visible to the caller.
+        child scope) so variable writes are visible to the caller.
 
-        The result chains a nil value with all statement-level results so
-        every side effect is reachable (independent variable mutations
-        would otherwise be dead code).
-        """
-        stmt_results = self._lower_body_stmts(node, scope)
-        nil = ConstantOp(value=0, type=Nil())
-        if not stmt_results:
-            block_result: dgen.Value = nil
-        else:
-            block_result = ChainOp(lhs=nil, rhs=pack(stmt_results), type=Nil())
-        return dgen.Block(result=block_result, captures=scope.captures)
-
-    def _lower_body_stmts(self, node: c_ast.Node, scope: Scope) -> list[dgen.Value]:
-        """Lower statement(s) and return each statement's final value.
-
-        These are the values that the block result must depend on to keep
-        all side effects alive.
+        Returns a single value that transitively depends on every
+        statement's result, keeping independent mutations alive.
         """
         if isinstance(node, c_ast.Compound) and node.block_items:
             results: list[dgen.Value] = []
@@ -472,15 +450,14 @@ class Parser:
                     raise LoweringError(
                         "return inside control flow not yet supported (Brick 6.5)"
                     )
-                if result:
-                    results.append(result[-1])
-            return results
+                results.append(result)
+            return _chain_all(results)
         result = self._statement(node, scope)
         if isinstance(result, _Return):
             raise LoweringError(
                 "return inside control flow not yet supported (Brick 6.5)"
             )
-        return [result[-1]] if result else []
+        return result
 
     def _propagate_cf_ordering(
         self,
@@ -509,10 +486,9 @@ class Parser:
             if scope.is_variable(name):
                 scope.record_read(name, cf_op)
 
-    def _if_statement(self, node: c_ast.If, scope: Scope) -> list[dgen.Op] | _Return:
+    def _if_statement(self, node: c_ast.If, scope: Scope) -> dgen.Value | _Return:
         cond = _run_gen(self._expression(node.cond, scope))
-        bool_ops: list[dgen.Op] = list(self._to_bool(cond))
-        bool_cond = bool_ops[-1] if bool_ops else cond
+        bool_cond = _run_gen(self._to_bool(cond))
 
         then_scope = scope.child()
         then_block = self._block_from(node.iftrue, then_scope)
@@ -534,16 +510,13 @@ class Parser:
         )
 
         self._propagate_cf_ordering(scope, [then_scope, else_scope], if_op)
-        return [*bool_ops, empty, if_op]
+        return if_op
 
-    def _while_statement(
-        self, node: c_ast.While, scope: Scope
-    ) -> list[dgen.Op] | _Return:
+    def _while_statement(self, node: c_ast.While, scope: Scope) -> dgen.Value | _Return:
         # Condition block: evaluate condition in child scope, convert to bool.
         cond_scope = scope.child()
         cond_val = _run_gen(self._expression(node.cond, cond_scope))
-        cond_bool_ops = list(self._to_bool(cond_val))
-        cond_result = cond_bool_ops[-1] if cond_bool_ops else cond_val
+        cond_result = _run_gen(self._to_bool(cond_val))
         cond_block = dgen.Block(result=cond_result, captures=cond_scope.captures)
 
         # Body block.
@@ -556,47 +529,37 @@ class Parser:
         )
 
         self._propagate_cf_ordering(scope, [cond_scope, body_scope], while_op)
-        return [empty, while_op]
+        return while_op
 
-    def _for_statement(self, node: c_ast.For, scope: Scope) -> list[dgen.Op] | _Return:
-        ops: list[dgen.Op] = []
-
+    def _for_statement(self, node: c_ast.For, scope: Scope) -> dgen.Value | _Return:
         # Init runs in current scope.
         if node.init is not None:
             if isinstance(node.init, c_ast.DeclList):
                 for decl in node.init.decls:
-                    ops.extend(self._declaration(decl, scope))
+                    self._declaration(decl, scope)
             else:
                 result = self._statement(node.init, scope)
                 if isinstance(result, _Return):
                     raise LoweringError("return in for-init")
-                ops.extend(result)
 
         # Condition block.
         cond_scope = scope.child()
         if node.cond is not None:
             cond_val = _run_gen(self._expression(node.cond, cond_scope))
-            cond_bool_ops = list(self._to_bool(cond_val))
-            cond_result = cond_bool_ops[-1] if cond_bool_ops else cond_val
+            cond_result = _run_gen(self._to_bool(cond_val))
             cond_block = dgen.Block(result=cond_result, captures=cond_scope.captures)
         else:
             cond_block = dgen.Block(result=ConstantOp(value=1, type=c_int(32)))
 
         # Body block: body statements + update appended.
         body_scope = scope.child()
-        stmt_results = self._lower_body_stmts(node.stmt, body_scope)
+        body_result = self._body_result(node.stmt, body_scope)
         if node.next is not None:
-            update_result = self._statement(node.next, body_scope)
-            if isinstance(update_result, _Return):
+            update = self._statement(node.next, body_scope)
+            if isinstance(update, _Return):
                 raise LoweringError("return in for-update")
-            if update_result:
-                stmt_results.append(update_result[-1])
-        nil = ConstantOp(value=0, type=Nil())
-        if not stmt_results:
-            block_result: dgen.Value = nil
-        else:
-            block_result = ChainOp(lhs=nil, rhs=pack(stmt_results), type=Nil())
-        body_block = dgen.Block(result=block_result, captures=body_scope.captures)
+            body_result = ChainOp(lhs=update, rhs=body_result, type=update.type)
+        body_block = self._nil_block(body_result, body_scope)
 
         empty = pack([])
         while_op = control_flow.WhileOp(
@@ -604,8 +567,7 @@ class Parser:
         )
 
         self._propagate_cf_ordering(scope, [cond_scope, body_scope], while_op)
-        ops.extend([empty, while_op])
-        return ops
+        return while_op
 
     # --- Expressions ---
 
@@ -613,6 +575,9 @@ class Parser:
         self, node: c_ast.Node, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression. Dispatches to handler by node type."""
+        # Assignment is a plain function, not a generator.
+        if isinstance(node, c_ast.Assignment):
+            return self._assignment(node, scope)
         handler_name = self._EXPR_DISPATCH.get(type(node))
         if handler_name is not None:
             return (yield from getattr(self, handler_name)(node, scope))
@@ -772,6 +737,21 @@ def _run_gen(gen: Generator[dgen.Op, None, dgen.Value]) -> dgen.Value:
             next(gen)
         except StopIteration as e:
             return e.value
+
+
+def _chain_all(values: list[dgen.Value]) -> dgen.Value:
+    """Chain a list of values so the result depends on all of them.
+
+    Independent values (e.g. mutations to different variables) have no
+    use-def edge between them. ChainOp makes the last value depend on
+    all earlier ones, keeping them alive in the block.
+    """
+    if not values:
+        return ConstantOp(value=0, type=Nil())
+    result = values[0]
+    for v in values[1:]:
+        result = ChainOp(lhs=v, rhs=result, type=v.type)
+    return result
 
 
 # ---------------------------------------------------------------------------
