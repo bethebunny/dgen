@@ -11,13 +11,53 @@ import dgen
 from dgen import Dialect
 from dgen.block import BlockArgument
 from dgen.dialects import function, index
+from dgen.dialects.builtin import Nil
 from dgen.dialects.function import Function as FunctionType
-from dgen.dialects.number import SignedInteger
+from dgen.dialects.memory import Reference
+from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
+from dgen.graph import transitive_dependencies
 from dgen.module import ConstantOp, pack
 
 from dcc2.cli import c_compiler
+from dcc2.dialects import c, c_double, c_float, c_int, c_ptr, c_void
+from dcc2.dialects.c import (
+    AssignOp,
+    CFunctionType,
+    LvalueToRvalueOp,
+    LvalueVarOp,
+    Struct,
+)
+from dcc2.dialects.c import (
+    AddressOfOp,
+    ArithmeticConvertOp,
+    ArrayDecayOp,
+    CommaOp,
+    CompoundAssignOp,
+    CReturnOp,
+    CSizeofOp,
+    Enum,
+    FunctionDecayOp,
+    IntegerPromoteOp,
+    LvalueArrowOp,
+    LvalueDerefOp,
+    LvalueMemberOp,
+    LvalueSubscriptOp,
+    LogicalNotOp,
+    ModuloOp,
+    NullToPointerOp,
+    PostDecrementOp,
+    PostIncrementOp,
+    PreDecrementOp,
+    PreIncrementOp,
+    ScalarToBoolOp,
+    ShiftLeftOp,
+    ShiftRightOp,
+    StructField,
+    Union,
+)
 from dcc2.parser.c_parser import parse_c_string
 from dcc2.parser.lowering import lower
+from dcc2.parser.type_resolver import TypeResolver, TypeResolverError
 
 # Make dcc2 dialect discoverable.
 Dialect.paths.append(Path(__file__).parent.parent / "dialects")
@@ -35,27 +75,9 @@ class TestDialect:
     """Brick 1: Verify the C dialect loads and all ops/types are available."""
 
     def test_dialect_loads(self) -> None:
-        from dcc2.dialects import c
-
         assert c.c.name == "c"
 
     def test_lvalue_ops_exist(self) -> None:
-        from dcc2.dialects.c import (
-            AddressOfOp,
-            AssignOp,
-            CompoundAssignOp,
-            LvalueArrowOp,
-            LvalueDerefOp,
-            LvalueMemberOp,
-            LvalueSubscriptOp,
-            LvalueToRvalueOp,
-            LvalueVarOp,
-            PostDecrementOp,
-            PostIncrementOp,
-            PreDecrementOp,
-            PreIncrementOp,
-        )
-
         assert LvalueVarOp is not None
         assert LvalueDerefOp is not None
         assert LvalueSubscriptOp is not None
@@ -71,15 +93,6 @@ class TestDialect:
         assert PostDecrementOp is not None
 
     def test_conversion_ops_exist(self) -> None:
-        from dcc2.dialects.c import (
-            ArithmeticConvertOp,
-            ArrayDecayOp,
-            FunctionDecayOp,
-            IntegerPromoteOp,
-            NullToPointerOp,
-            ScalarToBoolOp,
-        )
-
         assert IntegerPromoteOp is not None
         assert ArithmeticConvertOp is not None
         assert ArrayDecayOp is not None
@@ -88,14 +101,6 @@ class TestDialect:
         assert ScalarToBoolOp is not None
 
     def test_c_types_exist(self) -> None:
-        from dcc2.dialects.c import (
-            CFunctionType,
-            Enum,
-            Struct,
-            StructField,
-            Union,
-        )
-
         assert Struct is not None
         assert StructField is not None
         assert Union is not None
@@ -103,16 +108,6 @@ class TestDialect:
         assert CFunctionType is not None
 
     def test_arithmetic_and_control_ops_exist(self) -> None:
-        from dcc2.dialects.c import (
-            CommaOp,
-            CReturnOp,
-            CSizeofOp,
-            LogicalNotOp,
-            ModuloOp,
-            ShiftLeftOp,
-            ShiftRightOp,
-        )
-
         assert CReturnOp is not None
         assert CSizeofOp is not None
         assert ModuloOp is not None
@@ -122,12 +117,6 @@ class TestDialect:
         assert CommaOp is not None
 
     def test_type_constructors(self) -> None:
-        from dgen.dialects.builtin import Nil
-        from dgen.dialects.memory import Reference
-        from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
-
-        from dcc2.dialects import c_double, c_float, c_int, c_ptr, c_void
-
         signed = c_int(32)
         assert isinstance(signed, SignedInteger)
 
@@ -180,9 +169,6 @@ class TestTypeResolver:
     """Brick 3: Verify type resolution from pycparser AST nodes."""
 
     def test_int_types(self) -> None:
-        from dgen.dialects.number import SignedInteger, UnsignedInteger
-
-        from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
         signed = r.resolve(
@@ -198,9 +184,6 @@ class TestTypeResolver:
         assert isinstance(unsigned, UnsignedInteger)
 
     def test_float_and_double(self) -> None:
-        from dgen.dialects.number import Float64
-
-        from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
         f = r.resolve(
@@ -214,9 +197,6 @@ class TestTypeResolver:
         assert isinstance(d, Float64)
 
     def test_void(self) -> None:
-        from dgen.dialects.builtin import Nil
-
-        from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
         v = r.resolve(
@@ -225,9 +205,6 @@ class TestTypeResolver:
         assert isinstance(v, Nil)
 
     def test_pointer(self) -> None:
-        from dgen.dialects.memory import Reference
-
-        from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
         p = r.resolve(
@@ -239,8 +216,6 @@ class TestTypeResolver:
         assert isinstance(p, Reference)
 
     def test_struct_with_fields(self) -> None:
-        from dcc2.dialects.c import Struct
-        from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
         decls = [
@@ -272,8 +247,6 @@ class TestTypeResolver:
         assert r._resolve_struct(c_ast.Struct("Point", None)) is t
 
     def test_anonymous_structs_are_unique(self) -> None:
-        from dcc2.dialects.c import Struct
-        from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
         decl_x = [
@@ -307,7 +280,6 @@ class TestTypeResolver:
         assert s1 is not s2
 
     def test_enum_constants(self) -> None:
-        from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
         enumerators = c_ast.EnumeratorList(
@@ -325,7 +297,6 @@ class TestTypeResolver:
         assert r.enum_constants["D"] == 11
 
     def test_unknown_type_raises(self) -> None:
-        from dcc2.parser.type_resolver import TypeResolver, TypeResolverError
 
         r = TypeResolver()
         with pytest.raises(TypeResolverError, match="unknown type"):
@@ -337,8 +308,6 @@ class TestTypeResolver:
 
     def test_f_void_has_no_params(self) -> None:
         """C11: f(void) should resolve to a function with zero parameters."""
-        from dcc2.dialects.c import CFunctionType
-        from dcc2.parser.type_resolver import TypeResolver
 
         r = TypeResolver()
         # int f(void)
@@ -483,9 +452,6 @@ class TestMemoryOrdering:
         R2 must NOT be in the transitive dependencies of R3 (independent).
         R2 and R3 must both be in the transitive dependencies of W4.
         """
-        from dgen.graph import transitive_dependencies
-
-        from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 
         ir = lower(
             parse_c_string(
