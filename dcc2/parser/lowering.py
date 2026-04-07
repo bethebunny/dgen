@@ -7,6 +7,7 @@ Follows the Toy dialect pattern: generator methods yielding ops.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Generator, Iterator
 
 from pycparser import c_ast
@@ -41,8 +42,8 @@ class Scope:
     Tracks per variable:
     - _bindings: the current value (latest write, for type resolution)
     - _variables: which names are mutable variables
-    - _last_write: the latest write on each variable (reads source from this)
-    - _pending_reads: reads since the last write (a write must depend on all)
+    - _last_write: the latest write (reads source from this)
+    - _pending_reads: reads since the last write (a write depends on all)
 
     Ordering rules:
     - Reads depend on the latest write only. Back-to-back reads are
@@ -56,7 +57,7 @@ class Scope:
         self._bindings: dict[str, dgen.Value] = {}
         self._variables: set[str] = set()
         self._last_write: dict[str, dgen.Value] = {}
-        self._pending_reads: dict[str, list[dgen.Value]] = {}
+        self._pending_reads: dict[str, list[dgen.Value]] = defaultdict(list)
         self._parent = parent
         self.captures: list[dgen.Value] = []
 
@@ -68,29 +69,27 @@ class Scope:
         self._bindings[name] = value
         self._variables.add(name)
         self._last_write[name] = value
-        self._pending_reads[name] = []
 
     def is_variable(self, name: str) -> bool:
         if name in self._variables:
             return True
         return self._parent.is_variable(name) if self._parent is not None else False
 
-    def var_source_for_read(self, name: str) -> dgen.Value:
+    def read_source(self, name: str) -> dgen.Value:
         """Source for a read: the latest write. Reads are independent."""
-        return self._lookup_last_write(name)
+        return self._find_last_write(name)
 
-    def var_source_for_write(self, name: str) -> dgen.Value:
+    def write_source(self, name: str) -> dgen.Value:
         """Source for a write: a pack of all pending reads (or the last
-        write if no reads have occurred). The write depends on all of
-        them, ensuring reads complete before the overwrite."""
-        reads = self._pending_reads.get(name, [])
+        write if no reads). The write depends on all of them."""
+        reads = self._pending_reads[name]
         if reads:
             return pack(reads)
-        return self._lookup_last_write(name)
+        return self._find_last_write(name)
 
     def record_read(self, name: str, read_op: dgen.Value) -> None:
         """Record a read. Does not advance the write chain."""
-        self._pending_reads.setdefault(name, []).append(read_op)
+        self._pending_reads[name].append(read_op)
 
     def record_write(self, name: str, write_op: dgen.Value) -> None:
         """Record a write. Clears pending reads and advances the chain."""
@@ -99,23 +98,23 @@ class Scope:
         self._pending_reads[name] = []
 
     def lookup(self, name: str) -> dgen.Value:
-        return self._lookup_binding(name)
+        return self._find_binding(name)
 
-    def _lookup_binding(self, name: str) -> dgen.Value:
+    def _find_binding(self, name: str) -> dgen.Value:
         if name in self._bindings:
             return self._bindings[name]
         if self._parent is not None:
-            val = self._parent._lookup_binding(name)
-            if val not in self.captures:
-                self.captures.append(val)
-            return val
+            value = self._parent._find_binding(name)
+            if value not in self.captures:
+                self.captures.append(value)
+            return value
         raise LoweringError(f"undefined: {name}")
 
-    def _lookup_last_write(self, name: str) -> dgen.Value:
+    def _find_last_write(self, name: str) -> dgen.Value:
         if name in self._last_write:
             return self._last_write[name]
         if self._parent is not None:
-            return self._parent._lookup_last_write(name)
+            return self._parent._find_last_write(name)
         raise LoweringError(f"no write for: {name}")
 
     def has(self, name: str) -> bool:
@@ -156,7 +155,7 @@ _UNARY: dict[str, tuple[type[dgen.Op], str]] = {
     "~": (algebra.ComplementOp, "input"),
 }
 
-# C literal type string -> (parser function, dgen type).
+# C literal type string -> (parser function, bits, signed).
 _LITERAL_TYPES: dict[str, tuple[type, ...]] = {
     "int": (parse_c_int, 32, True),
     "char": (parse_c_char, 8, True),
@@ -180,7 +179,7 @@ class Parser:
     # Maps pycparser expression node type -> handler method name.
     _EXPR_DISPATCH: dict[type[c_ast.Node], str] = {
         c_ast.Constant: "_constant",
-        c_ast.ID: "_id",
+        c_ast.ID: "_identifier",
         c_ast.BinaryOp: "_binary",
         c_ast.UnaryOp: "_unary",
         c_ast.Cast: "_cast",
@@ -190,10 +189,10 @@ class Parser:
 
     # Maps pycparser statement node type -> handler method name.
     _STMT_DISPATCH: dict[type[c_ast.Node], str] = {
-        c_ast.Return: "_return",
-        c_ast.Decl: "_decl_stmt",
-        c_ast.Assignment: "_assignment_stmt",
-        c_ast.Compound: "_compound_stmt",
+        c_ast.Return: "_return_statement",
+        c_ast.Decl: "_declaration_statement",
+        c_ast.Assignment: "_assignment_statement",
+        c_ast.Compound: "_compound_statement",
     }
 
     def __init__(self) -> None:
@@ -230,26 +229,26 @@ class Parser:
         """Bind a file-scope function name to an ExternOp. Idempotent."""
         if self.file_scope.has(name):
             return
-        fn_type = self._function_type(type_node)
+        function_type = self._function_type(type_node)
         self.file_scope.bind(
             name,
-            ExternOp(name=name, symbol=String().constant(name), type=fn_type),
+            ExternOp(name=name, symbol=String().constant(name), type=function_type),
         )
 
     def _function_type(self, node: c_ast.Node) -> FunctionType:
         """Extract a function.Function type from a FuncDecl."""
-        func_decl = node
-        while isinstance(func_decl, c_ast.PtrDecl):
-            func_decl = func_decl.type
-        ret = self._return_type(node)
-        arg_types: list[dgen.Type] = []
-        if isinstance(func_decl, c_ast.FuncDecl) and func_decl.args:
-            for param in func_decl.args.params:
-                if isinstance(param, c_ast.EllipsisParam):
+        function_decl = node
+        while isinstance(function_decl, c_ast.PtrDecl):
+            function_decl = function_decl.type
+        return_type = self._return_type(node)
+        argument_types: list[dgen.Type] = []
+        if isinstance(function_decl, c_ast.FuncDecl) and function_decl.args:
+            for parameter in function_decl.args.params:
+                if isinstance(parameter, c_ast.EllipsisParam):
                     continue
-                if isinstance(param, c_ast.Decl):
-                    arg_types.append(self.types.resolve(param.type))
-        return FunctionType(arguments=pack(arg_types), result_type=ret)
+                if isinstance(parameter, c_ast.Decl):
+                    argument_types.append(self.types.resolve(parameter.type))
+        return FunctionType(arguments=pack(argument_types), result_type=return_type)
 
     def _return_type(self, node: c_ast.Node) -> dgen.Type:
         if isinstance(node, c_ast.FuncDecl):
@@ -261,59 +260,55 @@ class Parser:
     def _function(self, funcdef: c_ast.FuncDef) -> function.FunctionOp:
         """Lower a FuncDef to a FunctionOp."""
         name = funcdef.decl.name
-        fn_type = self._function_type(funcdef.decl.type)
-        ret_type = fn_type.result_type
-        self._current_return_type = ret_type
+        return_type = self._function_type(funcdef.decl.type).result_type
+        self._current_return_type = return_type
 
         # Create block args for function parameters, then bind each as
-        # a local variable (LvalueVarOp + AssignOp) so _id can treat
+        # a local variable (LvalueVarOp + AssignOp) so _identifier treats
         # parameters and locals uniformly.
         scope = self.file_scope.child()
-        args: list[BlockArgument] = []
-        param_ops: list[dgen.Op] = []
+        arguments: list[BlockArgument] = []
         if isinstance(funcdef.decl.type, c_ast.FuncDecl):
-            func_decl = funcdef.decl.type
-            if func_decl.args:
-                for param in func_decl.args.params:
-                    if isinstance(param, c_ast.EllipsisParam):
+            function_decl = funcdef.decl.type
+            if function_decl.args:
+                for parameter in function_decl.args.params:
+                    if isinstance(parameter, c_ast.EllipsisParam):
                         continue
-                    if isinstance(param, c_ast.Decl) and param.name:
-                        arg = BlockArgument(
-                            name=param.name, type=self.types.resolve(param.type)
+                    if isinstance(parameter, c_ast.Decl) and parameter.name:
+                        argument = BlockArgument(
+                            name=parameter.name,
+                            type=self.types.resolve(parameter.type),
                         )
-                        args.append(arg)
-                        lv = LvalueVarOp(
-                            var_name=String().constant(param.name),
-                            source=arg,
-                            type=arg.type,
+                        arguments.append(argument)
+                        lvalue = LvalueVarOp(
+                            var_name=String().constant(parameter.name),
+                            source=argument,
+                            type=argument.type,
                         )
-                        param_ops.append(lv)
-                        assign = AssignOp(lvalue=lv, rvalue=arg, type=arg.type)
-                        param_ops.append(assign)
-                        scope.declare_variable(param.name, assign)
+                        assign = AssignOp(
+                            lvalue=lvalue, rvalue=argument, type=argument.type
+                        )
+                        scope.declare_variable(parameter.name, assign)
 
-        # Rebuild fn_type from actual resolved args.
-        fn_type = FunctionType(
-            arguments=pack(arg.type for arg in args),
-            result_type=ret_type,
+        function_type = FunctionType(
+            arguments=pack(arg.type for arg in arguments),
+            result_type=return_type,
         )
 
-        # Lower body.
         return_value, ops = self._compound(funcdef.body, scope)
 
-        # Determine block result.
         if return_value is not None:
             block_result = return_value
         elif ops:
             block_result = ops[-1]
         else:
-            block_result = ConstantOp(value=0, type=ret_type)
+            block_result = ConstantOp(value=0, type=return_type)
 
         return function.FunctionOp(
             name=name,
-            result_type=ret_type,
-            body=dgen.Block(result=block_result, args=args),
-            type=fn_type,
+            result_type=return_type,
+            body=dgen.Block(result=block_result, args=arguments),
+            type=function_type,
         )
 
     def _compound(
@@ -326,7 +321,7 @@ class Parser:
             for item in node.block_items:
                 if return_value is not None:
                     break
-                result = self._stmt(item, scope)
+                result = self._statement(item, scope)
                 if isinstance(result, _Return):
                     return_value = result.value
                 else:
@@ -335,96 +330,84 @@ class Parser:
 
     # --- Statements ---
 
-    def _stmt(self, node: c_ast.Node, scope: Scope) -> list[dgen.Op] | _Return:
+    def _statement(self, node: c_ast.Node, scope: Scope) -> list[dgen.Op] | _Return:
         """Lower a statement. Dispatches to handler by node type."""
         handler_name = self._STMT_DISPATCH.get(type(node))
         if handler_name is not None:
             return getattr(self, handler_name)(node, scope)
         # Expression statement -- evaluate for side effects.
-        return list(self._expr(node, scope))
+        return list(self._expression(node, scope))
 
-    def _return(self, node: c_ast.Return, scope: Scope) -> _Return:
-        """Lower a return statement."""
+    def _return_statement(self, node: c_ast.Return, scope: Scope) -> _Return:
         if node.expr is None:
             return _Return(ConstantOp(value=0, type=self._current_return_type))
-        val = _run_gen(self._expr(node.expr, scope))
-        return _Return(val)
+        return _Return(_run_gen(self._expression(node.expr, scope)))
 
-    def _compound_stmt(
+    def _compound_statement(
         self, node: c_ast.Compound, scope: Scope
     ) -> list[dgen.Op] | _Return:
-        """Lower a nested compound statement (child scope)."""
         return_value, ops = self._compound(node, scope.child())
         if return_value is not None:
             return _Return(return_value)
         return ops
 
-    def _decl_stmt(self, node: c_ast.Decl, scope: Scope) -> list[dgen.Op]:
-        """Lower a declaration statement."""
-        return list(self._decl(node, scope))
+    def _declaration_statement(self, node: c_ast.Decl, scope: Scope) -> list[dgen.Op]:
+        return list(self._declaration(node, scope))
 
-    def _decl(self, node: c_ast.Decl, scope: Scope) -> Iterator[dgen.Op]:
-        """Lower a declaration (e.g. int x = 5;).
-
-        Emits lvalue_var + assign. The lvalue elimination pass
-        (CLvalueToMemory) converts these to stack allocations and stores.
-        """
+    def _declaration(self, node: c_ast.Decl, scope: Scope) -> Iterator[dgen.Op]:
+        """Lower a declaration (e.g. int x = 5;)."""
         if node.name is None:
-            # Type-only declaration (struct/union/enum definition).
             if node.type is not None:
                 self.types.resolve(node.type)
             return
-        var_type = self.types.resolve(node.type)
-        init_val: dgen.Value
+        variable_type = self.types.resolve(node.type)
         if node.init is not None:
-            init_val = _run_gen(self._expr(node.init, scope))
+            initial_value = _run_gen(self._expression(node.init, scope))
         else:
-            init_val = ConstantOp(value=0, type=var_type)
-            yield init_val
-        lv = LvalueVarOp(
-            var_name=String().constant(node.name),
-            source=init_val,
-            type=var_type,
+            yield (initial_value := ConstantOp(value=0, type=variable_type))
+        yield (
+            lvalue := LvalueVarOp(
+                var_name=String().constant(node.name),
+                source=initial_value,
+                type=variable_type,
+            )
         )
-        yield lv
-        assign = AssignOp(lvalue=lv, rvalue=init_val, type=var_type)
-        yield assign
+        yield (
+            assign := AssignOp(lvalue=lvalue, rvalue=initial_value, type=variable_type)
+        )
         scope.declare_variable(node.name, assign)
 
-    def _assignment_stmt(
+    def _assignment_statement(
         self, node: c_ast.Assignment, scope: Scope
     ) -> list[dgen.Op] | _Return:
-        """Lower an assignment statement (e.g. x = 5;)."""
         return list(self._assignment(node, scope))
 
     def _assignment(
         self, node: c_ast.Assignment, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an assignment expression."""
-        rhs = yield from self._expr(node.rvalue, scope)
+        rhs = yield from self._expression(node.rvalue, scope)
 
-        # For now, only handle direct variable assignment (ID on LHS).
         if not isinstance(node.lvalue, c_ast.ID):
             raise LoweringError(
                 f"unsupported assignment target: {type(node.lvalue).__name__}"
             )
-        var_name = node.lvalue.name
-        source = scope.var_source_for_write(var_name)
-        var_type = scope.lookup(var_name).type
-        lv = LvalueVarOp(
-            var_name=String().constant(var_name),
-            source=source,
-            type=var_type,
+        variable_name = node.lvalue.name
+        variable_type = scope.lookup(variable_name).type
+        yield (
+            lvalue := LvalueVarOp(
+                var_name=String().constant(variable_name),
+                source=scope.write_source(variable_name),
+                type=variable_type,
+            )
         )
-        yield lv
-        assign = AssignOp(lvalue=lv, rvalue=rhs, type=var_type)
-        yield assign
-        scope.record_write(var_name, assign)
+        yield (assign := AssignOp(lvalue=lvalue, rvalue=rhs, type=variable_type))
+        scope.record_write(variable_name, assign)
         return assign
 
     # --- Expressions ---
 
-    def _expr(
+    def _expression(
         self, node: c_ast.Node, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression. Dispatches to handler by node type."""
@@ -436,25 +419,24 @@ class Parser:
     def _constant(
         self, node: c_ast.Constant, _scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower a literal constant."""
         literal = _LITERAL_TYPES.get(node.type)
         if literal is not None:
             parser_fn, bits, signed = literal
-            val = parser_fn(node.value)
-            op = ConstantOp(value=val, type=c_int(bits, signed))
-            yield op
+            yield (
+                op := ConstantOp(value=parser_fn(node.value), type=c_int(bits, signed))
+            )
             return op
         if node.type in ("float", "double"):
-            val = float(node.value.rstrip("fFlL"))
-            op = ConstantOp(value=val, type=Float64())
-            yield op
+            yield (
+                op := ConstantOp(value=float(node.value.rstrip("fFlL")), type=Float64())
+            )
             return op
-        # Default: integer 0.
-        op = ConstantOp(value=0, type=c_int(32))
-        yield op
+        yield (op := ConstantOp(value=0, type=c_int(32)))
         return op
 
-    def _id(self, node: c_ast.ID, scope: Scope) -> Generator[dgen.Op, None, dgen.Value]:
+    def _identifier(
+        self, node: c_ast.ID, scope: Scope
+    ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an identifier reference.
 
         Variables emit lvalue_var + lvalue_to_rvalue. The source comes
@@ -462,72 +444,65 @@ class Parser:
         but we record the read so a subsequent write depends on it.
         """
         if node.name in self.types.enum_constants:
-            op = ConstantOp(value=self.types.enum_constants[node.name], type=c_int(32))
-            yield op
+            yield (
+                op := ConstantOp(
+                    value=self.types.enum_constants[node.name], type=c_int(32)
+                )
+            )
             return op
         if not scope.is_variable(node.name):
             return scope.lookup(node.name)
-        source = scope.var_source_for_read(node.name)
-        var_type = scope.lookup(node.name).type
-        lv = LvalueVarOp(
-            var_name=String().constant(node.name),
-            source=source,
-            type=var_type,
+        variable_type = scope.lookup(node.name).type
+        yield (
+            lvalue := LvalueVarOp(
+                var_name=String().constant(node.name),
+                source=scope.read_source(node.name),
+                type=variable_type,
+            )
         )
-        yield lv
-        load = LvalueToRvalueOp(lvalue=lv, type=var_type)
-        yield load
+        yield (load := LvalueToRvalueOp(lvalue=lvalue, type=variable_type))
         scope.record_read(node.name, load)
         return load
 
     def _binary(
         self, node: c_ast.BinaryOp, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower a binary operation."""
+        lhs = yield from self._expression(node.left, scope)
+        rhs = yield from self._expression(node.right, scope)
+
         cls = _ALGEBRA.get(node.op)
         if cls is None:
             raise LoweringError(f"unsupported binary op: {node.op}")
 
-        lhs = yield from self._expr(node.left, scope)
-        rhs = yield from self._expr(node.right, scope)
-
-        # Comparisons produce a boolean; wrap in CastOp to widen to int.
         if node.op in _COMPARISONS:
-            cmp_op = _binop(cls, lhs, rhs, lhs.type)
-            yield cmp_op
-            cast = algebra.CastOp(input=cmp_op, type=c_int(32))
-            yield cast
+            yield (comparison := _binop(cls, lhs, rhs, lhs.type))
+            yield (cast := algebra.CastOp(input=comparison, type=c_int(32)))
             return cast
 
-        op = _binop(cls, lhs, rhs, lhs.type)
-        yield op
+        yield (op := _binop(cls, lhs, rhs, lhs.type))
         return op
 
     def _unary(
         self, node: c_ast.UnaryOp, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower a unary operation."""
         entry = _UNARY.get(node.op)
         if entry is not None:
             cls, field_name = entry
-            inner = yield from self._expr(node.expr, scope)
-            op = cls(**{field_name: inner, "type": inner.type})
-            yield op
+            inner = yield from self._expression(node.expr, scope)
+            yield (op := cls(**{field_name: inner, "type": inner.type}))
             return op
         if node.op == "+":
-            return (yield from self._expr(node.expr, scope))
+            return (yield from self._expression(node.expr, scope))
         raise LoweringError(f"unsupported unary op: {node.op}")
 
     def _cast(
         self, node: c_ast.Cast, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower a cast expression (pass-through for now)."""
-        return (yield from self._expr(node.expr, scope))
+        return (yield from self._expression(node.expr, scope))
 
     def _ternary(
         self, node: c_ast.TernaryOp, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
-        """Lower a ternary (a ? b : c) -- requires IfOp (Brick 6)."""
         raise LoweringError("ternary operator (?:) not yet supported")
 
 
@@ -537,7 +512,7 @@ class Parser:
 
 
 class _Return:
-    """Sentinel that _stmt returns when encountering a return statement."""
+    """Sentinel that _statement returns when encountering a return."""
 
     __slots__ = ("value",)
 
@@ -547,7 +522,6 @@ class _Return:
 
 def _run_gen(gen: Generator[dgen.Op, None, dgen.Value]) -> dgen.Value:
     """Exhaust a generator and return its final value."""
-    # Consume all yielded ops, then capture the return value from StopIteration.
     while True:
         try:
             next(gen)
@@ -562,5 +536,4 @@ def _run_gen(gen: Generator[dgen.Op, None, dgen.Value]) -> dgen.Value:
 
 def lower(ast: c_ast.FileAST) -> function.FunctionOp:
     """Lower a pycparser FileAST to a FunctionOp."""
-    parser = Parser()
-    return parser.parse(ast)
+    return Parser().parse(ast)

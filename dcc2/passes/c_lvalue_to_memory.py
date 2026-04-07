@@ -1,18 +1,12 @@
 """Lower C lvalue ops to memory dialect ops.
 
-This pass eliminates lvalue ops by converting them to stack allocations,
-loads, and stores. Memory ordering is carried by the use-def graph itself:
-each LvalueVarOp.source points to the prior operation on that variable
-(the prior AssignOp, which the pass replaces with a StoreOp). After
-replace_uses_of runs, the source becomes the StoreOp — exactly the mem
-token the next operation needs.
+Memory ordering is carried by the use-def graph: each LvalueVarOp.source
+points to the prior operation on that variable. After replace_uses_of
+runs on earlier ops, sources become StoreOp/LoadOp/PackOp values —
+exactly the mem tokens the next operation needs.
 
-The per-variable ordering chain emerges naturally:
-
-    alloca → store_init → load_1 → store_2 → load_2 → ...
-
-because each op's source/mem traces back to the prior op on that variable.
-Operations on different variables have no spurious dependencies.
+Reads depend on the latest write. Writes depend on all pending reads
+(via a PackOp source). Operations on different variables are independent.
 """
 
 from __future__ import annotations
@@ -24,6 +18,13 @@ from dgen.passes.pass_ import Pass, lowering_for
 
 from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 
+# After replace_uses_of, a LvalueVarOp.source that was originally an
+# AssignOp/LvalueToRvalueOp becomes the StoreOp/LoadOp/PackOp that
+# replaced it. These types are valid mem tokens — use them directly.
+# Anything else (BlockArgument, ConstantOp) means this is the first
+# operation on the variable — use the alloca as the initial mem token.
+_MEM_TOKEN_TYPES = (memory.StoreOp, memory.LoadOp, PackOp)
+
 
 def _var_name(lvalue: LvalueVarOp) -> str:
     """Extract the variable name string from a LvalueVarOp."""
@@ -31,13 +32,7 @@ def _var_name(lvalue: LvalueVarOp) -> str:
 
 
 class CLvalueToMemory(Pass):
-    """Lower lvalue ops to memory dialect ops.
-
-    Memory ordering comes from the use-def graph: each LvalueVarOp.source
-    chains to the prior operation on that variable. After prior ops are
-    lowered and replace_uses_of runs, source becomes the StoreOp/LoadOp
-    that replaced them — the correct mem token.
-    """
+    """Lower lvalue ops to memory dialect ops."""
 
     allow_unregistered_ops = True
 
@@ -54,14 +49,9 @@ class CLvalueToMemory(Pass):
             return None
         name = _var_name(op.lvalue)
         alloca = self._ensure_alloca(name, op.rvalue.type)
-        # op.lvalue.source is the prior op on this variable. After
-        # replace_uses_of, it's the StoreOp/LoadOp that replaced the
-        # prior AssignOp/LvalueToRvalueOp. For the first assignment,
-        # source is the init value (ConstantOp or BlockArgument) —
-        # use the alloca as mem in that case.
-        mem = self._mem_from_source(name, op.lvalue.source)
-        store = memory.StoreOp(mem=mem, value=op.rvalue, ptr=alloca)
-        return store
+        source = op.lvalue.source
+        mem = source if isinstance(source, _MEM_TOKEN_TYPES) else alloca
+        return memory.StoreOp(mem=mem, value=op.rvalue, ptr=alloca)
 
     @lowering_for(LvalueToRvalueOp)
     def lower_lvalue_to_rvalue(self, op: LvalueToRvalueOp) -> dgen.Value | None:
@@ -71,30 +61,20 @@ class CLvalueToMemory(Pass):
         alloca = self._alloca.get(name)
         if alloca is None:
             return op.lvalue.source
-        mem = self._mem_from_source(name, op.lvalue.source)
+        source = op.lvalue.source
+        mem = source if isinstance(source, _MEM_TOKEN_TYPES) else alloca
         return memory.LoadOp(mem=mem, ptr=alloca, type=op.type)
 
-    def _mem_from_source(self, name: str, source: dgen.Value) -> dgen.Value:
-        """Derive the mem token from a LvalueVarOp's source.
-
-        After replace_uses_of, the source is one of:
-        - StoreOp/LoadOp: the replaced prior operation. Use directly.
-        - PackOp: a pack of replaced reads (write depends on all).
-          Use the pack itself — it transitively depends on all reads.
-        - ConstantOp/BlockArgument: first operation. Use the alloca.
-        """
-        if isinstance(source, (memory.StoreOp, memory.LoadOp, PackOp)):
-            return source
-        return self._alloca[name]
-
-    def _ensure_alloca(self, name: str, elem_type: dgen.Type) -> memory.StackAllocateOp:
+    def _ensure_alloca(
+        self, name: str, element_type: dgen.Type
+    ) -> memory.StackAllocateOp:
         """Get or create a stack allocation for a variable."""
         alloca = self._alloca.get(name)
         if alloca is not None:
             return alloca
         alloca = memory.StackAllocateOp(
-            element_type=elem_type,
-            type=memory.Reference(element_type=elem_type),
+            element_type=element_type,
+            type=memory.Reference(element_type=element_type),
         )
         self._alloca[name] = alloca
         return alloca
