@@ -11,6 +11,7 @@ structure is preserved in use-def edges.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
 from pycparser import c_ast
 
@@ -38,25 +39,28 @@ class LoweringError(Exception):
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class Variable:
+    """Per-variable state: declared type, ordering chain, and current binding."""
+
+    type: dgen.Type
+    ordering: dgen.Value | None = None
+    pending_reads: list[dgen.Value] = field(default_factory=list)
+    binding: dgen.Value | None = None
+
+
 class Scope:
     """Lexical scope for C name resolution and memory ordering.
 
-    Two independent concerns:
-    - **Names** (`_names`): maps identifiers to values. Immutable bindings
-      (externs) and mutable variables both live here. ``_mutable`` tracks
-      which names are variables.
-    - **Ordering** (`_ordering`, `_pending_reads`): per-variable ordering
-      token chain. Reads source from the latest ordering token. Writes
-      depend on all pending reads. Separate from names — an ordering
-      token (e.g. a control-flow op) does not carry the variable's value.
+    Two namespaces:
+    - **_names**: immutable bindings (externs, enum constants).
+    - **_variables**: mutable locals, each a `Variable` that tracks
+      declared type, ordering chain, pending reads, and current binding.
     """
 
     def __init__(self, parent: Scope | None = None) -> None:
         self._names: dict[str, dgen.Value] = {}
-        self._mutable: set[str] = set()
-        self._types: dict[str, dgen.Type] = {}
-        self._ordering: dict[str, dgen.Value] = {}
-        self._pending_reads: dict[str, list[dgen.Value]] = {}
+        self._variables: dict[str, Variable] = {}
         self.local_reads: set[str] = set()
         self.local_writes: set[str] = set()
         self._parent = parent
@@ -68,18 +72,17 @@ class Scope:
 
     def declare(self, name: str, variable_type: dgen.Type) -> None:
         """Declare a mutable variable. No ops emitted, no ordering yet."""
-        self._mutable.add(name)
-        self._types[name] = variable_type
+        self._variables[name] = Variable(type=variable_type)
 
     def is_variable(self, name: str) -> bool:
-        if name in self._mutable:
+        if name in self._variables:
             return True
         return self._parent.is_variable(name) if self._parent is not None else False
 
     def variable_type(self, name: str) -> dgen.Type:
         """Return the declared type of a variable."""
-        if name in self._types:
-            return self._types[name]
+        if name in self._variables:
+            return self._variables[name].type
         if self._parent is not None:
             return self._parent.variable_type(name)
         raise LoweringError(f"undeclared variable: {name}")
@@ -89,8 +92,8 @@ class Scope:
     def read_ordering(self, name: str) -> dgen.Value | None:
         """Ordering token for a read: the latest ordering node, or None
         if the variable has never been written."""
-        if name in self._ordering:
-            return self._ordering[name]
+        if name in self._variables:
+            return self._variables[name].ordering
         if self._parent is not None:
             value = self._parent.read_ordering(name)
             if value is not None:
@@ -101,41 +104,66 @@ class Scope:
     def write_ordering(self, name: str) -> dgen.Value | None:
         """Ordering token for a write: a pack of all pending reads (or the
         latest ordering node, or None if never written)."""
-        reads = self._pending_reads.get(name)
-        if reads:
-            return pack(reads)
+        if name in self._variables:
+            var = self._variables[name]
+            if var.pending_reads:
+                return pack(var.pending_reads)
+            return var.ordering
         return self.read_ordering(name)
 
     def record_read(self, name: str, read_op: dgen.Value) -> None:
         """Record a read. Does not advance the ordering chain."""
-        self._pending_reads.setdefault(name, []).append(read_op)
+        var = self._find_variable(name)
+        var.pending_reads.append(read_op)
         self.local_reads.add(name)
 
     def record_write(self, name: str, write_op: dgen.Value) -> None:
         """Record a write. Updates the binding, clears pending reads,
         and advances the ordering chain."""
-        self._names[name] = write_op
-        self._ordering[name] = write_op
-        self._pending_reads[name] = []
+        var = self._find_variable(name)
+        var.binding = write_op
+        var.ordering = write_op
+        var.pending_reads = []
         self.local_writes.add(name)
 
     def record_fence(self, name: str, fence_op: dgen.Value) -> None:
         """Record an ordering fence (e.g. control flow op) without updating
         the name binding. Subsequent reads/writes will depend on it."""
-        self._ordering[name] = fence_op
-        self._pending_reads[name] = []
+        var = self._find_variable(name)
+        var.ordering = fence_op
+        var.pending_reads = []
         self.local_writes.add(name)
 
-    # --- Name resolution (non-mutating) ---
+    def _find_variable(self, name: str) -> Variable:
+        """Find a variable in this scope, creating a local shadow if it
+        exists only in a parent scope."""
+        if name in self._variables:
+            return self._variables[name]
+        if self._parent is not None and self._parent.is_variable(name):
+            # Create a local proxy that inherits the parent's ordering.
+            var = Variable(type=self._parent.variable_type(name))
+            ordering = self._parent.read_ordering(name)
+            if ordering is not None:
+                var.ordering = ordering
+                self.capture(ordering)
+            self._variables[name] = var
+            return var
+        raise LoweringError(f"undeclared variable: {name}")
+
+    # --- Name resolution ---
 
     def __contains__(self, name: str) -> bool:
-        if name in self._names:
+        if name in self._names or name in self._variables:
             return True
         return name in self._parent if self._parent is not None else False
 
     def __getitem__(self, name: str) -> dgen.Value:
         if name in self._names:
             return self._names[name]
+        if name in self._variables:
+            var = self._variables[name]
+            if var.binding is not None:
+                return var.binding
         if self._parent is not None:
             return self._parent[name]
         raise LoweringError(f"undefined: {name}")
@@ -149,6 +177,10 @@ class Scope:
         """Look up a name, adding captures for cross-scope references."""
         if name in self._names:
             return self._names[name]
+        if name in self._variables:
+            var = self._variables[name]
+            if var.binding is not None:
+                return var.binding
         if self._parent is not None:
             value = self._parent.resolve(name)
             self.capture(value)
