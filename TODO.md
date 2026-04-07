@@ -46,6 +46,9 @@
 - test_peano's `test_call_jit` _should not_ call the jit, let's verify that it doesn't and put it somewhere more sensible
 - `ChainOp` type forwarding: when a pass mutates `op.type` (e.g. shape inference resolves `InferredShapeTensor → Tensor`), wrapping ChainOps keep the old type. Needs a general solution.
 
+## Control flow dialect
+- `control_flow.IfOp` and `goto.ConditionalBranchOp` should require `Boolean` conditions. Currently codegen handles non-Boolean via `icmp ne 0`, but conditions should be explicitly Boolean at the dialect level.
+
 ## C compiler requests
 - Add `mod`, `shift_left`, `shift_right` to the algebra dialect — these are universal integer operations, not C-specific. Every language with integers needs them; currently the C frontend keeps a separate pass just for three ops.
 - Make `transitive_dependencies` iterative (explicit stack instead of recursion). Memory token chains create O(n)-depth recursion for n memory ops in a function. Python's default recursion limit (1000) is too shallow for large functions; the C frontend needs `sys.setrecursionlimit(50000)` for sqlite3.

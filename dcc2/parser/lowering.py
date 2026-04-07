@@ -14,11 +14,11 @@ from pycparser import c_ast
 
 import dgen
 from dgen.block import BlockArgument
-from dgen.dialects import algebra, function
-from dgen.dialects.builtin import ExternOp, String
+from dgen.dialects import algebra, control_flow, function
+from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
-from dgen.dialects.number import Float64
+from dgen.dialects.number import Boolean, Float64
 from dgen.module import ConstantOp, pack
 
 from dcc2.dialects import c_int
@@ -58,6 +58,8 @@ class Scope:
         self._variables: set[str] = set()
         self._last_write: dict[str, dgen.Value] = {}
         self._pending_reads: dict[str, list[dgen.Value]] = defaultdict(list)
+        self._local_reads: set[str] = set()
+        self._local_writes: set[str] = set()
         self._parent = parent
         self.captures: list[dgen.Value] = []
 
@@ -90,12 +92,32 @@ class Scope:
     def record_read(self, name: str, read_op: dgen.Value) -> None:
         """Record a read. Does not advance the write chain."""
         self._pending_reads[name].append(read_op)
+        self._local_reads.add(name)
 
     def record_write(self, name: str, write_op: dgen.Value) -> None:
         """Record a write. Clears pending reads and advances the chain."""
         self._bindings[name] = write_op
         self._last_write[name] = write_op
         self._pending_reads[name] = []
+        self._local_writes.add(name)
+
+    def record_ordering(self, name: str, fence_op: dgen.Value) -> None:
+        """Record an ordering fence (e.g. control flow op) without updating
+        the variable's binding. Advances the write chain so subsequent
+        reads/writes depend on the fence."""
+        self._last_write[name] = fence_op
+        self._pending_reads[name] = []
+        self._local_writes.add(name)
+
+    @property
+    def local_reads(self) -> set[str]:
+        """Variable names read in this scope (not inherited from parent)."""
+        return self._local_reads
+
+    @property
+    def local_writes(self) -> set[str]:
+        """Variable names written in this scope (not inherited from parent)."""
+        return self._local_writes
 
     def lookup(self, name: str) -> dgen.Value:
         return self._find_binding(name)
@@ -193,6 +215,9 @@ class Parser:
         c_ast.Decl: "_declaration_statement",
         c_ast.Assignment: "_assignment_statement",
         c_ast.Compound: "_compound_statement",
+        c_ast.If: "_if_statement",
+        c_ast.While: "_while_statement",
+        c_ast.For: "_for_statement",
     }
 
     def __init__(self) -> None:
@@ -405,6 +430,183 @@ class Parser:
         scope.record_write(variable_name, assign)
         return assign
 
+    # --- Control flow ---
+
+    def _to_bool(self, value: dgen.Value) -> Generator[dgen.Op, None, dgen.Value]:
+        """Convert a value to Boolean (for control flow conditions)."""
+        if isinstance(value.type, Boolean):
+            return value
+        yield (zero := ConstantOp(value=0, type=value.type))
+        yield (cmp := _binop(algebra.NotEqualOp, value, zero, value.type))
+        return cmp
+
+    def _block_from(self, node: c_ast.Node, scope: Scope) -> dgen.Block:
+        """Lower a statement into a Block (for control flow bodies).
+
+        For compound bodies, uses the provided scope directly (no extra
+        child scope) so that variable writes are visible to the caller.
+
+        The result chains a nil value with all statement-level results so
+        every side effect is reachable (independent variable mutations
+        would otherwise be dead code).
+        """
+        stmt_results = self._lower_body_stmts(node, scope)
+        nil = ConstantOp(value=0, type=Nil())
+        if not stmt_results:
+            block_result: dgen.Value = nil
+        else:
+            block_result = ChainOp(lhs=nil, rhs=pack(stmt_results), type=Nil())
+        return dgen.Block(result=block_result, captures=scope.captures)
+
+    def _lower_body_stmts(self, node: c_ast.Node, scope: Scope) -> list[dgen.Value]:
+        """Lower statement(s) and return each statement's final value.
+
+        These are the values that the block result must depend on to keep
+        all side effects alive.
+        """
+        if isinstance(node, c_ast.Compound) and node.block_items:
+            results: list[dgen.Value] = []
+            for item in node.block_items:
+                result = self._statement(item, scope)
+                if isinstance(result, _Return):
+                    raise LoweringError(
+                        "return inside control flow not yet supported (Brick 6.5)"
+                    )
+                if result:
+                    results.append(result[-1])
+            return results
+        result = self._statement(node, scope)
+        if isinstance(result, _Return):
+            raise LoweringError(
+                "return inside control flow not yet supported (Brick 6.5)"
+            )
+        return [result[-1]] if result else []
+
+    def _propagate_cf_ordering(
+        self,
+        scope: Scope,
+        child_scopes: list[Scope],
+        cf_op: dgen.Value,
+    ) -> None:
+        """Propagate variable ordering from child scopes after control flow.
+
+        Written variables: cf_op becomes the new ordering fence (last_write).
+        Read-only variables: cf_op is added to pending reads so a subsequent
+        write in the parent will fence after the cf_op.
+
+        Uses record_ordering (not record_write) to avoid overwriting the
+        variable's binding/type with the Nil-typed control flow op.
+        """
+        all_writes: set[str] = set()
+        all_reads: set[str] = set()
+        for child in child_scopes:
+            all_writes |= child.local_writes
+            all_reads |= child.local_reads
+        for name in all_writes:
+            if scope.is_variable(name):
+                scope.record_ordering(name, cf_op)
+        for name in all_reads - all_writes:
+            if scope.is_variable(name):
+                scope.record_read(name, cf_op)
+
+    def _if_statement(self, node: c_ast.If, scope: Scope) -> list[dgen.Op] | _Return:
+        cond = _run_gen(self._expression(node.cond, scope))
+        bool_ops: list[dgen.Op] = list(self._to_bool(cond))
+        bool_cond = bool_ops[-1] if bool_ops else cond
+
+        then_scope = scope.child()
+        then_block = self._block_from(node.iftrue, then_scope)
+
+        else_scope = scope.child()
+        if node.iffalse is not None:
+            else_block = self._block_from(node.iffalse, else_scope)
+        else:
+            else_block = dgen.Block(result=ConstantOp(value=0, type=Nil()))
+
+        empty = pack([])
+        if_op = control_flow.IfOp(
+            condition=bool_cond,
+            then_arguments=empty,
+            else_arguments=empty,
+            type=Nil(),
+            then_body=then_block,
+            else_body=else_block,
+        )
+
+        self._propagate_cf_ordering(scope, [then_scope, else_scope], if_op)
+        return [*bool_ops, empty, if_op]
+
+    def _while_statement(
+        self, node: c_ast.While, scope: Scope
+    ) -> list[dgen.Op] | _Return:
+        # Condition block: evaluate condition in child scope, convert to bool.
+        cond_scope = scope.child()
+        cond_val = _run_gen(self._expression(node.cond, cond_scope))
+        cond_bool_ops = list(self._to_bool(cond_val))
+        cond_result = cond_bool_ops[-1] if cond_bool_ops else cond_val
+        cond_block = dgen.Block(result=cond_result, captures=cond_scope.captures)
+
+        # Body block.
+        body_scope = scope.child()
+        body_block = self._block_from(node.stmt, body_scope)
+
+        empty = pack([])
+        while_op = control_flow.WhileOp(
+            initial_arguments=empty, condition=cond_block, body=body_block
+        )
+
+        self._propagate_cf_ordering(scope, [cond_scope, body_scope], while_op)
+        return [empty, while_op]
+
+    def _for_statement(self, node: c_ast.For, scope: Scope) -> list[dgen.Op] | _Return:
+        ops: list[dgen.Op] = []
+
+        # Init runs in current scope.
+        if node.init is not None:
+            if isinstance(node.init, c_ast.DeclList):
+                for decl in node.init.decls:
+                    ops.extend(self._declaration(decl, scope))
+            else:
+                result = self._statement(node.init, scope)
+                if isinstance(result, _Return):
+                    raise LoweringError("return in for-init")
+                ops.extend(result)
+
+        # Condition block.
+        cond_scope = scope.child()
+        if node.cond is not None:
+            cond_val = _run_gen(self._expression(node.cond, cond_scope))
+            cond_bool_ops = list(self._to_bool(cond_val))
+            cond_result = cond_bool_ops[-1] if cond_bool_ops else cond_val
+            cond_block = dgen.Block(result=cond_result, captures=cond_scope.captures)
+        else:
+            cond_block = dgen.Block(result=ConstantOp(value=1, type=c_int(32)))
+
+        # Body block: body statements + update appended.
+        body_scope = scope.child()
+        stmt_results = self._lower_body_stmts(node.stmt, body_scope)
+        if node.next is not None:
+            update_result = self._statement(node.next, body_scope)
+            if isinstance(update_result, _Return):
+                raise LoweringError("return in for-update")
+            if update_result:
+                stmt_results.append(update_result[-1])
+        nil = ConstantOp(value=0, type=Nil())
+        if not stmt_results:
+            block_result: dgen.Value = nil
+        else:
+            block_result = ChainOp(lhs=nil, rhs=pack(stmt_results), type=Nil())
+        body_block = dgen.Block(result=block_result, captures=body_scope.captures)
+
+        empty = pack([])
+        while_op = control_flow.WhileOp(
+            initial_arguments=empty, condition=cond_block, body=body_block
+        )
+
+        self._propagate_cf_ordering(scope, [cond_scope, body_scope], while_op)
+        ops.extend([empty, while_op])
+        return ops
+
     # --- Expressions ---
 
     def _expression(
@@ -467,6 +669,9 @@ class Parser:
     def _binary(
         self, node: c_ast.BinaryOp, scope: Scope
     ) -> Generator[dgen.Op, None, dgen.Value]:
+        if node.op in ("&&", "||"):
+            return (yield from self._short_circuit(node, scope))
+
         lhs = yield from self._expression(node.left, scope)
         rhs = yield from self._expression(node.right, scope)
 
@@ -480,6 +685,46 @@ class Parser:
             return cast
 
         yield (op := _binop(cls, lhs, rhs, lhs.type))
+        return op
+
+    def _short_circuit(
+        self, node: c_ast.BinaryOp, scope: Scope
+    ) -> Generator[dgen.Op, None, dgen.Value]:
+        """Lower && and || to expression-level IfOp (short-circuit)."""
+        lhs = yield from self._expression(node.left, scope)
+        yield from (bool_ops := list(self._to_bool(lhs)))
+        bool_lhs = bool_ops[-1] if bool_ops else lhs
+
+        # RHS evaluated lazily inside a block.
+        rhs_scope = scope.child()
+        rhs_val = _run_gen(self._expression(node.right, rhs_scope))
+        rhs_bool_ops = list(self._to_bool(rhs_val))
+        rhs_bool = rhs_bool_ops[-1] if rhs_bool_ops else rhs_val
+        rhs_cast = algebra.CastOp(input=rhs_bool, type=c_int(32))
+        rhs_block = dgen.Block(result=rhs_cast, captures=rhs_scope.captures)
+
+        one_block = dgen.Block(result=ConstantOp(value=1, type=c_int(32)))
+        zero_block = dgen.Block(result=ConstantOp(value=0, type=c_int(32)))
+
+        empty = pack([])
+        yield empty
+
+        if node.op == "&&":
+            then_block = rhs_block
+            else_block = zero_block
+        else:
+            then_block = one_block
+            else_block = rhs_block
+
+        op = control_flow.IfOp(
+            condition=bool_lhs,
+            then_arguments=empty,
+            else_arguments=empty,
+            type=c_int(32),
+            then_body=then_block,
+            else_body=else_block,
+        )
+        yield op
         return op
 
     def _unary(
