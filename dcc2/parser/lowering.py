@@ -10,7 +10,7 @@ structure is preserved in use-def edges.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections.abc import Callable
 
 from pycparser import c_ast
 
@@ -21,7 +21,7 @@ from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Boolean, Float64
-from dgen.module import ConstantOp, pack
+from dgen.module import pack
 
 from dcc2.dialects import c_int
 from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
@@ -41,110 +41,119 @@ class LoweringError(Exception):
 class Scope:
     """Lexical scope for C name resolution and memory ordering.
 
-    Tracks per variable:
-    - _bindings: the current value (latest write, for type resolution)
-    - _variables: which names are mutable variables
-    - _last_write: the latest write (reads source from this)
-    - _pending_reads: reads since the last write (a write depends on all)
-
-    Ordering rules:
-    - Reads depend on the latest write only. Back-to-back reads are
-      independent — they can execute in any order.
-    - A write depends on ALL pending reads (via a pack), ensuring every
-      read completes before the write overwrites the value.
-    - Operations on different variables are fully independent.
+    Two independent concerns:
+    - **Names** (`_names`): maps identifiers to values. Immutable bindings
+      (externs) and mutable variables both live here. ``_mutable`` tracks
+      which names are variables.
+    - **Ordering** (`_ordering`, `_pending_reads`): per-variable ordering
+      token chain. Reads source from the latest ordering token. Writes
+      depend on all pending reads. Separate from names — an ordering
+      token (e.g. a control-flow op) does not carry the variable's value.
     """
 
     def __init__(self, parent: Scope | None = None) -> None:
-        self._bindings: dict[str, dgen.Value] = {}
-        self._variables: set[str] = set()
-        self._last_write: dict[str, dgen.Value] = {}
-        self._pending_reads: dict[str, list[dgen.Value]] = defaultdict(list)
-        self._local_reads: set[str] = set()
-        self._local_writes: set[str] = set()
+        self._names: dict[str, dgen.Value] = {}
+        self._mutable: set[str] = set()
+        self._types: dict[str, dgen.Type] = {}
+        self._ordering: dict[str, dgen.Value] = {}
+        self._pending_reads: dict[str, list[dgen.Value]] = {}
+        self.local_reads: set[str] = set()
+        self.local_writes: set[str] = set()
         self._parent = parent
         self.captures: list[dgen.Value] = []
 
     def bind(self, name: str, value: dgen.Value) -> None:
-        self._bindings[name] = value
+        """Bind an immutable name (e.g. an extern function)."""
+        self._names[name] = value
 
-    def declare_variable(self, name: str, value: dgen.Value) -> None:
-        """Bind a name as a mutable variable and initialize ordering."""
-        self._bindings[name] = value
-        self._variables.add(name)
-        self._last_write[name] = value
+    def declare(self, name: str, variable_type: dgen.Type) -> None:
+        """Declare a mutable variable. No ops emitted, no ordering yet."""
+        self._mutable.add(name)
+        self._types[name] = variable_type
 
     def is_variable(self, name: str) -> bool:
-        if name in self._variables:
+        if name in self._mutable:
             return True
         return self._parent.is_variable(name) if self._parent is not None else False
 
-    def read_source(self, name: str) -> dgen.Value:
-        """Source for a read: the latest write. Reads are independent."""
-        return self._find_last_write(name)
+    def variable_type(self, name: str) -> dgen.Type:
+        """Return the declared type of a variable."""
+        if name in self._types:
+            return self._types[name]
+        if self._parent is not None:
+            return self._parent.variable_type(name)
+        raise LoweringError(f"undeclared variable: {name}")
 
-    def write_source(self, name: str) -> dgen.Value:
-        """Source for a write: a pack of all pending reads (or the last
-        write if no reads). The write depends on all of them."""
-        reads = self._pending_reads[name]
+    # --- Ordering ---
+
+    def read_ordering(self, name: str) -> dgen.Value | None:
+        """Ordering token for a read: the latest ordering node, or None
+        if the variable has never been written."""
+        if name in self._ordering:
+            return self._ordering[name]
+        if self._parent is not None:
+            value = self._parent.read_ordering(name)
+            if value is not None:
+                self.capture(value)
+            return value
+        return None
+
+    def write_ordering(self, name: str) -> dgen.Value | None:
+        """Ordering token for a write: a pack of all pending reads (or the
+        latest ordering node, or None if never written)."""
+        reads = self._pending_reads.get(name)
         if reads:
             return pack(reads)
-        return self._find_last_write(name)
+        return self.read_ordering(name)
 
     def record_read(self, name: str, read_op: dgen.Value) -> None:
-        """Record a read. Does not advance the write chain."""
-        self._pending_reads[name].append(read_op)
-        self._local_reads.add(name)
+        """Record a read. Does not advance the ordering chain."""
+        self._pending_reads.setdefault(name, []).append(read_op)
+        self.local_reads.add(name)
 
     def record_write(self, name: str, write_op: dgen.Value) -> None:
-        """Record a write. Clears pending reads and advances the chain."""
-        self._bindings[name] = write_op
-        self._last_write[name] = write_op
+        """Record a write. Updates the binding, clears pending reads,
+        and advances the ordering chain."""
+        self._names[name] = write_op
+        self._ordering[name] = write_op
         self._pending_reads[name] = []
-        self._local_writes.add(name)
+        self.local_writes.add(name)
 
-    def record_ordering(self, name: str, fence_op: dgen.Value) -> None:
+    def record_fence(self, name: str, fence_op: dgen.Value) -> None:
         """Record an ordering fence (e.g. control flow op) without updating
-        the variable's binding. Advances the write chain so subsequent
-        reads/writes depend on the fence."""
-        self._last_write[name] = fence_op
+        the name binding. Subsequent reads/writes will depend on it."""
+        self._ordering[name] = fence_op
         self._pending_reads[name] = []
-        self._local_writes.add(name)
+        self.local_writes.add(name)
 
-    @property
-    def local_reads(self) -> set[str]:
-        """Variable names read in this scope (not inherited from parent)."""
-        return self._local_reads
+    # --- Name resolution (non-mutating) ---
 
-    @property
-    def local_writes(self) -> set[str]:
-        """Variable names written in this scope (not inherited from parent)."""
-        return self._local_writes
+    def __contains__(self, name: str) -> bool:
+        if name in self._names:
+            return True
+        return name in self._parent if self._parent is not None else False
 
-    def lookup(self, name: str) -> dgen.Value:
-        return self._find_binding(name)
-
-    def _find_binding(self, name: str) -> dgen.Value:
-        if name in self._bindings:
-            return self._bindings[name]
+    def __getitem__(self, name: str) -> dgen.Value:
+        if name in self._names:
+            return self._names[name]
         if self._parent is not None:
-            value = self._parent._find_binding(name)
-            if value not in self.captures:
-                self.captures.append(value)
-            return value
+            return self._parent[name]
         raise LoweringError(f"undefined: {name}")
 
-    def _find_last_write(self, name: str) -> dgen.Value:
-        if name in self._last_write:
-            return self._last_write[name]
-        if self._parent is not None:
-            return self._parent._find_last_write(name)
-        raise LoweringError(f"no write for: {name}")
+    def capture(self, value: dgen.Value) -> None:
+        """Declare a cross-scope dependency."""
+        if value not in self.captures:
+            self.captures.append(value)
 
-    def has(self, name: str) -> bool:
-        if name in self._bindings:
-            return True
-        return self._parent.has(name) if self._parent is not None else False
+    def resolve(self, name: str) -> dgen.Value:
+        """Look up a name, adding captures for cross-scope references."""
+        if name in self._names:
+            return self._names[name]
+        if self._parent is not None:
+            value = self._parent.resolve(name)
+            self.capture(value)
+            return value
+        raise LoweringError(f"undefined: {name}")
 
     def child(self) -> Scope:
         return Scope(parent=self)
@@ -193,33 +202,44 @@ def _binop(cls: type[dgen.Op], a: dgen.Value, b: dgen.Value, ty: dgen.Type) -> d
 
 
 # ---------------------------------------------------------------------------
+# Dispatch registration
+# ---------------------------------------------------------------------------
+
+_EXPR_HANDLERS: dict[type[c_ast.Node], Callable[..., dgen.Value]] = {}
+_STMT_HANDLERS: dict[type[c_ast.Node], Callable[..., object]] = {}
+
+
+def _expr(
+    node_type: type[c_ast.Node],
+) -> Callable[[Callable[..., dgen.Value]], Callable[..., dgen.Value]]:
+    """Register a Parser method as the expression handler for a node type."""
+
+    def decorator(fn: Callable[..., dgen.Value]) -> Callable[..., dgen.Value]:
+        _EXPR_HANDLERS[node_type] = fn
+        return fn
+
+    return decorator
+
+
+def _stmt(
+    node_type: type[c_ast.Node],
+) -> Callable[[Callable[..., object]], Callable[..., object]]:
+    """Register a Parser method as the statement handler for a node type."""
+
+    def decorator(fn: Callable[..., object]) -> Callable[..., object]:
+        _STMT_HANDLERS[node_type] = fn
+        return fn
+
+    return decorator
+
+
+# ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
 
 
 class Parser:
     """Translate pycparser AST to C-dialect IR."""
-
-    # Maps pycparser expression node type -> handler method name.
-    _EXPR_DISPATCH: dict[type[c_ast.Node], str] = {
-        c_ast.Constant: "_constant",
-        c_ast.ID: "_identifier",
-        c_ast.BinaryOp: "_binary",
-        c_ast.UnaryOp: "_unary",
-        c_ast.Cast: "_cast",
-        c_ast.TernaryOp: "_ternary",
-    }
-
-    # Maps pycparser statement node type -> handler method name.
-    _STMT_DISPATCH: dict[type[c_ast.Node], str] = {
-        c_ast.Return: "_return_statement",
-        c_ast.Decl: "_declaration_statement",
-        c_ast.Assignment: "_assignment_statement",
-        c_ast.Compound: "_compound_statement",
-        c_ast.If: "_if_statement",
-        c_ast.While: "_while_statement",
-        c_ast.For: "_for_statement",
-    }
 
     def __init__(self) -> None:
         self.types = TypeResolver()
@@ -253,7 +273,7 @@ class Parser:
 
     def _bind_extern(self, name: str, type_node: c_ast.Node) -> None:
         """Bind a file-scope function name to an ExternOp. Idempotent."""
-        if self.file_scope.has(name):
+        if name in self.file_scope:
             return
         function_type = self._function_type(type_node)
         self.file_scope.bind(
@@ -289,9 +309,8 @@ class Parser:
         return_type = self._function_type(funcdef.decl.type).result_type
         self._current_return_type = return_type
 
-        # Create block args for function parameters, then bind each as
-        # a local variable (LvalueVarOp + AssignOp) so _identifier treats
-        # parameters and locals uniformly.
+        # Create block args for function parameters. Each parameter is a
+        # mutable local in C, so we declare it and emit an initial assign.
         scope = self.file_scope.child()
         arguments: list[BlockArgument] = []
         if isinstance(funcdef.decl.type, c_ast.FuncDecl):
@@ -301,20 +320,19 @@ class Parser:
                     if isinstance(parameter, c_ast.EllipsisParam):
                         continue
                     if isinstance(parameter, c_ast.Decl) and parameter.name:
-                        argument = BlockArgument(
-                            name=parameter.name,
-                            type=self.types.resolve(parameter.type),
-                        )
+                        param_type = self.types.resolve(parameter.type)
+                        argument = BlockArgument(name=parameter.name, type=param_type)
                         arguments.append(argument)
                         lvalue = LvalueVarOp(
                             var_name=String().constant(parameter.name),
                             source=argument,
-                            type=argument.type,
+                            type=param_type,
                         )
                         assign = AssignOp(
-                            lvalue=lvalue, rvalue=argument, type=argument.type
+                            lvalue=lvalue, rvalue=argument, type=param_type
                         )
-                        scope.declare_variable(parameter.name, assign)
+                        scope.declare(parameter.name, param_type)
+                        scope.record_write(parameter.name, assign)
 
         function_type = FunctionType(
             arguments=pack(arg.type for arg in arguments),
@@ -340,53 +358,50 @@ class Parser:
                 if isinstance(result, _Return):
                     return result
                 last = result
-        return last if last is not None else ConstantOp(value=0, type=Nil())
+        return last if last is not None else Nil().constant(None)
 
     # --- Statements ---
 
     def _statement(self, node: c_ast.Node, scope: Scope) -> dgen.Value | _Return:
         """Lower a statement. Returns a single Value or _Return."""
-        handler_name = self._STMT_DISPATCH.get(type(node))
-        if handler_name is not None:
-            return getattr(self, handler_name)(node, scope)
+        handler = _STMT_HANDLERS.get(type(node))
+        if handler is not None:
+            return handler(self, node, scope)
         # Expression statement -- evaluate for side effects.
         return self._expression(node, scope)
 
+    @_stmt(c_ast.Return)
     def _return_statement(self, node: c_ast.Return, scope: Scope) -> _Return:
         if node.expr is None:
-            return _Return(ConstantOp(value=0, type=self._current_return_type))
+            return _Return(self._current_return_type.constant(0))
         return _Return(self._expression(node.expr, scope))
 
+    @_stmt(c_ast.Compound)
     def _compound_statement(
         self, node: c_ast.Compound, scope: Scope
     ) -> dgen.Value | _Return:
         return self._compound(node, scope.child())
 
+    @_stmt(c_ast.Decl)
     def _declaration_statement(
         self, node: c_ast.Decl, scope: Scope
     ) -> dgen.Value | _Return:
         return self._declaration(node, scope)
 
     def _declaration(self, node: c_ast.Decl, scope: Scope) -> dgen.Value:
-        """Lower a declaration (e.g. int x = 5;). Returns the AssignOp."""
+        """Lower a declaration. Emits assign only when an initializer exists."""
         if node.name is None:
             if node.type is not None:
                 self.types.resolve(node.type)
-            return ConstantOp(value=0, type=Nil())
+            return Nil().constant(None)
         variable_type = self.types.resolve(node.type)
-        if node.init is not None:
-            initial_value = self._expression(node.init, scope)
-        else:
-            initial_value = ConstantOp(value=0, type=variable_type)
-        lvalue = LvalueVarOp(
-            var_name=String().constant(node.name),
-            source=initial_value,
-            type=variable_type,
-        )
-        assign = AssignOp(lvalue=lvalue, rvalue=initial_value, type=variable_type)
-        scope.declare_variable(node.name, assign)
-        return assign
+        scope.declare(node.name, variable_type)
+        if node.init is None:
+            return Nil().constant(None)
+        initial_value = self._expression(node.init, scope)
+        return self._assign_variable(node.name, initial_value, scope)
 
+    @_stmt(c_ast.Assignment)
     def _assignment_statement(
         self, node: c_ast.Assignment, scope: Scope
     ) -> dgen.Value | _Return:
@@ -395,20 +410,24 @@ class Parser:
     def _assignment(self, node: c_ast.Assignment, scope: Scope) -> dgen.Value:
         """Lower an assignment expression. Returns the AssignOp."""
         rhs = self._expression(node.rvalue, scope)
-
         if not isinstance(node.lvalue, c_ast.ID):
             raise LoweringError(
                 f"unsupported assignment target: {type(node.lvalue).__name__}"
             )
-        variable_name = node.lvalue.name
-        variable_type = scope.lookup(variable_name).type
+        return self._assign_variable(node.lvalue.name, rhs, scope)
+
+    def _assign_variable(self, name: str, rhs: dgen.Value, scope: Scope) -> AssignOp:
+        """Emit lvalue_var + assign for a variable write."""
+        variable_type = scope.variable_type(name)
+        ordering = scope.write_ordering(name)
+        source = ordering if ordering is not None else rhs
         lvalue = LvalueVarOp(
-            var_name=String().constant(variable_name),
-            source=scope.write_source(variable_name),
+            var_name=String().constant(name),
+            source=source,
             type=variable_type,
         )
         assign = AssignOp(lvalue=lvalue, rvalue=rhs, type=variable_type)
-        scope.record_write(variable_name, assign)
+        scope.record_write(name, assign)
         return assign
 
     # --- Control flow ---
@@ -417,21 +436,20 @@ class Parser:
         """Convert a value to Boolean (for control flow conditions)."""
         if isinstance(value.type, Boolean):
             return value
-        zero = ConstantOp(value=0, type=value.type)
+        zero = value.type.constant(0)
         return _binop(algebra.NotEqualOp, value, zero, value.type)
 
     def _block_from(self, node: c_ast.Node, scope: Scope) -> dgen.Block:
         """Lower a statement into a Nil-typed Block for control flow bodies."""
-        return self._nil_block(self._body_result(node, scope), scope)
-
-    def _nil_block(self, body: dgen.Value, scope: Scope) -> dgen.Block:
-        """Wrap a body value in a Nil-typed block result."""
-        nil = ConstantOp(value=0, type=Nil())
-        result = ChainOp(lhs=nil, rhs=body, type=Nil())
-        return dgen.Block(result=result, captures=scope.captures)
+        body = self._body_result(node, scope)
+        nil = Nil().constant(None)
+        return dgen.Block(
+            result=ChainOp(lhs=nil, rhs=body, type=Nil()),
+            captures=scope.captures,
+        )
 
     def _body_result(self, node: c_ast.Node, scope: Scope) -> dgen.Value:
-        """Lower control-flow body statements, chaining all results.
+        """Lower control-flow body statements, packing independent results.
 
         For compound bodies, uses the provided scope directly (no extra
         child scope) so variable writes are visible to the caller.
@@ -448,7 +466,7 @@ class Parser:
                         "return inside control flow not yet supported (Brick 6.5)"
                     )
                 results.append(result)
-            return _chain_all(results)
+            return pack(results) if len(results) != 1 else results[0]
         result = self._statement(node, scope)
         if isinstance(result, _Return):
             raise LoweringError(
@@ -464,12 +482,9 @@ class Parser:
     ) -> None:
         """Propagate variable ordering from child scopes after control flow.
 
-        Written variables: cf_op becomes the new ordering fence (last_write).
+        Written variables: cf_op becomes the new ordering fence.
         Read-only variables: cf_op is added to pending reads so a subsequent
         write in the parent will fence after the cf_op.
-
-        Uses record_ordering (not record_write) to avoid overwriting the
-        variable's binding/type with the Nil-typed control flow op.
         """
         all_writes: set[str] = set()
         all_reads: set[str] = set()
@@ -478,11 +493,12 @@ class Parser:
             all_reads |= child.local_reads
         for name in all_writes:
             if scope.is_variable(name):
-                scope.record_ordering(name, cf_op)
+                scope.record_fence(name, cf_op)
         for name in all_reads - all_writes:
             if scope.is_variable(name):
                 scope.record_read(name, cf_op)
 
+    @_stmt(c_ast.If)
     def _if_statement(self, node: c_ast.If, scope: Scope) -> dgen.Value | _Return:
         cond = self._expression(node.cond, scope)
         bool_cond = self._to_bool(cond)
@@ -494,7 +510,7 @@ class Parser:
         if node.iffalse is not None:
             else_block = self._block_from(node.iffalse, else_scope)
         else:
-            else_block = dgen.Block(result=ConstantOp(value=0, type=Nil()))
+            else_block = dgen.Block(result=Nil().constant(None))
 
         empty = pack([])
         if_op = control_flow.IfOp(
@@ -509,14 +525,14 @@ class Parser:
         self._propagate_cf_ordering(scope, [then_scope, else_scope], if_op)
         return if_op
 
+    @_stmt(c_ast.While)
     def _while_statement(self, node: c_ast.While, scope: Scope) -> dgen.Value | _Return:
-        # Condition block: evaluate condition in child scope, convert to bool.
         cond_scope = scope.child()
         cond_val = self._expression(node.cond, cond_scope)
-        cond_result = self._to_bool(cond_val)
-        cond_block = dgen.Block(result=cond_result, captures=cond_scope.captures)
+        cond_block = dgen.Block(
+            result=self._to_bool(cond_val), captures=cond_scope.captures
+        )
 
-        # Body block.
         body_scope = scope.child()
         body_block = self._block_from(node.stmt, body_scope)
 
@@ -528,6 +544,7 @@ class Parser:
         self._propagate_cf_ordering(scope, [cond_scope, body_scope], while_op)
         return while_op
 
+    @_stmt(c_ast.For)
     def _for_statement(self, node: c_ast.For, scope: Scope) -> dgen.Value | _Return:
         # Init runs in current scope.
         if node.init is not None:
@@ -543,20 +560,25 @@ class Parser:
         cond_scope = scope.child()
         if node.cond is not None:
             cond_val = self._expression(node.cond, cond_scope)
-            cond_result = self._to_bool(cond_val)
-            cond_block = dgen.Block(result=cond_result, captures=cond_scope.captures)
+            cond_block = dgen.Block(
+                result=self._to_bool(cond_val), captures=cond_scope.captures
+            )
         else:
-            cond_block = dgen.Block(result=ConstantOp(value=1, type=c_int(32)))
+            cond_block = dgen.Block(result=c_int(32).constant(1))
 
         # Body block: body statements + update appended.
         body_scope = scope.child()
-        body_result = self._body_result(node.stmt, body_scope)
+        body = self._body_result(node.stmt, body_scope)
         if node.next is not None:
             update = self._statement(node.next, body_scope)
             if isinstance(update, _Return):
                 raise LoweringError("return in for-update")
-            body_result = ChainOp(lhs=update, rhs=body_result, type=update.type)
-        body_block = self._nil_block(body_result, body_scope)
+            body = ChainOp(lhs=update, rhs=body, type=update.type)
+        nil = Nil().constant(None)
+        body_block = dgen.Block(
+            result=ChainOp(lhs=nil, rhs=body, type=Nil()),
+            captures=body_scope.captures,
+        )
 
         empty = pack([])
         while_op = control_flow.WhileOp(
@@ -570,43 +592,46 @@ class Parser:
 
     def _expression(self, node: c_ast.Node, scope: Scope) -> dgen.Value:
         """Lower an expression. Returns a single Value."""
-        handler_name = self._EXPR_DISPATCH.get(type(node))
-        if handler_name is not None:
-            return getattr(self, handler_name)(node, scope)
+        handler = _EXPR_HANDLERS.get(type(node))
+        if handler is not None:
+            return handler(self, node, scope)
         raise LoweringError(f"unsupported expression: {type(node).__name__}")
 
+    @_expr(c_ast.Constant)
     def _constant(self, node: c_ast.Constant, _scope: Scope) -> dgen.Value:
         literal = _LITERAL_TYPES.get(node.type)
         if literal is not None:
             parser_fn, bits, signed = literal
-            return ConstantOp(value=parser_fn(node.value), type=c_int(bits, signed))
+            return c_int(bits, signed).constant(parser_fn(node.value))
         if node.type in ("float", "double"):
-            return ConstantOp(value=float(node.value.rstrip("fFlL")), type=Float64())
-        return ConstantOp(value=0, type=c_int(32))
+            return Float64().constant(float(node.value.rstrip("fFlL")))
+        return c_int(32).constant(0)
 
+    @_expr(c_ast.ID)
     def _identifier(self, node: c_ast.ID, scope: Scope) -> dgen.Value:
         """Lower an identifier reference.
 
-        Variables emit lvalue_var + lvalue_to_rvalue. The source comes
-        from the latest write (so back-to-back reads are independent),
+        Variables emit lvalue_var + lvalue_to_rvalue. The ordering token
+        comes from the latest write (so back-to-back reads are independent),
         but we record the read so a subsequent write depends on it.
         """
         if node.name in self.types.enum_constants:
-            return ConstantOp(
-                value=self.types.enum_constants[node.name], type=c_int(32)
-            )
+            return c_int(32).constant(self.types.enum_constants[node.name])
         if not scope.is_variable(node.name):
-            return scope.lookup(node.name)
-        variable_type = scope.lookup(node.name).type
+            return scope.resolve(node.name)
+        variable_type = scope.variable_type(node.name)
+        ordering = scope.read_ordering(node.name)
+        source = ordering if ordering is not None else variable_type.constant(0)
         lvalue = LvalueVarOp(
             var_name=String().constant(node.name),
-            source=scope.read_source(node.name),
+            source=source,
             type=variable_type,
         )
         load = LvalueToRvalueOp(lvalue=lvalue, type=variable_type)
         scope.record_read(node.name, load)
         return load
 
+    @_expr(c_ast.BinaryOp)
     def _binary(self, node: c_ast.BinaryOp, scope: Scope) -> dgen.Value:
         if node.op in ("&&", "||"):
             return self._short_circuit(node, scope)
@@ -635,8 +660,9 @@ class Parser:
         rhs_cast = algebra.CastOp(input=self._to_bool(rhs_val), type=c_int(32))
         rhs_block = dgen.Block(result=rhs_cast, captures=rhs_scope.captures)
 
-        one_block = dgen.Block(result=ConstantOp(value=1, type=c_int(32)))
-        zero_block = dgen.Block(result=ConstantOp(value=0, type=c_int(32)))
+        i32 = c_int(32)
+        one_block = dgen.Block(result=i32.constant(1))
+        zero_block = dgen.Block(result=i32.constant(0))
 
         empty = pack([])
 
@@ -651,11 +677,12 @@ class Parser:
             condition=bool_lhs,
             then_arguments=empty,
             else_arguments=empty,
-            type=c_int(32),
+            type=i32,
             then_body=then_block,
             else_body=else_block,
         )
 
+    @_expr(c_ast.UnaryOp)
     def _unary(self, node: c_ast.UnaryOp, scope: Scope) -> dgen.Value:
         entry = _UNARY.get(node.op)
         if entry is not None:
@@ -666,11 +693,19 @@ class Parser:
             return self._expression(node.expr, scope)
         raise LoweringError(f"unsupported unary op: {node.op}")
 
+    @_expr(c_ast.Cast)
     def _cast(self, node: c_ast.Cast, scope: Scope) -> dgen.Value:
         return self._expression(node.expr, scope)
 
+    @_expr(c_ast.TernaryOp)
     def _ternary(self, node: c_ast.TernaryOp, scope: Scope) -> dgen.Value:
         raise LoweringError("ternary operator (?:) not yet supported")
+
+    @_expr(c_ast.Assignment)
+    def _assignment_expression(
+        self, node: c_ast.Assignment, scope: Scope
+    ) -> dgen.Value:
+        return self._assignment(node, scope)
 
 
 # ---------------------------------------------------------------------------
@@ -685,21 +720,6 @@ class _Return:
 
     def __init__(self, value: dgen.Value) -> None:
         self.value = value
-
-
-def _chain_all(values: list[dgen.Value]) -> dgen.Value:
-    """Chain a list of values so the result depends on all of them.
-
-    Independent values (e.g. mutations to different variables) have no
-    use-def edge between them. ChainOp makes the last value depend on
-    all earlier ones, keeping them alive in the block.
-    """
-    if not values:
-        return ConstantOp(value=0, type=Nil())
-    result = values[0]
-    for v in values[1:]:
-        result = ChainOp(lhs=v, rhs=result, type=v.type)
-    return result
 
 
 # ---------------------------------------------------------------------------

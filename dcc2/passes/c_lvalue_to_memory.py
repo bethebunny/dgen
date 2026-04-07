@@ -17,8 +17,8 @@ from __future__ import annotations
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import memory
-from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
+from dgen.type import Constant
 
 from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 
@@ -27,9 +27,9 @@ from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 # replaced it. Control flow ops (IfOp, WhileOp, RegionOp) also appear
 # as ordering fences when variables are read/written inside control flow.
 # All of these are valid mem tokens — use them directly.
-# Only BlockArgument and ConstantOp indicate the first operation on a
+# Only BlockArgument and Constant indicate the first operation on a
 # variable — those fall back to the alloca as the initial mem token.
-_INITIAL_VALUE_TYPES = (BlockArgument, ConstantOp)
+_INITIAL_VALUE_TYPES = (BlockArgument, Constant)
 
 
 def _var_name(lvalue: LvalueVarOp) -> str:
@@ -44,12 +44,12 @@ class CLvalueToMemory(Pass):
 
     def __init__(self) -> None:
         self._alloca: dict[str, memory.StackAllocateOp] = {}
-        self._alloca_depth: dict[str, int] = {}
+        self._alloca_owner: dict[str, dgen.Block] = {}
         self._block_stack: list[dgen.Block] = []
 
     def run(self, value: dgen.Value, compiler: object) -> dgen.Value:
         self._alloca = {}
-        self._alloca_depth = {}
+        self._alloca_owner = {}
         self._block_stack = []
         return super().run(value, compiler)
 
@@ -59,11 +59,11 @@ class CLvalueToMemory(Pass):
         self._block_stack.pop()
 
     def _capture_alloca(self, name: str, alloca: memory.StackAllocateOp) -> None:
-        """Add alloca as a capture to inner blocks that are deeper than
+        """Add alloca as a capture to every block in the stack that isn't
         the block where the alloca was created."""
-        owner_depth = self._alloca_depth[name]
-        for block in self._block_stack[owner_depth + 1 :]:
-            if alloca not in block.captures:
+        owner = self._alloca_owner[name]
+        for block in self._block_stack:
+            if block is not owner and alloca not in block.captures:
                 block.captures = [*block.captures, alloca]
 
     @lowering_for(AssignOp)
@@ -102,5 +102,8 @@ class CLvalueToMemory(Pass):
             type=memory.Reference(element_type=element_type),
         )
         self._alloca[name] = alloca
-        self._alloca_depth[name] = len(self._block_stack) - 1
+        # Allocas belong to the outermost block (function body), not
+        # wherever they're first encountered. The first block in the
+        # stack is the root wrapper; the second is the function body.
+        self._alloca_owner[name] = self._block_stack[1]
         return alloca
