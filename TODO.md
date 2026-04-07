@@ -17,6 +17,7 @@
 
 ## Test infrastructure
 - Run verifier on IR test inputs (parsed from ASM) — currently roundtrip tests don't verify captures/scoping invariants on the parsed IR
+- Fuzz testing on dependency ordering: tests should verify correctness under any valid topological sort of the use-def graph, not just the one produced by the current `transitive_dependencies` walk. A random topo-sort iterator would catch ordering bugs where ops are accidentally independent (missing use-def edge) but happen to be emitted in the right order by the default DFS.
 
 ## Parser / type values
 - Parser stores Type objects (e.g. `Index()`) as constant values for TypeType fields. It should store their JSON dict form (`{"tag": "builtin.Index"}`) so `TypeValue.from_json` doesn't need special-casing.
