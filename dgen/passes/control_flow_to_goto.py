@@ -101,18 +101,18 @@ class ResolveJumpMarkers(Pass):
         self._self_param = self_param
         self._exit_param = exit_param
 
-    def _lower_block(self, block: dgen.Block) -> None:
+    def lower_block(self, block: dgen.Block) -> None:
         # Add loop targets as captures so replacement BranchOps can
         # reference them (captures form the stop set for block.values).
         block.captures = [self._self_param, self._exit_param, *block.captures]
-        # Use the standard _lower_block logic, but skip recursing into
+        # Use the standard lower_block logic, but skip recursing into
         # nested loop bodies — those belong to inner loops.
         for v in block.values:
             result = self._dispatch_handlers(v)
             effective = result if result is not None else v
             if not isinstance(effective, (control_flow.WhileOp, control_flow.ForOp)):
                 for _, child_block in effective.blocks:
-                    self._lower_block(child_block)
+                    self.lower_block(child_block)
             if result is not None:
                 block.replace_uses_of(v, result)
 
@@ -286,7 +286,7 @@ class ControlFlowToGoto(Pass):
 
         # Resolve break/continue markers before constructing goto structure.
         # The resolver adds temporary captures that we strip afterward.
-        ResolveJumpMarkers(header_self, header_exit)._lower_block(op.body)
+        ResolveJumpMarkers(header_self, header_exit).lower_block(op.body)
         original_captures = [
             c for c in op.body.captures if c is not header_self and c is not header_exit
         ]

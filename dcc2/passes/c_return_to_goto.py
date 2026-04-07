@@ -30,9 +30,9 @@ class _ResolveCReturn(Pass):
     def __init__(self, exit_param: BlockParameter) -> None:
         self._exit_param = exit_param
 
-    def _lower_block(self, block: dgen.Block) -> None:
+    def lower_block(self, block: dgen.Block) -> None:
         block.captures = [self._exit_param, *block.captures]
-        super()._lower_block(block)
+        super().lower_block(block)
 
     @lowering_for(CReturnOp)
     def lower_c_return(self, op: CReturnOp) -> dgen.Value | None:
@@ -62,7 +62,7 @@ class CReturnToGoto(Pass):
 
         # Resolve CReturnOp markers — they branch to %self (the merge
         # point) with their return value as the phi argument.
-        _ResolveCReturn(region_self)._lower_block(op.body)
+        _ResolveCReturn(region_self).lower_block(op.body)
         body_captures = [c for c in op.body.captures if c is not region_self]
 
         result_arg = BlockArgument(name=f"func_result{lid}", type=op.result_type)
