@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import memory
+from dgen.module import PackOp
 from dgen.passes.pass_ import Pass, lowering_for
 
 from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
@@ -76,12 +77,13 @@ class CLvalueToMemory(Pass):
     def _mem_from_source(self, name: str, source: dgen.Value) -> dgen.Value:
         """Derive the mem token from a LvalueVarOp's source.
 
-        If source is a memory op (StoreOp, LoadOp) — it's the replaced
-        prior operation on this variable. Use it directly as mem.
-        Otherwise (ConstantOp, BlockArgument) — this is the first
-        operation on this variable. Use the alloca.
+        After replace_uses_of, the source is one of:
+        - StoreOp/LoadOp: the replaced prior operation. Use directly.
+        - PackOp: a pack of replaced reads (write depends on all).
+          Use the pack itself — it transitively depends on all reads.
+        - ConstantOp/BlockArgument: first operation. Use the alloca.
         """
-        if isinstance(source, (memory.StoreOp, memory.LoadOp)):
+        if isinstance(source, (memory.StoreOp, memory.LoadOp, PackOp)):
             return source
         return self._alloca[name]
 
