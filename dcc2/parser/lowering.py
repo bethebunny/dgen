@@ -38,18 +38,15 @@ class LoweringError(Exception):
 class Scope:
     """Lexical scope for C name resolution and memory ordering.
 
-    Tracks three things per variable:
-    - _bindings: the current value (for reads — always the latest write)
-    - _variables: which names are mutable variables (vs externs/constants)
-    - _mem_order: the latest memory operation (read or write) on each
-      variable, used as LvalueVarOp.source to encode statement order
-      into the use-def graph
+    Tracks per variable:
+    - _bindings: the current value (latest write, for type resolution)
+    - _variables: which names are mutable variables
+    - _mem_order: the latest operation (read or write) on each variable,
+      used as LvalueVarOp.source to encode statement order
 
-    Memory ordering rule: reads depend on the latest write only.
-    A subsequent write depends on the latest operation (read or write).
-    This means back-to-back reads are independent (both depend on the
-    same prior write), but a write after reads depends on all of them
-    via the _mem_order chain.
+    Every operation on a variable chains through the previous one via
+    source, creating a total per-variable order matching C statement
+    semantics. Operations on different variables are independent.
     """
 
     def __init__(self, parent: Scope | None = None) -> None:
@@ -73,16 +70,12 @@ class Scope:
             return True
         return self._parent.is_variable(name) if self._parent is not None else False
 
-    def var_source_for_read(self, name: str) -> dgen.Value:
-        """Source for a read: the latest write (binding). Reads are independent."""
-        return self._lookup_binding(name)
-
-    def var_source_for_write(self, name: str) -> dgen.Value:
-        """Source for a write: the latest operation (read or write)."""
+    def var_source(self, name: str) -> dgen.Value:
+        """Source for the next operation on this variable: the latest op."""
         return self._lookup_mem_order(name)
 
     def record_read(self, name: str, read_op: dgen.Value) -> None:
-        """Record a read as the latest memory operation (for write ordering)."""
+        """Record a read as the latest memory operation."""
         self._mem_order[name] = read_op
 
     def record_write(self, name: str, write_op: dgen.Value) -> None:
@@ -401,7 +394,7 @@ class Parser:
                 f"unsupported assignment target: {type(node.lvalue).__name__}"
             )
         var_name = node.lvalue.name
-        source = scope.var_source_for_write(var_name)
+        source = scope.var_source(var_name)
         lv = LvalueVarOp(
             var_name=String().constant(var_name),
             source=source,
@@ -458,7 +451,7 @@ class Parser:
             return op
         if not scope.is_variable(node.name):
             return scope.lookup(node.name)
-        source = scope.var_source_for_read(node.name)
+        source = scope.var_source(node.name)
         lv = LvalueVarOp(
             var_name=String().constant(node.name),
             source=source,
