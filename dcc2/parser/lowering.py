@@ -36,21 +36,26 @@ class LoweringError(Exception):
 
 
 class Scope:
-    """Lexical scope for C name resolution.
+    """Lexical scope for C name resolution and memory ordering.
 
-    Each compound statement ({}) creates a child scope. Variable
-    declarations bind in the current scope. Lookups walk the parent
-    chain. Captures track cross-scope references for block construction.
+    Tracks three things per variable:
+    - _bindings: the current value (for reads — always the latest write)
+    - _variables: which names are mutable variables (vs externs/constants)
+    - _mem_order: the latest memory operation (read or write) on each
+      variable, used as LvalueVarOp.source to encode statement order
+      into the use-def graph
 
-    Variables (names in _variables) have their bindings updated after
-    every read and write, so LvalueVarOp.source always chains to the
-    prior operation on that variable. This encodes statement ordering
-    into the use-def graph.
+    Memory ordering rule: reads depend on the latest write only.
+    A subsequent write depends on the latest operation (read or write).
+    This means back-to-back reads are independent (both depend on the
+    same prior write), but a write after reads depends on all of them
+    via the _mem_order chain.
     """
 
     def __init__(self, parent: Scope | None = None) -> None:
         self._bindings: dict[str, dgen.Value] = {}
         self._variables: set[str] = set()
+        self._mem_order: dict[str, dgen.Value] = {}
         self._parent = parent
         self.captures: list[dgen.Value] = []
 
@@ -58,25 +63,52 @@ class Scope:
         self._bindings[name] = value
 
     def declare_variable(self, name: str, value: dgen.Value) -> None:
-        """Bind a name as a mutable variable (parameter or local)."""
+        """Bind a name as a mutable variable and initialize ordering."""
         self._bindings[name] = value
         self._variables.add(name)
+        self._mem_order[name] = value
 
     def is_variable(self, name: str) -> bool:
-        """Check if a name is a declared variable (not an extern/constant)."""
         if name in self._variables:
             return True
         return self._parent.is_variable(name) if self._parent is not None else False
 
+    def var_source_for_read(self, name: str) -> dgen.Value:
+        """Source for a read: the latest write (binding). Reads are independent."""
+        return self._lookup_binding(name)
+
+    def var_source_for_write(self, name: str) -> dgen.Value:
+        """Source for a write: the latest operation (read or write)."""
+        return self._lookup_mem_order(name)
+
+    def record_read(self, name: str, read_op: dgen.Value) -> None:
+        """Record a read as the latest memory operation (for write ordering)."""
+        self._mem_order[name] = read_op
+
+    def record_write(self, name: str, write_op: dgen.Value) -> None:
+        """Record a write as both the current value and latest operation."""
+        self._bindings[name] = write_op
+        self._mem_order[name] = write_op
+
     def lookup(self, name: str) -> dgen.Value:
+        return self._lookup_binding(name)
+
+    def _lookup_binding(self, name: str) -> dgen.Value:
         if name in self._bindings:
             return self._bindings[name]
         if self._parent is not None:
-            val = self._parent.lookup(name)
+            val = self._parent._lookup_binding(name)
             if val not in self.captures:
                 self.captures.append(val)
             return val
         raise LoweringError(f"undefined: {name}")
+
+    def _lookup_mem_order(self, name: str) -> dgen.Value:
+        if name in self._mem_order:
+            return self._mem_order[name]
+        if self._parent is not None:
+            return self._parent._lookup_mem_order(name)
+        raise LoweringError(f"no mem order for: {name}")
 
     def has(self, name: str) -> bool:
         if name in self._bindings:
@@ -369,16 +401,16 @@ class Parser:
                 f"unsupported assignment target: {type(node.lvalue).__name__}"
             )
         var_name = node.lvalue.name
-        prev = scope.lookup(var_name)
+        source = scope.var_source_for_write(var_name)
         lv = LvalueVarOp(
             var_name=String().constant(var_name),
-            source=prev,
-            type=prev.type,
+            source=source,
+            type=source.type,
         )
         yield lv
-        assign = AssignOp(lvalue=lv, rvalue=rhs, type=prev.type)
+        assign = AssignOp(lvalue=lv, rvalue=rhs, type=source.type)
         yield assign
-        scope.bind(var_name, assign)
+        scope.record_write(var_name, assign)
         return assign
 
     # --- Expressions ---
@@ -416,11 +448,9 @@ class Parser:
     def _id(self, node: c_ast.ID, scope: Scope) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an identifier reference.
 
-        Variables emit lvalue_var + lvalue_to_rvalue, then update the
-        scope binding so the next operation on this variable chains
-        through this read. This encodes C statement order into the
-        use-def graph: read(x) → write(x) forces the read before the
-        write, even though they're on the same alloca.
+        Variables emit lvalue_var + lvalue_to_rvalue. The source comes
+        from the latest write (so back-to-back reads are independent),
+        but we record the read so a subsequent write depends on it.
         """
         if node.name in self.types.enum_constants:
             op = ConstantOp(value=self.types.enum_constants[node.name], type=c_int(32))
@@ -428,17 +458,16 @@ class Parser:
             return op
         if not scope.is_variable(node.name):
             return scope.lookup(node.name)
-        binding = scope.lookup(node.name)
+        source = scope.var_source_for_read(node.name)
         lv = LvalueVarOp(
             var_name=String().constant(node.name),
-            source=binding,
-            type=binding.type,
+            source=source,
+            type=source.type,
         )
         yield lv
-        load = LvalueToRvalueOp(lvalue=lv, type=binding.type)
+        load = LvalueToRvalueOp(lvalue=lv, type=source.type)
         yield load
-        # Update binding: next operation on this variable depends on this read.
-        scope.bind(node.name, load)
+        scope.record_read(node.name, load)
         return load
 
     def _binary(
