@@ -401,6 +401,109 @@ class TestEndToEnd:
             == 3
         )
 
+    # --- Brick 6: Control flow ---
+
+    def test_if_true(self) -> None:
+        assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 1) == 1
+
+    def test_if_false(self) -> None:
+        assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 0) == 0
+
+    def test_if_else(self) -> None:
+        assert (
+            run_c("int f(int x) { int r; if (x) r = 1; else r = 2; return r; }", 1) == 1
+        )
+        assert (
+            run_c("int f(int x) { int r; if (x) r = 1; else r = 2; return r; }", 0) == 2
+        )
+
+    def test_if_compound_body(self) -> None:
+        assert (
+            run_c("int f(int x) { int r = 0; if (x) { r = x + 10; } return r; }", 5)
+            == 15
+        )
+
+    def test_while_loop(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int s = 0; int i = 0;"
+                " while (i < n) { s = s + i; i = i + 1; } return s; }",
+                5,
+            )
+            == 10
+        )
+
+    def test_while_zero_iterations(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int s = 0; int i = 0;"
+                " while (i < n) { s = s + i; i = i + 1; } return s; }",
+                0,
+            )
+            == 0
+        )
+
+    def test_for_loop(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int r = 1; int i;"
+                " for (i = 1; i <= n; i = i + 1) r = r * i; return r; }",
+                5,
+            )
+            == 120
+        )
+
+    def test_for_with_decl_init(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int s = 0;"
+                " for (int i = 0; i < n; i = i + 1) s = s + i; return s; }",
+                5,
+            )
+            == 10
+        )
+
+    def test_nested_if_while(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int s = 0; int i = 0;"
+                " while (i < n) { if (i - (i/2)*2 == 0) s = s + i;"
+                " i = i + 1; } return s; }",
+                6,
+            )
+            == 6
+        )
+
+    def test_short_circuit_and(self) -> None:
+        assert run_c("int f(int x, int y) { return x && y; }", 0, 42) == 0
+        assert run_c("int f(int x, int y) { return x && y; }", 1, 42) == 1
+        assert run_c("int f(int x, int y) { return x && y; }", 1, 0) == 0
+
+    def test_short_circuit_or(self) -> None:
+        assert run_c("int f(int x, int y) { return x || y; }", 0, 0) == 0
+        assert run_c("int f(int x, int y) { return x || y; }", 0, 1) == 1
+        assert run_c("int f(int x, int y) { return x || y; }", 1, 0) == 1
+
+    def test_read_inside_if_then_write(self) -> None:
+        """Read inside if-body must fence subsequent write (diamond pattern)."""
+        assert (
+            run_c(
+                "int f(int c) { int x = 1; if (c) { int y = x; } x = 2; return x; }",
+                1,
+            )
+            == 2
+        )
+
+    def test_while_read_then_outer_write(self) -> None:
+        """Reads inside while body must fence subsequent write."""
+        assert (
+            run_c(
+                "int f() { int x = 10; int s = 0; int i = 0;"
+                " while (i < 3) { s = s + x; i = i + 1; } x = 0; return s; }"
+            )
+            == 30
+        )
+
 
 class TestMemoryOrdering:
     """Structural tests for the use-def ordering of memory operations."""
