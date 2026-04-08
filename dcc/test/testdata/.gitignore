@@ -1,5 +1,0 @@
-# Large generated test files — regenerate via test scripts
-large.c
-large_sqlite_like.c
-sqlite3.c
-sqlite3.h

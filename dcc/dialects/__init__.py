@@ -1,14 +1,12 @@
-"""C dialect definitions and convenience constructors.
+"""C dialect type constructors.
 
 Maps C types to shared dgen types:
   int/unsigned  -> number.SignedInteger / number.UnsignedInteger
-  float/double  -> number.Float64
+  float         -> number.Float64  (TODO: Float32 when layout primitive exists)
+  double        -> number.Float64
   void          -> builtin.Nil
   T*            -> memory.Reference<T>
   T[N]          -> builtin.Array<T, N>
-  int (*)(...)  -> function.Function<[], R>
-
-Only CStruct and CUnion remain C-specific.
 """
 
 from __future__ import annotations
