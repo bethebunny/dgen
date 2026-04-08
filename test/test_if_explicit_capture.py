@@ -7,7 +7,7 @@ blocks, making each branch a closed term.
 
 from dgen import asm
 from dgen.asm.parser import parse
-from dgen.compiler import Compiler, IdentityPass
+from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.dialects import control_flow, function
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.testing import assert_ir_equivalent, strip_prefix

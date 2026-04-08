@@ -6,11 +6,11 @@ loop's entry branch.
 """
 
 from dgen.asm.parser import parse
-from dgen.codegen import LLVMCodegen
-from dgen.compiler import Compiler, IdentityPass
+from dgen.llvm.codegen import LLVMCodegen
+from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.testing import strip_prefix
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
 

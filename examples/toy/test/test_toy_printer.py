@@ -7,7 +7,7 @@ from dgen import asm
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function
-from dgen.module import ConstantOp, PackOp, pack
+from dgen.builtins import ConstantOp, PackOp, pack
 from dgen.testing import strip_prefix
 from toy.dialects import shape_constant, toy
 

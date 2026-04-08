@@ -3,7 +3,7 @@
 import dgen
 from dgen import asm
 from dgen.asm.parser import parse
-from dgen.compiler import Compiler, IdentityPass
+from dgen.passes.compiler import Compiler, IdentityPass
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.shape_inference import ShapeInference

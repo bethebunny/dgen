@@ -10,12 +10,11 @@ from collections.abc import Callable
 from functools import reduce
 from typing import Any
 
-import dgen.type
 from dgen import Block, Constant, Op, Type, Value
 from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
-from dgen.module import ConstantOp, PackOp
+from dgen.builtins import ConstantOp, PackOp
 
 
 class ParseError(RuntimeError):

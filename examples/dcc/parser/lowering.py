@@ -22,7 +22,7 @@ from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Boolean, Float64
-from dgen.module import pack
+from dgen.builtins import pack
 
 from dcc.dialects import c_int
 from dcc.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp

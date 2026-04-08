@@ -15,8 +15,8 @@ from dgen.dialects.builtin import Nil
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
-from dgen.graph import transitive_dependencies
-from dgen.module import pack
+from dgen.ir.traversal import transitive_dependencies
+from dgen.builtins import pack
 
 from dcc.cli import c_compiler
 from dcc.dialects import c, c_double, c_float, c_int, c_ptr, c_void

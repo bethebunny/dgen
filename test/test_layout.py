@@ -10,9 +10,10 @@ from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse
 from dgen.dialects import builtin, number
 from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
-from dgen.module import string_value
+from dgen.builtins import string_value
 from dgen.testing import strip_prefix
-from dgen.type import Constant, Fields, Memory, Type, TypeType, Value
+from dgen.memory import Memory
+from dgen.type import Constant, Fields, Type, TypeType, Value
 
 
 def test_primitive_sizes():

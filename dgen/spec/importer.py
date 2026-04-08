@@ -3,7 +3,7 @@
 Install with ``install()`` (called automatically when ``dgen`` is imported) to
 make ``.dgen`` files importable as regular Python modules.  The hook searches
 for ``<name>.dgen`` alongside the normal Python path entries and, when found,
-builds the dialect module in-memory via :func:`dgen.gen.build.build`.
+builds the dialect module in-memory via :func:`dgen.spec.builder.build`.
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-from dgen.gen.ast import DgenFile
-from dgen.gen.build import build
-from dgen.gen.parser import parse
+from dgen.spec.ast import DgenFile
+from dgen.spec.builder import build
+from dgen.spec.parser import parse
 
 
 def _path_to_module(dgen_path: Path) -> str | None:

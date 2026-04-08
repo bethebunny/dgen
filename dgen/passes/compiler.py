@@ -8,7 +8,9 @@ from typing import Generic, Protocol, TypeVar
 import dgen
 from dgen.passes.pass_ import Pass
 
-verify_passes: ContextVar[bool] = ContextVar("dgen.verify_passes", default=False)
+verify_passes: ContextVar[bool] = ContextVar(
+    "dgen.ir.verification_passes", default=False
+)
 
 T = TypeVar("T", covariant=True)
 
@@ -42,7 +44,7 @@ class Compiler(Generic[T]):
 
     def compile(self, value: dgen.Value) -> T:
         """Full pipeline: staging → passes → exit."""
-        from dgen.staging import compile_value
+        from dgen.passes.staging import compile_value
 
         return compile_value(value, self)
 

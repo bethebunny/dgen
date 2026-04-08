@@ -14,7 +14,7 @@ is valid in the caller's scope.
 from __future__ import annotations
 
 import dgen
-from dgen.graph import inline_block
+from dgen.ir.traversal import inline_block
 from dgen.passes.pass_ import Pass, lowering_for
 
 from actor.dialects.actor import ActorOp, PipelineOp, ProduceOp

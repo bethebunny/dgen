@@ -6,12 +6,12 @@ designed so that incorrect ordering would produce the wrong result.
 """
 
 from dgen.asm.parser import parse
-from dgen.codegen import Executable, LLVMCodegen
-from dgen.compiler import Compiler
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.llvm.codegen import Executable, LLVMCodegen
+from dgen.passes.compiler import Compiler
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.testing import strip_prefix
 
 

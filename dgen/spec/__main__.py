@@ -1,4 +1,4 @@
-"""CLI: python -m dgen.gen path/to/dialect.dgen"""
+"""CLI: python -m dgen.spec path/to/dialect.dgen"""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 import click
 
-from dgen.gen.importer import _path_to_module, install
-from dgen.gen.python import generate_pyi
+from dgen.spec.importer import _path_to_module, install
+from dgen.spec.stubs import generate_pyi
 
 
 @click.command()

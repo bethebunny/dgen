@@ -2,14 +2,14 @@
 
 from dgen import Block, asm
 from dgen.asm.parser import parse
-from dgen.codegen import Executable, LLVMCodegen
+from dgen.llvm.codegen import Executable, LLVMCodegen
 from dgen.testing import llvm_compile as compile_module
-from dgen.compiler import Compiler
+from dgen.passes.compiler import Compiler
 from dgen.dialects.builtin import TypeOp
 from dgen.dialects.index import Index
-from dgen.module import ConstantOp
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.builtins import ConstantOp
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.testing import assert_ir_equivalent, strip_prefix
 from dgen.type import TypeType
 

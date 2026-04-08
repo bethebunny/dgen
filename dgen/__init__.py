@@ -3,7 +3,8 @@ from pathlib import Path
 from .block import Block
 from .dialect import Dialect
 from .op import Op
-from .type import Constant, Trait, Type, TypeType, Value
+from .trait import Trait
+from .type import Constant, Type, TypeType, Value
 
 __all__ = [
     "Block",
@@ -16,7 +17,7 @@ __all__ = [
     "Value",
 ]
 
-from dgen.gen.importer import install as _install_dgen_hook
+from dgen.spec.importer import install as _install_dgen_hook
 
 _install_dgen_hook()
 

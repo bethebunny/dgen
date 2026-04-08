@@ -5,21 +5,21 @@ import pytest
 from dgen import asm
 from dgen.asm.parser import parse
 from dgen.block import BlockArgument
-from dgen.codegen import Executable, LLVMCodegen
-from dgen.compiler import Compiler, IdentityPass
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.llvm.codegen import Executable, LLVMCodegen
+from dgen.passes.compiler import Compiler, IdentityPass
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.dialects.builtin import Nil
 from dgen.dialects.function import FunctionOp
-from dgen.module import ConstantOp
+from dgen.builtins import ConstantOp
 import dgen
 from dgen.passes.pass_ import Pass, lowering_for
-from dgen.staging import ConstantFold
-from dgen.verify import ClosedBlockError
+from dgen.passes.staging import ConstantFold
+from dgen.ir.verification import ClosedBlockError
 from toy.dialects import toy
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
-from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.testing import strip_prefix
 
 

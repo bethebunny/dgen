@@ -11,7 +11,7 @@ from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean, Float64
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, pack
+from dgen.builtins import ConstantOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.dialects import control_flow
 from dgen.dialects import ndbuffer
@@ -20,7 +20,7 @@ from toy.dialects import shape_constant, toy
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from dgen.compiler import Compiler
+    from dgen.passes.compiler import Compiler
 
 
 def _nested_for(

@@ -1,12 +1,12 @@
 """Tests for .dgen file parser."""
 
-from dgen.gen.ast import (
+from dgen.spec.ast import (
     ExpressionConstraint,
     HasTraitConstraint,
     HasTypeConstraint,
     TypeRef,
 )
-from dgen.gen.parser import parse
+from dgen.spec.parser import parse
 
 
 def test_parse_import():

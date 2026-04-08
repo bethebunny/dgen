@@ -86,7 +86,7 @@ mem = Memory.from_asm(TensorType(shape=[3]), "[1.0, 2.0, 3.0]")
 When codegen encounters a `ConstantOp` with an array value, it creates a `Memory` from the op's type, packs the compile-time data, and emits the buffer's address as an `inttoptr` constant. The JIT code reads directly from that buffer — no serialization boundary, the compile-time layout IS the runtime layout.
 
 ```python
-# dgen/codegen.py
+# dgen/llvm/codegen.py
 mem = Memory(op.type)
 mem.pack(*op.value)
 host_buffers.append(mem)  # prevent GC
@@ -98,7 +98,7 @@ constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
 The staging evaluator JIT-compiles subgraphs to resolve compile-time values. When a subgraph depends on function parameters (stage-1), the runtime arguments must be passed to the JIT. `_prepare_ctypes_args` walks the parameters and uses each type's layout to marshal:
 
 ```python
-# dgen/staging.py
+# dgen/passes/staging.py
 for arg, param in zip(python_args, block_args):
     ct_val, refs = param.type.__layout__.prepare_arg(arg, param.type)
 ```

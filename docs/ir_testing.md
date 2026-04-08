@@ -73,7 +73,7 @@ This restores the invariant that approving a snapshot update means something rea
 
 Three components:
 
-1. **`dgen/ir_equiv.py`** — `fingerprint(value)`, `graph_equivalent(a, b)`, `structural_diff(a, b)`
+1. **`dgen/ir/equivalence.py`** — `fingerprint(value)`, `graph_equivalent(a, b)`, `structural_diff(a, b)`
 2. **Test helper** — `assert_ir_equivalent(actual, expected)` in `dgen/testing.py` or `conftest.py`
 3. **Test migration** — existing pass output tests adopt the helper
 

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import dgen
-from dgen.verify import (
+from dgen.ir.verification import (
     verify_all_ready,
     verify_closed_blocks,
     verify_constraints,
@@ -15,7 +15,7 @@ from dgen.verify import (
 )
 
 if TYPE_CHECKING:
-    from dgen.compiler import Compiler
+    from dgen.passes.compiler import Compiler
 
 # ---------------------------------------------------------------------------
 # Handler registration

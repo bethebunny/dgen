@@ -1,7 +1,7 @@
 """Tests for toy-specific memory layout."""
 
 from dgen.layout import Span
-from dgen.type import Memory
+from dgen.memory import Memory
 from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
 

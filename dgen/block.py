@@ -6,7 +6,7 @@ from typing import Iterable
 
 import dgen
 
-from .graph import transitive_dependencies
+from dgen.ir.traversal import transitive_dependencies
 from .type import Memory, TypeType, Value
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dgen
-from dgen.graph import all_values
+from dgen.ir.traversal import all_values
 from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import toy
 

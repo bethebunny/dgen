@@ -1,6 +1,6 @@
 """Tests for .dgen AST types."""
 
-from dgen.gen.ast import (
+from dgen.spec.ast import (
     DataField,
     DgenFile,
     HasTypeConstraint,

@@ -8,15 +8,16 @@ from typing import TYPE_CHECKING, TypeVar
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.codegen import Executable, build_callback_thunk, register_executable
+from dgen.llvm.codegen import Executable, build_callback_thunk, register_executable
 from dgen.dialects.function import Function, FunctionOp
-from dgen.graph import all_values, interior_values
-from dgen.module import ConstantOp, pack
+from dgen.ir.traversal import all_values, interior_values
+from dgen.builtins import ConstantOp, pack
 from dgen.passes.pass_ import Pass
-from dgen.type import Constant, Memory
+from dgen.memory import Memory
+from dgen.type import Constant
 
 if TYPE_CHECKING:
-    from dgen.compiler import Compiler
+    from dgen.passes.compiler import Compiler
 
 T = TypeVar("T")
 

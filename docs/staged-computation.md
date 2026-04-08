@@ -51,7 +51,7 @@ An op's stage number tells you *when* it can become ready. `Op.ready` tells you 
 
 ## Key Functions
 
-All staging logic lives in `dgen/staging.py`.
+All staging logic lives in `dgen/passes/staging.py`.
 
 ### Stage Computation
 
@@ -193,9 +193,9 @@ The current `compile_staged` callback path handles the case where unresolved `__
 
 | File | Role |
 |------|------|
-| `dgen/staging.py` | Stage computation, dependency tracing, staged resolution, `compile_staged` |
+| `dgen/passes/staging.py` | Stage computation, dependency tracing, staged resolution, `compile_staged` |
 | `dgen/op.py` | `Op.ready` property |
-| `dgen/codegen.py` | LLVM IR emission with function parameters, JIT with args |
+| `dgen/llvm/codegen.py` | LLVM IR emission with function parameters, JIT with args |
 | `dgen/value.py` | `Constant` / `Value` base classes |
 | `toy/passes/toy_to_affine.py` | Block arg propagation, TileOp lowering |
 | `toy/passes/affine_to_llvm.py` | Block arg propagation with shape tracking |

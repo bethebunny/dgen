@@ -1,7 +1,15 @@
-"""Trait base class — re-exported from dgen.type to avoid circular imports."""
+"""Trait base class for dgen dialects."""
 
 from __future__ import annotations
 
-from .type import Trait
+from .type import TypeType
 
-__all__ = ["Trait"]
+
+class Trait(TypeType):
+    """Base class for all dgen traits.
+
+    Traits are type values in the type hierarchy — they describe sets
+    of types. A trait can appear wherever a type can: as a type annotation,
+    in constraint checks, in ASM type position.
+
+    """

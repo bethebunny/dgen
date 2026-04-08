@@ -16,14 +16,14 @@ from dgen.type import format_value
 from dgen.asm.parser import ASMParser, parse, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
-from dgen.codegen import Executable, LLVMCodegen
+from dgen.llvm.codegen import Executable, LLVMCodegen
 from dgen.testing import llvm_compile as compile_module
-from dgen.compiler import Compiler
+from dgen.passes.compiler import Compiler
 from dgen.dialects import builtin, llvm, number
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, pack, string_value
-from dgen.type import Memory
+from dgen.builtins import ConstantOp, pack, string_value
+from dgen.memory import Memory
 from toy.dialects import shape_constant
 from dgen.dialects.ndbuffer import NDBuffer, Shape
 from toy.dialects.toy import InferredShapeTensor, Tensor

@@ -6,9 +6,9 @@ import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialect import Dialect
 from dgen.dialects.function import FunctionOp
-from dgen.gen.ast import HasTraitConstraint
-from dgen.graph import all_blocks, all_values
-from dgen.module import asm_with_imports
+from dgen.spec.ast import HasTraitConstraint
+from dgen.ir.traversal import all_blocks, all_values
+from dgen.asm import asm_with_imports
 from dgen.trait import Trait
 from dgen.type import type_constant
 

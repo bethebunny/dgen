@@ -71,9 +71,10 @@ import dgen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import algebra, control_flow, goto
 from dgen.dialects.builtin import ChainOp
+from dgen.ir.traversal import all_values
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean
-from dgen.module import ConstantOp, PackOp, pack
+from dgen.builtins import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 
 
@@ -85,8 +86,6 @@ class ControlFlowToGoto(Pass):
 
     def verify_preconditions(self, root: dgen.Value) -> None:
         super().verify_preconditions(root)
-        from dgen.graph import all_values
-
         for value in all_values(root):
             if not isinstance(value, control_flow.IfOp):
                 continue

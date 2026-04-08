@@ -20,14 +20,14 @@ from dgen import Dialect, Op, Trait, Type, Value, asm, layout
 from dgen.asm.parser import parse
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
-from dgen.codegen import Executable, LLVMCodegen
-from dgen.compiler import Compiler, IdentityPass
+from dgen.llvm.codegen import Executable, LLVMCodegen
+from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.dialects.function import FunctionOp
-from dgen.verify import CycleError, verify_dag
+from dgen.ir.verification import CycleError, verify_dag
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Fields, TypeType, type_constant
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.testing import llvm_compile, strip_prefix
 
