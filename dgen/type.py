@@ -284,6 +284,8 @@ def format_value(value: object, slot: SlotFn = _default_slot) -> str:
 
 def format_json(value: object, slot: SlotFn = _default_slot) -> str:
     """Format a plain Python value as an ASM literal."""
+    if value is None:
+        return "()"
     if isinstance(value, list):
         return "[" + ", ".join(format_value(v, slot) for v in value) + "]"
     if isinstance(value, dict):

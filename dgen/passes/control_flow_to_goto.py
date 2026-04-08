@@ -80,15 +80,12 @@ from dgen.passes.pass_ import Pass, lowering_for
 class ResolveJumpMarkers(Pass):
     """Replace break/continue markers with goto.branch ops.
 
-    Called by ControlFlowToGoto on loop bodies *before* constructing
-    the goto structure. Walks the body block tree and replaces:
-    - BreakOp → goto.branch<%exit>([])
-    - ContinueOp → goto.branch<%self>([])
+    Called by ControlFlowToGoto on loop bodies *after* constructing
+    the goto structure.  The target parameters (``%self``, ``%exit``)
+    must already be accessible as captures of the block being lowered.
 
-    The loop target parameters are added as captures of each block
-    the resolver enters, so the replacement BranchOps can reference
-    them. The caller is responsible for cleaning up these temporary
-    captures afterward.
+    Skips recursing into nested WhileOp/ForOp bodies — those belong
+    to inner loops whose markers will be resolved by their own pass.
     """
 
     allow_unregistered_ops = True
@@ -102,11 +99,6 @@ class ResolveJumpMarkers(Pass):
         self._exit_param = exit_param
 
     def lower_block(self, block: dgen.Block) -> None:
-        # Add loop targets as captures so replacement BranchOps can
-        # reference them (captures form the stop set for block.values).
-        block.captures = [self._self_param, self._exit_param, *block.captures]
-        # Use the standard lower_block logic, but skip recursing into
-        # nested loop bodies — those belong to inner loops.
         for v in block.values:
             result = self._dispatch_handlers(v)
             effective = result if result is not None else v
@@ -284,20 +276,10 @@ class ControlFlowToGoto(Pass):
         header_self = BlockParameter(name="self", type=goto.Label())
         header_exit = BlockParameter(name=f"exit{lid}", type=goto.Label())
 
-        # Resolve break/continue markers before constructing goto structure.
-        # The resolver adds temporary captures that we strip afterward.
-        ResolveJumpMarkers(header_self, header_exit).lower_block(op.body)
-        original_captures = [
-            c for c in op.body.captures if c is not header_self and c is not header_exit
-        ]
-
         # --- Body label: remap body block args, append back-edge ---
         for orig, new in zip(op.body.args, body_args):
             op.body.replace_uses_of(orig, new)
 
-        # Body result is the next-iteration values. Wrap in a pack for the
-        # back-edge branch arguments. The branch already depends on body_result
-        # transitively via the arguments operand.
         body_result = op.body.result
         next_args: list[dgen.Value] = (
             list(body_result) if isinstance(body_result, PackOp) else [body_result]
@@ -307,13 +289,17 @@ class ControlFlowToGoto(Pass):
         body_block = dgen.Block(
             result=back_br,
             args=body_args,
-            captures=[header_self, header_exit] + original_captures,
+            captures=[header_self, header_exit, *op.body.captures],
         )
         body_label = goto.LabelOp(
             name=f"while_body{lid}",
             initial_arguments=pack([]),
             body=body_block,
         )
+
+        # Resolve break/continue markers now that header_self/header_exit
+        # are accessible as captures of body_block.
+        ResolveJumpMarkers(header_self, header_exit).lower_block(body_block)
 
         # --- Header: remap condition block args, append conditional branch ---
         for orig, new in zip(op.condition.args, header_args):
@@ -328,15 +314,13 @@ class ControlFlowToGoto(Pass):
             false_arguments=pack([]),
         )
 
-        header_label = goto.RegionOp(
+        return goto.RegionOp(
             name=f"while_header{lid}",
             initial_arguments=op.initial_arguments,
             body=dgen.Block(
                 result=cond_br,
                 parameters=[header_self, header_exit],
                 args=header_args,
-                captures=list(op.condition.captures) + original_captures,
+                captures=list(op.condition.captures) + list(op.body.captures),
             ),
         )
-
-        return header_label

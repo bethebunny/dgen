@@ -23,7 +23,7 @@ from pathlib import Path
 import click
 
 import dgen
-from dgen import Dialect, asm
+from dgen import Dialect
 from dgen.asm.formatting import SlotTracker, _is_sugar_op, op_asm
 from dgen.asm.parser import parse
 from dgen.graph import all_values
