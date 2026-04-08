@@ -105,6 +105,19 @@ class Block:
                 param.type = new
         if self.result is old:
             self.result = new
+        # Ensure new's dependencies are accessible.  If the replacement
+        # introduced a BlockArgument or BlockParameter not already in this
+        # block's boundary set, add it as a capture so the closed-block
+        # invariant holds.
+        accessible: set[dgen.Value] = (
+            set(self.captures) | set(self.args) | set(self.parameters)
+        )
+        for dep in new.dependencies:
+            if dep not in accessible and isinstance(
+                dep, (BlockArgument, BlockParameter)
+            ):
+                self.captures.append(dep)
+                accessible.add(dep)
 
     @property
     def asm(self) -> Iterable[str]:

@@ -15,6 +15,7 @@ from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 
 from dcc2.passes.c_lvalue_to_memory import CLvalueToMemory
+from dcc2.passes.c_return_to_goto import CReturnToGoto
 
 # Make dcc2 dialects discoverable for IR parsing round-trips.
 Dialect.paths.append(Path(__file__).parent / "dialects")
@@ -27,6 +28,7 @@ c_compiler: Compiler[Executable] = Compiler(
         # CImplicitConversions(),  # Brick 9: before lvalue elimination
         CLvalueToMemory(),
         # CToLLVM(),               # Brick 10: after lvalue elimination
+        CReturnToGoto(),
         ControlFlowToGoto(),
         MemoryToLLVM(),
         BuiltinToLLVM(),

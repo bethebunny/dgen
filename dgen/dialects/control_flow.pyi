@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil, Span
+from dgen.dialects.builtin import Never, Nil, Span
 from dgen.dialects.index import Index
 
 control_flow = Dialect("control_flow")
@@ -34,3 +34,11 @@ class IfOp(Op):
     type: Type
     then_body: Block
     else_body: Block
+
+@dataclass(eq=False, kw_only=True)
+class BreakOp(Op):
+    type: Type = Never()
+
+@dataclass(eq=False, kw_only=True)
+class ContinueOp(Op):
+    type: Type = Never()

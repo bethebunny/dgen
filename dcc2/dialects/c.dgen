@@ -1,4 +1,4 @@
-from builtin import Index, Nil, String, Span
+from builtin import Index, Never, Nil, String, Span
 
 # --- C-specific types ---
 
@@ -47,7 +47,7 @@ op scalar_to_bool(val)
 
 # --- Control flow ---
 
-op c_return(value) -> Nil
+op c_return(value) -> Never
 op c_sizeof<target_type: Type>()
 
 # --- C-specific arithmetic ---

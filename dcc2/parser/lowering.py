@@ -25,7 +25,7 @@ from dgen.dialects.number import Boolean, Float64
 from dgen.module import pack
 
 from dcc2.dialects import c_int
-from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
+from dcc2.dialects.c import AssignOp, CReturnOp, LvalueToRvalueOp, LvalueVarOp
 from dcc2.parser.c_literals import parse_c_char, parse_c_int
 from dcc2.parser.type_resolver import TypeResolver
 
@@ -372,7 +372,7 @@ class Parser:
         )
 
         result = self._compound(funcdef.body, scope)
-        block_result = result.value if isinstance(result, _Return) else result
+        block_result = result.value if isinstance(result, CReturnOp) else result
 
         return function.FunctionOp(
             name=name,
@@ -381,21 +381,35 @@ class Parser:
             type=function_type,
         )
 
-    def _compound(self, node: c_ast.Compound, scope: Scope) -> dgen.Value | _Return:
-        """Lower a compound statement. Returns the last statement's value."""
+    def _compound(self, node: c_ast.Compound, scope: Scope) -> dgen.Value:
+        """Lower a compound statement. Returns the last statement's value.
+
+        Stops processing on CReturnOp (propagated upward) or jump ops
+        (BreakOp, ContinueOp — remaining statements are dead code).
+        Preceding effects are chained into the return value so they
+        remain reachable in the use-def graph.
+        """
         last: dgen.Value | None = None
         if node.block_items:
             for item in node.block_items:
                 result = self._statement(item, scope)
-                if isinstance(result, _Return):
+                if isinstance(result, CReturnOp):
+                    # Chain preceding effects into the return value.
+                    if last is not None:
+                        chained = ChainOp(
+                            lhs=result.value, rhs=last, type=result.value.type
+                        )
+                        return CReturnOp(value=chained)
                     return result
                 last = result
+                if isinstance(result, (control_flow.BreakOp, control_flow.ContinueOp)):
+                    break
         return last if last is not None else Nil().constant(None)
 
     # --- Statements ---
 
-    def _statement(self, node: c_ast.Node, scope: Scope) -> dgen.Value | _Return:
-        """Lower a statement. Returns a single Value or _Return."""
+    def _statement(self, node: c_ast.Node, scope: Scope) -> dgen.Value:
+        """Lower a statement. Returns a single Value (CReturnOp for returns)."""
         handler = _STMT_HANDLERS.get(type(node))
         if handler is not None:
             return handler(self, node, scope)
@@ -403,21 +417,27 @@ class Parser:
         return self._expression(node, scope)
 
     @_stmt(c_ast.Return)
-    def _return_statement(self, node: c_ast.Return, scope: Scope) -> _Return:
+    def _return_statement(self, node: c_ast.Return, scope: Scope) -> CReturnOp:
         if node.expr is None:
-            return _Return(self._current_return_type.constant(0))
-        return _Return(self._expression(node.expr, scope))
+            return CReturnOp(value=self._current_return_type.constant(0))
+        return CReturnOp(value=self._expression(node.expr, scope))
+
+    @_stmt(c_ast.Break)
+    def _break_statement(self, node: c_ast.Break, scope: Scope) -> control_flow.BreakOp:
+        return control_flow.BreakOp()
+
+    @_stmt(c_ast.Continue)
+    def _continue_statement(
+        self, node: c_ast.Continue, scope: Scope
+    ) -> control_flow.ContinueOp:
+        return control_flow.ContinueOp()
 
     @_stmt(c_ast.Compound)
-    def _compound_statement(
-        self, node: c_ast.Compound, scope: Scope
-    ) -> dgen.Value | _Return:
+    def _compound_statement(self, node: c_ast.Compound, scope: Scope) -> dgen.Value:
         return self._compound(node, scope.child())
 
     @_stmt(c_ast.Decl)
-    def _declaration_statement(
-        self, node: c_ast.Decl, scope: Scope
-    ) -> dgen.Value | _Return:
+    def _declaration_statement(self, node: c_ast.Decl, scope: Scope) -> dgen.Value:
         return self._declaration(node, scope)
 
     def _declaration(self, node: c_ast.Decl, scope: Scope) -> dgen.Value:
@@ -434,9 +454,7 @@ class Parser:
         return self._assign_variable(node.name, initial_value, scope)
 
     @_stmt(c_ast.Assignment)
-    def _assignment_statement(
-        self, node: c_ast.Assignment, scope: Scope
-    ) -> dgen.Value | _Return:
+    def _assignment_statement(self, node: c_ast.Assignment, scope: Scope) -> dgen.Value:
         return self._assignment(node, scope)
 
     def _assignment(self, node: c_ast.Assignment, scope: Scope) -> dgen.Value:
@@ -488,23 +506,33 @@ class Parser:
 
         Returns a single value that transitively depends on every
         statement's result, keeping independent mutations alive.
+
+        Jump ops (BreakOp, ContinueOp, CReturnOp) terminate the statement
+        sequence. Preceding effects are chained through the jump op so it
+        becomes the block's effective result, detectable by the goto pass.
         """
         if isinstance(node, c_ast.Compound) and node.block_items:
             results: list[dgen.Value] = []
+            jump: dgen.Value | None = None
             for item in node.block_items:
                 result = self._statement(item, scope)
-                if isinstance(result, _Return):
-                    raise LoweringError(
-                        "return inside control flow not yet supported (Brick 6.5)"
-                    )
+                if isinstance(
+                    result,
+                    (control_flow.BreakOp, control_flow.ContinueOp, CReturnOp),
+                ):
+                    jump = result
+                    break
                 results.append(result)
+            if jump is not None:
+                # Chain effects before jump so they are scheduled first
+                # in topo order. The jump (rhs) is a dependency — it will
+                # be visited after effects (lhs) during linearization.
+                if results:
+                    effects = pack(results) if len(results) != 1 else results[0]
+                    return ChainOp(lhs=effects, rhs=jump, type=jump.type)
+                return jump
             return pack(results) if len(results) != 1 else results[0]
-        result = self._statement(node, scope)
-        if isinstance(result, _Return):
-            raise LoweringError(
-                "return inside control flow not yet supported (Brick 6.5)"
-            )
-        return result
+        return self._statement(node, scope)
 
     def _propagate_cf_ordering(
         self,
@@ -531,7 +559,7 @@ class Parser:
                 scope.record_read(name, cf_op)
 
     @_stmt(c_ast.If)
-    def _if_statement(self, node: c_ast.If, scope: Scope) -> dgen.Value | _Return:
+    def _if_statement(self, node: c_ast.If, scope: Scope) -> dgen.Value:
         cond = self._expression(node.cond, scope)
         bool_cond = self._to_bool(cond)
 
@@ -558,7 +586,7 @@ class Parser:
         return if_op
 
     @_stmt(c_ast.While)
-    def _while_statement(self, node: c_ast.While, scope: Scope) -> dgen.Value | _Return:
+    def _while_statement(self, node: c_ast.While, scope: Scope) -> dgen.Value:
         cond_scope = scope.child()
         cond_val = self._expression(node.cond, cond_scope)
         cond_block = dgen.Block(
@@ -577,7 +605,7 @@ class Parser:
         return while_op
 
     @_stmt(c_ast.For)
-    def _for_statement(self, node: c_ast.For, scope: Scope) -> dgen.Value | _Return:
+    def _for_statement(self, node: c_ast.For, scope: Scope) -> dgen.Value:
         # Init runs in current scope.
         if node.init is not None:
             if isinstance(node.init, c_ast.DeclList):
@@ -585,7 +613,7 @@ class Parser:
                     self._declaration(decl, scope)
             else:
                 result = self._statement(node.init, scope)
-                if isinstance(result, _Return):
+                if isinstance(result, CReturnOp):
                     raise LoweringError("return in for-init")
 
         # Condition block.
@@ -603,7 +631,7 @@ class Parser:
         body = self._body_result(node.stmt, body_scope)
         if node.next is not None:
             update = self._statement(node.next, body_scope)
-            if isinstance(update, _Return):
+            if isinstance(update, CReturnOp):
                 raise LoweringError("return in for-update")
             body = ChainOp(lhs=update, rhs=body, type=update.type)
         nil = Nil().constant(None)
@@ -743,15 +771,6 @@ class Parser:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-class _Return:
-    """Sentinel that _statement returns when encountering a return."""
-
-    __slots__ = ("value",)
-
-    def __init__(self, value: dgen.Value) -> None:
-        self.value = value
 
 
 # ---------------------------------------------------------------------------

@@ -53,9 +53,9 @@ class CLvalueToMemory(Pass):
         self._block_stack = []
         return super().run(value, compiler)
 
-    def _lower_block(self, block: dgen.Block) -> None:
+    def lower_block(self, block: dgen.Block) -> None:
         self._block_stack.append(block)
-        super()._lower_block(block)
+        super().lower_block(block)
         self._block_stack.pop()
 
     def _capture_alloca(self, name: str, alloca: memory.StackAllocateOp) -> None:

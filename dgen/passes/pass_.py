@@ -97,20 +97,24 @@ class Pass(metaclass=_PassMeta):
     def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
         """Run this pass on a value and all its nested blocks."""
         root_block = dgen.Block(result=value)
-        self._lower_block(root_block)
+        self.lower_block(root_block)
         return root_block.result
 
-    def _lower_block(self, block: dgen.Block) -> None:
+    def lower_block(self, block: dgen.Block) -> None:
         """Lower all ops in block (topo order), recursing into nested blocks.
 
         For each op, dispatch handlers. After lowering (whether the op was
         replaced or not), recurse into the effective op's blocks — before
         processing any downstream uses. This ensures handler-created blocks
         are lowered before they're referenced elsewhere.
+
+        Subclasses may override to customize traversal (e.g. skip nested
+        loop bodies in ResolveJumpMarkers). Passes may also call this
+        directly on a specific block for nested pass composition.
         """
         for v in block.values:
             for _, child_block in ((result := self._dispatch_handlers(v)) or v).blocks:
-                self._lower_block(child_block)
+                self.lower_block(child_block)
             if result is not None:
                 block.replace_uses_of(v, result)
 

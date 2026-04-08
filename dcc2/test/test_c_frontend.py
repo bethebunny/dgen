@@ -505,6 +505,85 @@ class TestEndToEnd:
         )
 
 
+class TestBreakContinue:
+    """Brick 6.5: break and continue in loops."""
+
+    def test_break_exits_loop(self) -> None:
+        """while(1) { break; } completes immediately."""
+        assert (
+            run_c("int f() { int x = 0; while (1) { x = 42; break; } return x; }") == 42
+        )
+
+    def test_break_in_if(self) -> None:
+        """Sum until i==3, then break."""
+        assert (
+            run_c(
+                "int f() { int s = 0; int i = 0;"
+                " while (i < 10) { if (i == 3) { break; } s = s + i; i = i + 1; }"
+                " return s; }"
+            )
+            == 3  # 0+1+2
+        )
+
+    def test_nested_break(self) -> None:
+        """Inner break doesn't exit outer loop."""
+        assert (
+            run_c(
+                "int f() { int s = 0; int i = 0;"
+                " while (i < 3) {"
+                "   int j = 0;"
+                "   while (j < 10) { if (j == 2) { break; } j = j + 1; }"
+                "   s = s + j; i = i + 1;"
+                " } return s; }"
+            )
+            == 6  # 2+2+2
+        )
+
+    def test_continue_while(self) -> None:
+        """Continue skips the rest of the body."""
+        assert (
+            run_c(
+                "int f() { int s = 0; int i = 0;"
+                " while (i < 5) {"
+                "   i = i + 1; if (i == 3) { continue; } s = s + i;"
+                " } return s; }"
+            )
+            == 12  # 1+2+4+5
+        )
+
+
+class TestEarlyReturn:
+    """Brick 6.5: early return inside control flow."""
+
+    def test_early_return_in_if(self) -> None:
+        """Return in then-branch, fallthrough in else."""
+        assert run_c("int f(int x) { if (x > 0) { return 1; } return 0; }", 5) == 1
+        assert run_c("int f(int x) { if (x > 0) { return 1; } return 0; }", -1) == 0
+
+    def test_early_return_in_loop(self) -> None:
+        """Return inside while body exits the function."""
+        assert (
+            run_c(
+                "int f() { int i = 0;"
+                " while (i < 10) { if (i == 5) { return i; } i = i + 1; }"
+                " return -1; }"
+            )
+            == 5
+        )
+
+    @pytest.mark.xfail(
+        reason="Codegen emits empty exit block when all IfOp branches diverge"
+    )
+    def test_early_return_both_branches(self) -> None:
+        """Both if branches return."""
+        assert (
+            run_c("int f(int x) { if (x) { return 42; } else { return 7; } }", 1) == 42
+        )
+        assert (
+            run_c("int f(int x) { if (x) { return 42; } else { return 7; } }", 0) == 7
+        )
+
+
 class TestMemoryOrdering:
     """Structural tests for the use-def ordering of memory operations."""
 
