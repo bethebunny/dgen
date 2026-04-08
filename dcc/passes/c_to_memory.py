@@ -18,7 +18,6 @@ import dgen
 from dgen.dialects import algebra, llvm, memory
 from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
-from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
 
 from dcc.dialects.c import (
@@ -80,9 +79,7 @@ class CToMemory(Pass):
 
     def _get_mem(self, name: str) -> dgen.Value:
         """Get the current memory token for a variable."""
-        return self._mem.get(
-            name, self._alloca.get(name, ConstantOp(value=None, type=Nil()))
-        )
+        return self._mem.get(name, self._alloca.get(name, Nil().constant(None)))
 
     # --- Variable declaration ---
 
@@ -178,11 +175,14 @@ class CToMemory(Pass):
         mem = self._get_mem(name)
         elem_type = op.type
         load = memory.LoadOp(mem=mem, ptr=alloca, type=elem_type)
-        one = ConstantOp(value=1, type=elem_type)
         if negate:
-            updated = algebra.SubtractOp(left=load, right=one, type=elem_type)
+            updated = algebra.SubtractOp(
+                left=load, right=elem_type.constant(1), type=elem_type
+            )
         else:
-            updated = algebra.AddOp(left=load, right=one, type=elem_type)
+            updated = algebra.AddOp(
+                left=load, right=elem_type.constant(1), type=elem_type
+            )
         store = memory.StoreOp(mem=load, value=updated, ptr=alloca)
         self._mem[name] = store
         return load if post else updated
@@ -197,8 +197,9 @@ class CToMemory(Pass):
     def lower_pointer_member_access(
         self, op: PointerMemberAccessOp
     ) -> dgen.Value | None:
-        zero = ConstantOp(value=0, type=llvm.Int(bits=Index().constant(64)))
-        gep = llvm.GepOp(base=op.base, index=zero)
+        gep = llvm.GepOp(
+            base=op.base, index=llvm.Int(bits=Index().constant(64)).constant(0)
+        )
         return memory.LoadOp(mem=gep, ptr=gep, type=op.type)
 
     # --- Pointer/array ops ---
@@ -225,8 +226,9 @@ class CToMemory(Pass):
     def lower_field_address(self, op: FieldAddressOp) -> dgen.Value | None:
         # TODO: use real struct field offsets. PointerMemberAccessOp has the
         # same placeholder — GEP with index 0 just returns the base pointer.
-        zero = ConstantOp(value=0, type=llvm.Int(bits=Index().constant(64)))
-        return llvm.GepOp(base=op.base, index=zero)
+        return llvm.GepOp(
+            base=op.base, index=llvm.Int(bits=Index().constant(64)).constant(0)
+        )
 
     @lowering_for(StoreIndirectOp)
     def lower_store_indirect(self, op: StoreIndirectOp) -> dgen.Value | None:

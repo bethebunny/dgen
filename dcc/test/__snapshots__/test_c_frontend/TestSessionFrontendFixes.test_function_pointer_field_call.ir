@@ -4,7 +4,7 @@ import index
 import memory
 import number
 
-%f : function.Function<[memory.Reference<c.CStruct<"S", "S", "S">>, number.SignedInteger<32>], number.SignedInteger<32>> = function.function<number.SignedInteger<32>>() body(%s: memory.Reference<c.CStruct<"S", "S", "S">>, %x: number.SignedInteger<32>):
-    %0 : memory.Reference<function.Function<[], number.SignedInteger<32>>> = c.pointer_member_access<"fn">(%s)
-    %1 : number.SignedInteger<32> = function.call<%0>([%x])
+%f : function.Function<[memory.Reference<c.CStruct<"S", "S", "S">>, number.SignedInteger<index.Index(32)>], number.SignedInteger<index.Index(32)>> = function.function<number.SignedInteger<index.Index(32)>>() body(%s: memory.Reference<c.CStruct<"S", "S", "S">>, %x: number.SignedInteger<index.Index(32)>):
+    %0 : memory.Reference<function.Function<[], number.SignedInteger<index.Index(32)>>> = c.pointer_member_access<"fn">(%s)
+    %1 : number.SignedInteger<index.Index(32)> = function.call<%0>([%x])
     %2 : Nil = c.return(%1)

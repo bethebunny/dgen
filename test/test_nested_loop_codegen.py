@@ -19,9 +19,9 @@ NESTED_FOR = strip_prefix("""
     | import function
     | import index
     |
-    | %test : function.Function<[], ()> = function.function<Nil>() body():
-    |     %outer : Nil = control_flow.for<0, 2>([]) body(%i: index.Index):
-    |         %inner : Nil = control_flow.for<0, 2>([%i]) body(%j: index.Index, %i: index.Index):
+    | %test : function.Function<[], Nil> = function.function<Nil>() body():
+    |     %outer : Nil = control_flow.for<index.Index(0), index.Index(2)>([]) body(%i: index.Index):
+    |         %inner : Nil = control_flow.for<index.Index(0), index.Index(2)>([%i]) body(%j: index.Index, %i: index.Index):
     |             %0 : index.Index = 0
     |             %1 : Nil = chain(%0, %0)
 """)

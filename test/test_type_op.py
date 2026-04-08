@@ -16,7 +16,7 @@ from dgen.type import TypeType
 
 def test_type_op_construction():
     """TypeOp takes a value and defaults to TypeType() result type."""
-    x = ConstantOp(name="x", value=42, type=Index())
+    x = ConstantOp.from_constant(Index().constant(42), name="x")
     t = TypeOp(name="t", value=x)
     assert isinstance(t.type, TypeType)
     assert t.value is x
@@ -24,7 +24,7 @@ def test_type_op_construction():
 
 def test_type_op_in_block_ops():
     """TypeOp participates in use-def: reachable from block.result."""
-    x = ConstantOp(name="x", value=42, type=Index())
+    x = ConstantOp.from_constant(Index().constant(42), name="x")
     t = TypeOp(name="t", value=x)
     block = Block(result=t)
     assert x in block.ops
@@ -37,7 +37,7 @@ def test_type_op_asm_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %x : index.Index = 42
         |     %t : Type = type(%x)
     """)
@@ -54,7 +54,7 @@ def test_type_op_result_is_type_dependency():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %x : index.Index = 42
         |     %t : Type = type(%x)
         |     %y : %t = 7

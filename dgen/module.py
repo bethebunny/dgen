@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from functools import cached_property
 from typing import ClassVar
 
 from dgen import Constant, Dialect, Op, Type, TypeType, Value
@@ -28,20 +27,23 @@ from dgen.type import Fields, Memory, SlotFn, _default_slot, format_value, type_
 @builtin.op("constant")
 @dataclass(eq=False, kw_only=True)
 class ConstantOp(Op, Constant):
-    value: object
+    value: Memory | object
     type: Value[TypeType]
-
-    @cached_property
-    def memory(self) -> Memory:
-        if isinstance(self.value, Memory):
-            return self.value
-        return Memory.from_value(type_constant(self.type), self.value)
 
     format_asm = Value.format_asm  # SSA reference, not Constant literal
 
     @property
     def __constant__(self) -> Memory:
-        return self.memory
+        if isinstance(self.value, Memory):
+            return self.value
+        # Deferred: type was an SSA ref at parse time, resolve now.
+        return Memory.from_value(type_constant(self.type), self.value)
+
+    @classmethod
+    def from_constant(
+        cls, constant: Constant, *, name: str | None = None
+    ) -> ConstantOp:
+        return cls(value=constant.value, type=constant.type, name=name)
 
     def __eq__(self, other: object) -> bool:
         return self is other

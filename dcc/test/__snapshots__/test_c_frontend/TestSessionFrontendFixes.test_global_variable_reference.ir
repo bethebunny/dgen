@@ -3,6 +3,6 @@ import function
 import index
 import number
 
-%f : function.Function<[], number.SignedInteger<32>> = function.function<number.SignedInteger<32>>() body():
-    %g : number.SignedInteger<32> = extern<"g">()
+%f : function.Function<[], number.SignedInteger<index.Index(32)>> = function.function<number.SignedInteger<index.Index(32)>>() body():
+    %g : number.SignedInteger<index.Index(32)> = extern<String("g")>()
     %0 : Nil = c.return(%g)

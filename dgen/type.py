@@ -204,11 +204,9 @@ class Constant(Value[T]):
     value: Memory[T]
 
     def format_asm(self, slot: SlotFn = _default_slot) -> str:
-        """Format as literal, with type prefix for parameterized types."""
+        """Format as Type(value) — always includes the type prefix."""
         json_str = format_json(self.__constant__.to_json(), slot)
-        if type(self.type).__params__:
-            return f"{self.type.format_asm(slot)}({json_str})"
-        return json_str
+        return f"{self.type.format_asm(slot)}({json_str})"
 
     @property
     def ready(self) -> bool:
@@ -295,6 +293,8 @@ def format_json(value: object, slot: SlotFn = _default_slot) -> str:
         return str(value)
     if isinstance(value, str):
         return f'"{value}"'
+    if value is None:
+        return "()"
     raise ValueError(f"Cannot format {type(value).__name__} as ASM literal: {value!r}")
 
 

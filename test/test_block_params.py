@@ -82,7 +82,7 @@ def test_verify_block_param_in_scope():
         | import goto
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
         |         %zero : index.Index = 0
     """)

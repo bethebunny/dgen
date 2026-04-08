@@ -42,8 +42,7 @@ class AlgebraToLLVM(Pass):
         if _is_float(op):
             return llvm.FnegOp(input=op.input)
         # Integer negate: 0 - x
-        zero = dgen.module.ConstantOp(value=0, type=op.type)
-        return llvm.SubOp(lhs=zero, rhs=op.input, type=op.type)
+        return llvm.SubOp(lhs=op.type.constant(0), rhs=op.input, type=op.type)
 
     @lowering_for(algebra.SubtractOp)
     def lower_subtract(self, op: algebra.SubtractOp) -> dgen.Value:
@@ -59,8 +58,7 @@ class AlgebraToLLVM(Pass):
 
     @lowering_for(algebra.ReciprocalOp)
     def lower_reciprocal(self, op: algebra.ReciprocalOp) -> dgen.Value:
-        one = dgen.module.ConstantOp(value=1.0, type=Float64())
-        return llvm.FdivOp(lhs=one, rhs=op.input)
+        return llvm.FdivOp(lhs=Float64().constant(1.0), rhs=op.input)
 
     @lowering_for(algebra.DivideOp)
     def lower_divide(self, op: algebra.DivideOp) -> dgen.Value:
@@ -81,8 +79,7 @@ class AlgebraToLLVM(Pass):
     @lowering_for(algebra.ComplementOp)
     def lower_complement(self, op: algebra.ComplementOp) -> dgen.Value:
         # NOT x = XOR x, -1 (all ones)
-        all_ones = dgen.module.ConstantOp(value=-1, type=op.type)
-        return llvm.XorOp(lhs=op.input, rhs=all_ones, type=op.type)
+        return llvm.XorOp(lhs=op.input, rhs=op.type.constant(-1), type=op.type)
 
     @lowering_for(algebra.SymmetricDifferenceOp)
     def lower_symmetric_difference(

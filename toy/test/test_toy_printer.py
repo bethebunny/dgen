@@ -21,10 +21,9 @@ def ranked(shape: Sequence[int]) -> dgen.Type:
 
 
 def test_constant_op():
-    op = ConstantOp(
+    op = ConstantOp.from_constant(
+        ranked([2, 3]).constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
         name="0",
-        value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        type=ranked([2, 3]),
     )
     assert asm.format(op) == strip_prefix("""
         | import index
@@ -32,7 +31,7 @@ def test_constant_op():
         | import number
         | import toy
         |
-        | %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     """)
 
 
@@ -56,7 +55,7 @@ def test_reshape_op():
         | import number
         | import toy
         |
-        | %1 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.reshape(%0)
+        | %1 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.reshape(%0)
     """)
 
 
@@ -135,7 +134,7 @@ def test_concat_op():
         | import number
         | import toy
         |
-        | %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<0>(%0, %1)
+        | %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<index.Index(0)>(%0, %1)
     """)
 
 
@@ -183,15 +182,9 @@ def test_full_module(ir_snapshot):
     )
 
     # Build main function
-    c0 = ConstantOp(
-        value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        type=ranked([2, 3]),
-    )
+    c0 = ranked([2, 3]).constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     r1 = toy.ReshapeOp(input=c0, type=ranked([2, 3]))
-    c2 = ConstantOp(
-        value=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        type=ranked([6]),
-    )
+    c2 = ranked([6]).constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     r3 = toy.ReshapeOp(input=c2, type=ranked([2, 3]))
     pack4 = pack([r1, r3])
     function.CallOp(

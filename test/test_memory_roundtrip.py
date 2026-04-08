@@ -11,7 +11,7 @@ def test_roundtrip_stack_allocate():
         | import memory
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
     """)
     value = parse(ir)
@@ -25,7 +25,7 @@ def test_roundtrip_heap_allocate():
         | import memory
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %n : index.Index = 10
         |     %0 : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
     """)
@@ -40,7 +40,7 @@ def test_roundtrip_load_store_with_mem():
         | import memory
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %val : index.Index = 42
         |     %st : Nil = memory.store(%alloc, %val, %alloc)
@@ -57,7 +57,7 @@ def test_roundtrip_offset():
         | import memory
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %n : index.Index = 10
         |     %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
         |     %idx : index.Index = 3
@@ -74,7 +74,7 @@ def test_roundtrip_deallocate():
         | import memory
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %n : index.Index = 1
         |     %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
         |     %dealloc : Nil = memory.deallocate(%alloc, %alloc)
@@ -90,7 +90,7 @@ def test_roundtrip_load_store_chain():
         | import memory
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %zero : index.Index = 0
         |     %st0 : Nil = memory.store(%alloc, %zero, %alloc)
@@ -111,7 +111,7 @@ def test_roundtrip_offset_load_store():
         | import memory
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %n : index.Index = 10
         |     %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
         |     %idx : index.Index = 5
@@ -134,7 +134,7 @@ def test_roundtrip_mem_from_for_loop():
         |
         | %f : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-        |     %loop : Nil = control_flow.for<0, 10>([]) body(%iv: index.Index) captures(%alloc):
+        |     %loop : Nil = control_flow.for<index.Index(0), index.Index(10)>([]) body(%iv: index.Index) captures(%alloc):
         |         %cur : index.Index = memory.load(%alloc, %alloc)
         |         %_ : Nil = memory.store(%cur, %iv, %alloc)
         |     %ld : index.Index = memory.load(%loop, %alloc)

@@ -9,8 +9,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from dgen.block import Block, BlockArgument, BlockParameter
-from dgen.dialects.builtin import Nil
 from dgen.module import ConstantOp, PackOp
+from dgen.type import Memory, format_json
 
 from ..op import Op
 from ..type import Value, format_value
@@ -122,11 +122,9 @@ def op_asm(
     type_str = format_expr(op.type, tracker)
     parts = [f"%{result_name} : {type_str} = "]
     if isinstance(op, ConstantOp):
-        # Nil-as-value formats as "()" (parseable), not "Nil" (looks like an op call).
-        if isinstance(op.value, Nil):
-            parts.append("()")
-        else:
-            parts.append(format_expr(op.value, tracker))
+        val = op.value
+        json = val.to_json() if isinstance(val, Memory) else val
+        parts.append(format_json(json, tracker.track_name))
     else:
         op_str = op.dialect.qualified_name(cls.asm_name)
         if param_parts:

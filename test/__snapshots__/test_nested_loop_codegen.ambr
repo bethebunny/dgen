@@ -6,27 +6,27 @@
   entry:
     br label %loop_header0
   loop_header0:
-    %i0 = phi i64 [ 0, %entry ], [ %_4, %exit1 ]
+    %i0 = phi i64 [ 0, %entry ], [ %_3, %exit1 ]
     br label %loop_body0_exit
   loop_body0:
     %i = phi i64 [ %i0, %loop_body0_exit ]
-    %_4 = add i64 %i, 1
+    %_3 = add i64 %i, 1
     br label %loop_header1
   loop_header1:
-    %i1 = phi i64 [ 0, %loop_body0 ], [ %_10, %loop_body1 ]
+    %i1 = phi i64 [ 0, %loop_body0 ], [ %_8, %loop_body1 ]
     br label %loop_body1_exit
   loop_body1:
     %j = phi i64 [ %i1, %loop_body1_exit ]
-    %_10 = add i64 %j, 1
+    %_8 = add i64 %j, 1
     br label %loop_header1
   loop_body1_exit:
-    %_15 = icmp slt i64 %i1, 2
-    br i1 %_15, label %loop_body1, label %exit1
+    %_12 = icmp slt i64 %i1, 2
+    br i1 %_12, label %loop_body1, label %exit1
   exit1:
     br label %loop_header0
   loop_body0_exit:
-    %_23 = icmp slt i64 %i0, 2
-    br i1 %_23, label %loop_body0, label %exit0
+    %_19 = icmp slt i64 %i0, 2
+    br i1 %_19, label %loop_body0, label %exit0
   exit0:
     ret void
   }

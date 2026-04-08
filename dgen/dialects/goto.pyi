@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil, Span
+from dgen.dialects.builtin import Nil
 
 goto = Dialect("goto")
 

@@ -53,7 +53,7 @@ def test_typetype_constant_asm_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
     """)
     value = parse(ir)
@@ -66,7 +66,7 @@ def test_ssa_ref_as_op_type():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
@@ -85,7 +85,7 @@ def test_ssa_ref_as_op_type_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
@@ -123,7 +123,7 @@ def test_parameterized_typetype_constant_roundtrip():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
     """)
     value = parse(ir)
@@ -136,7 +136,7 @@ def test_array_with_ssa_dimension():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %n : index.Index = 4
         |     %arr : Array<index.Index, %n> = [1, 2, 3, 4]
     """)
@@ -152,14 +152,14 @@ def test_array_with_ssa_dimension():
 
 
 def test_array_with_ssa_element_type():
-    """Array<%t, 4> — SSA type value as element_type param, round-trips through ASM."""
+    """Array<%t, index.Index(4)> — SSA type value as element_type param, round-trips through ASM."""
     ir = strip_prefix("""
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %arr : Array<%t, 4> = [1, 2, 3, 4]
+        |     %arr : Array<%t, index.Index(4)> = [1, 2, 3, 4]
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -173,14 +173,14 @@ def test_array_with_ssa_element_type():
 
 
 def test_array_with_ssa_element_type_layout():
-    """Array<%t, 4> — type_constant resolves the element type for layout computation."""
+    """Array<%t, index.Index(4)> — type_constant resolves the element type for layout computation."""
     ir = strip_prefix("""
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %arr : Array<%t, 4> = [1, 2, 3, 4]
+        |     %arr : Array<%t, index.Index(4)> = [1, 2, 3, 4]
     """)
     value = parse(ir)
     ops = list(value.body.ops)
@@ -200,7 +200,7 @@ def test_pointer_with_ssa_pointee():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %p : Pointer<%t> = 0
     """)
@@ -253,7 +253,7 @@ def test_span_with_ssa_element_type():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %xs : Span<%t> = [1, 2, 3]
     """)
@@ -275,7 +275,7 @@ def test_fat_pointer_with_ssa_pointee():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "number.Float64"}
         |     %p : Span<%t> = [0.0, 0.0]
     """)
@@ -297,7 +297,7 @@ def test_function_with_ssa_result_type():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
         |         %_ : Nil = ()
@@ -341,7 +341,7 @@ def test_type_constant_resolves_ssa_constant():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
@@ -357,7 +357,7 @@ def test_compile_with_ssa_function_result():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
         |         %_ : Nil = ()
@@ -378,9 +378,9 @@ def test_compile_function_with_ssa_typed_block_arg():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<[%t], ()> = function.function<Nil>() body(%x: %t):
+        |     %f : function.Function<[%t], Nil> = function.function<Nil>() body(%x: %t):
         |         %_ : Nil = ()
     """)
     value = parse(ir)
@@ -405,7 +405,7 @@ def test_compile_constant_with_ssa_type():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %x : %t = 42
     """)
@@ -428,7 +428,7 @@ def test_compile_input_types_resolved_from_ssa():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[%t], %t> = function.function<%t>() body(%x: %t):
         |         %_ : Nil = ()
@@ -517,16 +517,15 @@ def test_parse_typetype_block_arg_constant_materializes():
         | import function
         | import index
         |
-        | %main : function.Function<[Type], ()> = function.function<Nil>() body(%arr_ty: Type):
+        | %main : function.Function<[Type], Nil> = function.function<Nil>() body(%arr_ty: Type):
         |     %tt : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
     """)
     value = parse(ir)
     tt_op = list(value.body.ops)[0]
     assert isinstance(tt_op, ConstantOp)
-    assert isinstance(tt_op.value, dict)
+    assert isinstance(tt_op.value, Memory)
     # Memory materializes fine — TypeValue layout is self-describing
-    mem = tt_op.memory
-    assert mem.to_json() == {
+    assert tt_op.value.to_json() == {
         "tag": "builtin.Array",
         "element_type": {"tag": "index.Index"},
         "n": 4,
@@ -549,7 +548,7 @@ def test_staging_with_ssa_result_type():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
         |         %y : %rt = algebra.add(%x, %x)

@@ -5,34 +5,31 @@ from dgen.asm.parser import parse
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
 from dgen.graph import all_values, interior_values, transitive_dependencies
-from dgen.module import ConstantOp
 from dgen.op import Op
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
 def test_transitive_dependencies_linear_chain():
     """Walk a simple linear dependency chain."""
-    a = ConstantOp(value=1, type=builtin.Index())
-    b = ConstantOp(value=2, type=builtin.Index())
+    a = builtin.Index().constant(1)
+    b = builtin.Index().constant(2)
     c = llvm.AddOp(lhs=a, rhs=b)
     deps = list(transitive_dependencies(c))
     # Root is always last
     assert deps[-1] is c
-    # All three ops are present (plus type values)
-    assert {v for v in deps if isinstance(v, Op)} == {a, b, c}
+    # All three values are present (plus type values)
+    assert a in deps and b in deps and c in deps
 
 
 def test_transitive_dependencies_diamond():
     """Diamond dependency: a used by both b and c, both used by d."""
-    a = ConstantOp(value=1, type=builtin.Index())
+    a = builtin.Index().constant(1)
     b = llvm.AddOp(lhs=a, rhs=a)
     c = llvm.MulOp(lhs=a, rhs=a)
     d = llvm.AddOp(lhs=b, rhs=c)
     deps = list(transitive_dependencies(d))
-    ops = [v for v in deps if isinstance(v, Op)]
-    assert ops[0] is a
-    assert ops[-1] is d
-    assert len(ops) == 4
+    assert a in deps and b in deps and c in deps and d in deps
+    assert deps[-1] is d
 
 
 def test_transitive_dependencies_visits_block_args():
@@ -50,7 +47,7 @@ def test_transitive_dependencies_does_not_descend_into_blocks():
         | import function
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
     func = parse(ir)
@@ -66,7 +63,7 @@ def test_chain_asm_round_trip():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 0
         |     %1 : index.Index = 1
         |     %2 : index.Index = chain(%1, %0)
@@ -77,17 +74,16 @@ def test_chain_asm_round_trip():
 
 def test_transitive_dependencies_follows_chain_dependencies():
     """chain(lhs, rhs) creates dependency on rhs, transitive_dependencies finds both."""
-    a = ConstantOp(value=0, type=builtin.Index())
-    b = ConstantOp(value=1, type=builtin.Index())
+    a = builtin.Index().constant(0)
+    b = builtin.Index().constant(1)
     c = builtin.ChainOp(lhs=b, rhs=a, type=builtin.Index())
     deps = list(transitive_dependencies(c))
-    ops = {v for v in deps if isinstance(v, Op)}
-    assert ops == {a, b, c}
+    assert a in deps and b in deps and c in deps
 
 
 def test_transitive_dependencies_includes_types():
     """Type values are included in the traversal."""
-    a = ConstantOp(value=1, type=builtin.Index())
+    a = builtin.Index().constant(1)
     deps = list(transitive_dependencies(a))
     # The Index type and its dependencies should be present
     assert any(isinstance(v, builtin.Index) for v in deps)
@@ -109,7 +105,7 @@ def test_all_values_includes_nested_block_ops():
         | import function
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
     inner_const = next(func.body.ops)
@@ -126,7 +122,7 @@ def test_all_values_includes_deeply_nested():
         | import goto
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %init : index.Index = 0
         |     %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
         |         %inner : index.Index = 42
@@ -143,7 +139,7 @@ def test_interior_values_yields_block_contents():
         | import function
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
     inner = list(interior_values(func))
@@ -155,5 +151,5 @@ def test_interior_values_yields_block_contents():
 
 def test_interior_values_empty_for_leaf_op():
     """A leaf op with no blocks has no interior values."""
-    a = ConstantOp(value=1, type=builtin.Index())
+    a = builtin.Index().constant(1)
     assert list(interior_values(a)) == []

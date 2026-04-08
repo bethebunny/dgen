@@ -67,7 +67,7 @@ class Lowering:
         elif ops:
             block_result = ops[-1]
         else:
-            block_result = ConstantOp(value={}, type=builtin.Nil())
+            block_result = ConstantOp.from_constant(builtin.Nil().constant(None))
         return function.FunctionOp(
             name=f.proto.name,
             result_type=result,
@@ -116,17 +116,13 @@ class Lowering:
     def lower_expr(self, expr: Expression) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression, yielding ops and returning the result Value."""
         if isinstance(expr, NumberLiteral):
-            op = ConstantOp(
-                value=[expr.value],
-                type=toy.Tensor(shape=shape_constant([1])),
-            )
+            tensor_type = toy.Tensor(shape=shape_constant([1]))
+            op = ConstantOp.from_constant(tensor_type.constant([expr.value]))
             yield op
             return op
         if isinstance(expr, TensorLiteral):
-            op = ConstantOp(
-                value=list(expr.values),
-                type=toy.Tensor(shape=shape_constant(list(expr.shape))),
-            )
+            tensor_type = toy.Tensor(shape=shape_constant(list(expr.shape)))
+            op = ConstantOp.from_constant(tensor_type.constant(list(expr.values)))
             yield op
             return op
         if isinstance(expr, VarRef):
@@ -155,7 +151,7 @@ class Lowering:
     ) -> Generator[dgen.Op, None, dgen.Value]:
         """Lower an expression that should produce an index value."""
         if isinstance(expr, NumberLiteral):
-            op = ConstantOp(value=int(expr.value), type=index.Index())
+            op = index.Index().constant(int(expr.value))
             yield op
             return op
         return (yield from self.lower_expr(expr))

@@ -66,7 +66,7 @@ def test_block_replace_uses_of(ir_snapshot):
         | import llvm
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 1
         |     %1 : index.Index = 2
         |     %2 : index.Index = llvm.add(%0, %0)
@@ -85,11 +85,11 @@ def test_block_replace_uses_of(ir_snapshot):
 
 def test_block_replace_uses_of_op_type():
     """replace_uses_of updates op.type when it references the replaced value."""
-    old_type = ConstantOp(
-        name="old_t", value={"tag": "index.Index"}, type=dgen.TypeType()
+    old_type = ConstantOp.from_constant(
+        dgen.TypeType().constant({"tag": "index.Index"}), name="old_t"
     )
-    new_type = ConstantOp(
-        name="new_t", value={"tag": "index.Index"}, type=dgen.TypeType()
+    new_type = ConstantOp.from_constant(
+        dgen.TypeType().constant({"tag": "index.Index"}), name="new_t"
     )
     x = ConstantOp(name="x", value=42, type=old_type)
     block = dgen.Block(result=x)
@@ -103,14 +103,14 @@ def test_block_replace_uses_of_block_arg_type():
     """replace_uses_of updates block argument types."""
     from dgen.dialects.index import Index
 
-    old_type = ConstantOp(
-        name="old_t", value={"tag": "index.Index"}, type=dgen.TypeType()
+    old_type = ConstantOp.from_constant(
+        dgen.TypeType().constant({"tag": "index.Index"}), name="old_t"
     )
-    new_type = ConstantOp(
-        name="new_t", value={"tag": "index.Index"}, type=dgen.TypeType()
+    new_type = ConstantOp.from_constant(
+        dgen.TypeType().constant({"tag": "index.Index"}), name="new_t"
     )
     arg = BlockArgument(name="x", type=old_type)
-    result = ConstantOp(name="r", value=0, type=Index())
+    result = ConstantOp.from_constant(Index().constant(0), name="r")
     block = dgen.Block(result=result, args=[arg])
 
     assert arg.type is old_type
@@ -123,8 +123,8 @@ def test_block_replace_uses_of_captures():
     from dgen.dialects.index import Index
     from dgen.dialects.builtin import ChainOp
 
-    old_val = ConstantOp(name="old", value=1, type=Index())
-    new_val = ConstantOp(name="new", value=2, type=Index())
+    old_val = ConstantOp.from_constant(Index().constant(1), name="old")
+    new_val = ConstantOp.from_constant(Index().constant(2), name="new")
     inner_op = ChainOp(name="use", lhs=old_val, rhs=old_val, type=Index())
     block = dgen.Block(result=inner_op, captures=[old_val])
 
@@ -142,14 +142,14 @@ def test_block_replace_uses_of_block_parameter_type():
     from dgen.block import BlockParameter
     from dgen.dialects.index import Index
 
-    old_type = ConstantOp(
-        name="old_t", value={"tag": "index.Index"}, type=dgen.TypeType()
+    old_type = ConstantOp.from_constant(
+        dgen.TypeType().constant({"tag": "index.Index"}), name="old_t"
     )
-    new_type = ConstantOp(
-        name="new_t", value={"tag": "index.Index"}, type=dgen.TypeType()
+    new_type = ConstantOp.from_constant(
+        dgen.TypeType().constant({"tag": "index.Index"}), name="new_t"
     )
     param = BlockParameter(name="p", type=old_type)
-    result = ConstantOp(name="r", value=0, type=Index())
+    result = ConstantOp.from_constant(Index().constant(0), name="r")
     block = dgen.Block(result=result, parameters=[param])
 
     assert param.type is old_type
@@ -171,10 +171,10 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
         | import number
         | import toy
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<ndbuffer.Shape<2>([3, 2]), number.Float64> = toy.transpose(%0)
-        |     %2 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.transpose(%1)
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %1 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([3, 2]), number.Float64> = toy.transpose(%0)
+        |     %2 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.transpose(%1)
         |     %3 : Nil = toy.print(%2)
     """)
 
@@ -202,8 +202,8 @@ def test_pass_unregistered_ops_error():
         | import number
         | import toy
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
 
@@ -237,7 +237,7 @@ def test_pass_multiple_handlers_first_wins():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
     m = parse(ir_text)
@@ -257,7 +257,7 @@ def test_compiler_run_verification_catches_closed_block_violation():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : Nil = {}
     """)
 
@@ -297,7 +297,7 @@ def test_constant_fold_resolves_stage0_boundary():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %t : Type = {"tag": "index.Index"}
         |     %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
         |         %y : %rt = algebra.add(%x, %x)
@@ -335,7 +335,7 @@ def test_constant_fold_is_noop_without_boundaries():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
     m = parse(ir_text)
@@ -361,7 +361,7 @@ def test_pass_run_receives_continuation_compiler():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 42
     """)
     m = parse(ir_text)

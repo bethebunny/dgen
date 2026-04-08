@@ -304,7 +304,7 @@ def _build_op(
         )
     if od.operands:
         op_ns["__operands__"] = tuple(
-            (op.name, _resolve_type(op.type.name, ns) if op.type is not None else Type)
+            (op.name, _resolve_type(op.type.name, ns) if op.type is not None else Value)
             for op in od.operands
         )
     if od.blocks:

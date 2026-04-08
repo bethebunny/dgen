@@ -8,38 +8,37 @@ from dgen.dialects import builtin, number
 from dgen.dialects.llvm import AddOp, MulOp
 from dgen.ir_diff import structural_diff
 from dgen.ir_equiv import Fingerprinter, graph_equivalent
-from dgen.module import ConstantOp
 from dgen.testing import strip_prefix
 from dgen.dialects.ndbuffer import NDBuffer, Shape
 
 
 def test_identical_ops_same_fingerprint():
     """Two independently-constructed identical ops have the same fingerprint."""
-    a = ConstantOp(value=42, type=builtin.Index())
-    b = ConstantOp(value=42, type=builtin.Index())
+    a = builtin.Index().constant(42)
+    b = builtin.Index().constant(42)
     fingerprinter = Fingerprinter()
     assert fingerprinter.fingerprint(a) == fingerprinter.fingerprint(b)
 
 
 def test_different_value_different_fingerprint():
-    a = ConstantOp(value=1, type=builtin.Index())
-    b = ConstantOp(value=2, type=builtin.Index())
+    a = builtin.Index().constant(1)
+    b = builtin.Index().constant(2)
     fingerprinter = Fingerprinter()
     assert fingerprinter.fingerprint(a) != fingerprinter.fingerprint(b)
 
 
 def test_different_type_different_fingerprint():
-    a = ConstantOp(value=1, type=builtin.Index())
-    b = ConstantOp(value=1, type=number.Float64())
+    a = builtin.Index().constant(1)
+    b = number.Float64().constant(1)
     fingerprinter = Fingerprinter()
     assert fingerprinter.fingerprint(a) != fingerprinter.fingerprint(b)
 
 
 def test_op_includes_operands():
     """Ops with different operands fingerprint differently."""
-    x = ConstantOp(value=1, type=builtin.Index())
-    y = ConstantOp(value=2, type=builtin.Index())
-    z = ConstantOp(value=3, type=builtin.Index())
+    x = builtin.Index().constant(1)
+    y = builtin.Index().constant(2)
+    z = builtin.Index().constant(3)
     add_xy = AddOp(lhs=x, rhs=y)
     add_xz = AddOp(lhs=x, rhs=z)
     fingerprinter = Fingerprinter()
@@ -48,8 +47,8 @@ def test_op_includes_operands():
 
 def test_op_operand_order_matters():
     """add(%x, %y) != add(%y, %x) — operand order is structural."""
-    x = ConstantOp(value=1, type=builtin.Index())
-    y = ConstantOp(value=2, type=builtin.Index())
+    x = builtin.Index().constant(1)
+    y = builtin.Index().constant(2)
     fingerprinter = Fingerprinter()
     assert fingerprinter.fingerprint(AddOp(lhs=x, rhs=y)) != fingerprinter.fingerprint(
         AddOp(lhs=y, rhs=x)
@@ -77,7 +76,7 @@ def test_block_arg_different_position_different_fingerprint():
 
 def test_fingerprint_memoized():
     """fingerprint() is called once per object even in a diamond dependency."""
-    x = ConstantOp(value=5, type=builtin.Index())
+    x = builtin.Index().constant(5)
     add = AddOp(lhs=x, rhs=x)
     mul = MulOp(lhs=add, rhs=add)
     fingerprinter = Fingerprinter()
@@ -92,9 +91,10 @@ def test_graph_equivalent_same_ir():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     assert graph_equivalent(parse(ir), parse(ir))
@@ -107,9 +107,10 @@ def test_graph_equivalent_different_names():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -117,9 +118,10 @@ def test_graph_equivalent_different_names():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %x : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %x : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %y : Nil = toy.print(%x)
     """)
     assert graph_equivalent(parse(a), parse(b))
@@ -131,9 +133,10 @@ def test_graph_not_equivalent_different_values():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -141,9 +144,10 @@ def test_graph_not_equivalent_different_values():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
     assert not graph_equivalent(parse(a), parse(b))
@@ -155,9 +159,10 @@ def test_structural_diff_returns_string():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -165,9 +170,10 @@ def test_structural_diff_returns_string():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
     diff = structural_diff(parse(a), parse(b))
@@ -192,7 +198,7 @@ def test_type_constant_with_dynamic_layout_param():
     serialize the "shape" field, but Shape.__layout__ is Array(Index.__layout__,
     self.rank.to_json()), which requires a concrete self.rank.
     """
-    rank = ConstantOp(value=2, type=builtin.Index())
+    rank = builtin.Index().constant(2)
     shape = Shape(rank=rank)
     memref_type = NDBuffer(shape=shape, dtype=number.Float64())
     # Triggers TypeValue._resolve_layout("ndbuffer.NDBuffer") -> Shape().__layout__ -> TypeError

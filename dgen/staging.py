@@ -135,7 +135,7 @@ def _jit_evaluate(target: dgen.Value, compiler: Compiler[object]) -> ConstantOp:
     )
     exe = compiler.run(func)
     result = exe.run()  # type: ignore[attr-defined]
-    return ConstantOp(value=result.to_json(), type=target.type)
+    return ConstantOp.from_constant(target.type.constant(result.to_json()))
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ def _resolve_with_runtime_args(
     """Substitute func.body.args with runtime-value constants, then
     resolve any remaining stage-0 boundaries in func."""
     for block_arg, py_val in zip(func.body.args, python_args):
-        const = ConstantOp(value=py_val, type=block_arg.type)
+        const = ConstantOp.from_constant(block_arg.type.constant(py_val))
         func.body.replace_uses_of(block_arg, const)
 
     while True:

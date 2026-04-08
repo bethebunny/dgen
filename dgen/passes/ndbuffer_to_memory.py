@@ -19,7 +19,7 @@ from dgen.dialects import algebra, function, llvm, memory
 from dgen.dialects.builtin import ExternOp, Nil, String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
-from dgen.module import ConstantOp, PackOp, pack
+from dgen.module import PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.dialects import ndbuffer
 from toy.dialects import toy
@@ -40,9 +40,7 @@ def _linearize(shape: list[int], indices: list[dgen.Value]) -> dgen.Value:
     for i, idx in enumerate(indices):
         stride = prod(shape[i + 1 :])
         term: dgen.Value = (
-            algebra.MultiplyOp(
-                left=idx, right=ConstantOp(value=stride, type=Index()), type=Index()
-            )
+            algebra.MultiplyOp(left=idx, right=Index().constant(stride), type=Index())
             if stride != 1
             else idx
         )
@@ -85,7 +83,7 @@ class NDBufferToMemory(Pass):
         dtype = Float64()
         alloc = memory.HeapAllocateOp(
             element_type=dtype,
-            count=ConstantOp(value=total, type=Index()),
+            count=Index().constant(total),
             type=memory.Reference(element_type=dtype),
         )
         self._shapes[id(alloc)] = shape
@@ -134,5 +132,5 @@ class NDBufferToMemory(Pass):
                 arguments=pack([llvm.Ptr(), Index()]), result_type=Nil()
             ),
         )
-        args = pack([ptr, ConstantOp(value=size, type=Index())])
+        args = pack([ptr, Index().constant(size)])
         return function.CallOp(callee=print_memref, arguments=args, type=Nil())
