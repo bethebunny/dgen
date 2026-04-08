@@ -10,7 +10,7 @@ markers = ["slow: marks tests as slow (deselected by default, run with --slow)"]
 addopts = "-m 'not slow'"
 
 [tool.setuptools.packages.find]
-include = ["dgen*", "toy*", "dcc*", "actor*", "editors*"]
+include = ["dgen*", "toy*", "dcc*", "actor*"]
 
 [tool.setuptools.package-dir]
 toy = "examples/toy"
@@ -26,5 +26,4 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-notebook = ["ipython", "ipykernel"]
-dev = ["papermill", "ipykernel", "syrupy", "pytest", "ruff"]
+dev = ["syrupy", "pytest", "ruff"]
