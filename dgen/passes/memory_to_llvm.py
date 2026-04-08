@@ -14,7 +14,7 @@ import dgen
 from dgen.dialects import function, llvm, memory
 from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
 from dgen.dialects.index import Index
-from dgen.module import ConstantOp, pack
+from dgen.module import pack
 from dgen.passes.pass_ import Pass, lowering_for
 
 
@@ -24,8 +24,8 @@ class MemoryToLLVM(Pass):
     @lowering_for(memory.HeapAllocateOp)
     def lower_heap_allocate(self, op: memory.HeapAllocateOp) -> dgen.Value | None:
         # malloc(count * 8) for 8-byte doubles
-        byte_count = ConstantOp(value=8, type=Index())
-        total = llvm.MulOp(lhs=op.count, rhs=byte_count)
+        int64 = llvm.Int(bits=Index().constant(64))
+        total = llvm.MulOp(lhs=op.count, rhs=int64.constant(8))
         malloc = ExternOp(
             symbol=String().constant("malloc"),
             type=function.Function(arguments=pack([Index()]), result_type=llvm.Ptr()),
@@ -38,7 +38,7 @@ class MemoryToLLVM(Pass):
 
     @lowering_for(memory.DeallocateOp)
     def lower_deallocate(self, op: memory.DeallocateOp) -> dgen.Value | None:
-        return ChainOp(lhs=ConstantOp(value=0, type=Nil()), rhs=op.mem, type=Nil())
+        return ChainOp(lhs=Nil().constant(None), rhs=op.mem, type=Nil())
 
     @lowering_for(memory.OffsetOp)
     def lower_offset(self, op: memory.OffsetOp) -> dgen.Value | None:

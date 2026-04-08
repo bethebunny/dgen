@@ -23,7 +23,6 @@ from dgen.dialects.index import Index
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
 from dgen.dialects.function import FunctionOp
-from dgen.module import ConstantOp
 from dgen.verify import CycleError, verify_dag
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Fields, TypeType, type_constant
@@ -107,16 +106,16 @@ class PeanoLowering(Pass):
 
     @lowering_for(ZeroOp)
     def lower_zero(self, op: ZeroOp) -> Value | None:
-        return ConstantOp(value=Zero().__constant__.to_json(), type=TypeType())
+        return TypeType().constant(Zero().__constant__.to_json())
 
     @lowering_for(SuccessorOp)
     def lower_successor(self, op: SuccessorOp) -> Value | None:
         succ = Successor(pred=type_constant(op.pred))
-        return ConstantOp(value=succ.__constant__.to_json(), type=TypeType())
+        return TypeType().constant(succ.__constant__.to_json())
 
     @lowering_for(ValueOp)
     def lower_value(self, op: ValueOp) -> Value | None:
-        return ConstantOp(value=count_nat(type_constant(op.nat)), type=Index())
+        return Index().constant(count_nat(type_constant(op.nat)))
 
 
 def lower_peano(value: dgen.Value) -> dgen.Value:
@@ -183,7 +182,7 @@ def test_recursive_type_roundtrip():
     nat = Successor(pred=Successor(pred=Zero()))
     assert count_nat(nat) == 2
     data = nat.__constant__.to_json()
-    reconstructed = type_constant(ConstantOp(value=data, type=TypeType()))
+    reconstructed = type_constant(TypeType().constant(data))
     assert count_nat(reconstructed) == 2
 
 
@@ -302,9 +301,9 @@ def test_equal_and_subtract_roundtrip():
         | import index
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %eq : number.Boolean = algebra.equal(%n, 0)
+        |     %eq : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %eq_i : index.Index = algebra.cast(%eq)
-        |     %sub : index.Index = algebra.subtract(%n, 1)
+        |     %sub : index.Index = algebra.subtract(%n, index.Index(1))
         |     %result : index.Index = algebra.add(%eq_i, %sub)
     """)
     asm_text = asm.format(parse(ir))
@@ -321,7 +320,7 @@ def test_subtract_jit():
         | import index
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %sub : index.Index = algebra.subtract(%n, 1)
+        |     %sub : index.Index = algebra.subtract(%n, index.Index(1))
     """)
     value = parse(ir)
     exe = llvm_compile(value)
@@ -337,7 +336,7 @@ def test_if_else_parse_roundtrip():
         | import function
         | import index
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : number.Boolean = algebra.equal(%n, 0)
+        |     %cond : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : index.Index = 10
         |     else_body():
@@ -363,11 +362,11 @@ def test_if_else_jit():
         | import function
         | import index
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : number.Boolean = algebra.equal(%n, 0)
+        |     %cond : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %one : index.Index = 1
         |     else_body() captures(%n):
-        |         %val : index.Index = algebra.subtract(%n, 1)
+        |         %val : index.Index = algebra.subtract(%n, index.Index(1))
     """)
     value = parse(ir)
     exe = llvm_compile(value)
@@ -385,7 +384,7 @@ def test_call_op_roundtrip():
         | import index
         |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %r : index.Index = algebra.add(%n, 1)
+        |     %r : index.Index = algebra.add(%n, index.Index(1))
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
         |     %result : index.Index = function.call<%add_one>([%x])
@@ -405,7 +404,7 @@ def test_call_jit():
         | import index
         |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %r : index.Index = algebra.add(%n, 1)
+        |     %r : index.Index = algebra.add(%n, index.Index(1))
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
         |     %result : index.Index = function.call<%add_one>([%x])
@@ -427,7 +426,7 @@ def test_multi_function_staged():
         | import index
         |
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %r : index.Index = algebra.add(%x, 1)
+        |     %r : index.Index = algebra.add(%x, index.Index(1))
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body() captures(%add_one):
         |     %z : Type = peano.zero()
@@ -450,7 +449,7 @@ def test_equal_jit():
         | import index
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cmp : number.Boolean = algebra.equal(%n, 0)
+        |     %cmp : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %eq : index.Index = algebra.cast(%cmp)
     """)
     value = parse(ir)
@@ -470,7 +469,7 @@ def test_verify_dag_detects_cycle():
         | import function
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : Nil = {}
     """)
     )
@@ -508,12 +507,12 @@ def test_recursive_peano():
         |     %result : index.Index = peano.value<%n>()
         |
         | %natural : function.Function<[index.Index], peano.Natural> = function.function<peano.Natural>() body(%n: index.Index):
-        |     %base_case : number.Boolean = algebra.equal(%n, 0)
+        |     %base_case : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %value : peano.Natural = control_flow.if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
         |     else_body() captures(%natural):
-        |         %n_minus_one : index.Index = algebra.subtract(%n, 1)
+        |         %n_minus_one : index.Index = algebra.subtract(%n, index.Index(1))
         |         %predecessor : peano.Natural = function.call<%natural>([%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()
     """)

@@ -15,8 +15,8 @@ def test_llvm_via_imports():
         | import number
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : Nil = llvm.alloca<6>()
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : Nil = llvm.alloca<index.Index(6)>()
         |     %1 : number.Float64 = 1.0
         |     %store : Nil = memory.store(%0, %1, %0)
     """)
@@ -33,15 +33,15 @@ def test_llvm_full_loop():
         | import llvm
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : Nil = llvm.alloca<3>()
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : Nil = llvm.alloca<index.Index(3)>()
         |     %init : index.Index = 0
         |     %loop_header : goto.Label = goto.label([]) body<%self: goto.Label, %exit: goto.Label>(%i0: index.Index):
         |         %hi : index.Index = 3
-        |         %cmp : llvm.Int<1> = llvm.icmp<"slt">(%i0, %hi)
+        |         %cmp : llvm.Int<index.Index(1)> = llvm.icmp<String("slt")>(%i0, %hi)
         |         %loop_body : goto.Label = goto.label([]) body(%j: index.Index) captures(%self):
         |             %one : index.Index = 1
-        |             %next : llvm.Int<64> = llvm.add(%j, %one)
+        |             %next : llvm.Int<index.Index(64)> = llvm.add(%j, %one)
         |             %_ : Nil = goto.branch<%self>([%next])
         |         %loop_exit : goto.Label = goto.label([]) body():
         |             %_0 : Nil = ()

@@ -3,7 +3,7 @@ import function
 import index
 import number
 
-%f : function.Function<[], number.SignedInteger<32>> = function.function<number.SignedInteger<32>>() body():
-    %arr : Array<number.SignedInteger<32>, 10> = extern<"arr">()
-    %0 : number.SignedInteger<32> = c.dereference(%arr)
+%f : function.Function<[], number.SignedInteger<index.Index(32)>> = function.function<number.SignedInteger<index.Index(32)>>() body():
+    %arr : Array<number.SignedInteger<index.Index(32)>, 10> = extern<String("arr")>()
+    %0 : number.SignedInteger<index.Index(32)> = c.dereference(%arr)
     %1 : Nil = c.return(%0)

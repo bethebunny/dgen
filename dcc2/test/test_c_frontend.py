@@ -16,7 +16,7 @@ from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
 from dgen.graph import transitive_dependencies
-from dgen.module import ConstantOp, pack
+from dgen.module import pack
 
 from dcc2.cli import c_compiler
 from dcc2.dialects import c, c_double, c_float, c_int, c_ptr, c_void
@@ -100,7 +100,7 @@ class TestPipeline:
     def test_pipeline_smoke(self) -> None:
         """Manually construct int f() { return 42; } and run through pipeline."""
         ret_type = SignedInteger(bits=index.Index().constant(64))
-        body_result = ConstantOp(value=42, type=ret_type)
+        body_result = ret_type.constant(42)
         func = function.FunctionOp(
             name="f",
             result_type=ret_type,

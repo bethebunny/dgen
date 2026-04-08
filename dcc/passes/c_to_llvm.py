@@ -47,8 +47,9 @@ class CToLLVM(Pass):
 
     @lowering_for(LogicalNotOp)
     def lower_logical_not(self, op: LogicalNotOp) -> dgen.Value | None:
-        zero = ConstantOp(value=0, type=op.operand.type)
-        eq = algebra.EqualOp(left=op.operand, right=zero, type=op.operand.type)
+        eq = algebra.EqualOp(
+            left=op.operand, right=op.operand.type.constant(0), type=op.operand.type
+        )
         return algebra.CastOp(input=eq, type=op.type)
 
     @lowering_for(ReturnOp)
@@ -61,12 +62,12 @@ class CToLLVM(Pass):
 
     @lowering_for(SizeofOp)
     def lower_sizeof(self, op: SizeofOp) -> dgen.Value | None:
-        return ConstantOp(value=8, type=llvm.Int(bits=Index().constant(64)))
+        return ConstantOp.from_constant(llvm.Int(bits=Index().constant(64)).constant(8))
 
     @lowering_for(DoWhileOp)
     def lower_do_while(self, op: DoWhileOp) -> dgen.Value | None:
-        return ConstantOp(value=None, type=Nil())
+        return ConstantOp.from_constant(Nil().constant(None))
 
     @lowering_for(BreakOp)
     def lower_break(self, op: BreakOp) -> dgen.Value | None:
-        return ConstantOp(value=None, type=Nil())
+        return ConstantOp.from_constant(Nil().constant(None))

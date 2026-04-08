@@ -5,6 +5,6 @@ import memory
 import number
 
 %f : function.Function<[memory.Reference<c.CStruct<"S", "S", "S">>], Nil> = function.function<Nil>() body(%s: memory.Reference<c.CStruct<"S", "S", "S">>):
-    %0 : memory.Reference<number.SignedInteger<32>> = c.field_address<"x">(%s)
-    %1 : number.SignedInteger<32> = 7
-    %2 : number.SignedInteger<32> = c.store_indirect(%0, %1)
+    %0 : memory.Reference<number.SignedInteger<index.Index(32)>> = c.field_address<"x">(%s)
+    %1 : number.SignedInteger<index.Index(32)> = 7
+    %2 : number.SignedInteger<index.Index(32)> = c.store_indirect(%0, %1)

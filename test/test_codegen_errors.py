@@ -12,10 +12,11 @@ def test_unhandled_op_raises():
     """Codegen raises ValueError for ops it cannot emit, not silent drop."""
     ir = strip_prefix("""
         | import function
+        | import index
         | import ndbuffer
         | import number
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %a : ndbuffer.NDBuffer<ndbuffer.Shape<1>([2]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([2]))
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %a : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(1)>([2]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<index.Index(1)>([2]))
     """)
     value = parse(ir)
     # ndbuffer.alloc has no lowering in codegen (needs NDBufferToMemory first),
@@ -37,7 +38,7 @@ def test_empty_non_label_group_in_mixed_block():
         | import function
         | import goto
         | import index
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %lbl : goto.Label = goto.label([]) body<%self: goto.Label, %exit: goto.Label>(%iv: index.Index):
         |         %one : index.Index = 1
         |         %next : index.Index = algebra.add(%iv, %one)

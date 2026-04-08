@@ -8,6 +8,6 @@ import number
     %0 : c.CStruct<"S", "S", "S"> = 0
     %1 : c.CStruct<"S", "S", "S"> = c.variable_declaration<"s", c.CStruct<"S", "S", "S">>(%0)
     %2 : memory.Reference<c.CStruct<"S", "S", "S">> = c.address_of(%1)
-    %3 : memory.Reference<number.SignedInteger<32>> = c.field_address<"x">(%2)
-    %4 : number.SignedInteger<32> = 7
-    %5 : number.SignedInteger<32> = c.store_indirect(%3, %4)
+    %3 : memory.Reference<number.SignedInteger<index.Index(32)>> = c.field_address<"x">(%2)
+    %4 : number.SignedInteger<index.Index(32)> = 7
+    %5 : number.SignedInteger<index.Index(32)> = c.store_indirect(%3, %4)

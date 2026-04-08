@@ -169,9 +169,8 @@ class ControlFlowToGoto(Pass):
         # Body label: reuse op.body's IV, chain(increment, body_result) as
         # the back-edge arg so the increment happens after the body runs.
         iv = op.body.args[0]
-        one = ConstantOp(value=1, type=Index())
         next_iv = ChainOp(
-            lhs=algebra.AddOp(left=iv, right=one, type=Index()),
+            lhs=algebra.AddOp(left=iv, right=Index().constant(1), type=Index()),
             rhs=op.body.result,
             type=Index(),
         )
@@ -186,7 +185,7 @@ class ControlFlowToGoto(Pass):
         )
 
         # Header: compare, branch to body or %exit.
-        hi = ConstantOp(value=op.upper_bound.__constant__.to_json(), type=Index())
+        hi = Index().constant(op.upper_bound.__constant__.to_json())
         cmp = algebra.LessThanOp(left=header_iv, right=hi, type=Boolean())
         cond_br = goto.ConditionalBranchOp(
             condition=cmp,
@@ -195,7 +194,9 @@ class ControlFlowToGoto(Pass):
             true_arguments=pack([header_iv]),
             false_arguments=pack([]),
         )
-        lo = ConstantOp(value=op.lower_bound.__constant__.to_json(), type=Index())
+        lo = ConstantOp.from_constant(
+            Index().constant(op.lower_bound.__constant__.to_json())
+        )
         return goto.RegionOp(
             name=f"loop_header{lid}",
             initial_arguments=pack([lo]),

@@ -58,7 +58,7 @@ def test_runtime_dependencies_follows_operands():
         | import llvm
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : number.Float64 = 2.0
         |     %c : Nil = llvm.fadd(%a, %b)
@@ -78,7 +78,7 @@ def test_runtime_dependencies_excludes_type_deps():
         | import llvm
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : number.Float64 = 2.0
         |     %c : Nil = llvm.fadd(%a, %b)
@@ -99,7 +99,7 @@ def test_runtime_dependencies_follows_captures():
         | import goto
         | import index
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %x : index.Index = 42
         |     %lbl : goto.Label = goto.label([]) body() captures(%x):
         |         %_ : Nil = ()
@@ -117,7 +117,7 @@ def test_runtime_dependencies_no_duplicates():
         | import llvm
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : Nil = llvm.fadd(%a, %a)
     """)
@@ -132,7 +132,7 @@ def test_runtime_dependencies_empty_for_constant():
         | import function
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %a : number.Float64 = 42.0
     """)
     from dgen import Constant
@@ -149,7 +149,7 @@ def test_runtime_dependencies_transitive():
         | import llvm
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : number.Float64 = 2.0
         |     %c : Nil = llvm.fadd(%a, %b)
@@ -171,7 +171,7 @@ def test_runtime_dependencies_topological_order():
         | import llvm
         | import number
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %a : number.Float64 = 1.0
         |     %b : number.Float64 = 2.0
         |     %c : Nil = llvm.fadd(%a, %b)
@@ -234,18 +234,18 @@ def test_emit_linearized_nested_loop():
         | import llvm
         | import number
         |
-        | %test : function.Function<[], ()> = function.function<Nil>() body():
+        | %test : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 0
         |     %loop_header0 : goto.Label = goto.region([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
         |         %1 : index.Index = 2
-        |         %2 : number.Boolean = llvm.icmp<"slt">(%i0, %1)
+        |         %2 : number.Boolean = llvm.icmp<String("slt")>(%i0, %1)
         |         %loop_body0 : goto.Label = goto.label([]) body(%j0: index.Index) captures(%self):
         |             %3 : index.Index = 1
         |             %4 : index.Index = llvm.add(%j0, %3)
         |             %5 : index.Index = 0
         |             %loop_header1 : goto.Label = goto.region([%5]) body<%6: goto.Label, %exit1: goto.Label>(%i1: index.Index):
         |                 %7 : index.Index = 2
-        |                 %8 : number.Boolean = llvm.icmp<"slt">(%i1, %7)
+        |                 %8 : number.Boolean = llvm.icmp<String("slt")>(%i1, %7)
         |                 %loop_body1 : goto.Label = goto.label([]) body(%j1: index.Index) captures(%6):
         |                     %9 : index.Index = 1
         |                     %10 : index.Index = llvm.add(%j1, %9)
@@ -279,8 +279,8 @@ def test_externs_function_with_typed_args():
         | import algebra
         | import llvm
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
-        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
         |     %size : index.Index = 48
         |     %ptr : llvm.Ptr = function.call<%malloc>([%size])
     """)
@@ -295,8 +295,8 @@ def test_externs_non_function():
         strip_prefix("""
         | import function
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
-        |     %greeting : String = extern<"hello_world">()
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %greeting : String = extern<String("hello_world")>()
     """)
     )
     externs = _externs(value)
@@ -312,10 +312,10 @@ def test_externs_nested_in_region():
         | import index
         | import llvm
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %init : index.Index = 0
         |     %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
-        |         %print : function.Function<[llvm.Ptr, index.Index], ()> = extern<"print_memref">()
+        |         %print : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
         |         %0 : Nil = function.call<%print>([])
         |         %1 : index.Index = 1
         |         %next : index.Index = llvm.add(%i, %1)
@@ -336,8 +336,8 @@ def test_externs_no_duplicates():
         | import algebra
         | import llvm
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
-        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
         |     %0 : llvm.Ptr = function.call<%malloc>([])
         |     %1 : llvm.Ptr = function.call<%malloc>([])
         |     %_ : Nil = chain(%0, %1)
@@ -394,9 +394,9 @@ def test_externs_multiple_distinct():
         | import algebra
         | import llvm
         |
-        | %f : function.Function<[], ()> = function.function<Nil>() body():
-        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
-        |     %print : function.Function<[llvm.Ptr, index.Index], ()> = extern<"print_memref">()
+        | %f : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
+        |     %print : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
         |     %ptr : llvm.Ptr = function.call<%malloc>([])
         |     %0 : Nil = function.call<%print>([])
         |     %_ : Nil = chain(%ptr, %0)
@@ -470,7 +470,7 @@ def test_llvm_codegen_on_extern():
         | import function
         | import index
         | import llvm
-        | %m : function.Function<[index.Index], llvm.Ptr> = extern<"malloc">()
+        | %m : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
     """)
     )
     exe = LLVMCodegen().run(value)

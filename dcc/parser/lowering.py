@@ -424,7 +424,7 @@ class Parser:
         if node.init is not None:
             init = yield from self._expr(node.init, scope, target_type=var_type)
         else:
-            init = ConstantOp(value=0, type=var_type)
+            init = ConstantOp.from_constant(var_type.constant(0))
             yield init
         decl = VariableDeclarationOp(
             variable_name=String().constant(node.name),
@@ -523,7 +523,7 @@ class Parser:
 
     def _ret(self, node: c_ast.Return, scope: Scope) -> Iterator[dgen.Op]:
         if node.expr is None:
-            nil = ConstantOp(value=None, type=Nil())
+            nil = Nil().constant(None)
             yield nil
             yield ReturnOp(value=nil)
         else:
@@ -604,7 +604,7 @@ class Parser:
             cond_scope = scope.child()
             cond_block = self._block_from(self._expr(node.cond, cond_scope), cond_scope)
         else:
-            one = ConstantOp(value=1, type=c_int(32))
+            one = ConstantOp.from_constant(c_int(32).constant(1))
             cond_block = dgen.Block(result=one)
         body_scope = scope.child()
         body_stmts = list(self._stmt(node.stmt, body_scope))
@@ -724,19 +724,21 @@ class Parser:
         ):
             val = parse_c_int(node.value)
             ty = target_type or self._int_type_from_suffix(node.value)
-            op = ConstantOp(value=val, type=ty)
+            op = ConstantOp.from_constant(ty.constant(val))
             yield op
             return op
         if node.type in ("float", "double"):
-            op = ConstantOp(value=float(node.value.rstrip("fFlL")), type=Float64())
+            op = ConstantOp.from_constant(
+                Float64().constant(float(node.value.rstrip("fFlL")))
+            )
             yield op
             return op
         if node.type == "char":
-            op = ConstantOp(value=parse_c_char(node.value), type=c_int(8))
+            op = ConstantOp.from_constant(c_int(8).constant(parse_c_char(node.value)))
             yield op
             return op
         if node.type == "string":
-            op = ConstantOp(value=0, type=Reference(element_type=c_int(8)))
+            op = ConstantOp.from_constant(Reference(element_type=c_int(8)).constant(0))
             yield op
             return op
         raise LoweringError(f"unsupported constant type: {node.type}")
@@ -752,7 +754,9 @@ class Parser:
 
     def _id(self, node: c_ast.ID, scope: Scope) -> Iterator[dgen.Op]:
         if node.name in self.types.enum_constants:
-            op = ConstantOp(value=self.types.enum_constants[node.name], type=c_int(32))
+            op = ConstantOp.from_constant(
+                c_int(32).constant(self.types.enum_constants[node.name])
+            )
             yield op
             return op
         val = scope.lookup(node.name)
@@ -846,7 +850,7 @@ class Parser:
             elem_type = self._pointee(addr.type)
             load = DereferenceOp(pointer=addr, type=elem_type)
             yield load
-            one = ConstantOp(value=1, type=elem_type)
+            one = ConstantOp.from_constant(elem_type.constant(1))
             yield one
             is_dec = node.op in ("--", "p--")
             cls = algebra.SubtractOp if is_dec else algebra.AddOp

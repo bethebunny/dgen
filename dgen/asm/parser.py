@@ -210,7 +210,7 @@ def value_expression(parser: ASMParser) -> object:
     if (name := parser.try_read(ssa_name)) is not None:
         return parser.resolve(name)
     if parser.try_read("()") is not None:
-        return builtin.Nil()
+        return builtin.Nil().constant(None)
     if parser.try_read("[") is not None:
         items = parser.read_list(value_expression)
         parser.read("]")
@@ -271,18 +271,30 @@ def op_expression(
     return op_cls, parameters, operands, blocks
 
 
+def _make_constant_op(val: object, pre_type: Value, name: str | None) -> ConstantOp:
+    """Create a ConstantOp from a parsed value and type annotation."""
+    if isinstance(val, Constant):
+        return ConstantOp.from_constant(val, name=name)
+    if isinstance(pre_type, Type):
+        return ConstantOp.from_constant(pre_type.constant(val), name=name)
+    # Type is an SSA ref — can't resolve at parse time; defer to __constant__.
+    return ConstantOp(value=val, type=pre_type, name=name)
+
+
 def op_statement(parser: ASMParser) -> Op:
     name = parser.read(ssa_name)
     pre_type = value_expression(parser) if parser.try_read(":") is not None else None
     parser.read("=")
     if pre_type is not None and parser.peek() in _LITERAL_START:
-        op = ConstantOp(name=name, value=value_expression(parser), type=pre_type)
+        val = value_expression(parser)
+        op = _make_constant_op(val, pre_type, name)
         parser.name_table[name] = op
         return op
     op_cls, parameters, operands, blocks = op_expression(parser)
     if issubclass(op_cls, ConstantOp):
         assert len(operands) == 1
-        op = ConstantOp(name=name, value=operands[0], type=pre_type)
+        op = _make_constant_op(operands[0], pre_type, name)
+
         parser.name_table[name] = op
         return op
     kwargs: dict[str, object] = {"name": name}
@@ -291,12 +303,7 @@ def op_statement(parser: ASMParser) -> Op:
     for (param_name, param_type), value in zip(op_cls.__params__, parameters):
         kwargs[param_name] = _coerce(parser, value, param_type)
     for (field_name, field_type), value in zip(op_cls.__operands__, operands):
-        # For polymorphic ops (field_type is base Type), infer concrete type
-        # from the explicit result type annotation when available.
-        effective_type = field_type
-        if field_type is Type and isinstance(pre_type, Type):
-            effective_type = type(pre_type)
-        kwargs[field_name] = _coerce(parser, value, effective_type)
+        kwargs[field_name] = _coerce(parser, value, field_type)
     for block_name, block in zip(op_cls.__blocks__, blocks):
         kwargs[block_name] = block
     op = op_cls(**kwargs)
@@ -331,16 +338,11 @@ def block_arguments(parser: ASMParser) -> list[BlockArgument]:
 
 
 def _as_constant(field_type: type[Type], raw: object) -> Constant:
-    """Wrap a raw literal as a Constant of *field_type*.
-
-    Raises if *field_type* is parameterized (can't infer params from a literal).
-    """
-    if field_type.__params__:
-        raise RuntimeError(
-            f"Cannot use a bare literal for parameterized type {field_type.asm_name}; "
-            f"use {field_type.asm_name}<...>({raw!r}) to specify type parameters explicitly"
-        )
-    return field_type().constant(raw)
+    """Bare literals are not allowed as operands — always use Type(value) syntax."""
+    raise RuntimeError(
+        f"Bare literal {raw!r} is not allowed; "
+        f"use Type({raw!r}) or Type<...>({raw!r}) to specify the type explicitly"
+    )
 
 
 def _coerce(
@@ -372,11 +374,18 @@ def _pack_list(
                 element_type = elem.type
                 break
         if element_type is None:
-            element_type = dgen.type.TypeType()
+            if elems:
+                raise RuntimeError(
+                    f"Cannot infer element type for bare literal list {elems!r}; "
+                    f"use typed constants like Type(value) inside the list"
+                )
+            element_type = builtin.Nil()
     elif field_type.__params__:
         # Parameterized non-Span type — can't pack bare literals.
-        _as_constant(field_type, elems)  # always raises
-        raise AssertionError("unreachable")
+        raise RuntimeError(
+            f"Cannot use a bare literal for parameterized type {field_type.asm_name}; "
+            f"use {field_type.asm_name}<...>({elems!r}) to specify type parameters explicitly"
+        )
     else:
         element_type = field_type()
     values: list[Value] = []
@@ -384,7 +393,7 @@ def _pack_list(
         if isinstance(elem, Value):
             values.append(elem)
         else:
-            values.append(ConstantOp(value=elem, type=element_type))
+            values.append(element_type.constant(elem))
     return PackOp(values=values, type=builtin.Span(pointee=element_type))
 
 

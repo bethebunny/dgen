@@ -22,7 +22,7 @@ def test_if_no_capture_roundtrip():
         | import index
         | import function
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : number.Boolean = algebra.equal(%n, 0)
+        |     %cond : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : index.Index = 10
         |     else_body():
@@ -96,7 +96,7 @@ def test_if_value_lowering(ir_snapshot):
         | import index
         | import function
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : number.Boolean = algebra.equal(%n, 0)
+        |     %cond : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %ten : index.Index = 10
         |     else_body():
@@ -114,7 +114,7 @@ def test_if_void_lowering(ir_snapshot):
         | import function
         | import index
         | import memory
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %cond : index.Index = 1
         |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
@@ -160,7 +160,7 @@ def test_if_type_mismatch_then():
         | import index
         | import function
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : number.Boolean = algebra.equal(%n, 0)
+        |     %cond : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %a : number.Float64 = 1.0
         |     else_body():
@@ -182,7 +182,7 @@ def test_if_type_mismatch_else():
         | import index
         | import function
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
-        |     %cond : number.Boolean = algebra.equal(%n, 0)
+        |     %cond : number.Boolean = algebra.equal(%n, index.Index(0))
         |     %result : index.Index = control_flow.if(%cond, [], []) then_body():
         |         %a : index.Index = 10
         |     else_body():

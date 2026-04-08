@@ -5,7 +5,8 @@ from __future__ import annotations
 import dgen
 from dgen.dialects import function
 from dgen.graph import all_blocks, all_values
-from dgen.module import ConstantOp, PackOp
+from dgen.module import PackOp
+from dgen.type import Constant
 from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import shape_constant, toy
 
@@ -61,7 +62,7 @@ class ShapeInference(Pass):
 
     @lowering_for(toy.TileOp)
     def infer_tile(self, op: toy.TileOp) -> dgen.Value | None:
-        if not isinstance(op.count, ConstantOp):
+        if not isinstance(op.count, Constant):
             return op
         count = op.count.__constant__.to_json()
         assert isinstance(count, int)

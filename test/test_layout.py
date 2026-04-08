@@ -339,13 +339,13 @@ def test_pointer_array_type_asm():
             element_type=number.Float64(), n=builtin.Index().constant(4)
         )
     )
-    assert type_asm(pa) == "Pointer<Array<number.Float64, 4>>"
+    assert type_asm(pa) == "Pointer<Array<number.Float64, index.Index(4)>>"
 
 
 def test_parse_type_with_pointer_array_param():
     """Parsing a type whose param is Pointer<Array<...>> with an explicit typed literal.
 
-    With the Type<params>(literal) syntax, Pointer<Array<number.Float64, 3>>([10, 20, 30])
+    With the Type<params>(literal) syntax, Pointer<Array<number.Float64, index.Index(3)>>([10, 20, 30])
     is parsed without any inference — the type is fully specified.
     """
     test_dialect = Dialect("_test_pa")
@@ -359,10 +359,11 @@ def test_parse_type_with_pointer_array_param():
 
     ir = strip_prefix("""
         | import function
+        | import index
         | import number
         | import _test_pa
         |
-        | %f : function.Function<[], _test_pa.Wrapper<Pointer<Array<number.Float64, 3>>([10, 20, 30])>> = function.function<_test_pa.Wrapper<Pointer<Array<number.Float64, 3>>([10, 20, 30])>>() body():
+        | %f : function.Function<[], _test_pa.Wrapper<Pointer<Array<number.Float64, index.Index(3)>>([10, 20, 30])>> = function.function<_test_pa.Wrapper<Pointer<Array<number.Float64, index.Index(3)>>([10, 20, 30])>>() body():
         |     %_ : Nil = ()
     """)
     parse(ir)

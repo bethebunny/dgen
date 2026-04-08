@@ -332,7 +332,7 @@ def test_for_loop_accumulator():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
         |     %zero : index.Index = 0
         |     %init : Nil = memory.store(%alloc, %zero, %alloc)
-        |     %loop : Nil = control_flow.for<0, 5>([]) body(%iv: index.Index) captures(%alloc, %init):
+        |     %loop : Nil = control_flow.for<index.Index(0), index.Index(5)>([]) body(%iv: index.Index) captures(%alloc, %init):
         |         %cur : index.Index = memory.load(%init, %alloc)
         |         %one : index.Index = 1
         |         %next : index.Index = algebra.add(%cur, %one)
@@ -359,7 +359,7 @@ def test_for_loop_last_iv_stored():
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-        |     %loop : Nil = control_flow.for<0, 5>([]) body(%iv: index.Index) captures(%alloc):
+        |     %loop : Nil = control_flow.for<index.Index(0), index.Index(5)>([]) body(%iv: index.Index) captures(%alloc):
         |         %_ : Nil = memory.store(%alloc, %iv, %alloc)
         |     %result : index.Index = memory.load(%loop, %alloc)
     """)

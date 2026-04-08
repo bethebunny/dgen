@@ -25,7 +25,7 @@ def test_roundtrip_signed_integer():
         | import index
         | import number
         |
-        | %f : function.Function<[number.SignedInteger<64>], Nil> = function.function<Nil>() body(%x: number.SignedInteger<64>):
+        | %f : function.Function<[number.SignedInteger<index.Index(64)>], Nil> = function.function<Nil>() body(%x: number.SignedInteger<index.Index(64)>):
         |     %0 : index.Index = 0
     """)
     value = parse(ir)
@@ -38,7 +38,7 @@ def test_roundtrip_unsigned_integer():
         | import index
         | import number
         |
-        | %f : function.Function<[number.UnsignedInteger<32>], Nil> = function.function<Nil>() body(%x: number.UnsignedInteger<32>):
+        | %f : function.Function<[number.UnsignedInteger<index.Index(32)>], Nil> = function.function<Nil>() body(%x: number.UnsignedInteger<index.Index(32)>):
         |     %0 : index.Index = 0
     """)
     value = parse(ir)

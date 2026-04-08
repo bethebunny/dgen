@@ -355,8 +355,8 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
         | import index
         | import ndbuffer
         |
-        | %main : function.Function<[index.Index], ()> = function.function<Nil>() body(%x: index.Index):
-        |     %store : Nil = ndbuffer.store(%x, %x, %x, [3, %x, 5])
+        | %main : function.Function<[index.Index], Nil> = function.function<Nil>() body(%x: index.Index):
+        |     %store : Nil = ndbuffer.store(%x, %x, %x, [index.Index(3), %x, index.Index(5)])
     """)
     parsed = parse(ir_input)
     assert parsed == ir_snapshot
@@ -389,10 +389,10 @@ def test_string_as_op_param():
         | import llvm
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : index.Index = 1
         |     %1 : index.Index = 2
-        |     %cmp : llvm.Int<1> = llvm.icmp<"slt">(%0, %1)
+        |     %cmp : llvm.Int<index.Index(1)> = llvm.icmp<String("slt")>(%0, %1)
     """)
     parsed = parse(ir)
     assert_ir_equivalent(parsed, asm.parse(asm.format(parsed)))
@@ -422,8 +422,8 @@ def test_string_param_staging():
         | import index
         |
         | %main : function.Function<[String, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
-        |     %cmp : llvm.Int<1> = llvm.icmp<%pred>(%x, %y)
-        |     %ext : llvm.Int<64> = llvm.zext(%cmp)
+        |     %cmp : llvm.Int<index.Index(1)> = llvm.icmp<%pred>(%x, %y)
+        |     %ext : llvm.Int<index.Index(64)> = llvm.zext(%cmp)
     """)
     value = parse(ir)
 
@@ -452,8 +452,8 @@ def test_compile_once_run_twice():
         | import index
         |
         | %main : function.Function<[String, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%pred : String, %x : index.Index, %y : index.Index):
-        |     %cmp : llvm.Int<1> = llvm.icmp<%pred>(%x, %y)
-        |     %ext : llvm.Int<64> = llvm.zext(%cmp)
+        |     %cmp : llvm.Int<index.Index(1)> = llvm.icmp<%pred>(%x, %y)
+        |     %ext : llvm.Int<index.Index(64)> = llvm.zext(%cmp)
     """)
     value = parse(ir)
 
@@ -524,7 +524,7 @@ def test_deepcopy_module_with_span_constant():
     # The copied value's constant should still be readable
     copied_const = list(copied.body.ops)[0]
     assert isinstance(copied_const, ConstantOp)
-    assert copied_const.memory.to_json() == [3, 5, 7]
+    assert copied_const.value.to_json() == [3, 5, 7]
 
 
 # ---------------------------------------------------------------------------

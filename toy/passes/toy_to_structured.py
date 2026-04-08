@@ -144,7 +144,7 @@ class ToyToStructured(Pass):
         shape = self._shape(op.input)
         axis = op.axis.__constant__.to_json()
         assert isinstance(axis, int)
-        return ConstantOp(value=shape[axis], type=Index())
+        return ConstantOp.from_constant(Index().constant(shape[axis]))
 
     @lowering_for(toy.TileOp)
     def lower_tile(self, op: toy.TileOp) -> dgen.Value | None:
@@ -181,7 +181,7 @@ class ToyToStructured(Pass):
             return ndbuffer.StoreOp(mem=load, value=load, memref=alloc, indices=idx)
 
         lhs_loop = _nested_for(lhs_shape, lhs_body, captures=[alloc, op.lhs])
-        offset = ConstantOp(value=lhs_shape[axis], type=Index())
+        offset = Index().constant(lhs_shape[axis])
 
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             shifted = list(ivars)
@@ -206,9 +206,9 @@ class ToyToStructured(Pass):
         reference_type = memory.Reference(element_type=Index())
         accumulator = memory.StackAllocateOp(element_type=Index(), type=reference_type)
         initial_store = memory.StoreOp(
-            mem=accumulator, value=ConstantOp(value=0, type=Index()), ptr=accumulator
+            mem=accumulator, value=Index().constant(0), ptr=accumulator
         )
-        zero = ConstantOp(value=0.0, type=Float64())
+        zero = Float64().constant(0.0)
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             element = ndbuffer.LoadOp(

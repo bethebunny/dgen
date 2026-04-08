@@ -12,9 +12,10 @@ def test_diff_empty_when_identical():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     assert diff_values(parse(ir), parse(ir)) == ""
@@ -27,9 +28,10 @@ def test_diff_empty_when_ssa_names_differ():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -37,9 +39,10 @@ def test_diff_empty_when_ssa_names_differ():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %tensor : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %tensor : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %result : Nil = toy.print(%tensor)
     """)
     assert diff_values(parse(a), parse(b)) == ""
@@ -52,9 +55,10 @@ def test_diff_empty_when_functions_wrapped_identically():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %func_a : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %func_a : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     b = strip_prefix("""
@@ -62,9 +66,10 @@ def test_diff_empty_when_functions_wrapped_identically():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %func_b : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        | %func_b : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
         |     %1 : Nil = toy.print(%0)
     """)
     from dgen.dialects.builtin import ChainOp
@@ -81,22 +86,24 @@ def test_diff_empty_when_op_order_differs():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
-        |     %a : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %b : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
-        |     %c : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.mul(%a, %b)
+        | %main : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = function.function<toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64>>() body():
+        |     %a : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %b : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        |     %c : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.mul(%a, %b)
     """)
     b = strip_prefix("""
         | import function
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = function.function<toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64>>() body():
-        |     %x : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
-        |     %y : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %z : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = toy.mul(%y, %x)
+        | %main : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = function.function<toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64>>() body():
+        |     %x : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        |     %y : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        |     %z : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.mul(%y, %x)
     """)
     assert diff_values(parse(a), parse(b)) == ""
 
@@ -108,9 +115,10 @@ def test_diff_format_semantic_change():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     actual = strip_prefix("""
@@ -118,9 +126,10 @@ def test_diff_format_semantic_change():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
         |     %1 : Nil = toy.print(%0)
     """)
     result = diff_values(parse(actual), parse(expected))
@@ -145,9 +154,10 @@ def test_diff_format_missing_function():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     actual_module = None
@@ -165,9 +175,10 @@ def test_diff_format_extra_function():
         | import ndbuffer
         | import number
         | import toy
+        | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %1 : Nil = toy.print(%0)
     """)
     expected_module = None
