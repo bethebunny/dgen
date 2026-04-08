@@ -10,8 +10,8 @@ from dgen.compiler import verify_passes
 from dgen.testing.syrupy import IRSnapshotExtension
 
 # Make toy and dcc dialects discoverable via Dialect.get().
-Dialect.paths.append(Path(__file__).parent / "toy" / "dialects")
-Dialect.paths.append(Path(__file__).parent / "dcc" / "dialects")
+Dialect.paths.append(Path(__file__).parent / "examples" / "toy" / "dialects")
+Dialect.paths.append(Path(__file__).parent / "examples" / "dcc" / "dialects")
 
 
 @pytest.fixture(autouse=True)

@@ -18,12 +18,12 @@ Key design principles:
 
 The current working demonstration is a Toy dialect (inspired by the MLIR Toy tutorial), implemented as a full pipeline: source → AST → Toy IR → structured IR → LLVM IR → JIT execution via llvmlite.
 
-Pipeline stages (in `toy/cli.py`):
-1. **Parse** `.toy` source → AST (`toy/parser/toy_parser.py`, `toy/parser/ast.py`)
-2. **Lower** AST → Toy IR (`toy/parser/lowering.py`)
-3. **Optimize** Toy IR → Toy IR (`toy/passes/optimize.py` — transpose folding, reshape elimination, dead code)
-4. **Shape inference** (`toy/passes/shape_inference.py`)
-5. **Lower** Toy → structured (`toy/passes/toy_to_structured.py` — loops, memory, arithmetic)
+Pipeline stages (in `examples/toy/cli.py`):
+1. **Parse** `.toy` source → AST (`examples/toy/parser/toy_parser.py`, `examples/toy/parser/ast.py`)
+2. **Lower** AST → Toy IR (`examples/toy/parser/lowering.py`)
+3. **Optimize** Toy IR → Toy IR (`examples/toy/passes/optimize.py` — transpose folding, reshape elimination, dead code)
+4. **Shape inference** (`examples/toy/passes/shape_inference.py`)
+5. **Lower** Toy → structured (`examples/toy/passes/toy_to_structured.py` — loops, memory, arithmetic)
 6. **Lower** control flow → goto (`dgen/passes/control_flow_to_goto.py` — for/while → labels)
 7. **Lower** ndbuffer → memory (`dgen/passes/ndbuffer_to_memory.py`)
 8. **Lower** memory → LLVM (`dgen/passes/memory_to_llvm.py`)
@@ -42,13 +42,16 @@ Implementation language: **Python**.
   - `dialects/ndbuffer.pyi` — NDBuffer dialect type stubs (loaded at runtime from `ndbuffer.dgen`)
   - `codegen.py` — LLVM IR emission and JIT compilation via llvmlite
   - `layout.py` — Memory layout descriptors for types
-- `toy/` — Toy dialect implementation
-  - `dialects/toy.pyi` — Toy dialect type stubs (loaded at runtime from `toy.dgen`)
-  - `parser/` — Toy language frontend (lexer, parser, AST, lowering to IR)
-  - `passes/` — Lowering and optimization passes
-  - `test/` — All tests (pytest)
-  - `test/testdata/` — `.toy` source files for CLI tests
-  - `cli.py` — CLI entry point (compile and run `.toy` files)
+- `examples/` — Example dialect implementations
+  - `toy/` — Toy dialect (MLIR Toy tutorial reimplementation)
+    - `dialects/toy.pyi` — Toy dialect type stubs (loaded at runtime from `toy.dgen`)
+    - `parser/` — Toy language frontend (lexer, parser, AST, lowering to IR)
+    - `passes/` — Lowering and optimization passes
+    - `test/` — Tests (pytest)
+    - `test/testdata/` — `.toy` source files for CLI tests
+    - `cli.py` — CLI entry point (compile and run `.toy` files)
+  - `dcc/` — C frontend dialect
+  - `actor/` — Actor dialect
 - `docs/` — Design documents (see `staging.md` for compile-time type staging model)
 - `test/` — `dgen`-level tests
 - `TODO.md` — Current task list
@@ -106,10 +109,10 @@ uv pip install -e ".[dev]"
 pytest . -q
 
 # Run a specific test file
-pytest toy/test/test_end_to_end.py -q
+pytest examples/toy/test/test_end_to_end.py -q
 
 # Run CLI on a .toy file (must be run from repo root)
-python -m toy.cli toy/test/testdata/constant.toy
+python -m toy.cli examples/toy/test/testdata/constant.toy
 ```
 
 Tests validate IR round-trips, pass correctness, and end-to-end JIT output. 110 tests, runs in ~1s.
@@ -143,7 +146,7 @@ To regenerate `.pyi` stubs (run from repo root):
 python -m dgen.gen dgen/dialects/builtin.dgen > dgen/dialects/builtin.pyi
 python -m dgen.gen dgen/dialects/llvm.dgen > dgen/dialects/llvm.pyi
 python -m dgen.gen dgen/dialects/ndbuffer.dgen > dgen/dialects/ndbuffer.pyi
-python -m dgen.gen toy/dialects/toy.dgen > toy/dialects/toy.pyi
+python -m dgen.gen examples/toy/dialects/toy.dgen > examples/toy/dialects/toy.pyi
 ```
 
 ## Debugging and Investigation
