@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 
 _CHAR_ESCAPES: dict[str, int] = {
     "n": 10,
@@ -16,7 +17,7 @@ _CHAR_ESCAPES: dict[str, int] = {
     "f": 12,
 }
 
-_CONST_BINOPS: dict[str, object] = {
+CONST_BINOPS: dict[str, Callable[[int, int], int]] = {
     "+": lambda a, b: a + b,
     "-": lambda a, b: a - b,
     "*": lambda a, b: a * b,
@@ -29,7 +30,7 @@ _CONST_BINOPS: dict[str, object] = {
     "^": lambda a, b: a ^ b,
 }
 
-_CONST_UNARY: dict[str, object] = {
+CONST_UNARY: dict[str, Callable[[int], int]] = {
     "-": lambda v: -v,
     "+": lambda v: v,
     "~": lambda v: ~v,

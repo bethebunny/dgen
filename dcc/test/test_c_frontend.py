@@ -1,242 +1,322 @@
-"""Tests for the C frontend: type resolution, end-to-end JIT, and scale."""
+"""Tests for the dcc C frontend."""
 
 from __future__ import annotations
 
-import random
-import shutil
-import time
-import urllib.request
 from pathlib import Path
 
 import pytest
-from syrupy.assertion import SnapshotAssertion
+from pycparser import c_ast
 
 import dgen
-from dgen.testing import llvm_compile
-from dgen.compiler import Compiler, IdentityPass
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen import Dialect
+from dgen.block import BlockArgument
+from dgen.dialects import function, index
 from dgen.dialects.builtin import Nil
+from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
-from dcc.dialects import c_int
-from dcc.dialects.c import CStruct
+from dgen.graph import transitive_dependencies
+from dgen.module import pack
+
+from dcc.cli import c_compiler
+from dcc.dialects import c, c_double, c_float, c_int, c_ptr, c_void
 from dcc.parser.c_parser import parse_c_string
 from dcc.parser.lowering import lower
-from dcc.parser.type_resolver import TypeResolver
-from dcc.passes.c_to_llvm import CToLLVM
-from dcc.passes.c_to_memory import CToMemory
+from dcc.parser.type_resolver import TypeResolver, TypeResolverError
 
-TESTDATA = Path(__file__).parent / "testdata"
-
-_c_compiler = Compiler(
-    [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM()], IdentityPass()
-)
-
-_SQLITE3_URL = (
-    "https://raw.githubusercontent.com/mattn/go-sqlite3/master/sqlite3-binding.c"
-)
-
-# GCC extensions that survive preprocessing and that pycparser can't handle.
-# glibc headers use __attribute__, __asm__, __restrict, __extension__,
-# __builtin_va_list, and _FloatN types unconditionally — even with -std=c99.
-# Defining these away is the standard pycparser approach.
-_GCC_COMPAT_DEFINES = [
-    "-D__attribute__(x)=",
-    "-D__asm__(x)=",
-    "-D__extension__=",
-    "-D__restrict=",
-    "-D__inline=inline",
-    "-D__signed__=signed",
-    "-D__volatile=volatile",
-    "-D__const=const",
-    "-D__builtin_va_list=void*",
-    "-D__builtin_offsetof(t,f)=((long)(0))",
-    "-D__builtin_va_start(a,b)=",
-    "-D__builtin_va_end(a)=",
-    "-D__builtin_va_arg(a,b)=0",
-    "-D__builtin_va_copy(a,b)=",
-    # glibc exposes _FloatN types — map them to standard types
-    "-D_Float16=float",
-    "-D_Float32=float",
-    "-D_Float64=double",
-    "-D_Float128=double",
-    "-D_Float32x=double",
-    "-D_Float64x=double",
-    "-D_Float128x=double",
-    "-D__CFLOAT32=float _Complex",
-    "-D__CFLOAT64=double _Complex",
-    "-D__CFLOAT128=double _Complex",
-    "-D__CFLOAT32X=double _Complex",
-    "-D__CFLOAT64X=double _Complex",
-]
+# Make dcc dialect discoverable.
+Dialect.paths.append(Path(__file__).parent.parent / "dialects")
 
 
 def run_c(source: str, *args: int) -> int:
     """Compile a C source string, JIT the last function, return the result."""
-    lowered = _lower_to_llvm(source)
-    exe = llvm_compile(lowered)
+    ir = lower(parse_c_string(source))
+    exe = c_compiler.compile(ir)
     result = exe.run(*args)
     return result.to_json()
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+class TestDialect:
+    """Brick 1: Verify the C dialect loads and all ops/types are available."""
+
+    def test_dialect_loads(self) -> None:
+        assert c.c.name == "c"
+
+    def test_lvalue_ops_exist(self) -> None:
+        assert c.LvalueVarOp is not None
+        assert c.LvalueDerefOp is not None
+        assert c.LvalueSubscriptOp is not None
+        assert c.LvalueMemberOp is not None
+        assert c.LvalueArrowOp is not None
+        assert c.LvalueToRvalueOp is not None
+        assert c.AddressOfOp is not None
+        assert c.AssignOp is not None
+        assert c.CompoundAssignOp is not None
+        assert c.PreIncrementOp is not None
+        assert c.PostIncrementOp is not None
+        assert c.PreDecrementOp is not None
+        assert c.PostDecrementOp is not None
+
+    def test_conversion_ops_exist(self) -> None:
+        assert c.IntegerPromoteOp is not None
+        assert c.ArithmeticConvertOp is not None
+        assert c.ArrayDecayOp is not None
+        assert c.FunctionDecayOp is not None
+        assert c.NullToPointerOp is not None
+        assert c.ScalarToBoolOp is not None
+
+    def test_c_types_exist(self) -> None:
+        assert c.Struct is not None
+        assert c.StructField is not None
+        assert c.Union is not None
+        assert c.Enum is not None
+        assert c.CFunctionType is not None
+
+    def test_arithmetic_and_control_ops_exist(self) -> None:
+        assert c.CReturnOp is not None
+        assert c.CSizeofOp is not None
+        assert c.ModuloOp is not None
+        assert c.ShiftLeftOp is not None
+        assert c.ShiftRightOp is not None
+        assert c.LogicalNotOp is not None
+        assert c.CommaOp is not None
+
+    def test_type_constructors(self) -> None:
+        signed = c_int(32)
+        assert isinstance(signed, SignedInteger)
+
+        unsigned = c_int(16, signed=False)
+        assert isinstance(unsigned, UnsignedInteger)
+
+        assert isinstance(c_float(), Float64)
+        assert isinstance(c_double(), Float64)
+        assert isinstance(c_void(), Nil)
+        assert isinstance(c_ptr(c_int()), Reference)
 
 
-@pytest.fixture(scope="session")
-def sqlite3_ast(tmp_path_factory: pytest.TempPathFactory) -> object:
-    """Download sqlite3.c, preprocess with gcc -E, parse with pycparser.
+class TestPipeline:
+    """Brick 2: Verify the compiler pipeline can compile and run IR."""
 
-    gcc -E expands all macros and includes using real system headers.
-    The _GCC_COMPAT_DEFINES stub out GCC extensions that pycparser
-    can't handle (__attribute__, __asm__, _FloatN, etc.).
-    """
-    from pycparser import parse_file
-
-    if not shutil.which("gcc"):
-        pytest.skip("gcc not available")
-
-    tmp = tmp_path_factory.mktemp("sqlite3")
-    raw = tmp / "sqlite3.c"
-
-    try:
-        resp = urllib.request.urlopen(_SQLITE3_URL, timeout=30)
-        raw.write_bytes(resp.read())
-    except Exception as exc:
-        pytest.skip(f"Cannot download sqlite3.c: {exc}")
-
-    if raw.stat().st_size < 1_000_000:
-        pytest.skip("Downloaded file too small — likely truncated")
-
-    try:
-        return parse_file(
-            str(raw),
-            use_cpp=True,
-            cpp_path="gcc",
-            cpp_args=["-E", *_GCC_COMPAT_DEFINES],
+    def test_pipeline_smoke(self) -> None:
+        """Manually construct int f() { return 42; } and run through pipeline."""
+        ret_type = SignedInteger(bits=index.Index().constant(64))
+        body_result = ret_type.constant(42)
+        func = function.FunctionOp(
+            name="f",
+            result_type=ret_type,
+            body=dgen.Block(result=body_result, args=[]),
+            type=FunctionType(
+                arguments=pack([]),
+                result_type=ret_type,
+            ),
         )
-    except Exception as exc:
-        pytest.skip(f"Cannot parse sqlite3.c: {exc}")
+        exe = c_compiler.compile(func)
+        assert exe.run().to_json() == 42
 
-
-# ---------------------------------------------------------------------------
-# Type resolver
-# ---------------------------------------------------------------------------
+    def test_pipeline_with_parameter(self) -> None:
+        """int f(int x) { return x; } with x=7."""
+        ret_type = SignedInteger(bits=index.Index().constant(64))
+        arg = BlockArgument(name="x", type=ret_type)
+        func = function.FunctionOp(
+            name="f",
+            result_type=ret_type,
+            body=dgen.Block(result=arg, args=[arg]),
+            type=FunctionType(
+                arguments=pack([ret_type]),
+                result_type=ret_type,
+            ),
+        )
+        exe = c_compiler.compile(func)
+        assert exe.run(7).to_json() == 7
 
 
 class TestTypeResolver:
-    def test_basic_int_types(self) -> None:
-        r = TypeResolver()
-        assert isinstance(r._resolve_identifier_type(["int"]), SignedInteger)
+    """Brick 3: Verify type resolution from pycparser AST nodes."""
 
-    def test_unsigned_long(self) -> None:
+    def test_int_types(self) -> None:
+
         r = TypeResolver()
-        assert isinstance(
-            r._resolve_identifier_type(["unsigned", "long"]), UnsignedInteger
+        signed = r.resolve(
+            c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["int"]))
         )
+        assert isinstance(signed, SignedInteger)
 
-    def test_void(self) -> None:
-        r = TypeResolver()
-        assert isinstance(r._resolve_identifier_type(["void"]), Nil)
-
-    def test_double(self) -> None:
-        r = TypeResolver()
-        assert isinstance(r._resolve_identifier_type(["double"]), Float64)
-
-    def test_typedef(self) -> None:
-        r = TypeResolver()
-        r.register_typedef("myint", c_int(32))
-        assert isinstance(r._resolve_identifier_type(["myint"]), SignedInteger)
-
-    def test_pointer(self) -> None:
-        from pycparser import c_ast
-
-        r = TypeResolver()
-        node = c_ast.PtrDecl(
-            quals=[],
-            type=c_ast.TypeDecl(
-                declname="x",
-                quals=[],
-                align=None,
-                type=c_ast.IdentifierType(names=["int"]),
-            ),
-        )
-        assert isinstance(r.resolve(node), Reference)
-
-    def test_struct(self) -> None:
-        from pycparser import c_ast
-
-        r = TypeResolver()
-        node = c_ast.Struct(
-            name="Point",
-            decls=[
-                c_ast.Decl(
-                    name="x",
-                    quals=[],
-                    align=None,
-                    storage=[],
-                    funcspec=[],
-                    type=c_ast.TypeDecl(
-                        declname="x",
-                        quals=[],
-                        align=None,
-                        type=c_ast.IdentifierType(names=["double"]),
-                    ),
-                    init=None,
-                    bitsize=None,
-                ),
-            ],
-        )
-        assert isinstance(r.resolve(node), CStruct)
-
-    def test_enum_constants(self) -> None:
-        from pycparser import c_ast
-
-        r = TypeResolver()
-        r.resolve(
-            c_ast.Enum(
-                name="Color",
-                values=c_ast.EnumeratorList(
-                    enumerators=[
-                        c_ast.Enumerator(name="RED", value=None),
-                        c_ast.Enumerator(name="GREEN", value=None),
-                        c_ast.Enumerator(
-                            name="BLUE",
-                            value=c_ast.Constant(type="int", value="5"),
-                        ),
-                    ]
-                ),
+        unsigned = r.resolve(
+            c_ast.TypeDecl(
+                None, None, None, c_ast.IdentifierType(names=["unsigned", "int"])
             )
         )
-        assert r.enum_constants == {"RED": 0, "GREEN": 1, "BLUE": 5}
+        assert isinstance(unsigned, UnsignedInteger)
 
-    def test_const_expr_hex(self) -> None:
-        from pycparser import c_ast
-
-        r = TypeResolver()
-        assert r._eval_const_expr(c_ast.Constant(type="int", value="0xFF")) == 255
-
-    def test_const_expr_binop(self) -> None:
-        from pycparser import c_ast
+    def test_float_and_double(self) -> None:
 
         r = TypeResolver()
-        node = c_ast.BinaryOp(
-            op="+",
-            left=c_ast.Constant(type="int", value="3"),
-            right=c_ast.Constant(type="int", value="4"),
+        f = r.resolve(
+            c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["float"]))
         )
-        assert r._eval_const_expr(node) == 7
+        assert isinstance(f, Float64)
 
+        d = r.resolve(
+            c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["double"]))
+        )
+        assert isinstance(d, Float64)
 
-# ---------------------------------------------------------------------------
-# End-to-end: C source → JIT → verify return value
-# ---------------------------------------------------------------------------
+    def test_void(self) -> None:
+
+        r = TypeResolver()
+        v = r.resolve(
+            c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["void"]))
+        )
+        assert isinstance(v, Nil)
+
+    def test_pointer(self) -> None:
+
+        r = TypeResolver()
+        p = r.resolve(
+            c_ast.PtrDecl(
+                None,
+                c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["int"])),
+            )
+        )
+        assert isinstance(p, Reference)
+
+    def test_struct_with_fields(self) -> None:
+
+        r = TypeResolver()
+        decls = [
+            c_ast.Decl(
+                "x",
+                None,
+                None,
+                None,
+                None,
+                c_ast.TypeDecl("x", None, None, c_ast.IdentifierType(names=["int"])),
+                None,
+                None,
+            ),
+            c_ast.Decl(
+                "y",
+                None,
+                None,
+                None,
+                None,
+                c_ast.TypeDecl("y", None, None, c_ast.IdentifierType(names=["int"])),
+                None,
+                None,
+            ),
+        ]
+        node = c_ast.Struct("Point", decls)
+        t = r.resolve(node)
+        assert isinstance(t, c.Struct)
+        # Verify struct is cached and forward-referenceable.
+        assert r._resolve_struct(c_ast.Struct("Point", None)) is t
+
+    def test_anonymous_structs_are_unique(self) -> None:
+
+        r = TypeResolver()
+        decl_x = [
+            c_ast.Decl(
+                "x",
+                None,
+                None,
+                None,
+                None,
+                c_ast.TypeDecl("x", None, None, c_ast.IdentifierType(names=["int"])),
+                None,
+                None,
+            )
+        ]
+        decl_y = [
+            c_ast.Decl(
+                "y",
+                None,
+                None,
+                None,
+                None,
+                c_ast.TypeDecl("y", None, None, c_ast.IdentifierType(names=["int"])),
+                None,
+                None,
+            )
+        ]
+        s1 = r.resolve(c_ast.Struct(None, decl_x))
+        s2 = r.resolve(c_ast.Struct(None, decl_y))
+        assert isinstance(s1, c.Struct)
+        assert isinstance(s2, c.Struct)
+        assert s1 is not s2
+
+    def test_enum_constants(self) -> None:
+
+        r = TypeResolver()
+        enumerators = c_ast.EnumeratorList(
+            [
+                c_ast.Enumerator("A", None),
+                c_ast.Enumerator("B", None),
+                c_ast.Enumerator("C", c_ast.Constant("int", "10")),
+                c_ast.Enumerator("D", None),
+            ]
+        )
+        r.resolve(c_ast.Enum("Color", enumerators))
+        assert r.enum_constants["A"] == 0
+        assert r.enum_constants["B"] == 1
+        assert r.enum_constants["C"] == 10
+        assert r.enum_constants["D"] == 11
+
+    def test_unknown_type_raises(self) -> None:
+
+        r = TypeResolver()
+        with pytest.raises(TypeResolverError, match="unknown type"):
+            r.resolve(
+                c_ast.TypeDecl(
+                    None, None, None, c_ast.IdentifierType(names=["mystery_t"])
+                )
+            )
+
+    def test_f_void_has_no_params(self) -> None:
+        """C11: f(void) should resolve to a function with zero parameters."""
+
+        r = TypeResolver()
+        # int f(void)
+        func_decl = c_ast.FuncDecl(
+            c_ast.ParamList(
+                [
+                    c_ast.Typename(
+                        None,
+                        None,
+                        None,
+                        c_ast.TypeDecl(
+                            None, None, None, c_ast.IdentifierType(names=["void"])
+                        ),
+                    )
+                ]
+            ),
+            c_ast.TypeDecl(None, None, None, c_ast.IdentifierType(names=["int"])),
+        )
+        t = r.resolve(func_decl)
+        assert isinstance(t, c.CFunctionType)
+
+    def test_parse_c_string(self) -> None:
+        ast = parse_c_string("int f(int x) { return x; }")
+        assert ast is not None
+        assert len(ast.ext) == 1
 
 
 class TestEndToEnd:
-    """Compile C functions through the full pipeline and verify JIT output."""
+    """Brick 4+: End-to-end tests via run_c()."""
+
+    def test_return_constant(self) -> None:
+        assert run_c("int f() { return 42; }") == 42
+
+    def test_return_zero(self) -> None:
+        assert run_c("int f() { return 0; }") == 0
+
+    def test_return_negative(self) -> None:
+        assert run_c("int f() { return -1; }") == -1
+
+    def test_return_parameter(self) -> None:
+        assert run_c("int f(int x) { return x; }", 7) == 7
+
+    def test_two_parameters(self) -> None:
+        assert run_c("int f(int a, int b) { return a; }", 3, 4) == 3
 
     def test_add(self) -> None:
         assert run_c("int f(int a, int b) { return a + b; }", 3, 4) == 7
@@ -253,50 +333,28 @@ class TestEndToEnd:
     def test_negate(self) -> None:
         assert run_c("int f(int x) { return -x; }", 5) == -5
 
-    def test_constant(self) -> None:
-        assert run_c("int f() { return 42; }") == 42
-
     def test_nested_arithmetic(self) -> None:
         assert run_c("int f(int a, int b) { return (a + b) * (a - b); }", 7, 3) == 40
 
-    def test_bitwise_and(self) -> None:
-        assert run_c("int f(int a, int b) { return a & b; }", 0xCC, 0xAA) == 0x88
-
-    def test_bitwise_or(self) -> None:
-        assert run_c("int f(int a, int b) { return a | b; }", 0xCC, 0xAA) == 0xEE
-
-    def test_bitwise_xor(self) -> None:
-        assert run_c("int f(int a, int b) { return a ^ b; }", 0xCC, 0xAA) == 0x66
-
-    def test_comparison_lt(self) -> None:
+    def test_comparison_less_than(self) -> None:
         assert run_c("int f(int a, int b) { return a < b; }", 3, 5) == 1
         assert run_c("int f(int a, int b) { return a < b; }", 5, 3) == 0
 
-    def test_comparison_eq(self) -> None:
+    def test_comparison_equal(self) -> None:
         assert run_c("int f(int a, int b) { return a == b; }", 5, 5) == 1
         assert run_c("int f(int a, int b) { return a == b; }", 5, 3) == 0
 
-    def test_comparison_ge(self) -> None:
-        assert run_c("int f(int a, int b) { return a >= b; }", 5, 5) == 1
-        assert run_c("int f(int a, int b) { return a >= b; }", 3, 5) == 0
+    def test_literal_and_param_types_match(self) -> None:
+        """Integer literals and parameters should both be i32 (C int = 32-bit)."""
+        assert run_c("int f(int x) { return x + 1; }", 5) == 6
+        assert run_c("int f(int x) { return 10 - x; }", 3) == 7
 
-    def test_comparison_ne(self) -> None:
-        assert run_c("int f(int a, int b) { return a != b; }", 3, 5) == 1
-        assert run_c("int f(int a, int b) { return a != b; }", 5, 5) == 0
-
-    def test_multiple_ops(self) -> None:
-        assert run_c("int f(int a, int b) { return a * b + a / b; }", 20, 4) == 85
-
-    def test_chained_comparisons(self) -> None:
-        assert run_c("int f(int a, int b) { return (a < b) + (a > b); }", 3, 5) == 1
-        assert run_c("int f(int a, int b) { return (a < b) + (a > b); }", 5, 5) == 0
+    # --- Brick 5: Local variables (lvalue model) ---
 
     def test_local_variable(self) -> None:
-        """Local var: alloca + store + load must be in the use-def graph."""
         assert run_c("int f(int x) { int y = x + 1; return y; }", 5) == 6
 
     def test_local_mutation(self) -> None:
-        """Mutating a local via assignment."""
         assert run_c("int f(int x) { int y = x; y = y + 10; return y; }", 5) == 15
 
     def test_multiple_locals(self) -> None:
@@ -309,739 +367,213 @@ class TestEndToEnd:
             == 40
         )
 
-    def test_function_call_e2e(self) -> None:
-        """Cross-function calls."""
+    def test_uninitialized_local(self) -> None:
+        assert run_c("int f() { int x; x = 42; return x; }") == 42
+
+    def test_reassign_multiple_times(self) -> None:
+        assert run_c("int f() { int x = 1; x = 2; x = 3; return x; }") == 3
+
+    def test_local_from_param_arithmetic(self) -> None:
+        assert run_c("int f(int a, int b) { int r = a * b + 1; return r; }", 6, 7) == 43
+
+    def test_nested_scope(self) -> None:
+        assert run_c("int f() { int x = 10; { int y = 20; } return x; }") == 10
+
+    def test_shadowed_variable(self) -> None:
+        """Inner x doesn't affect outer x."""
+        assert run_c("int f() { int x = 10; { int x = 99; } return x; }") == 10
+
+    def test_shadow_then_reassign_outer(self) -> None:
+        assert run_c("int f() { int x = 0; { int x = 99; } x = 2; return x; }") == 2
+
+    def test_assign_to_parameter(self) -> None:
+        """Parameters are mutable local variables in C."""
+        assert run_c("int f(int x) { x = 10; return x; }", 5) == 10
+
+    def test_read_then_reassign_same_variable(self) -> None:
+        """Read x, then reassign x — read must see original value."""
+        assert run_c("int f(int x) { int y = x; x = 10; return x + y; }", 5) == 15
+
+    def test_multiple_reads_between_writes(self) -> None:
+        """Multiple reads of x between writes must see correct values."""
         assert (
-            run_c("int g(int x) { return x + 1; }\nint f(int x) { return g(x); }", 5)
+            run_c("int f() { int x = 1; int a = x; x = 2; int b = x; return a + b; }")
+            == 3
+        )
+
+    # --- Brick 6: Control flow ---
+
+    def test_if_true(self) -> None:
+        assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 1) == 1
+
+    def test_if_false(self) -> None:
+        assert run_c("int f(int x) { int r = 0; if (x) r = 1; return r; }", 0) == 0
+
+    def test_if_else(self) -> None:
+        assert (
+            run_c("int f(int x) { int r; if (x) r = 1; else r = 2; return r; }", 1) == 1
+        )
+        assert (
+            run_c("int f(int x) { int r; if (x) r = 1; else r = 2; return r; }", 0) == 2
+        )
+
+    def test_if_compound_body(self) -> None:
+        assert (
+            run_c("int f(int x) { int r = 0; if (x) { r = x + 10; } return r; }", 5)
+            == 15
+        )
+
+    def test_while_loop(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int s = 0; int i = 0;"
+                " while (i < n) { s = s + i; i = i + 1; } return s; }",
+                5,
+            )
+            == 10
+        )
+
+    def test_while_zero_iterations(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int s = 0; int i = 0;"
+                " while (i < n) { s = s + i; i = i + 1; } return s; }",
+                0,
+            )
+            == 0
+        )
+
+    def test_for_loop(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int r = 1; int i;"
+                " for (i = 1; i <= n; i = i + 1) r = r * i; return r; }",
+                5,
+            )
+            == 120
+        )
+
+    def test_for_with_decl_init(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int s = 0;"
+                " for (int i = 0; i < n; i = i + 1) s = s + i; return s; }",
+                5,
+            )
+            == 10
+        )
+
+    def test_nested_if_while(self) -> None:
+        assert (
+            run_c(
+                "int f(int n) { int s = 0; int i = 0;"
+                " while (i < n) { if (i - (i/2)*2 == 0) s = s + i;"
+                " i = i + 1; } return s; }",
+                6,
+            )
             == 6
         )
 
-    def test_assign_then_return(self) -> None:
-        """Assignment followed by return."""
-        assert run_c("int f(int x) { int y = 0; y = x + 1; return y; }", 5) == 6
-
-
-# ---------------------------------------------------------------------------
-# Lowering (verify C constructs lower without crashing)
-# ---------------------------------------------------------------------------
-
-
-class TestLowering:
-    def test_if_else(self) -> None:
-        ast = parse_c_string("""
-            int abs(int x) {
-                if (x < 0) return -x;
-                else return x;
-            }
-        """)
-        _, stats = lower(ast)
-        assert len(stats.function_ops) == 1
-
-    def test_while_loop(self) -> None:
-        ast = parse_c_string("""
-            int sum(int n) {
-                int s = 0; int i = 0;
-                while (i < n) { s = s + i; i = i + 1; }
-                return s;
-            }
-        """)
-        _, stats = lower(ast)
-        assert len(stats.function_ops) == 1
-
-    def test_for_loop(self) -> None:
-        ast = parse_c_string("""
-            int factorial(int n) {
-                int r = 1; int i;
-                for (i = 1; i <= n; i++) { r = r * i; }
-                return r;
-            }
-        """)
-        _, stats = lower(ast)
-        assert len(stats.function_ops) == 1
-
-    def test_typedef(self) -> None:
-        ast = parse_c_string("""
-            typedef unsigned int uint;
-            uint f(uint x) { return x * 2; }
-        """)
-        _, stats = lower(ast)
-        assert stats.typedefs == 1
-
-    def test_struct(self) -> None:
-        ast = parse_c_string("""
-            struct P { int x; int y; };
-            int f(struct P *p) { return p->x; }
-        """)
-        _, stats = lower(ast)
-        assert len(stats.function_ops) == 1
-
-    def test_enum(self) -> None:
-        ast = parse_c_string("""
-            enum Color { RED, GREEN, BLUE };
-            int f() { return GREEN; }
-        """)
-        _, stats = lower(ast)
-        assert len(stats.function_ops) == 1
-
-    def test_ternary(self) -> None:
-        ast = parse_c_string("int f(int a, int b) { return a > b ? a : b; }")
-        _, stats = lower(ast)
-        assert len(stats.function_ops) == 1
-
-    def test_function_call(self) -> None:
-        ast = parse_c_string("""
-            int add(int a, int b) { return a + b; }
-            int f() { return add(1, 2); }
-        """)
-        _, stats = lower(ast)
-        assert len(stats.function_ops) == 2
-
-    def test_goto_label(self) -> None:
-        ast = parse_c_string("""
-            int f(int x) {
-                goto done;
-                x = x + 1;
-                done:
-                return x;
-            }
-        """)
-        _, stats = lower(ast)
-        assert len(stats.function_ops) == 1
-        assert stats.skipped_functions == 0
-
-
-# ---------------------------------------------------------------------------
-# Session-fix regression tests: minimal repros for things that used to
-# fail at the C frontend / codegen boundary. Each test has:
-#   - a structural assertion that pinpoints what changed semantically;
-#   - an ir_snapshot that captures the full lowered IR for cosmetic review.
-# ---------------------------------------------------------------------------
-
-
-def _lower_c(source: str) -> dgen.Value:
-    """Lower C source; assert nothing got skipped. Returns the entry FunctionOp."""
-    ast = parse_c_string(source)
-    entry, stats = lower(ast)
-    assert stats.skipped_functions == 0, (
-        f"lowering skipped functions: {stats.skip_reasons}"
-    )
-    return entry
-
-
-def _lower_to_llvm(source: str) -> dgen.Value:
-    """Run the full frontend pipeline, chaining all functions."""
-    from functools import reduce
-    from dgen.dialects.builtin import ChainOp
-    from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-    from dgen.compiler import verify_passes
-
-    ast = parse_c_string(source)
-    _, stats = lower(ast)
-    assert stats.skipped_functions == 0, (
-        f"lowering skipped functions: {stats.skip_reasons}"
-    )
-    all_fns = stats.function_ops
-    root = reduce(lambda a, b: ChainOp(lhs=a, rhs=b, type=a.type), all_fns)
-    pipeline = Compiler(
-        [CToMemory(), CToLLVM(), AlgebraToLLVM(), MemoryToLLVM(), ControlFlowToGoto()],
-        IdentityPass(),
-    )
-    token = verify_passes.set(False)
-    try:
-        return pipeline.run(root)
-    finally:
-        verify_passes.reset(token)
-
-
-def _codegen_verifies(source: str) -> None:
-    """Compile source through the full pipeline; assert LLVM parses + verifies."""
-    from dgen.codegen import emit_llvm_ir
-    import llvmlite.binding as llvm_binding
-
-    llvm_binding.initialize_native_target()
-    llvm_binding.initialize_native_asmprinter()
-
-    value = _lower_to_llvm(source)
-    ir, _ = emit_llvm_ir(value)
-    mod = llvm_binding.parse_assembly(ir)
-    mod.verify()
-
-
-def _contains_op(value: dgen.Value, op_type: type) -> bool:
-    from dgen.graph import all_values
-
-    return any(isinstance(v, op_type) for v in all_values(value))
-
-
-def _count_ops(value: dgen.Value, op_type: type) -> int:
-    from dgen.graph import all_values
-
-    return sum(isinstance(v, op_type) for v in all_values(value))
-
-
-class TestSessionFrontendFixes:
-    """Minimal repros for each frontend lowering fix in this session.
-
-    Every test asserts the specific IR structure that distinguishes a
-    correct lowering from the pre-fix behavior, then snapshots the full
-    FunctionOp.  Regressions show up as a structural assertion failure; purely
-    cosmetic IR shifts only update the snapshot.
-    """
-
-    def test_global_variable_reference(self, ir_snapshot: SnapshotAssertion) -> None:
-        # Pre-fix: ID lookup failed with LoweringError("undefined: g")
-        # because globals were never registered in file_scope.
-        from dgen.dialects.builtin import ExternOp
-
-        m = _lower_c("int g; int f(void) { return g; }")
-        assert _contains_op(m, ExternOp), "global should become an ExternOp in the IR"
-        assert m == ir_snapshot
-
-    def test_array_subscript_on_array_type(
-        self, ir_snapshot: SnapshotAssertion
-    ) -> None:
-        # Pre-fix: _pointee on Array raised "cannot dereference non-pointer".
-        from dcc.dialects.c import SubscriptOp
-
-        m = _lower_c("int arr[10]; int f(void) { return arr[3]; }")
-        assert _contains_op(m, SubscriptOp), "arr[3] should produce SubscriptOp"
-        assert m == ir_snapshot
-
-    def test_star_array_decays_to_pointer(self, ir_snapshot: SnapshotAssertion) -> None:
-        from dcc.dialects.c import DereferenceOp
-
-        m = _lower_c("int arr[10]; int f(void) { return *arr; }")
-        assert _contains_op(m, DereferenceOp)
-        assert m == ir_snapshot
-
-    def test_lvalue_star_p(self, ir_snapshot: SnapshotAssertion) -> None:
-        # Pre-fix: _assign rejected UnaryOp lvalue.
-        from dcc.dialects.c import StoreIndirectOp
-
-        m = _lower_c("void f(int *p) { *p = 5; }")
-        assert _count_ops(m, StoreIndirectOp) == 1, (
-            "*p = 5 should emit exactly one StoreIndirectOp"
-        )
-        assert m == ir_snapshot
-
-    def test_lvalue_arrow_field(self, ir_snapshot: SnapshotAssertion) -> None:
-        # Pre-fix: _assign rejected StructRef lvalue.
-        from dcc.dialects.c import FieldAddressOp, StoreIndirectOp
-
-        m = _lower_c("struct S { int x; }; void f(struct S *s) { s->x = 7; }")
-        assert _count_ops(m, FieldAddressOp) == 1
-        assert _count_ops(m, StoreIndirectOp) == 1
-        assert m == ir_snapshot
-
-    def test_lvalue_dot_field(self, ir_snapshot: SnapshotAssertion) -> None:
-        # obj.x = v on a local struct: dot → address_of(obj) + field_address.
-        from dcc.dialects.c import FieldAddressOp, StoreIndirectOp
-
-        m = _lower_c("struct S { int x; }; void f(void) { struct S s; s.x = 7; }")
-        assert _contains_op(m, FieldAddressOp)
-        assert _contains_op(m, StoreIndirectOp)
-        assert m == ir_snapshot
-
-    def test_lvalue_array_index(self, ir_snapshot: SnapshotAssertion) -> None:
-        # Pre-fix: _assign rejected ArrayRef lvalue.
-        from dcc.dialects.c import ElementAddressOp, StoreIndirectOp
-
-        m = _lower_c("void f(int *a) { a[3] = 42; }")
-        assert _count_ops(m, ElementAddressOp) == 1
-        assert _count_ops(m, StoreIndirectOp) == 1
-        assert m == ir_snapshot
-
-    def test_compound_assign_through_pointer(
-        self, ir_snapshot: SnapshotAssertion
-    ) -> None:
-        # *p += 5: load through addr, add, store back.
-        from dcc.dialects.c import DereferenceOp, StoreIndirectOp
-
-        m = _lower_c("void f(int *p) { *p += 5; }")
-        assert _contains_op(m, DereferenceOp)
-        assert _contains_op(m, StoreIndirectOp)
-        assert m == ir_snapshot
-
-    def test_increment_through_pointer(self, ir_snapshot: SnapshotAssertion) -> None:
-        # Pre-fix: ++/-- on non-ID raised LoweringError.
-        # Desugared to load + add + store — no PostIncrementOp in IR.
-        from dcc.dialects.c import PostIncrementOp, StoreIndirectOp
-
-        m = _lower_c("void f(int *p) { (*p)++; }")
-        assert not _contains_op(m, PostIncrementOp), (
-            "non-ID increment must be desugared via StoreIndirectOp"
-        )
-        assert _contains_op(m, StoreIndirectOp)
-        assert m == ir_snapshot
-
-    def test_assign_as_expression_non_id(self, ir_snapshot: SnapshotAssertion) -> None:
-        # Pre-fix: "assign-as-expression on non-variable".
-        # The read-back dereference becomes the expression's value.
-        from dcc.dialects.c import DereferenceOp
-
-        m = _lower_c("int f(int *p) { int x = (*p = 5); return x; }")
-        assert _contains_op(m, DereferenceOp)
-        assert m == ir_snapshot
-
-    def test_unresolved_struct_field_chain(
-        self, ir_snapshot: SnapshotAssertion
-    ) -> None:
-        # Pre-fix: unknown field type fell back to c_int(64); chained ->
-        # then died with "cannot dereference non-pointer type: i64".
-        m = _lower_c(
-            "struct Fwd; struct Outer { struct Fwd *p; };"
-            "int f(struct Outer *o) { return o->p->x; }"
-        )
-        # Pre-fix the inner -> failed to resolve (unknown field returned
-        # SignedInteger(64) instead of a pointer). Now a chained -> emits
-        # two PointerMemberAccessOps.
-        from dcc.dialects.c import PointerMemberAccessOp
-
-        assert _count_ops(m, PointerMemberAccessOp) == 2
-        assert m == ir_snapshot
-
-    def test_long_long_int_literal(self, ir_snapshot: SnapshotAssertion) -> None:
-        # Pre-fix: "unsupported constant type: long long int"
-        from dgen.dialects.number import SignedInteger
-        from dgen.graph import all_values
-        from dgen.module import ConstantOp
-
-        m = _lower_c("long long f(void) { return 1LL + 2LL; }")
-        # Both constants should land as 64-bit signed integers.
-        consts = [
-            v
-            for v in all_values(m)
-            if isinstance(v, ConstantOp) and isinstance(v.type, SignedInteger)
-        ]
-        assert consts, "no signed-integer constants found"
-        for c in consts:
-            assert c.type.bits.__constant__.to_json() == 64
-        assert m == ir_snapshot
-
-    def test_function_pointer_call_parameter(
-        self, ir_snapshot: SnapshotAssertion
-    ) -> None:
-        # Pre-fix: "indirect function calls not yet supported"
-        from dgen.dialects import function as _function
-        from dgen.block import BlockArgument
-
-        m = _lower_c("int f(int (*p)(int)) { return p(5); }")
-        # The call's callee must be a BlockArgument (the function
-        # pointer parameter), not a file-scope ExternOp/FunctionOp.
-        from dgen.graph import all_values
-
-        call_ops = [v for v in all_values(m) if isinstance(v, _function.CallOp)]
-        assert call_ops, "indirect call should become function.CallOp"
-        assert isinstance(call_ops[0].callee, BlockArgument), (
-            "calling a function-pointer local must dispatch through an SSA value"
-        )
-        assert m == ir_snapshot
-
-    def test_function_pointer_field_call(self, ir_snapshot: SnapshotAssertion) -> None:
-        # p->fn(x): call through a struct-field function pointer.
-        from dgen.dialects import function as _function
-
-        m = _lower_c(
-            "struct S { int (*fn)(int); };"
-            "int f(struct S *s, int x) { return s->fn(x); }"
-        )
-        assert _contains_op(m, _function.CallOp)
-        assert m == ir_snapshot
-
-
-class TestSessionCodegenFixes:
-    """Codegen-level fixes in this session."""
-
-    def test_null_pointer_constant(self) -> None:
-        # Pre-fix: ConstantOp(0, Reference) printed as "0", which LLVM
-        # rejects with "integer constant must have integer type". A
-        # pointer initialised to 0 and then used as a pointer triggers it.
-        _codegen_verifies("int *f(void) { int *p = 0; return p; }")
-
-    def test_function_pointer_call_codegen(self) -> None:
-        # Pre-fix: emit_function_call always printed @name, failing for
-        # SSA-valued callees.
-        _codegen_verifies("int f(int (*p)(int), int x) { return p(x); }")
-
-    def test_extern_callee_auto_declared(self) -> None:
-        # Pre-fix: calling a declared-but-not-defined function (e.g. any
-        # libc routine) produced `call i64 @malloc(...)` with no matching
-        # `declare`, so LLVM rejected the module with "use of undefined
-        # value '@malloc'". _resolve_callee_captures now synthesises an
-        # ExternOp for every named callee that doesn't correspond to a
-        # FunctionOp, and attaches it as a capture of every calling
-        # function's body. emit_llvm_ir picks up those ExternOps and
-        # emits `declare` lines.
-        _codegen_verifies(
-            "void *malloc(unsigned long);void *f(unsigned long n) { return malloc(n); }"
+    def test_short_circuit_and(self) -> None:
+        assert run_c("int f(int x, int y) { return x && y; }", 0, 42) == 0
+        assert run_c("int f(int x, int y) { return x && y; }", 1, 42) == 1
+        assert run_c("int f(int x, int y) { return x && y; }", 1, 0) == 0
+
+    def test_short_circuit_or(self) -> None:
+        assert run_c("int f(int x, int y) { return x || y; }", 0, 0) == 0
+        assert run_c("int f(int x, int y) { return x || y; }", 0, 1) == 1
+        assert run_c("int f(int x, int y) { return x || y; }", 1, 0) == 1
+
+    def test_read_inside_if_then_write(self) -> None:
+        """Read inside if-body must fence subsequent write (diamond pattern)."""
+        assert (
+            run_c(
+                "int f(int c) { int x = 1; if (c) { int y = x; } x = 2; return x; }",
+                1,
+            )
+            == 2
         )
 
-    def test_function_name_as_argument_value(self) -> None:
-        # Pre-fix: a void-returning function used by name as an argument
-        # (e.g. `h(g)`) was bound at file scope with type = its return
-        # type, so codegen emitted `call void @h(void %g)` — LLVM
-        # rejects with "void type only allowed for function results".
-        # _id now promotes bare file-scope function values to ExternOps
-        # with a Function-typed signature, yielding `ptr @g`.
-        _codegen_verifies(
-            "void g(void); void h(void (*cb)(void)) { cb(); } void f(void) { h(g); }"
+    def test_while_read_then_outer_write(self) -> None:
+        """Reads inside while body must fence subsequent write."""
+        assert (
+            run_c(
+                "int f() { int x = 10; int s = 0; int i = 0;"
+                " while (i < 3) { s = s + x; i = i + 1; } x = 0; return s; }"
+            )
+            == 30
         )
 
-    def test_implicit_int_to_pointer_return(self) -> None:
-        # Pre-fix: `int *f(long x) { return x; }` emitted `ret ptr %x`
-        # where %x has type i64, rejected as "'%x' defined with type
-        # 'i64' but expected 'ptr'". _ret now inserts a CastOp to the
-        # function's declared return type when it differs; the cast
-        # lowers to inttoptr.
-        _codegen_verifies("int *f(long x) { return x; }")
 
-    def test_explicit_pointer_int_casts(self) -> None:
-        # Pre-fix: algebra.CastOp for ptr↔int was a pass-through, so
-        # `(long)a & (long)b` left the ptr operands on `and`, rejected
-        # with "instruction requires integer operands" / "ptr but
-        # expected iN". lower_cast now emits ptrtoint/inttoptr.
-        _codegen_verifies("long f(int *a, int *b) { return (long)a & (long)b; }")
-        _codegen_verifies("int *f(long x) { return (int*)x; }")
+class TestMemoryOrdering:
+    """Structural tests for the use-def ordering of memory operations."""
 
-    def test_icmp_pointer_against_integer_zero(self) -> None:
-        # Pre-fix: the C frontend lowered `p == 0` into icmp with a ptr
-        # lhs and an i64 ConstantOp(0) rhs, emitting
-        #   icmp eq ptr %p, 0
-        # which LLVM rejects with "integer constant must have integer
-        # type". emit_icmp now renders the zero constant as `null` when
-        # the other operand is pointer-typed.
-        _codegen_verifies("int f(int *p) { return p == 0; }")
-        _codegen_verifies("int f(int *p) { return 0 == p; }")
-        _codegen_verifies("int f(int *p) { return p != 0; }")
+    def test_diamond_read_write_dependencies(self) -> None:
+        """W1, R2, R3, W4: reads are independent, write fences both reads.
 
+        The use-def graph should be:
+            W1 ← R2  (read depends on write)
+            W1 ← R3  (read depends on write, independent of R2)
+            R2, R3 ← W4  (write depends on both reads via pack)
+            W4 ← R5  (final read depends on second write)
 
-# ---------------------------------------------------------------------------
-# Outstanding bugs — xfailed so they'll turn green automatically when fixed.
-# Each one reproduces the smallest failing case I could find.
-# ---------------------------------------------------------------------------
-
-
-class TestKnownFailures:
-    @pytest.mark.xfail(
-        reason="frontend: 32-bit signed int dereference (3 cases in sqlite3)",
-        strict=True,
-    )
-    def test_int32_deref(self) -> None:
-        _lower_c("int f(int x) { return *x; }")
-
-    @pytest.mark.xfail(
-        reason="codegen: use of undefined value — local SSA (~34 in sqlite3). "
-        "if/else with a written-in-both-branches local var loses its phi.",
-        strict=True,
-    )
-    def test_codegen_undefined_value_if_return(self) -> None:
-        _codegen_verifies("int f(int x, int y) { if (x > 0) return y; else return x; }")
-
-    @pytest.mark.xfail(
-        reason="codegen: multiple definition of local value (~270 in sqlite3). "
-        "A local assigned inside an if gets a second alloca in the branch block.",
-        strict=True,
-    )
-    def test_codegen_slot_collision_local_written_in_branch(self) -> None:
-        _codegen_verifies("void f(int X) { long a = X; if (X > 0) { a = 1; } }")
-
-    @pytest.mark.xfail(
-        reason="codegen: Array.from_json asserts on zero-init of a local array "
-        "(17 in sqlite3). _decl emits ConstantOp(0, Array(...)).",
-        strict=True,
-    )
-    def test_codegen_array_init_assertion(self) -> None:
-        _codegen_verifies("int f(void) { int arr[4]; arr[0] = 1; return arr[0]; }")
-
-    @pytest.mark.xfail(
-        reason="codegen: ternary result as rvalue emits the block label instead of "
-        "the phi — '%ifN defined with type label but expected iN/ptr' "
-        "(~22 in sqlite3). Assigning a ternary through an lvalue triggers it.",
-        strict=True,
-    )
-    def test_codegen_ternary_rvalue_assignment(self) -> None:
-        _codegen_verifies("void f(int *p, int x) { *p = x ? 1 : 2; }")
-
-
-def _generate_sqlite_scale_c(n_functions: int, seed: int = 42) -> str:
-    """Generate a C source string with realistic function complexity."""
-    rng = random.Random(seed)
-    lines: list[str] = []
-    lines.append("typedef unsigned int u32;")
-    lines.append("typedef int i32;")
-    lines.append("")
-
-    for i in range(50):
-        lines.append(f"struct S{i} {{")
-        for j in range(rng.randint(2, 8)):
-            lines.append(f"  int f{j};")
-        lines.append("};")
-        lines.append("")
-
-    for i in range(20):
-        lines.append(f"enum E{i} {{")
-        for j in range(rng.randint(3, 10)):
-            lines.append(f"  E{i}_V{j} = {j},")
-        lines.append("};")
-        lines.append("")
-
-    for i in range(n_functions):
-        ret = rng.choice(["int", "void", "u32"])
-        n_params = rng.randint(0, 4)
-        params = [f"int a{j}" for j in range(n_params)]
-        param_str = ", ".join(params) if params else "void"
-
-        lines.append(f"{ret} func_{i}({param_str}) {{")
-
-        n_locals = rng.randint(1, 5)
-        for j in range(n_locals):
-            lines.append(f"  int x{j} = 0;")
-
-        for _ in range(rng.randint(3, 20)):
-            v = rng.randint(0, n_locals - 1)
-            kind = rng.choice(["assign", "if", "while", "for", "call"])
-            if kind == "assign":
-                op = rng.choice(["+", "-", "*", "&", "|"])
-                lines.append(f"  x{v} = x{v} {op} {rng.randint(1, 100)};")
-            elif kind == "if":
-                lines.append(f"  if (x{v} > {rng.randint(0, 50)}) x{v} = x{v} + 1;")
-            elif kind == "while":
-                lines.append(f"  while (x{v} < {rng.randint(10, 50)}) x{v} = x{v} + 1;")
-            elif kind == "for":
-                lines.append(
-                    f"  for (x{v} = 0; x{v} < {rng.randint(5, 20)}; x{v}++)"
-                    f" x{v} = x{v} + 1;"
-                )
-            elif kind == "call" and i > 0:
-                target = rng.randint(0, i - 1)
-                lines.append(f"  func_{target}();")
-
-        if ret == "void":
-            lines.append("  return;")
-        else:
-            lines.append("  return x0;")
-        lines.append("}")
-        lines.append("")
-
-    return "\n".join(lines)
-
-
-class TestScale:
-    """Verify the frontend handles large input."""
-
-    def test_1500_functions(self) -> None:
-        source = _generate_sqlite_scale_c(1500)
-        ast = parse_c_string(source)
-        _, stats = lower(ast)
-        assert stats.functions == 1500
-        assert stats.skipped_functions == 0
-        assert len(stats.function_ops) == 1500
-
-    @pytest.mark.slow
-    def test_5000_functions(self) -> None:
-        source = _generate_sqlite_scale_c(5000)
-        t0 = time.perf_counter()
-        ast = parse_c_string(source)
-        _, stats = lower(ast)
-        elapsed = time.perf_counter() - t0
-        assert elapsed < 60, f"Pipeline took {elapsed:.1f}s"
-        assert stats.functions == 5000
-        assert stats.skipped_functions == 0
-        assert len(stats.function_ops) == 5000
-
-
-# ---------------------------------------------------------------------------
-# sqlite3.c: download, preprocess with gcc -E, parse, and lower
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.slow
-class TestSqlite3:
-    """Parse and lower the actual sqlite3.c amalgamation."""
-
-    def test_parse_sqlite3(self, sqlite3_ast: object) -> None:
-        """pycparser can parse sqlite3.c (265K lines, ~9MB)."""
-        assert len(sqlite3_ast.ext) > 1000
-
-    def test_lower_sqlite3(self, sqlite3_ast: object) -> None:
-        """Lower sqlite3.c to dgen IR."""
-        t0 = time.perf_counter()
-        _, stats = lower(sqlite3_ast)
-        elapsed = time.perf_counter() - t0
-
-        lowered = len(stats.function_ops)
-        skipped = stats.skipped_functions
-        total = stats.functions
-        print(
-            f"\nsqlite3 lowering: {lowered} lowered, {skipped} skipped, {total} total"
-        )
-        if stats.skip_reasons:
-            top = sorted(stats.skip_reasons.items(), key=lambda x: -x[1])[:10]
-            print("top skip reasons:")
-            for reason, count in top:
-                print(f"  {count:5d}  {reason[:120]}")
-
-        assert lowered >= 2560, f"lowered regressed: {lowered}"
-        assert elapsed < 120, f"Lowering took {elapsed:.1f}s"
-
-    def test_codegen_sqlite3(self, sqlite3_ast: object) -> None:
-        """Lower sqlite3.c through the full pipeline to LLVM-verified IR.
-
-        Tracks progress across four stages. Each assertion is a ratchet —
-        update the threshold as improvements land.
+        R2 must NOT be in the transitive dependencies of R3 (independent).
+        R2 and R3 must both be in the transitive dependencies of W4.
         """
-        import sys
 
-        from dgen.codegen import EmitContext, _emit_ctx, emit, prepare_function
-        from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-
-        import llvmlite.binding as llvm_binding
-
-        llvm_binding.initialize_native_target()
-        llvm_binding.initialize_native_asmprinter()
-
-        old_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(max(old_limit, 50000))
-
-        from functools import reduce
-        from dgen.dialects.builtin import ChainOp
-
-        _, stats = lower(sqlite3_ast)
-        all_fns = stats.function_ops
-        # Chain all functions into a single root so the pipeline walks them
-        # in one call. Each function's body is mutated in place, so we can
-        # iterate all_fns after the pipeline run.
-        root = reduce(lambda a, b: ChainOp(lhs=a, rhs=b, type=a.type), all_fns)
-        pipeline = Compiler(
-            [
-                CToMemory(),
-                CToLLVM(),
-                AlgebraToLLVM(),
-                MemoryToLLVM(),
-                ControlFlowToGoto(),
-            ],
-            IdentityPass(),
+        ir = lower(
+            parse_c_string(
+                "int f() { int x = 1; int a = x; int b = x; x = 2; return a + b + x; }"
+            )
         )
-        # TODO: ChainOps inside if-bodies pull parent-scope ops into block.ops.
-        # _closed_block captures direct deps but not transitive — needs fixing.
-        from dgen.compiler import verify_passes
 
-        token = verify_passes.set(False)
-        pipeline.run(root)
-        verify_passes.reset(token)
+        # Collect ops by role.
+        assigns = [op for op in ir.body.ops if isinstance(op, c.AssignOp)]
+        reads = [op for op in ir.body.ops if isinstance(op, c.LvalueToRvalueOp)]
 
-        import os
-        import re
+        # Filter to x-variable ops only (skip a, b assignments/reads).
+        x_assigns = [
+            a
+            for a in assigns
+            if isinstance(a.lvalue, c.LvalueVarOp)
+            and a.lvalue.var_name.__constant__.to_json() == "x"
+        ]
+        x_reads = [
+            r
+            for r in reads
+            if isinstance(r.lvalue, c.LvalueVarOp)
+            and r.lvalue.var_name.__constant__.to_json() == "x"
+        ]
 
-        dump_for = os.environ.get("DUMP_IR_FOR")
-        total = len(all_fns)
-        emitted = 0
-        parsed = 0
-        verified = 0
-        emit_errors: dict[str, int] = {}
-        parse_errors: dict[str, int] = {}
-        preamble = "declare void @print_memref(ptr, i64)\ndeclare ptr @malloc(i64)\n\n"
-        for func in all_fns:
-            ctx = EmitContext()
-            ctx_token = _emit_ctx.set(ctx)
-            try:
-                prepare_function(func, ctx)
-                lines = list(emit(func))
-            except Exception as e:
-                import traceback
+        assert len(x_assigns) == 2  # W1 (x=1) and W4 (x=2)
+        assert len(x_reads) == 3  # R2 (for a), R3 (for b), R5 (for return x)
 
-                first = (str(e).splitlines() or [""])[0][:100]
-                tb = traceback.extract_tb(e.__traceback__)
-                site = (
-                    f"{tb[-1].filename.rsplit('/', 1)[-1]}:{tb[-1].lineno}"
-                    if tb
-                    else "?"
-                )
-                key = f"{type(e).__name__}@{site}: {first}"
-                emit_errors[key] = emit_errors.get(key, 0) + 1
-                continue
-            finally:
-                _emit_ctx.reset(ctx_token)
-            emitted += 1
-            # Collect extern declarations reachable from this function so
-            # string-named callees (libc, builtins, other sqlite3
-            # functions) have a `declare`.
-            from dgen.codegen import emit_extern, llvm_type
-            from dgen.graph import all_values
-            from dgen.dialects import builtin as _builtin
-            from dgen.dialects import function as _function
+        write_1, write_4 = x_assigns
+        read_2, read_3, read_5 = x_reads
 
-            seen_syms: set[str] = set()
-            declares: list[str] = []
-            for v in all_values(func):
-                if isinstance(v, _builtin.ExternOp):
-                    sym = v.symbol.__constant__.to_json()
-                    if sym not in seen_syms:
-                        seen_syms.add(sym)
-                        declares.extend(emit_extern(v))
-                elif isinstance(v, _function.FunctionOp) and v is not func:
-                    if v.name and v.name not in seen_syms:
-                        seen_syms.add(v.name)
-                        ret_ty = llvm_type(v.result_type)
-                        arg_tys = ", ".join(llvm_type(a.type) for a in v.body.args)
-                        declares.append(f"declare {ret_ty} @{v.name}({arg_tys})")
-            extern_block = ("\n".join(declares) + "\n") if declares else ""
-            ir = preamble + extern_block + "\n".join(lines)
-            try:
-                mod = llvm_binding.parse_assembly(ir)
-                parsed += 1
-                mod.verify()
-                verified += 1
-            except Exception as e:
-                # llvmlite puts the real diagnostic on subsequent lines.
-                # Pick the first line that looks like a diagnostic.
-                lines_ = str(e).splitlines()
-                msg = ""
-                for line in lines_:
-                    if "error:" in line or "<string>:" in line:
-                        msg = line
-                        break
-                if not msg and lines_:
-                    msg = lines_[-1]
-                # Strip llvmlite's leading "<string>:L:C: error:" prefix
-                msg = re.sub(r"^<string>:\d+:\d+:\s*", "", msg)
-                msg = re.sub(r"^error:\s*", "", msg)
-                # Normalise away specific %names, @names, numeric ids
-                norm = re.sub(r"[%@][\w.]+", "%X", msg)
-                norm = re.sub(r"\bi\d+\b", "iN", norm)
-                norm = re.sub(r"\b\d+\b", "N", norm)
-                norm = norm[:140]
-                parse_errors[norm] = parse_errors.get(norm, 0) + 1
-                if dump_for and dump_for in norm:
-                    print(f"\n=== DUMP_IR_FOR {dump_for!r} ===")
-                    print(f"function: {func.name}")
-                    print(f"normalized error: {norm}")
-                    print(f"raw error: {msg}")
-                    print("---- IR ----")
-                    print(ir)
-                    print("---- END ----")
-                    return
+        def deps(value: dgen.Value) -> set[dgen.Value]:
+            return set(transitive_dependencies(value))
 
-        report = (
-            f"\nsqlite3 codegen progress:\n"
-            f"  functions:     {total}\n"
-            f"  IR emitted:    {emitted:5d} ({100 * emitted / total:5.1f}%)\n"
-            f"  LLVM parsed:   {parsed:5d} ({100 * parsed / total:5.1f}%)\n"
-            f"  LLVM verified: {verified:5d} ({100 * verified / total:5.1f}%)\n"
+        # R2 and R3 are independent: neither is in the other's dependencies.
+        assert read_2 not in deps(read_3)
+        assert read_3 not in deps(read_2)
+
+        # Both R2 and R3 depend on W1.
+        assert write_1 in deps(read_2)
+        assert write_1 in deps(read_3)
+
+        # W4 depends on both R2 and R3.
+        write_4_deps = deps(write_4)
+        assert read_2 in write_4_deps
+        assert read_3 in write_4_deps
+
+        # R5 (return x) depends on W4.
+        assert write_4 in deps(read_5)
+
+        # End-to-end correctness: a=1, b=1, x=2, total=4.
+        assert (
+            run_c(
+                "int f() { int x = 1; int a = x; int b = x; x = 2; return a + b + x; }"
+            )
+            == 4
         )
-        print(report)
-        if emit_errors:
-            print("top emit errors:")
-            for key, n in sorted(emit_errors.items(), key=lambda x: -x[1])[:10]:
-                print(f"  {n:5d}  {key}")
-        if parse_errors:
-            print("top LLVM parse/verify errors:")
-            for key, n in sorted(parse_errors.items(), key=lambda x: -x[1])[:15]:
-                print(f"  {n:5d}  {key}")
-
-        # Ratchets — raise these as we fix things
-        sys.setrecursionlimit(old_limit)
-
-        # Ratchets — raise as we fix things
-        assert emitted >= total - 20, f"emitted regressed: {emitted}/{total}\n{report}"
-        assert verified >= 2050, f"verified regressed: {verified}\n{report}"

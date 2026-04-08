@@ -20,7 +20,7 @@ from dgen.dialects import memory
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Constant
 
-from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
+from dcc.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 
 # After replace_uses_of, a LvalueVarOp.source that was originally an
 # AssignOp/LvalueToRvalueOp becomes the StoreOp/LoadOp/PackOp that

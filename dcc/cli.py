@@ -1,63 +1,47 @@
-"""CLI tool: parse and compile C files through the dgen pipeline."""
+"""CLI tool: compile and run C files through the dgen pipeline."""
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import click
 
-from dcc.parser.c_parser import parse_c_file
-from dcc.parser.lowering import lower
+from dgen import Dialect
+from dgen.codegen import Executable, LLVMCodegen
+from dgen.compiler import Compiler
+from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.memory_to_llvm import MemoryToLLVM
+
+from dcc.passes.c_lvalue_to_memory import CLvalueToMemory
+
+# Make dcc dialects discoverable for IR parsing round-trips.
+Dialect.paths.append(Path(__file__).parent / "dialects")
+
+# Pass ordering: lvalue elimination must precede memory-to-LLVM.
+# See dcc/docs/plans/c-frontend-redesign.md for full rationale.
+c_compiler: Compiler[Executable] = Compiler(
+    passes=[
+        # CStructLayout(),         # Brick 8: before lvalue elimination
+        # CImplicitConversions(),  # Brick 9: before lvalue elimination
+        CLvalueToMemory(),
+        # CToLLVM(),               # Brick 10: after lvalue elimination
+        ControlFlowToGoto(),
+        MemoryToLLVM(),
+        BuiltinToLLVM(),
+        AlgebraToLLVM(),
+    ],
+    exit=LLVMCodegen(),
+)
 
 
 @click.command()
 @click.argument("source_file", type=click.Path(exists=True))
-@click.option("--stats", is_flag=True, help="Print lowering statistics")
-@click.option("--dump-ir", is_flag=True, help="Dump the dgen IR")
-@click.option("--benchmark", is_flag=True, help="Print timing information")
-@click.option(
-    "--cpp/--no-cpp",
-    default=False,
-    help="Run the C preprocessor (requires gcc/cpp)",
-)
-def main(
-    source_file: str,
-    stats: bool,
-    dump_ir: bool,
-    benchmark: bool,
-    cpp: bool,
-) -> None:
-    """Parse a C source file and lower to dgen IR."""
-    path = Path(source_file)
-
-    # Parse
-    t0 = time.perf_counter()
-    if cpp:
-        ast = parse_c_file(path, cpp_args=["-E", "-D__attribute__(x)="])
-    else:
-        ast = parse_c_file(path)
-    t_parse = time.perf_counter() - t0
-
-    # Lower
-    t1 = time.perf_counter()
-    module, lowering_stats = lower(ast)
-    t_lower = time.perf_counter() - t1
-
-    if benchmark:
-        click.echo(f"Parse:   {t_parse:.3f}s")
-        click.echo(f"Lower:   {t_lower:.3f}s")
-        click.echo(f"Total:   {t_parse + t_lower:.3f}s")
-
-    if stats:
-        click.echo(lowering_stats.summary())
-        click.echo(f"IR functions: {len(module.functions)}")
-        total_ops = sum(len(f.body.ops) for f in module.functions)
-        click.echo(f"IR ops (reachable): {total_ops}")
-
-    if dump_ir:
-        for line in module.asm:
-            click.echo(line)
+@click.argument("args", nargs=-1)
+def main(source_file: str, args: tuple[str, ...]) -> None:
+    """Compile and run a C source file."""
+    raise NotImplementedError("Full CLI not yet implemented (Brick 4+)")
 
 
 if __name__ == "__main__":

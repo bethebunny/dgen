@@ -5,125 +5,151 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
-from dgen import Block, Dialect, Op, Type, Value
+from dgen import Dialect, Op, Type, Value
 from dgen.dialects.builtin import Nil, Span, String
+from dgen.dialects.index import Index
 
 c = Dialect("c")
 
 @dataclass(frozen=True, eq=False)
-class CStruct(Type):
-    tag_name: Value[String]
-    field_names: Value[String]
-    field_types: Value[String]
+class Struct(Type):
+    tag: Value[String]
+    fields: Value[Span]
 
 @dataclass(frozen=True, eq=False)
-class CUnion(Type):
-    tag_name: Value[String]
-    field_names: Value[String]
-    field_types: Value[String]
+class StructField(Type):
+    field_name: Value[String]
+    field_type: Value[dgen.TypeType]
+    offset: Value[Index]
+
+@dataclass(frozen=True, eq=False)
+class Union(Type):
+    tag: Value[String]
+    fields: Value[Span]
+
+@dataclass(frozen=True, eq=False)
+class Enum(Type):
+    tag: Value[String]
+    underlying: Value[dgen.TypeType]
+
+@dataclass(frozen=True, eq=False)
+class CFunctionType(Type):
+    arguments: Value[Span]
+    result_type: Value[dgen.TypeType]
+    is_variadic: Value[Index]
+    n_fixed_params: Value[Index]
 
 @dataclass(eq=False, kw_only=True)
-class VariableDeclarationOp(Op):
-    variable_name: Value[String]
-    variable_type: Value[dgen.TypeType]
-    initializer: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class ReadVariableOp(Op):
-    variable_name: Value[String]
+class LvalueVarOp(Op):
+    var_name: Value[String]
     source: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class AssignOp(Op):
-    variable_name: Value[String]
-    target: Value
-    value: Value
+class LvalueDerefOp(Op):
+    ptr: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class CompoundAssignOp(Op):
-    variable_name: Value[String]
-    operator: Value[String]
-    target: Value
-    operand: Value
+class LvalueSubscriptOp(Op):
+    base: Value
+    index: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class PreIncrementOp(Op):
-    variable_name: Value[String]
-    target: Value
+class LvalueMemberOp(Op):
+    field: Value[String]
+    base: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class PostIncrementOp(Op):
-    variable_name: Value[String]
-    target: Value
+class LvalueArrowOp(Op):
+    field: Value[String]
+    ptr: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class PreDecrementOp(Op):
-    variable_name: Value[String]
-    target: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class PostDecrementOp(Op):
-    variable_name: Value[String]
-    target: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class DereferenceOp(Op):
-    pointer: Value
+class LvalueToRvalueOp(Op):
+    lvalue: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
 class AddressOfOp(Op):
-    operand: Value
+    lvalue: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class SubscriptOp(Op):
-    base: Value
-    index: Value
+class AssignOp(Op):
+    lvalue: Value
+    rvalue: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class ElementAddressOp(Op):
-    base: Value
-    index: Value
+class CompoundAssignOp(Op):
+    operator: Value[String]
+    lvalue: Value
+    rvalue: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class StoreIndirectOp(Op):
-    target: Value
-    value: Value
+class PreIncrementOp(Op):
+    lvalue: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class MemberAccessOp(Op):
-    field_name: Value[String]
-    base: Value
+class PostIncrementOp(Op):
+    lvalue: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class PointerMemberAccessOp(Op):
-    field_name: Value[String]
-    base: Value
+class PreDecrementOp(Op):
+    lvalue: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class FieldAddressOp(Op):
-    field_name: Value[String]
-    base: Value
+class PostDecrementOp(Op):
+    lvalue: Value
     type: Type
 
 @dataclass(eq=False, kw_only=True)
-class ReturnOp(Op):
+class IntegerPromoteOp(Op):
+    input: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class ArithmeticConvertOp(Op):
+    input: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class ArrayDecayOp(Op):
+    array: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class FunctionDecayOp(Op):
+    func: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class NullToPointerOp(Op):
+    zero: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class ScalarToBoolOp(Op):
+    val: Value
+    type: Type
+
+@dataclass(eq=False, kw_only=True)
+class CReturnOp(Op):
     value: Value
     type: Type = Nil()
+
+@dataclass(eq=False, kw_only=True)
+class CSizeofOp(Op):
+    target_type: Value[dgen.TypeType]
+    type: Type
 
 @dataclass(eq=False, kw_only=True)
 class ModuloOp(Op):
@@ -146,41 +172,6 @@ class ShiftRightOp(Op):
 @dataclass(eq=False, kw_only=True)
 class LogicalNotOp(Op):
     operand: Value
-    type: Type
-
-@dataclass(eq=False, kw_only=True)
-class ForLoopOp(Op):
-    type: Type = Nil()
-    initializer: Block
-    condition: Block
-    update: Block
-    body: Block
-
-@dataclass(eq=False, kw_only=True)
-class DoWhileOp(Op):
-    initial: Value
-    type: Type = Nil()
-    body: Block
-    condition: Block
-
-@dataclass(eq=False, kw_only=True)
-class SwitchOp(Op):
-    case_values: Value[Span]
-    selector: Value
-    type: Type = Nil()
-    default_body: Block
-
-@dataclass(eq=False, kw_only=True)
-class BreakOp(Op):
-    type: Type = Nil()
-
-@dataclass(eq=False, kw_only=True)
-class ContinueOp(Op):
-    type: Type = Nil()
-
-@dataclass(eq=False, kw_only=True)
-class SizeofOp(Op):
-    target_type: Value[dgen.TypeType]
     type: Type
 
 @dataclass(eq=False, kw_only=True)

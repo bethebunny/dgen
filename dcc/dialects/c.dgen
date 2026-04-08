@@ -2,42 +2,53 @@ from builtin import Index, Nil, String, Span
 
 # --- C-specific types ---
 
-type CStruct<tag_name: String, field_names: String, field_types: String>:
+type Struct<tag: String, fields: Span<StructField>>:
     data: Index
 
-type CUnion<tag_name: String, field_names: String, field_types: String>:
+type StructField<field_name: String, field_type: Type, offset: Index>:
+    data: Nil
+
+type Union<tag: String, fields: Span<StructField>>:
     data: Index
 
-# --- Variable ops ---
-# source/target operands create use-def edges for scoping.
-# CToMemory lowers these to memory.stack_allocate/load/store.
+type Enum<tag: String, underlying: Type>:
+    data: Index
 
-op variable_declaration<variable_name: String, variable_type: Type>(initializer)
-op read_variable<variable_name: String>(source)
-op assign<variable_name: String>(target, value)
-op compound_assign<variable_name: String, operator: String>(target, operand)
-op pre_increment<variable_name: String>(target)
-op post_increment<variable_name: String>(target)
-op pre_decrement<variable_name: String>(target)
-op post_decrement<variable_name: String>(target)
+type CFunctionType<arguments: Span<Type>, result_type: Type, is_variadic: Index, n_fixed_params: Index>:
+    data: Nil
 
-# --- Pointer and array ---
+# --- Lvalue-producing ops ---
 
-op dereference(pointer)
-op address_of(operand)
-op subscript(base, index)
-op element_address(base, index)
-op store_indirect(target, value)
+op lvalue_var<var_name: String>(source)
+op lvalue_deref(ptr)
+op lvalue_subscript(base, index)
+op lvalue_member<field: String>(base)
+op lvalue_arrow<field: String>(ptr)
 
-# --- Struct access ---
+# --- Lvalue-consuming ops ---
 
-op member_access<field_name: String>(base)
-op pointer_member_access<field_name: String>(base)
-op field_address<field_name: String>(base)
+op lvalue_to_rvalue(lvalue)
+op address_of(lvalue)
+op assign(lvalue, rvalue)
+op compound_assign<operator: String>(lvalue, rvalue)
+op pre_increment(lvalue)
+op post_increment(lvalue)
+op pre_decrement(lvalue)
+op post_decrement(lvalue)
 
-# --- Functions ---
+# --- Implicit conversion ops (inserted by conversion pass) ---
 
-op return(value) -> Nil
+op integer_promote(input)
+op arithmetic_convert(input)
+op array_decay(array)
+op function_decay(func)
+op null_to_pointer(zero)
+op scalar_to_bool(val)
+
+# --- Control flow ---
+
+op c_return(value) -> Nil
+op c_sizeof<target_type: Type>()
 
 # --- C-specific arithmetic ---
 
@@ -45,23 +56,4 @@ op modulo(lhs, rhs)
 op shift_left(lhs, rhs)
 op shift_right(lhs, rhs)
 op logical_not(operand)
-
-# --- Control flow ---
-
-op for_loop() -> Nil:
-    block initializer
-    block condition
-    block update
-    block body
-op do_while(initial: Span) -> Nil:
-    block body
-    block condition
-op switch<case_values: Span<Index>>(selector) -> Nil:
-    block default_body
-op break() -> Nil
-op continue() -> Nil
-
-# --- Misc ---
-
-op sizeof<target_type: Type>()
 op comma(lhs, rhs)
