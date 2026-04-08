@@ -4,6 +4,3 @@
 *.ir   linguist-language=LLVM
 *.asm  linguist-language=LLVM
 
-# Don't count grammar/editor config files toward repo language stats.
-editors/vscode/syntaxes/** linguist-vendored
-editors/vscode/package.json linguist-vendored

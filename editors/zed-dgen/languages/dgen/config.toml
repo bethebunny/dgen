@@ -1,5 +1,0 @@
-name = "DGEN"
-grammar = "dgen"
-path_suffixes = ["dgen"]
-line_comments = ["# "]
-tab_size = 4
