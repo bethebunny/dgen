@@ -6,7 +6,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from dgen import Dialect
-from dgen.compiler import verify_passes
+from dgen.passes.compiler import verify_passes
 from dgen.testing.syrupy import IRSnapshotExtension
 
 # Make toy and dcc dialects discoverable via Dialect.get().

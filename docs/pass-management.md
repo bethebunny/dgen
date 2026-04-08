@@ -190,13 +190,13 @@ This redesign is complete. The key files are:
 
 | File | Role |
 |------|------|
-| `dgen/compiler.py` | `Compiler` class with staging-aware `compile()` and per-value `run()` |
+| `dgen/passes/compiler.py` | `Compiler` class with staging-aware `compile()` and per-value `run()` |
 | `dgen/passes/pass_.py` | `Pass` base class: `run(value, compiler) -> Value`, `@lowering_for`, `_dispatch_handlers` |
-| `dgen/codegen.py` | `LLVMCodegen` ExitPass, `compile()` convenience function |
-| `dgen/staging.py` | `compile_module()`, `resolve_stage0()`, callback thunks |
+| `dgen/llvm/codegen.py` | `LLVMCodegen` ExitPass, `compile()` convenience function |
+| `dgen/passes/staging.py` | `compile_module()`, `resolve_stage0()`, callback thunks |
 | `dgen/type.py` | `Value.replace_operand`, `Value.replace_uses_of` |
 | `dgen/block.py` | `Block.replace_uses_of` |
-| `dgen/graph.py` | `all_blocks`, `interior_blocks`, `inline_block` |
+| `dgen/ir/traversal.py` | `all_blocks`, `interior_blocks`, `inline_block` |
 
 ## Verification
 

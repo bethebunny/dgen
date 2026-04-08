@@ -86,7 +86,7 @@ def test_verify_block_param_in_scope():
         |     %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
         |         %zero : index.Index = 0
     """)
-    from dgen.verify import verify_closed_blocks
+    from dgen.ir.verification import verify_closed_blocks
 
     value = parse(ir)
     verify_closed_blocks(value)  # Should not raise

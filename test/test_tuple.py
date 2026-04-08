@@ -8,7 +8,7 @@ from dgen.asm.parser import parse
 from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import Index, String, Tuple
 from dgen.dialects.number import Float64
-from dgen.module import pack
+from dgen.builtins import pack
 from dgen.type import _type_from_dict, type_constant
 from dgen.testing import strip_prefix
 

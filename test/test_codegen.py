@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 import dgen
 from dgen import asm
-from dgen.codegen import (
+from dgen.llvm.codegen import (
     EMITTERS,
     _externs,
     emitter_for,
@@ -12,7 +12,7 @@ from dgen.codegen import (
     emit,
 )
 from dgen.dialects import builtin, function, goto, index, llvm
-from dgen.module import pack
+from dgen.builtins import pack
 from dgen.testing import strip_prefix
 
 # ---------------------------------------------------------------------------
@@ -198,14 +198,14 @@ def test_runtime_dependencies_topological_order():
 
 def test_emit_label_registered_for_label_op():
     """The emitter for goto.LabelOp is the emit_label_op function."""
-    from dgen.codegen import emit_label_op
+    from dgen.llvm.codegen import emit_label_op
 
     assert EMITTERS[goto.LabelOp] is emit_label_op
 
 
 def test_emit_dispatches_by_value_class():
     """emit() dispatches to the emitter registered for type(value)."""
-    from dgen.codegen import emit
+    from dgen.llvm.codegen import emit
 
     @dataclass(eq=False, kw_only=True)
     class _Sentinel(dgen.Op):
@@ -413,7 +413,7 @@ def test_externs_multiple_distinct():
 
 def test_call_invokes_jit_function():
     """jit_function returns a ConstantOp[Function]; call invokes it."""
-    from dgen.codegen import call
+    from dgen.llvm.codegen import call
     from dgen.testing import llvm_compile as codegen_compile
 
     value = asm.parse(
@@ -437,7 +437,7 @@ def test_call_invokes_jit_function():
 
 def test_call_function_constant_keeps_engine_alive():
     """The returned ConstantOp[Function] can be called after the Executable is gone."""
-    from dgen.codegen import call
+    from dgen.llvm.codegen import call
     from dgen.testing import llvm_compile as codegen_compile
 
     value = asm.parse(
@@ -463,7 +463,7 @@ def test_llvm_codegen_on_extern():
     that forwards args to the extern symbol — making the resulting
     Executable callable with the extern's signature.
     """
-    from dgen.codegen import LLVMCodegen
+    from dgen.llvm.codegen import LLVMCodegen
 
     value = asm.parse(
         strip_prefix("""

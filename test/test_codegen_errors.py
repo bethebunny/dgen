@@ -3,8 +3,8 @@
 import pytest
 
 from dgen.asm.parser import parse
-from dgen.codegen import LLVMCodegen
-from dgen.compiler import Compiler
+from dgen.llvm.codegen import LLVMCodegen
+from dgen.passes.compiler import Compiler
 from dgen.testing import strip_prefix
 
 

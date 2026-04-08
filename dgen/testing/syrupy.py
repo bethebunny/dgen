@@ -46,9 +46,9 @@ from syrupy.types import (
 )
 
 from dgen.asm.parser import parse
-from dgen.ir_diff import diff_values
-from dgen.ir_equiv import graph_equivalent
-from dgen.module import asm_with_imports
+from dgen.ir.diff import diff_values
+from dgen.ir.equivalence import graph_equivalent
+from dgen.asm import asm_with_imports
 from dgen.type import Value
 
 

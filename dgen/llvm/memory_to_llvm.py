@@ -14,7 +14,7 @@ import dgen
 from dgen.dialects import function, llvm, memory
 from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
 from dgen.dialects.index import Index
-from dgen.module import pack
+from dgen.builtins import pack
 from dgen.passes.pass_ import Pass, lowering_for
 
 

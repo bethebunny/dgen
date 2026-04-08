@@ -5,7 +5,7 @@ from __future__ import annotations
 import dgen
 from dgen.dialects.builtin import TypeOp
 from dgen.passes.pass_ import Pass, lowering_for
-from dgen.module import ConstantOp
+from dgen.builtins import ConstantOp
 from dgen.type import TypeType, type_constant
 
 

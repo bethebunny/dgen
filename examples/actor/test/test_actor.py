@@ -6,15 +6,15 @@ import pytest
 
 from actor.passes.actor_to_affine import ActorToAffine
 from dgen import asm
-from dgen.codegen import Executable, LLVMCodegen
-from dgen.compiler import Compiler, IdentityPass
+from dgen.llvm.codegen import Executable, LLVMCodegen
+from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.dialects import builtin
 from dgen.dialects.number import Float64
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.testing import strip_prefix
-from dgen.type import Memory
+from dgen.memory import Memory
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 
 actor_compiler: Compiler[Executable] = Compiler(

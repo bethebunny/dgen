@@ -8,9 +8,9 @@ produce the empty diff; otherwise every emitted line is a genuine
 structural change.
 
 CLI usage:
-    python -m dgen.ir_diff expected.ir actual.ir
-    python -m dgen.ir_diff expected.ir actual.ir -C 5
-    python -m dgen.ir_diff expected.ir actual.ir -I toy/dialects
+    python -m dgen.ir.diff expected.ir actual.ir
+    python -m dgen.ir.diff expected.ir actual.ir -C 5
+    python -m dgen.ir.diff expected.ir actual.ir -I toy/dialects
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ import dgen
 from dgen import Dialect
 from dgen.asm.formatting import SlotTracker, _is_sugar_op, op_asm
 from dgen.asm.parser import parse
-from dgen.graph import all_values
-from dgen.ir_equiv import Fingerprinter
+from dgen.ir.traversal import all_values
+from dgen.ir.equivalence import Fingerprinter
 
 
 def structural_diff(actual: dgen.Value, expected: dgen.Value) -> str:
@@ -175,7 +175,7 @@ def diff(
 
     Non-core dialects are discovered via --include:
 
-        python -m dgen.ir_diff expected.ir actual.ir \\
+        python -m dgen.ir.diff expected.ir actual.ir \\
             -I toy/dialects -I actor/dialects
     """
     for d in include_dirs:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dgen.gen.ast import (
+from dgen.spec.ast import (
     Constraint,
     DataField,
     DgenFile,

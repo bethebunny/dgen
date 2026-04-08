@@ -22,7 +22,7 @@ import dgen
 from dgen.dialects.builtin import Array, Nil, String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
-from dgen.module import pack
+from dgen.builtins import pack
 
 from dcc.dialects import c_int, c_ptr, c_void
 from dcc.dialects.c import CFunctionType, Struct, StructField, Union

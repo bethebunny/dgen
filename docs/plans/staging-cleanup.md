@@ -2,7 +2,7 @@
 
 ## Problem
 
-The staging system (`dgen/staging.py`, ~560 lines) has accumulated codegen
+The staging system (`dgen/passes/staging.py`, ~560 lines) has accumulated codegen
 internals, hand-rolled optimization passes, and duplicated IR infrastructure.
 Most of this exists because `_jit_evaluate` bypasses the compiler's continuation
 and hardcodes `codegen.compile` — forcing staging to manage LLVM linking,

@@ -6,8 +6,8 @@ from dgen.asm.parser import parse
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, number
 from dgen.dialects.llvm import AddOp, MulOp
-from dgen.ir_diff import structural_diff
-from dgen.ir_equiv import Fingerprinter, graph_equivalent
+from dgen.ir.diff import structural_diff
+from dgen.ir.equivalence import Fingerprinter, graph_equivalent
 from dgen.testing import strip_prefix
 from dgen.dialects.ndbuffer import NDBuffer, Shape
 

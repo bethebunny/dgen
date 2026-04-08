@@ -9,16 +9,16 @@ import pytest
 
 from dgen import Block, Dialect, Op, Trait, Type, TypeType, Value, layout
 from dgen.dialects.function import Function, FunctionOp
-from dgen.gen.ast import (
+from dgen.spec.ast import (
     ExpressionConstraint,
     HasTraitConstraint,
     HasTypeConstraint,
     TypeRef,
 )
-from dgen.gen.parser import parse
-from dgen.module import pack
+from dgen.spec.parser import parse
+from dgen.builtins import pack
 from dgen.type import Fields
-from dgen.verify import ConstraintError, verify_constraints
+from dgen.ir.verification import ConstraintError, verify_constraints
 
 
 # -- Fixtures: a tiny dialect with traits, types, and ops --------------------

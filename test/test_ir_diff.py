@@ -1,7 +1,7 @@
 """Tests for diff_modules output format."""
 
 from dgen.asm.parser import parse
-from dgen.ir_diff import diff_values
+from dgen.ir.diff import diff_values
 from toy.dialects import toy  # noqa: F401 — registers toy dialect
 from dgen.testing import strip_prefix
 

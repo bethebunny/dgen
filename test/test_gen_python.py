@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import sys
 
-from dgen.gen.python import generate_pyi
+from dgen.spec.stubs import generate_pyi
 
 
 # ---------------------------------------------------------------------------

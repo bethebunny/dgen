@@ -15,8 +15,8 @@ import struct
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialects.builtin import Nil
-from dgen.graph import all_values
-from dgen.module import PackOp
+from dgen.ir.traversal import all_values
+from dgen.builtins import PackOp
 from dgen.type import Constant, Type, Value
 
 

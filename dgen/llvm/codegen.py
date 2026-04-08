@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import _ctypes
 import contextvars
 import ctypes
 import functools
@@ -25,10 +24,13 @@ from dgen.dialects import (
     memory,
     number,
 )
-from dgen.graph import all_values
+from dgen.ir.traversal import all_values
 from dgen.layout import Layout
-from dgen.module import ConstantOp, PackOp, pack, string_value
-from dgen.type import Constant, Memory, TypeType, Value, type_constant
+from dgen.builtins import ConstantOp, PackOp, pack, string_value
+from dgen.dialects.builtin import String
+from dgen.dialects.function import Function
+from dgen.memory import Memory
+from dgen.type import Constant, TypeType, Value, type_constant
 from dgen.type import _format_float as format_float
 
 # ---------------------------------------------------------------------------
@@ -810,14 +812,6 @@ class Executable:
     main_name: str
     host_refs: list = field(default_factory=list)
 
-    @property
-    def ctype(self) -> type[_ctypes.CFuncPtr]:
-        """ctypes function pointer type matching this executable's signature."""
-        return ctypes.CFUNCTYPE(
-            _ctype(self.result_type.__layout__),
-            *(_ctype(t.__layout__) for t in self.input_types),
-        )
-
     @functools.cached_property
     def func_constant(self) -> ConstantOp:
         """JIT-compile and return a ConstantOp[Function] for this executable."""
@@ -983,10 +977,6 @@ def build_callback_thunk(
     )
 
     # Build thunk: call callback with all original params, return result
-    from dgen.block import BlockArgument
-    from dgen.dialects.builtin import String
-    from dgen.dialects.function import Function
-
     thunk_args = [
         BlockArgument(name=arg.name, type=arg.type) for arg in func_op.body.args
     ]

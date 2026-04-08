@@ -6,7 +6,7 @@ from dgen import asm
 from dgen.asm.parser import parse
 from dgen.dialects import goto, llvm
 from dgen.testing import assert_ir_equivalent, strip_prefix
-from dgen.verify import ClosedBlockError, verify_closed_blocks
+from dgen.ir.verification import ClosedBlockError, verify_closed_blocks
 
 
 # ---------------------------------------------------------------------------

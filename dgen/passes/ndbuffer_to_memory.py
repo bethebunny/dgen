@@ -15,18 +15,16 @@ from __future__ import annotations
 from math import prod
 
 import dgen
-from dgen.dialects import algebra, function, llvm, memory
+from dgen.builtins import PackOp, pack
+from dgen.dialects import algebra, function, llvm, memory, ndbuffer
 from dgen.dialects.builtin import ExternOp, Nil, String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
-from dgen.module import PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
-from dgen.dialects import ndbuffer
-from toy.dialects import toy
 
 
 def _shape_of(val: dgen.Value) -> list[int]:
-    assert isinstance(val.type, (toy.Tensor, ndbuffer.NDBuffer))
+    """Extract static shape from a shaped type (NDBuffer or any type with .shape)."""
     result = val.type.shape.__constant__.to_json()
     assert isinstance(result, list)
     return result
@@ -54,9 +52,10 @@ def _linearize(shape: list[int], indices: list[dgen.Value]) -> dgen.Value:
 
 
 def _deref(val: dgen.Value) -> dgen.Value:
-    """If val is a tensor constant, load its data pointer."""
-    if not isinstance(val.type, toy.Tensor):
+    """If val's type is a shaped buffer (not Reference or NDBuffer), load its data pointer."""
+    if isinstance(val.type, (memory.Reference, ndbuffer.NDBuffer)):
         return val
+    # Upstream types (e.g. toy.Tensor) store a data pointer that needs dereferencing.
     return memory.LoadOp(
         mem=val, ptr=val, type=memory.Reference(element_type=Float64())
     )
@@ -67,12 +66,12 @@ class NDBufferToMemory(Pass):
 
     def __init__(self) -> None:
         # Track shapes for allocs that have been lowered to References.
-        self._shapes: dict[int, list[int]] = {}
+        self._shapes: dict[dgen.Value, list[int]] = {}
 
     def _resolve_shape(self, val: dgen.Value) -> list[int]:
         """Get shape from NDBuffer type or from tracked alloc shapes."""
-        if id(val) in self._shapes:
-            return self._shapes[id(val)]
+        if val in self._shapes:
+            return self._shapes[val]
         return _shape_of(val)
 
     @lowering_for(ndbuffer.AllocOp)
@@ -86,7 +85,7 @@ class NDBufferToMemory(Pass):
             count=Index().constant(total),
             type=memory.Reference(element_type=dtype),
         )
-        self._shapes[id(alloc)] = shape
+        self._shapes[alloc] = shape
         return alloc
 
     @lowering_for(ndbuffer.DeallocOp)

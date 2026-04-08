@@ -19,7 +19,7 @@ from dgen.block import BlockArgument
 from dgen.dialects import goto
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.dialects.index import Index
-from dgen.module import ConstantOp, pack
+from dgen.builtins import ConstantOp, pack
 
 
 def test_simple_chain():

@@ -11,8 +11,8 @@ import toy.dialects.toy  # noqa: F401 — registers dialect
 from dgen import asm
 from dgen.asm.parser import ASMParser, ParseError, parse
 from dgen.dialects.function import FunctionOp
-from dgen.graph import transitive_dependencies
-from dgen.module import asm_with_imports
+from dgen.ir.traversal import transitive_dependencies
+from dgen.asm import asm_with_imports
 from dgen.testing import strip_prefix
 
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")

@@ -1,4 +1,4 @@
-"""Framework-level IR items: ConstantOp, PackOp, and helpers.
+"""Hand-written builtin ops: ConstantOp, PackOp, and helpers.
 
 These complement the generated builtin dialect but live outside the dialect
 file to keep it purely generated.
@@ -10,14 +10,15 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import ClassVar
 
-from dgen import Constant, Dialect, Op, Type, TypeType, Value
+from dgen import Constant, Op, Type, TypeType, Value
 from dgen.dialects.builtin import (
     Nil,
     Span,
     String,
     builtin,
 )
-from dgen.type import Fields, Memory, SlotFn, _default_slot, format_value, type_constant
+from dgen.memory import Memory
+from dgen.type import Fields, SlotFn, _default_slot, format_value, type_constant
 
 # ===----------------------------------------------------------------------=== #
 # ConstantOp (custom __init__, multiple inheritance)
@@ -107,37 +108,6 @@ def string_value(v: Value[String]) -> str:
     result = v.__constant__.to_json()
     assert isinstance(result, str)
     return result
-
-
-def asm_with_imports(value: Value) -> Iterator[str]:
-    """Format a value and all its dependencies as IR text with import lines.
-
-    Walks ``transitive_dependencies(value)`` in topological order, emitting
-    every non-sugar Op as a top-level SSA statement. Sugar ops (``PackOp``)
-    are inlined as ``[...]`` where referenced, matching ``Module.asm``.
-    Dialects touched anywhere in the value's use-def graph (including nested
-    block bodies) are emitted as leading ``import`` lines.
-    """
-    from .asm.formatting import SlotTracker, _is_sugar_op, op_asm
-    from .graph import all_values, transitive_dependencies
-
-    builtin_dialect = Dialect.get("builtin")
-    dialects: set[Dialect] = {
-        v.dialect for v in all_values(value) if hasattr(v, "dialect")
-    }
-    dialects.discard(builtin_dialect)
-
-    for d in sorted(dialects, key=lambda d: d.name):
-        yield f"import {d.name}"
-    if dialects:
-        yield ""
-
-    tracker = SlotTracker()
-    formatted: set[int] = set()
-    for v in transitive_dependencies(value):
-        if isinstance(v, Op) and not _is_sugar_op(v):
-            yield from op_asm(v, tracker, formatted=formatted)
-            yield ""
 
 
 # ===----------------------------------------------------------------------=== #

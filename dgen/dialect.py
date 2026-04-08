@@ -49,7 +49,7 @@ class Dialect:
 
                 # The DgenFinder hook handles .dgen → module compilation.
                 # We need to figure out the Python module name for this path.
-                from dgen.gen.importer import _path_to_module
+                from dgen.spec.importer import _path_to_module
 
                 py_mod = _path_to_module(candidate)
                 if py_mod is not None:

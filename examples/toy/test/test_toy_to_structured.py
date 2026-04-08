@@ -2,7 +2,7 @@
 
 import dgen
 from dgen.asm.parser import parse
-from dgen.compiler import Compiler, IdentityPass
+from dgen.passes.compiler import Compiler, IdentityPass
 from toy.passes.toy_to_structured import ToyToStructured
 from toy.test.helpers import strip_prefix
 

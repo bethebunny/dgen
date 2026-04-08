@@ -9,8 +9,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from dgen.block import Block, BlockArgument, BlockParameter
-from dgen.module import ConstantOp, PackOp
-from dgen.type import Memory, format_json
+from dgen.builtins import ConstantOp, PackOp
+from dgen.memory import Memory
+from dgen.type import format_json
 
 from ..op import Op
 from ..type import Value, format_value

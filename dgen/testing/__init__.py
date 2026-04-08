@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import dgen
-from dgen.codegen import Executable, LLVMCodegen
-from dgen.compiler import Compiler
-from dgen.ir_diff import structural_diff
-from dgen.ir_equiv import graph_equivalent
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.llvm.codegen import Executable, LLVMCodegen
+from dgen.passes.compiler import Compiler
+from dgen.ir.diff import structural_diff
+from dgen.ir.equivalence import graph_equivalent
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
 
@@ -16,7 +16,7 @@ def llvm_compile(value: dgen.Value) -> Executable:
     """Lower a Value through the standard LLVM pipeline and bundle as an Executable.
 
     Shortcut for ``Compiler([ControlFlowToGoto, BuiltinToLLVM, AlgebraToLLVM],
-    LLVMCodegen()).run(value)`` — the pass set that ``dgen.codegen.compile``
+    LLVMCodegen()).run(value)`` — the pass set that ``dgen.llvm.codegen.compile``
     used to hardcode before it moved out of codegen.
     """
     return Compiler(

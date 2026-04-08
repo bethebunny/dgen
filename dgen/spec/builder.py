@@ -15,7 +15,7 @@ from types import ModuleType
 import dgen
 from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
 from dgen.trait import Trait
-from dgen.gen.ast import (
+from dgen.spec.ast import (
     DgenFile,
     OpDecl,
     TraitDecl,

@@ -8,23 +8,24 @@ from dgen.type import format_value
 from dgen.asm.parser import ASMParser, parse, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
-from dgen.codegen import Executable, LLVMCodegen
+from dgen.llvm.codegen import Executable, LLVMCodegen
 from dgen.testing import llvm_compile as compile_module
-from dgen.compiler import Compiler, IdentityPass
+from dgen.passes.compiler import Compiler, IdentityPass
 from dgen import layout
 from dgen.dialects import algebra, builtin, llvm
 from dgen.dialects.index import Index
 from dgen.dialects.function import FunctionOp
 from dgen.layout import TypeValue
-from dgen.module import ConstantOp
+from dgen.builtins import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
-from dgen.type import Memory, TypeType, type_constant
+from dgen.memory import Memory
+from dgen.type import TypeType, type_constant
 from dgen.testing import strip_prefix
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
-from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
-from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.llvm.memory_to_llvm import MemoryToLLVM
 
 
 def lower_to_llvm(m):

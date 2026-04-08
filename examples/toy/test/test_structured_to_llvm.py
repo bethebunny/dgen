@@ -2,10 +2,10 @@
 
 import dgen
 from dgen.asm.parser import parse
-from dgen.compiler import Compiler, IdentityPass
+from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
-from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from toy.passes.toy_to_structured import ToyToStructured
 from toy.test.helpers import strip_prefix
 

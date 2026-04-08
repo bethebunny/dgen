@@ -1,6 +1,6 @@
 # Codegen: Three-Phase LLVM IR Emission
 
-The codegen (`dgen/codegen.py`) emits LLVM IR text from dgen's graph-based IR.
+The codegen (`dgen/llvm/codegen.py`) emits LLVM IR text from dgen's graph-based IR.
 The core function is `_emit_func`, which transforms a `FunctionOp` into LLVM IR
 basic blocks via three phases.
 

@@ -7,11 +7,11 @@ JIT tests verify actual execution output.
 import llvmlite.binding as llvm_binding
 
 import dgen
-from dgen.codegen import emit_llvm_ir
-from dgen.compiler import Compiler, IdentityPass
-from dgen.passes.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.codegen import emit_llvm_ir
+from dgen.passes.compiler import Compiler, IdentityPass
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy

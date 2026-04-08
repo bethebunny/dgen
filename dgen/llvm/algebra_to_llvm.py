@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import algebra, llvm
-from dgen.dialects.builtin import String
+from dgen.dialects.builtin import Array, Pointer, String
+from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64
 from dgen.passes.pass_ import Pass, lowering_for
 
@@ -120,9 +121,6 @@ class AlgebraToLLVM(Pass):
         # i1 → iN: comparison widening
         if isinstance(op.input, (llvm.IcmpOp, llvm.FcmpOp)):
             return llvm.ZextOp(input=op.input, type=op.type)
-        from dgen.dialects.builtin import Array, Pointer
-        from dgen.dialects.memory import Reference
-
         ptr_types: tuple[type, ...] = (Reference, llvm.Ptr, Pointer, Array)
         dst_is_ptr = isinstance(op.type, ptr_types)
         src_is_ptr = isinstance(op.input.type, ptr_types)

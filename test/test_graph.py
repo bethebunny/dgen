@@ -4,7 +4,7 @@ from dgen import asm
 from dgen.asm.parser import parse
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, llvm
-from dgen.graph import all_values, interior_values, transitive_dependencies
+from dgen.ir.traversal import all_values, interior_values, transitive_dependencies
 from dgen.op import Op
 from dgen.testing import assert_ir_equivalent, strip_prefix
 

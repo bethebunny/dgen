@@ -2,11 +2,11 @@
 
 from dgen import asm
 from dgen.asm.parser import parse
-from dgen.compiler import Compiler, IdentityPass
+from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.testing import assert_ir_equivalent
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
-from dgen.passes.memory_to_llvm import MemoryToLLVM
+from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.testing import strip_prefix
 
 
