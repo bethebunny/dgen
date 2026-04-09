@@ -1,129 +1,125 @@
 # Memory and Layout
 
-## Overview
+## Layout Hierarchy
 
-Every DGEN type declares a `__layout__` describing its binary memory representation. `Layout` is the structural description; `Memory` is a live buffer typed by a DGEN type. Together they provide three capabilities:
+Every type declares a `__layout__: Layout` -- a language-agnostic description of its binary memory representation. The layout drives serialization (`to_json`), deserialization (`from_json`), and LLVM type mapping.
 
-1. **Passing values between stages** — compile-time data materializes to runtime memory through the same layout the JIT code reads.
-2. **Generic runtime JIT** — function arguments and return values are marshalled through `Layout.prepare_arg` and `Memory`, so the staging evaluator works for any type without per-type special cases.
-3. **Generic literal parsing** — `Memory.from_asm(type, text)` parses an ASM literal string into a packed buffer using only the type's layout, with no type-specific parser code.
+**Wire format = memory format.** Values are stored identically in IR serialization and at runtime. This enables mmap/memcpy-friendly JIT patterns.
 
-## Layout
-
-`Layout` (`dgen/layout.py`) is a value-level descriptor of binary encoding. Each layout wraps a `struct.Struct` format string:
-
-| Layout | Format | Size | Example type |
-|--------|--------|------|--------------|
-| `Byte` | `B` | 1 | — |
-| `Int` | `q` | 8 | `index` |
-| `Float64` | `d` | 8 | `f64` |
-| `Array(elem, n)` | `n × elem` | `n * elem.size` | `Tensor([2,3], f64)` → `Array(Float64, 6)` |
-| `Pointer(T)` | `P` | 8 | — |
-| `FatPointer(T)` | `PQ` | 16 | `String` |
-
-Primitive layouts are module-level singletons (`INT`, `FLOAT64`, `BYTE`). Compound layouts are constructed.
-
-A type declares its layout as a class attribute:
-
-```python
-@builtin.type("f64")
-@dataclass(frozen=True)
-class F64Type:
-    __layout__ = FLOAT64
-
-@dataclass(frozen=True)
-class TensorType:
-    shape: list[int]
-
-    @cached_property
-    def __layout__(self):
-        return Array(FLOAT64, math.prod(self.shape))
+```
+Layout
+  ├── Void          0 bytes, register_passable
+  ├── Byte          1 byte (uint8), register_passable
+  ├── Int           8 bytes (i64), register_passable
+  ├── Float64       8 bytes (f64), register_passable
+  ├── Pointer(T)    8 bytes (ptr to T), register_passable
+  ├── Array(T, n)   n * sizeof(T) bytes, inline
+  ├── Span(T)       16 bytes (ptr + i64 length)
+  ├── Record(fields) sequential field layout
+  ├── String        Span(Byte) with str ↔ bytes conversion
+  └── TypeValue     8-byte pointer to self-describing Record
 ```
 
-The `Type` protocol requires `__layout__: Layout`, so every type in the system has one.
+Each layout has a `struct: struct.Struct` for binary pack/unpack and a `byte_size` property.
 
-### `parse` and `prepare_arg`
+### register_passable
 
-Each layout has two methods that enable generic value handling:
+Scalars and pointers (`Void`, `Byte`, `Int`, `Float64`, `Pointer`) are `register_passable = True` -- they fit in a CPU register and are passed by value in function calls.
 
-- **`parse(obj)`** validates and coerces a Python value (from IR parsing or user input) to the layout's expected form. `Int.parse` asserts an int; `Array.parse` recursively parses each element.
-
-- **`prepare_arg(value, type)`** converts a Python value into a ctypes-compatible argument for JIT function calls. Scalars pass through directly. Arrays allocate a `Memory` buffer, pack the values, and return a pointer:
+Aggregates (`Array`, `Span`, `Record`, `String`) are `register_passable = False` -- they are passed by pointer. Codegen maps non-register-passable types to `ptr` in LLVM IR.
 
 ```python
-class Array(Layout):
-    def prepare_arg(self, value, type=None):
-        mem = Memory(type) if type is not None else Memory._from_layout(self)
-        mem.pack(*value)
-        return mem.ptr, [mem]   # pointer + ref to keep buffer alive
+from dgen.layout import Int, Span, Byte
+
+Int().register_passable      # True  → LLVM "i64", ctypes c_int64
+Span(Byte()).register_passable  # False → LLVM "ptr", ctypes c_void_p
 ```
 
-## Memory
+## Memory[T]: Typed Buffer
 
-`Memory` (`dgen/layout.py`) is a typed buffer — a `bytearray` paired with the DGEN `Type` that gives it meaning. It provides:
-
-- **`pack(*values)` / `unpack()`** — write/read Python values via the type's `struct.Struct`.
-- **`ptr`** — a `ctypes.c_void_p` to the buffer, suitable for passing to JIT-compiled functions.
-- **`address`** — the raw integer address, used in codegen to emit `inttoptr` constants.
+`Memory[T]` pairs a `Layout` with a `bytearray` buffer. It is the ABI-level representation of any value.
 
 ### Construction
 
 ```python
-# From a Type (allocates a zeroed buffer)
-mem = Memory(some_type)
+from dgen.memory import Memory
+from dgen.dialects.index import Index
 
-# From a Type + Python value (parse + pack)
-mem = Memory.from_value(F64Type(), 3.14)
+# From a Python value (JSON-compatible)
+mem = Memory.from_json(Index(), 42)
 
-# From a Type + ASM literal string (parse text + parse value + pack)
-mem = Memory.from_asm(TensorType(shape=[3]), "[1.0, 2.0, 3.0]")
+# From a Python value with str/bytes conversion
+mem = Memory.from_value(String(), "hello")
+
+# From a raw pointer (e.g. JIT result)
+mem = Memory.from_raw(Index(), address)
 ```
 
-## How the pieces connect
-
-### 1. Constant materialization in codegen
-
-When codegen encounters a `ConstantOp` with an array value, it creates a `Memory` from the op's type, packs the compile-time data, and emits the buffer's address as an `inttoptr` constant. The JIT code reads directly from that buffer — no serialization boundary, the compile-time layout IS the runtime layout.
+### Readback
 
 ```python
-# dgen/llvm/codegen.py
-mem = Memory(op.type)
-mem.pack(*op.value)
-host_buffers.append(mem)  # prevent GC
-constants[vid] = f"ptr inttoptr (i64 {mem.address} to ptr)"
+mem.to_json()    # → 42 (Python value)
+mem.unpack()     # → (42,) (raw struct.unpack tuple)
+mem.address      # → raw memory address of the buffer
 ```
 
-### 2. Argument marshalling in staging
+### Origins
 
-The staging evaluator JIT-compiles subgraphs to resolve compile-time values. When a subgraph depends on function parameters (stage-1), the runtime arguments must be passed to the JIT. `_prepare_ctypes_args` walks the parameters and uses each type's layout to marshal:
+For pointer-based layouts (`Span`, `Pointer`), the buffer contains raw pointers into backing data. `Memory.origins` is a list of objects whose lifetime must extend through the Memory's lifetime. Origins are shared (not copied) on `deepcopy` so packed pointers stay valid.
+
+## TypeValue Layout
+
+`TypeValue` is an 8-byte pointer to a self-describing `Record`. The record mirrors the JSON structure from `Type.to_json()`:
+
+```
+Record([
+    ("tag", String()),                              # e.g. "ndbuffer.Shape"
+    ("params", Record([
+        ("rank", Record([
+            ("type", TypeValue()),                  # recursive: type of the param
+            ("value", Int()),                       # param value in its own layout
+        ])),
+    ]))
+])
+```
+
+This makes every type value self-describing in memory: you can read the tag to determine the concrete type, then read each parameter's type descriptor to know how to interpret its value bytes.
 
 ```python
-# dgen/passes/staging.py
-for arg, param in zip(python_args, block_args):
-    ct_val, refs = param.type.__layout__.prepare_arg(arg, param.type)
+from dgen.layout import TypeValue
+
+tv = TypeValue()
+tv.byte_size          # 8 (one pointer)
+tv.register_passable  # False (indirection through pointer)
 ```
 
-For scalars, `prepare_arg` returns the value directly. For arrays, it allocates a `Memory`, packs, and returns the pointer. The staging evaluator doesn't need to know what type it's dealing with — the layout handles it.
+## Constant Materialization in Codegen
 
-### 3. CLI argument parsing
+When codegen encounters a `Constant` (or `ConstantOp`), it materializes the value differently based on the layout:
 
-The CLI accepts arguments as strings. `run()` parses them via the ASM expression parser (which handles ints, floats, and lists), then they flow through the same `prepare_arg` path:
+**Register-passable** values are emitted as immediate LLVM constants:
 
 ```python
-# toy/cli.py
-args = [_parse_arg(a) if isinstance(a, str) else a for a in args]
+# Index constant 42 → "42" in LLVM IR
+# Float64 constant 3.14 → "3.14" in LLVM IR
+# Pointer constant → "inttoptr (i64 <addr> to ptr)"
 ```
 
+**Non-register-passable** values (aggregates) are materialized via `inttoptr`: the `Memory` buffer's raw address is embedded as an integer constant and cast to a pointer. The `Memory` object is kept alive in `EmitContext.host_buffers` for the lifetime of the JIT engine.
+
+```python
+# Span/Array/Record constant:
+#   inttoptr (i64 140234567890 to ptr)
+# The Memory buffer lives in host_buffers, accessible via this address.
 ```
-$ python -m toy.cli program.toy '[1.0, 2.0, 3.0]'
-```
 
-`Memory.from_asm` composes these steps — parse the text, validate against the layout, pack into a buffer — for cases where you want a typed buffer directly from a string literal.
+This avoids copying aggregate constants into the LLVM module -- the JIT code reads directly from the Python-side `Memory` buffers.
 
-## Design properties
+## Key Files
 
-**Wire format = memory format.** The layout that `struct.Struct` describes is the same layout the JIT code reads. No marshalling layer, no serialization protocol. `Memory.address` gives you a pointer the JIT can dereference.
-
-**Type-driven, not value-driven.** The type's `__layout__` determines everything: buffer size, pack/unpack format, how to prepare arguments, how to parse literals. Adding a new type with a new layout requires no changes to codegen, staging, or the CLI.
-
-**One mechanism for all stages.** The same `Memory` + `Layout` pair handles: compile-time constant buffers in codegen, argument passing for stage-1 JIT evaluation, and CLI input parsing. There's one path through the system, not three.
+| File | Role |
+|------|------|
+| `dgen/layout.py` | Layout classes, TypeValue, binary pack/unpack |
+| `dgen/memory.py` | `Memory[T]`, from_json/from_raw/from_value, to_json |
+| `dgen/llvm/codegen.py` | `value_reference` -- constant materialization |
+| `dgen/type.py` | `Type.to_json` / `Type.from_json` -- TypeValue serialization |
