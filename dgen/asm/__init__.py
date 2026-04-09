@@ -6,10 +6,11 @@ from collections.abc import Iterator
 
 import dgen
 from dgen.ir.traversal import all_values, transitive_dependencies
-from dgen.type import Value
+from dgen.memory import Memory
+from dgen.type import Type, Value
 
 from .formatting import SlotTracker, _is_sugar_op, indent, op_asm
-from .parser import parse
+from .parser import ASMParser, parse, value_expression
 
 
 def format(value: Value) -> str:
@@ -45,4 +46,11 @@ def asm_with_imports(value: Value) -> Iterator[str]:
             yield ""
 
 
-__all__ = ["asm_with_imports", "format", "indent", "parse"]
+def memory_from_asm(type: Type, text: str) -> Memory:
+    """Create Memory from a Type and an ASM literal string."""
+    parser = ASMParser(text)
+    value = value_expression(parser)
+    return Memory.from_value(type, value)
+
+
+__all__ = ["asm_with_imports", "format", "indent", "memory_from_asm", "parse"]

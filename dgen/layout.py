@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import ctypes
 from struct import Struct
+from typing import TYPE_CHECKING
 
 from .dialect import Dialect
+
+if TYPE_CHECKING:
+    from .type import Type
 
 
 def _bytearray_address(buf: bytearray) -> int:
@@ -233,73 +237,80 @@ class Record(Layout):
                 lay.from_json(buf, offset + field_offset, value[name], origins)
 
 
+def _descriptor_layout(type_instance: Type) -> Record:
+    """Build the Record layout for a concrete type's self-describing descriptor.
+
+    The layout mirrors the JSON structure produced by ``Type.to_json()``::
+
+        Record([
+            ("tag", String()),
+            ("params", Record([
+                (name, Record([("type", TypeValue()), ("value", <layout>)])),
+                ...
+            ]))
+        ])
+    """
+    return Record([
+        ("tag", String()),
+        ("params", Record([
+            (name, Record([("type", TypeValue()), ("value", param.type.__layout__)]))
+            for name, param in type_instance.parameters
+        ])),
+    ])
+
+
 class TypeValue(Layout):
     """Pointer to a self-describing type value.
 
-    Type values are Records starting with ("tag", StringLayout()). The tag
-    identifies the type class, which determines the full Record layout.
-    Fixed size (8-byte pointer) regardless of concrete type.
+    Each parameter carries its own type descriptor, so the record is fully
+    self-describing.  Fixed size (8-byte pointer) regardless of concrete type.
     """
 
     struct = Struct("P")
 
-    @staticmethod
-    def _is_type_kinded(param_type: type) -> bool:
-        """Check if a __params__ type entry represents a type-kinded parameter.
-
-        Type-kinded params are TypeType, Type (base class = "any type"), or
-        TypeType subclasses (e.g. Natural trait). Concrete types like Index
-        are NOT type-kinded — they inherit from Type but not from TypeType.
-        """
-        from .type import Type, TypeType
-
-        if param_type is Type or param_type is TypeType:
-            return True
-        return hasattr(param_type, "__mro__") and TypeType in param_type.__mro__
-
-    def _resolve_layout(self, tag: str) -> Record:
-        """Look up a type class by tag and return its TypeType Record layout."""
-        dialect_name, type_name = tag.split(".")
-        dialect = Dialect.get(dialect_name)
-        cls = dialect.types[type_name]
-        fields: list[tuple[str, Layout]] = [("tag", String())]
-        for param_name, param_type in cls.__params__:
-            if self._is_type_kinded(param_type):
-                # Type-kinded param: its layout is itself a TypeValue pointer
-                fields.append((param_name, TypeValue()))
-            elif hasattr(param_type, "__params__") and any(
-                self._is_type_kinded(pt) for _, pt in param_type.__params__
-            ):
-                # List of types (e.g. Tuple's types: List param with TypeType element)
-                fields.append((param_name, Span(TypeValue())))
-            else:
-                # Value-kinded param: use the param type's layout
-                fields.append((param_name, param_type().__layout__))
-        return Record(fields)
-
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
+        from .type import Type
+
         assert isinstance(value, dict)
-        tag = value["tag"]
-        assert isinstance(tag, str)
-        pointee_layout = self._resolve_layout(tag)
-        origin = bytearray(pointee_layout.byte_size)
+        layout = _descriptor_layout(Type.from_json(value))
+        origin = bytearray(layout.byte_size)
         origins.append(origin)
-        pointee_layout.from_json(origin, 0, value, origins)
+        layout.from_json(origin, 0, value, origins)
         self.struct.pack_into(buf, offset, _bytearray_address(origin))
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
+        from .type import Type
+
         (ptr,) = self.struct.unpack_from(buf, offset)
-        # Read just the tag first (String = Span<Byte> at offset 0)
+        # Read the tag to look up param names, then read each param's type
+        # descriptor to determine its value layout.
         tag_layout = String()
-        tag_data = bytes((ctypes.c_char * tag_layout.struct.size).from_address(ptr))
-        tag = tag_layout.to_json(tag_data, 0)
+        tag_bytes = bytes((ctypes.c_char * tag_layout.byte_size).from_address(ptr))
+        tag = tag_layout.to_json(tag_bytes, 0)
         assert isinstance(tag, str)
-        # Now resolve full layout and read entire buffer
-        pointee_layout = self._resolve_layout(tag)
-        data = bytes((ctypes.c_char * pointee_layout.byte_size).from_address(ptr))
-        return pointee_layout.to_json(data, 0)
+        dialect_name, type_name = tag.split(".")
+        cls = Dialect.get(dialect_name).types[type_name]
+        # Build the full Record layout by reading type descriptors sequentially.
+        read_offset = tag_layout.byte_size
+        param_fields: list[tuple[str, Layout]] = []
+        for param_name, _param_cls in cls.__params__:
+            tv = TypeValue()
+            tv_bytes = bytes(
+                (ctypes.c_char * tv.byte_size).from_address(ptr + read_offset)
+            )
+            param_type = Type.from_json(tv.to_json(tv_bytes, 0))
+            value_layout = param_type.__layout__
+            param_fields.append(
+                (param_name, Record([("type", tv), ("value", value_layout)]))
+            )
+            read_offset += tv.byte_size + value_layout.byte_size
+        layout = Record([("tag", tag_layout), ("params", Record(param_fields))])
+        data = bytes((ctypes.c_char * layout.byte_size).from_address(ptr))
+        result = layout.to_json(data, 0)
+        assert isinstance(result, dict)
+        return result
 
 
 class String(Span):

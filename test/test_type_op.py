@@ -86,7 +86,7 @@ def test_type_op_jit_returns_type():
     value = parse(ir)
     exe = compile_module(value)
     result = exe.run()
-    assert result.to_json() == {"tag": "index.Index"}
+    assert result.to_json() == {"tag": "index.Index", "params": {}}
 
 
 def test_type_op_jit_with_argument():
@@ -101,7 +101,7 @@ def test_type_op_jit_with_argument():
     value = parse(ir)
     exe = compile_module(value)
     result = exe.run(99)
-    assert result.to_json() == {"tag": "index.Index"}
+    assert result.to_json() == {"tag": "index.Index", "params": {}}
 
 
 def test_type_op_jit_used_as_annotation():

@@ -86,10 +86,10 @@ def test_block_replace_uses_of(ir_snapshot):
 def test_block_replace_uses_of_op_type():
     """replace_uses_of updates op.type when it references the replaced value."""
     old_type = ConstantOp.from_constant(
-        dgen.TypeType().constant({"tag": "index.Index"}), name="old_t"
+        dgen.TypeType().constant({"tag": "index.Index", "params": {}}), name="old_t"
     )
     new_type = ConstantOp.from_constant(
-        dgen.TypeType().constant({"tag": "index.Index"}), name="new_t"
+        dgen.TypeType().constant({"tag": "index.Index", "params": {}}), name="new_t"
     )
     x = ConstantOp(name="x", value=42, type=old_type)
     block = dgen.Block(result=x)
@@ -104,10 +104,10 @@ def test_block_replace_uses_of_block_arg_type():
     from dgen.dialects.index import Index
 
     old_type = ConstantOp.from_constant(
-        dgen.TypeType().constant({"tag": "index.Index"}), name="old_t"
+        dgen.TypeType().constant({"tag": "index.Index", "params": {}}), name="old_t"
     )
     new_type = ConstantOp.from_constant(
-        dgen.TypeType().constant({"tag": "index.Index"}), name="new_t"
+        dgen.TypeType().constant({"tag": "index.Index", "params": {}}), name="new_t"
     )
     arg = BlockArgument(name="x", type=old_type)
     result = ConstantOp.from_constant(Index().constant(0), name="r")
@@ -143,10 +143,10 @@ def test_block_replace_uses_of_block_parameter_type():
     from dgen.dialects.index import Index
 
     old_type = ConstantOp.from_constant(
-        dgen.TypeType().constant({"tag": "index.Index"}), name="old_t"
+        dgen.TypeType().constant({"tag": "index.Index", "params": {}}), name="old_t"
     )
     new_type = ConstantOp.from_constant(
-        dgen.TypeType().constant({"tag": "index.Index"}), name="new_t"
+        dgen.TypeType().constant({"tag": "index.Index", "params": {}}), name="new_t"
     )
     param = BlockParameter(name="p", type=old_type)
     result = ConstantOp.from_constant(Index().constant(0), name="r")
@@ -298,7 +298,7 @@ def test_constant_fold_resolves_stage0_boundary():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
         |         %y : %rt = algebra.add(%x, %x)
     """)
@@ -326,7 +326,7 @@ def test_constant_fold_resolves_stage0_boundary():
         exit=LLVMCodegen(),
     )
     exe = compiler.compile(inner_func)
-    assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
+    assert exe.run({"tag": "index.Index", "params": {}}, 21).to_json() == 42
 
 
 def test_constant_fold_is_noop_without_boundaries():

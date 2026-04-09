@@ -103,34 +103,7 @@ def type_constant(value: Value[TypeType]) -> Type:
         return value
     data = value.__constant__.to_json()
     assert isinstance(data, dict)
-    return _type_from_dict(data)
-
-
-def _type_from_dict(data: dict[str, object]) -> Type:
-    """Reconstruct a Type from its serialized TypeType dict."""
-    from dgen.builtins import pack
-
-    tag = data["tag"]
-    assert isinstance(tag, str)
-    dialect_name, type_name = tag.split(".")
-    dialect = Dialect.get(dialect_name)
-    cls = dialect.types[type_name]
-    param_types = dict(cls.__params__)
-    kwargs: dict[str, object] = {}
-    for param_name, param_value in data.items():
-        if param_name == "tag":
-            continue
-        field_type = param_types[param_name]
-        if isinstance(param_value, list):
-            kwargs[param_name] = pack(
-                _type_from_dict(v) if isinstance(v, dict) else field_type().constant(v)
-                for v in param_value
-            )
-        elif isinstance(param_value, dict):
-            kwargs[param_name] = _type_from_dict(param_value)
-        else:
-            kwargs[param_name] = field_type().constant(param_value)
-    return cls(**kwargs)
+    return Type.from_json(data)
 
 
 class Type(Value["TypeType"]):
@@ -165,12 +138,41 @@ class Type(Value["TypeType"]):
     def type(self) -> TypeType:
         return TypeType()
 
+    def to_json(self) -> dict[str, object]:
+        """Serialize to a self-describing dict.
+
+        Format::
+
+            {"tag": "dialect.Name", "params": {"p": {"type": ..., "value": ...}, ...}}
+
+        Each param carries its own type descriptor so deserialization needs no schema.
+        """
+        return {
+            "tag": self.qualified_name,
+            "params": {
+                name: {
+                    "type": type_constant(param.type).to_json(),
+                    "value": param.__constant__.to_json(),
+                }
+                for name, param in self.parameters
+            },
+        }
+
+    @classmethod
+    def from_json(cls, data: dict[str, object]) -> Type:
+        """Reconstruct a Type from a self-describing dict."""
+        tag = data["tag"]
+        assert isinstance(tag, str)
+        dialect_name, type_name = tag.split(".")
+        type_cls = Dialect.get(dialect_name).types[type_name]
+        return type_cls(**{
+            name: Type.from_json(tv["type"]).constant(tv["value"])
+            for name, tv in data["params"].items()
+        })
+
     @cached_property
     def __constant__(self) -> Memory[TypeType]:
-        data: dict[str, object] = {"tag": self.qualified_name}
-        for name, param in self.parameters:
-            data[name] = param.__constant__.to_json()
-        return Memory.from_json(self.type, data)
+        return Memory.from_json(TypeType(), self.to_json())
 
     def format_asm(self, slot: SlotFn = _default_slot) -> str:
         """Format as ``dialect.Name<params>`` (no prefix for builtin)."""

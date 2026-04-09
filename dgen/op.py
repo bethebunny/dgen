@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, Iterable
+from typing import ClassVar
 
 from .dialect import Dialect
 from .type import Value
@@ -14,9 +14,3 @@ class Op(Value):
     name: str | None = None
     asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
-
-    @property
-    def asm(self) -> Iterable[str]:
-        from .asm.formatting import op_asm
-
-        return op_asm(self)

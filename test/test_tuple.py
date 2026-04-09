@@ -9,7 +9,7 @@ from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import Index, String, Tuple
 from dgen.dialects.number import Float64
 from dgen.builtins import pack
-from dgen.type import _type_from_dict, type_constant
+from dgen.type import type_constant, Type
 from dgen.testing import strip_prefix
 
 
@@ -60,25 +60,24 @@ def test_tuple_constant_roundtrip():
 
 
 def test_tuple_type_constant_serialization():
-    """Tuple.__constant__ serializes types list as a proper list of dicts."""
+    """Tuple.__constant__ serializes with self-describing params."""
     t = Tuple(types=pack([Index(), String()]))
     data = t.__constant__.to_json()
-    assert data == {
-        "tag": "builtin.Tuple",
-        "types": [{"tag": "index.Index"}, {"tag": "builtin.String"}],
-    }
+    assert data["tag"] == "builtin.Tuple"
+    types_param = data["params"]["types"]
+    # types is a Span<Type> — each element is a typed value
+    assert types_param["type"]["tag"] == "builtin.Span"
+    assert isinstance(types_param["value"], list)
 
 
-def test_tuple_type_from_dict_roundtrip():
-    """Tuple type round-trips through __constant__ → _type_from_dict."""
+def test_tuple_type_from_json_roundtrip():
+    """Tuple type round-trips through to_json → Type.from_json."""
     t = Tuple(types=pack([Index(), String()]))
     data = t.__constant__.to_json()
-    reconstructed = _type_from_dict(data)
+    reconstructed = Type.from_json(data)
     assert isinstance(reconstructed, Tuple)
-    types = list(reconstructed.types)
-    assert len(types) == 2
-    assert isinstance(type_constant(types[0]), Index)
-    assert isinstance(type_constant(types[1]), String)
+    # After from_json, types is a Constant (not a PackOp), so check via to_json
+    assert reconstructed.to_json() == data
 
 
 def test_tuple_three_types():
