@@ -34,16 +34,27 @@ def transitive_dependencies(
 
     Stop at any elements in the `stop` set."""
     visited: set[dgen.Value] = set(stop)
+    if value in visited:
+        return
 
-    def visit(value: dgen.Value) -> Iterator[dgen.Value]:
-        visited.add(value)
-        for dep in value.dependencies:
-            # check before recursing to reduce function call overhead
+    # Iterative post-order DFS using an explicit stack.
+    # Each frame is (value, deps_iterator).  When the iterator is exhausted
+    # we yield the value (post-order), matching the old recursive semantics.
+    stack: list[tuple[dgen.Value, Iterator[dgen.Value]]] = []
+    visited.add(value)
+    stack.append((value, iter(value.dependencies)))
+
+    while stack:
+        node, deps = stack[-1]
+        for dep in deps:
             if dep not in visited:
-                yield from visit(dep)
-        yield value
-
-    yield from () if value in visited else visit(value)
+                visited.add(dep)
+                stack.append((dep, iter(dep.dependencies)))
+                break  # process new node first (DFS)
+        else:
+            # all deps visited — emit this node (post-order)
+            stack.pop()
+            yield node
 
 
 def all_values(value: dgen.Value) -> Iterator[dgen.Value]:
