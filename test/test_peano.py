@@ -440,6 +440,92 @@ def test_multi_function_staged():
     assert result.to_json() == 2  # value(Successor(Zero)) = 1, then add 1 = 2
 
 
+# ============================================================================
+# Indirect calls (callee as operand)
+# ============================================================================
+
+
+def test_indirect_call_roundtrip():
+    """Indirect call round-trips: callee is a BlockArgument, not a FunctionOp."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        |
+        | %apply : function.Function<[function.Function<[index.Index], index.Index>, index.Index], index.Index> = function.function<index.Index>() body(%f: function.Function<[index.Index], index.Index>, %x: index.Index):
+        |     %result : index.Index = function.call(%f, [%x])
+    """)
+    value = parse(ir)
+    asm_text = asm.format(value)
+    assert "function.call(%f, [%x])" in asm_text
+    # Round-trip: parse the printed ASM back
+    reparsed = parse(asm_text)
+    assert asm.format(reparsed) == asm_text
+
+
+def test_indirect_call_jit():
+    """Indirect call via JIT: pass a function as an argument and call it."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        |
+        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %r : index.Index = algebra.add(%n, index.Index(1))
+        |
+        | %apply : function.Function<[function.Function<[index.Index], index.Index>, index.Index], index.Index> = function.function<index.Index>() body(%f: function.Function<[index.Index], index.Index>, %x: index.Index):
+        |     %result : index.Index = function.call(%f, [%x])
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one, %apply):
+        |     %result : index.Index = function.call(%apply, [%add_one, %x])
+    """)
+    value = parse(ir)
+    exe = llvm_compile(value)
+    assert exe.run(5).to_json() == 6
+    assert exe.run(0).to_json() == 1
+
+
+def test_indirect_call_no_stage_bump():
+    """Callee as operand does not add a stage boundary.
+
+    When call's callee is an operand (not a parameter), a BlockArgument
+    callee should NOT bump the stage — the call stays at stage 1, not
+    stage 2.  This avoids unnecessary callback-based JIT for plain
+    indirect calls.
+    """
+    from dgen.block import BlockArgument
+    from dgen.builtins import pack
+    from dgen.dialects.function import CallOp, Function, FunctionOp
+    from dgen.passes.staging import compute_stages
+
+    idx = Index()
+    func_type = Function(arguments=pack([idx]), result_type=idx)
+
+    f_arg = BlockArgument(name="f", type=func_type)
+    x_arg = BlockArgument(name="x", type=idx)
+    call_op = CallOp(
+        callee=f_arg,
+        arguments=pack([x_arg]),
+        type=idx,
+    )
+    func = FunctionOp(
+        name="apply",
+        body=dgen.Block(result=call_op, args=[f_arg, x_arg]),
+        result_type=idx,
+        type=Function(arguments=pack([func_type, idx]), result_type=idx),
+    )
+
+    stages = compute_stages(func)
+    # BlockArguments are stage 1
+    assert stages[f_arg] == 1
+    assert stages[x_arg] == 1
+    # The call should be stage 1 (max of operands), NOT stage 2
+    # (which would happen if callee were a parameter: 1 + stage(f_arg) = 2)
+    assert stages[call_op] == 1
+
+
 def test_equal_jit():
     """equal_index returns 1 when equal, 0 otherwise."""
     ir = strip_prefix("""
