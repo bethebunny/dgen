@@ -37,15 +37,15 @@ def lower_to_llvm(m):
 
 def test_parse_dict_literal():
     """value_expression handles {key: value, ...} and returns a Python dict."""
-    parser = ASMParser('{"tag": "index.Index"}')
+    parser = ASMParser('{"tag": "index.Index", "params": {}}')
     result = value_expression(parser)
-    assert result == {"tag": "index.Index"}
+    assert result == {"tag": "index.Index", "params": {}}
 
 
 def test_format_dict_literal():
     """format_value handles dicts."""
-    result = format_value({"tag": "index.Index"})
-    assert result == '{"tag": "index.Index"}'
+    result = format_value({"tag": "index.Index", "params": {}})
+    assert result == '{"tag": "index.Index", "params": {}}'
 
 
 def test_typetype_constant_asm_roundtrip():
@@ -55,7 +55,7 @@ def test_typetype_constant_asm_roundtrip():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -68,7 +68,7 @@ def test_ssa_ref_as_op_type():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %x : %t = 42
     """)
     value = parse(ir)
@@ -87,7 +87,7 @@ def test_ssa_ref_as_op_type_roundtrip():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %x : %t = 42
     """)
     value = parse(ir)
@@ -99,33 +99,39 @@ def test_typetype_memory_roundtrip():
     idx = Index()
     mem = idx.__constant__
     data = mem.to_json()
-    assert data == {"tag": "index.Index"}
+    assert data == {"tag": "index.Index", "params": {}}
     # Round-trip: dict → Memory → dict
     mem2 = Memory.from_json(idx.type, data)
     assert mem2.to_json() == data
 
 
 def test_parameterized_typetype_constant_roundtrip():
-    """TypeType for Array<index.Index, 4> round-trips with nested params in dict."""
+    """TypeType for Array<index.Index, 4> round-trips with self-describing params."""
     arr_ty = builtin.Array(
         element_type=Index(),
         n=Index().constant(4),
     )
-    mem = arr_ty.__constant__
-    data = mem.to_json()
-    assert data == {
+    assert arr_ty.__constant__.to_json() == {
         "tag": "builtin.Array",
-        "element_type": {"tag": "index.Index"},
-        "n": 4,
+        "params": {
+            "element_type": {
+                "type": {"tag": "builtin.Type", "params": {}},
+                "value": {"tag": "index.Index", "params": {}},
+            },
+            "n": {
+                "type": {"tag": "index.Index", "params": {}},
+                "value": 4,
+            },
+        },
     }
 
-    # ASM round-trip with the parameterized TypeType
+    # ASM round-trip
     ir = strip_prefix("""
         | import function
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
+        |     %t : Type = {"tag": "builtin.Array", "params": {"element_type": {"type": {"tag": "builtin.Type", "params": {}}, "value": {"tag": "index.Index", "params": {}}}, "n": {"type": {"tag": "index.Index", "params": {}}, "value": 4}}}
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -159,7 +165,7 @@ def test_array_with_ssa_element_type():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %arr : Array<%t, index.Index(4)> = [1, 2, 3, 4]
     """)
     value = parse(ir)
@@ -180,7 +186,7 @@ def test_array_with_ssa_element_type_layout():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %arr : Array<%t, index.Index(4)> = [1, 2, 3, 4]
     """)
     value = parse(ir)
@@ -202,7 +208,7 @@ def test_pointer_with_ssa_pointee():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %p : Pointer<%t> = 0
     """)
     value = parse(ir)
@@ -240,12 +246,12 @@ def test_type_constant_jit_return():
         | import index
         |
         | %main : function.Function<[], Type> = function.function<Type>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
     """)
     value = parse(ir)
     exe = compile_module(value)
     result = exe.run()
-    assert result.to_json() == {"tag": "index.Index"}
+    assert result.to_json() == {"tag": "index.Index", "params": {}}
 
 
 def test_span_with_ssa_element_type():
@@ -255,7 +261,7 @@ def test_span_with_ssa_element_type():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %xs : Span<%t> = [1, 2, 3]
     """)
     value = parse(ir)
@@ -277,7 +283,7 @@ def test_fat_pointer_with_ssa_pointee():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "number.Float64"}
+        |     %t : Type = {"tag": "number.Float64", "params": {}}
         |     %p : Span<%t> = [0.0, 0.0]
     """)
     value = parse(ir)
@@ -299,7 +305,7 @@ def test_function_with_ssa_result_type():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
         |         %_ : Nil = ()
     """)
@@ -343,7 +349,7 @@ def test_type_constant_resolves_ssa_constant():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %x : %t = 42
     """)
     value = parse(ir)
@@ -359,7 +365,7 @@ def test_compile_with_ssa_function_result():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
         |         %_ : Nil = ()
     """)
@@ -380,7 +386,7 @@ def test_compile_function_with_ssa_typed_block_arg():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %f : function.Function<[%t], Nil> = function.function<Nil>() body(%x: %t):
         |         %_ : Nil = ()
     """)
@@ -397,7 +403,7 @@ def test_compile_function_with_ssa_typed_block_arg():
 def test_compile_constant_with_ssa_type():
     """compile() handles ConstantOp whose type is an SSA ref (ConstantOp).
 
-    %t : Type = {"tag": "index.Index"}
+    %t : Type = {"tag": "index.Index", "params": {}}
     %x : %t = 42
 
     codegen must resolve %x's type via type_constant to get __layout__.
@@ -407,7 +413,7 @@ def test_compile_constant_with_ssa_type():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %x : %t = 42
     """)
     value = parse(ir)
@@ -430,7 +436,7 @@ def test_compile_input_types_resolved_from_ssa():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %f : function.Function<[%t], %t> = function.function<%t>() body(%x: %t):
         |         %_ : Nil = ()
     """)
@@ -487,11 +493,11 @@ def test_staging_resolves_block_arg_type():
     compile_time_calls = lower_calls
 
     # Each run() triggers runtime JIT — lower is called for each invocation
-    assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
+    assert exe.run({"tag": "index.Index", "params": {}}, 21).to_json() == 42
     calls_after_first_run = lower_calls
     assert calls_after_first_run > compile_time_calls
 
-    assert exe.run({"tag": "index.Index"}, 100).to_json() == 200
+    assert exe.run({"tag": "index.Index", "params": {}}, 100).to_json() == 200
     assert lower_calls > calls_after_first_run
 
 
@@ -519,25 +525,23 @@ def test_parse_typetype_block_arg_constant_materializes():
         | import index
         |
         | %main : function.Function<[Type], Nil> = function.function<Nil>() body(%arr_ty: Type):
-        |     %tt : Type = {"tag": "builtin.Array", "element_type": {"tag": "index.Index"}, "n": 4}
+        |     %tt : Type = {"tag": "builtin.Array", "params": {"element_type": {"type": {"tag": "builtin.Type", "params": {}}, "value": {"tag": "index.Index", "params": {}}}, "n": {"type": {"tag": "index.Index", "params": {}}, "value": 4}}}
     """)
     value = parse(ir)
     tt_op = list(value.body.ops)[0]
     assert isinstance(tt_op, ConstantOp)
     assert isinstance(tt_op.value, Memory)
-    # Memory materializes fine — TypeValue layout is self-describing
-    assert tt_op.value.to_json() == {
-        "tag": "builtin.Array",
-        "element_type": {"tag": "index.Index"},
-        "n": 4,
-    }
+    # Memory materializes fine — TypeValue format is self-describing
+    data = tt_op.value.to_json()
+    assert data["tag"] == "builtin.Array"
+    assert data["params"]["n"]["value"] == 4
 
 
 def test_staging_with_ssa_result_type():
     """Staging resolves func.result_type when it's a ConstantOp SSA ref.
 
     main() -> Nil:
-        %t : Type = {"tag": "index.Index"}
+        %t : Type = {"tag": "index.Index", "params": {}}
         %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
             %y : %rt = index.add(%x, %x)
 
@@ -550,7 +554,7 @@ def test_staging_with_ssa_result_type():
         | import index
         |
         | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
+        |     %t : Type = {"tag": "index.Index", "params": {}}
         |     %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
         |         %y : %rt = algebra.add(%x, %x)
     """)
@@ -570,7 +574,7 @@ def test_staging_with_ssa_result_type():
         passes=[LowerToLLVMPass(), BuiltinToLLVM(), AlgebraToLLVM()], exit=LLVMCodegen()
     )
     exe = compiler.compile(inner_func)
-    assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
+    assert exe.run({"tag": "index.Index", "params": {}}, 21).to_json() == 42
 
 
 def test_staging_resolves_type_value():
@@ -603,4 +607,4 @@ def test_staging_resolves_type_value():
         passes=[LowerAlgebraAdd()], exit=LLVMCodegen()
     )
     exe = compiler.compile(value)
-    assert exe.run({"tag": "index.Index"}, 21).to_json() == 42
+    assert exe.run({"tag": "index.Index", "params": {}}, 21).to_json() == 42

@@ -199,14 +199,15 @@ def test_type_layout_parametric_type_param_nested():
 def test_type_value_memory_non_parametric():
     """Pack and unpack Index() as a type value through Memory."""
     metatype = TypeType()
-    mem = Memory.from_json(metatype, {"tag": "index.Index"})
-    assert mem.to_json() == {"tag": "index.Index"}
+    data = {"tag": "index.Index", "params": {}}
+    mem = Memory.from_json(metatype, data)
+    assert mem.to_json() == data
 
 
 def test_type_value_memory_parametric():
     """Pack and unpack Span<index.Index> as a type value through Memory."""
     metatype = TypeType()
-    data = {"tag": "builtin.Span", "pointee": {"tag": "index.Index"}}
+    data = builtin.Span(pointee=builtin.Index()).to_json()
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
 
@@ -214,7 +215,7 @@ def test_type_value_memory_parametric():
 def test_type_value_memory_pointer():
     """Pack and unpack Pointer<number.Float64> as a type value through Memory."""
     metatype = TypeType()
-    data = {"tag": "builtin.Pointer", "pointee": {"tag": "number.Float64"}}
+    data = builtin.Pointer(pointee=number.Float64()).to_json()
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
 
@@ -222,22 +223,75 @@ def test_type_value_memory_pointer():
 def test_type_value_memory_nil():
     """Pack and unpack Nil as a type value through Memory."""
     metatype = TypeType()
-    mem = Memory.from_json(metatype, {"tag": "builtin.Nil"})
-    assert mem.to_json() == {"tag": "builtin.Nil"}
+    data = {"tag": "builtin.Nil", "params": {}}
+    mem = Memory.from_json(metatype, data)
+    assert mem.to_json() == data
 
 
 def test_type_value_memory_nested():
     """Pack and unpack Span<Span<number.Float64>> as a type value through Memory."""
     metatype = TypeType()
-    data = {
-        "tag": "builtin.Span",
-        "pointee": {
-            "tag": "builtin.Span",
-            "pointee": {"tag": "number.Float64"},
-        },
-    }
+    data = builtin.Span(pointee=builtin.Span(pointee=number.Float64())).to_json()
     mem = Memory.from_json(metatype, data)
     assert mem.to_json() == data
+
+
+def test_type_value_self_describing_format():
+    """Type.to_json produces self-describing format with param types."""
+    arr = builtin.Array(element_type=builtin.Index(), n=builtin.Index().constant(4))
+    assert arr.to_json() == {
+        "tag": "builtin.Array",
+        "params": {
+            "element_type": {
+                "type": {"tag": "builtin.Type", "params": {}},
+                "value": {"tag": "index.Index", "params": {}},
+            },
+            "n": {
+                "type": {"tag": "index.Index", "params": {}},
+                "value": 4,
+            },
+        },
+    }
+
+
+def test_type_value_from_json_roundtrip():
+    """Type.from_json reconstructs a Type from its self-describing dict."""
+    from dgen.type import Type
+
+    original = builtin.Array(element_type=number.Float64(), n=builtin.Index().constant(8))
+    data = original.to_json()
+    reconstructed = Type.from_json(data)
+    assert type(reconstructed).__name__ == "Array"
+    assert reconstructed.to_json() == data
+
+
+def test_type_value_dependent_param_roundtrip():
+    """Types with dependent params (Shape) round-trip through TypeValue."""
+    from dgen.type import Type
+    from dgen.dialects.ndbuffer import NDBuffer, Shape
+
+    rank = builtin.Index().constant(3)
+    shape = Shape(rank=rank)
+    ty = NDBuffer(shape=shape, dtype=number.Float64())
+    data = ty.to_json()
+    # Shape param's type is TypeType (shapes are types, types have metatype)
+    shape_param = data["params"]["shape"]
+    assert shape_param["type"]["tag"] == "builtin.Type"
+    # The value is the Shape descriptor with its own params
+    assert shape_param["value"]["tag"] == "ndbuffer.Shape"
+
+    # Full round-trip through Memory
+    metatype = TypeType()
+    mem = Memory.from_json(metatype, data)
+    reconstructed_data = mem.to_json()
+    assert reconstructed_data == data
+    reconstructed = Type.from_json(reconstructed_data)
+    assert type(reconstructed).__name__ == "NDBuffer"
+
+
+def test_type_value_non_parametric_format():
+    """Non-parametric types have an empty 'params' dict."""
+    assert builtin.Index().to_json() == {"tag": "index.Index", "params": {}}
 
 
 def test_type_type_layout_non_parametric():
@@ -277,15 +331,21 @@ def test_type_is_value():
 def test_type_constant_non_parametric():
     """Non-parametric type's __constant__ serializes to just a tag."""
     ty = number.Float64()
-    assert ty.__constant__.to_json() == {"tag": "number.Float64"}
+    assert ty.__constant__.to_json() == {"tag": "number.Float64", "params": {}}
 
 
 def test_type_constant_parametric():
-    """Parametric type's __constant__ includes param values."""
+    """Parametric type's __constant__ includes self-describing param values."""
     ty = builtin.Span(pointee=builtin.Index())
     data = ty.__constant__.to_json()
-    expected = {"tag": "builtin.Span", "pointee": {"tag": "index.Index"}}
+    expected = ty.to_json()
     assert data == expected
+    # Verify the self-describing structure
+    assert data["tag"] == "builtin.Span"
+    assert "params" in data
+    pointee = data["params"]["pointee"]
+    assert pointee["type"] == {"tag": "builtin.Type", "params": {}}
+    assert pointee["value"] == {"tag": "index.Index", "params": {}}
 
 
 def test_type_params_are_bare_types():

@@ -77,15 +77,6 @@ class Memory(Generic[T]):
         buf = bytes((ctypes.c_char * layout.byte_size).from_address(address))
         return cls(type, bytearray(buf))
 
-    @classmethod
-    def from_asm(cls, type: Type, text: str) -> Memory:
-        """Create Memory from a Type and an ASM literal string."""
-        from dgen.asm.parser import ASMParser, value_expression
-
-        parser = ASMParser(text)
-        value = value_expression(parser)
-        return cls.from_value(type, value)
-
     def __deepcopy__(self, memo: dict) -> Memory[T]:
         """Copy buffer, share origins (immutable constant data)."""
         new: Memory[T] = Memory.__new__(Memory)

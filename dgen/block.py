@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Iterable
 
 import dgen
 
@@ -106,7 +105,3 @@ class Block:
         if self.result is old:
             self.result = new
 
-    @property
-    def asm(self) -> Iterable[str]:
-        for op in self.ops:
-            yield from op.asm

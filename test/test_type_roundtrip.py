@@ -238,7 +238,7 @@ def test_from_value_roundtrip(ty, value, _asm, expected):
 
 @pytest.mark.parametrize("ty,_value,asm_literal,expected", _PARSEABLE_TYPES)
 def test_from_asm_roundtrip(ty, _value, asm_literal, expected):
-    mem = Memory.from_asm(ty, asm_literal)
+    mem = asm.memory_from_asm(ty, asm_literal)
     assert mem.unpack() == expected
 
 
@@ -282,7 +282,7 @@ def test_tensor_2d_from_value_roundtrip():
 def test_tensor_from_asm_roundtrip():
     """Tensor ASM literal round-trips through Memory."""
     ty = Tensor(shape=shape_constant([3]))
-    mem = Memory.from_asm(ty, "[1.0, 2.0, 3.0]")
+    mem = asm.memory_from_asm(ty, "[1.0, 2.0, 3.0]")
     assert mem.to_json() == [1.0, 2.0, 3.0]
 
 
