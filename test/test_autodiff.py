@@ -25,8 +25,9 @@ import dgen
 from dgen import Dialect, Op, Type, Value, asm
 from dgen.asm.parser import parse
 from dgen.block import BlockArgument
-from dgen.builtins import ConstantOp
+from dgen.builtins import ConstantOp, pack
 from dgen.dialects.algebra import AddOp, MultiplyOp, NegateOp
+from dgen.dialects.builtin import Span
 from dgen.dialects.function import Function, FunctionOp
 from dgen.dialects.number import Float64
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
@@ -69,18 +70,20 @@ class GradOp(Op):
 
 
 def _differentiate_body(func: FunctionOp) -> FunctionOp:
-    """Build a new FunctionOp that computes df/dx for a scalar function.
+    """Build a new FunctionOp computing the gradient of a scalar function.
 
     Uses reverse-mode AD:
     1. Walk the function body in topological order (forward pass)
     2. Assign adjoint values in reverse order (backward pass)
-    3. The adjoint of the input argument is the derivative
+    3. Collect the adjoint of each input argument
+
+    For single-argument functions, returns a scalar (Float64).
+    For multi-argument functions, returns a Span of partial derivatives.
 
     Supported ops: AddOp, MultiplyOp, NegateOp, ConstantOp.
     """
     body = deepcopy(func.body)
-    assert len(body.args) == 1, "grad only supports single-argument functions"
-    x = body.args[0]
+    input_args = body.args
     result = body.result
 
     f64 = Float64()
@@ -122,18 +125,31 @@ def _differentiate_body(func: FunctionOp) -> FunctionOp:
                 f"Autodiff not implemented for {type(op).__name__}"
             )
 
-    dx = get_adjoint(x)
+    partials = [get_adjoint(arg) for arg in input_args]
 
-    # Build the derivative function: same signature, returns dx.
-    grad_arg = BlockArgument(name="x", type=f64)
-    grad_body = dgen.Block(result=dx, args=[grad_arg])
-    # Rewrite: replace the original input with the new block argument.
-    grad_body.replace_uses_of(x, grad_arg)
+    # Single-arg: return scalar.  Multi-arg: return packed partials.
+    if len(partials) == 1:
+        grad_result: Value = partials[0]
+        result_type: Value = f64
+    else:
+        grad_result = pack(partials)
+        result_type = Span(pointee=f64)
+
+    # Build the derivative function with fresh block args.
+    grad_args = [BlockArgument(name=a.name, type=f64) for a in input_args]
+    grad_body = dgen.Block(result=grad_result, args=grad_args)
+    for old_arg, new_arg in zip(input_args, grad_args):
+        grad_body.replace_uses_of(old_arg, new_arg)
+
+    grad_func_type = Function(
+        arguments=func.type.arguments,
+        result_type=result_type,
+    )
     return FunctionOp(
         name=f"grad_{func.name}" if func.name else None,
         body=grad_body,
-        result_type=f64,
-        type=func.type,
+        result_type=result_type,
+        type=grad_func_type,
     )
 
 
@@ -152,6 +168,13 @@ class AutodiffLowering(Pass):
         if not isinstance(op.f, FunctionOp):
             return None
         return _differentiate_body(op.f)
+
+
+def lower_autodiff(value: dgen.Value) -> dgen.Value:
+    """Run only the AutodiffLowering pass, returning the lowered IR."""
+    from dgen.passes.compiler import IdentityPass
+
+    return Compiler([AutodiffLowering()], IdentityPass()).run(value)
 
 
 autodiff_compiler: Compiler[Executable] = Compiler(
@@ -255,7 +278,7 @@ def test_grad_add():
     assert exe.run(5.0).to_json() == 2.0
 
 
-def test_grad_multiply():
+def test_grad_multiply(ir_snapshot):
     """grad(x -> x * x) = x -> 2x."""
     ir = strip_prefix("""
         | import algebra
@@ -272,6 +295,7 @@ def test_grad_multiply():
         |     %result : number.Float64 = function.call(%df, [%x])
     """)
     value = parse(ir)
+    assert lower_autodiff(value) == ir_snapshot
     exe = autodiff_compiler.compile(value)
     assert exe.run(5.0).to_json() == 10.0
     assert exe.run(3.0).to_json() == 6.0
@@ -299,7 +323,7 @@ def test_grad_negate():
     assert exe.run(5.0).to_json() == -1.0
 
 
-def test_grad_polynomial():
+def test_grad_polynomial(ir_snapshot):
     """grad(x -> x*x + 3*x) = x -> 2x + 3, evaluated at x=5 gives 13."""
     ir = strip_prefix("""
         | import algebra
@@ -319,6 +343,7 @@ def test_grad_polynomial():
         |     %result : number.Float64 = function.call(%df, [%x])
     """)
     value = parse(ir)
+    assert lower_autodiff(value) == ir_snapshot
     exe = autodiff_compiler.compile(value)
     # f'(x) = 2x + 3
     assert exe.run(5.0).to_json() == 13.0
@@ -377,3 +402,43 @@ def test_grad_composes_with_indirect_call():
     # f'(x) = 2x
     assert exe.run(5.0).to_json() == 10.0
     assert exe.run(3.0).to_json() == 6.0
+
+
+def test_grad_two_variables(ir_snapshot):
+    """grad(f(x,y) = x*y + x) = (y + 1, x).
+
+    Multi-argument gradient returns a packed Span of partial derivatives.
+    """
+    ir = strip_prefix("""
+        | import algebra
+        | import autodiff
+        | import function
+        | import number
+        |
+        | %f : function.Function<[number.Float64, number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64, %y: number.Float64):
+        |     %xy : number.Float64 = algebra.multiply(%x, %y)
+        |     %r : number.Float64 = algebra.add(%xy, %x)
+        |
+        | %df : function.Function<[number.Float64, number.Float64], Span<number.Float64>> = autodiff.grad<%f>()
+    """)
+    value = parse(ir)
+    lowered = lower_autodiff(value)
+    assert lowered == ir_snapshot
+
+
+def test_grad_two_variables_product(ir_snapshot):
+    """grad(f(x,y) = x*y) = (y, x)."""
+    ir = strip_prefix("""
+        | import algebra
+        | import autodiff
+        | import function
+        | import number
+        |
+        | %f : function.Function<[number.Float64, number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64, %y: number.Float64):
+        |     %r : number.Float64 = algebra.multiply(%x, %y)
+        |
+        | %df : function.Function<[number.Float64, number.Float64], Span<number.Float64>> = autodiff.grad<%f>()
+    """)
+    value = parse(ir)
+    lowered = lower_autodiff(value)
+    assert lowered == ir_snapshot
