@@ -24,6 +24,7 @@ from typing import ClassVar
 import dgen
 from dgen import Dialect, Op, Type, Value, asm
 from dgen.asm.parser import parse
+from dgen.block import BlockArgument
 from dgen.builtins import ConstantOp, PackOp
 from dgen.dialects.algebra import AddOp, MultiplyOp, NegateOp
 from dgen.dialects.function import CallOp, FunctionOp
@@ -43,6 +44,29 @@ from dgen.type import Constant, Fields
 # ============================================================================
 
 symdiff = Dialect("symdiff")
+
+
+@symdiff.op("stage")
+@dataclass(eq=False, kw_only=True)
+class StageOp(Op):
+    """Explicit deferred compilation: compile body when args are known.
+
+    This is quote/eval made explicit:
+    - The block is the quoted form (IR structure, not yet compiled)
+    - Evaluation substitutes args into the block and inlines the result
+    - Constant folding evaluates stages whose args are all available
+
+    Passes emit stage ops when they need deferred compilation.  The
+    infrastructure decides when to evaluate: if args are all known in
+    the current scope, fold immediately.  If args depend on runtime
+    values, the stage survives until runtime (callback thunk).
+    """
+
+    args: Value
+    type: Type
+    body: dgen.Block
+    __operands__: ClassVar[Fields] = (("args", Float64),)
+    __blocks__: ClassVar[tuple[str, ...]] = ("body",)
 
 
 @symdiff.op("differentiate")
@@ -118,13 +142,29 @@ def _differentiate(value: Value, var: Value) -> Value:
 # ============================================================================
 
 
-class InlineKnownCalls(Pass):
-    """Inline call(f, args) where f is a FunctionOp.
+class StageFolding(Pass):
+    """Fold stage ops whose args are all available (not runtime-dependent).
 
-    This expands known function calls into their body expressions,
-    enabling downstream passes (like differentiation) to see through
-    function boundaries.
+    When a stage op's args are all computable in the current scope
+    (none are BlockArguments of the enclosing function), substitute
+    the block args with the actual values and inline the block body.
+
+    This is the "eval" step: the quoted block becomes live IR.
     """
+
+    allow_unregistered_ops = True
+
+    @lowering_for(StageOp)
+    def fold(self, op: StageOp) -> Value | None:
+        actual_args = list(op.args) if isinstance(op.args, PackOp) else [op.args]
+        # Always substitute and inline — the stage body becomes live IR
+        # in the current scope. Downstream passes handle the result.
+        body = deepcopy(op.body)
+        return inline_block(body, actual_args)
+
+
+class InlineKnownCalls(Pass):
+    """Inline call(f, args) where f is a FunctionOp."""
 
     allow_unregistered_ops = True
 
@@ -139,53 +179,44 @@ class InlineKnownCalls(Pass):
         return inline_block(body, call_args)
 
 
-def _inline_known_calls(value: Value, var: Value) -> Value:
-    """Inline all call(FunctionOp, args) in the subgraph from value to var.
-
-    Returns the (possibly rewritten) value with calls expanded.
-    """
-    ops = [
-        v
-        for v in transitive_dependencies(value, stop=[var])
-        if isinstance(v, CallOp) and isinstance(v.callee, FunctionOp)
-    ]
-    # Inline innermost calls first (topological = deps first).
-    for call_op in ops:
-        body = deepcopy(call_op.callee.body)
-        call_args = (
-            list(call_op.arguments)
-            if isinstance(call_op.arguments, PackOp)
-            else [call_op.arguments]
-        )
-        inlined = inline_block(body, call_args)
-        # Replace uses of the call result with the inlined expression.
-        # Walk from value to find all users.
-        for v in transitive_dependencies(value, stop=[var]):
-            v.replace_uses_of(call_op, inlined)
-        if value is call_op:
-            value = inlined
-    return value
-
-
 class SymDiffLowering(Pass):
-    """Lower differentiate ops by applying reverse-mode AD."""
+    """Lower differentiate ops by applying reverse-mode AD.
+
+    When the expression graph is fully visible, differentiates directly.
+    When it contains opaque ops (e.g. call through a BlockArgument),
+    wraps the differentiation in a StageOp — deferring until the opaque
+    values become concrete.
+    """
 
     allow_unregistered_ops = True
 
     @lowering_for(DifferentiateOp)
     def lower(self, op: DifferentiateOp) -> Value | None:
-        value = _inline_known_calls(op.value, op.var)
         try:
-            return _differentiate(value, op.var)
+            return _differentiate(op.value, op.var)
         except NotImplementedError:
-            # Can't differentiate yet (e.g. opaque call in a generic
-            # function body). Leave the op for later — it will be
-            # lowered when the function is inlined at a concrete call site.
-            return None
+            # Can't differentiate now — emit a stage op to defer.
+            # When the opaque values become known and the stage is
+            # folded, the differentiate will be re-exposed and this
+            # pass will handle it.
+            from dgen.builtins import pack
+
+            val_arg = BlockArgument(name="value", type=op.value.type)
+            var_arg = BlockArgument(name="var", type=op.var.type)
+            deferred = DifferentiateOp(value=val_arg, var=var_arg, type=op.type)
+            return StageOp(
+                args=pack([op.value, op.var]),
+                type=op.type,
+                body=dgen.Block(
+                    result=deferred,
+                    args=[val_arg, var_arg],
+                    captures=[],
+                ),
+            )
 
 
 def lower_symdiff(value: dgen.Value) -> dgen.Value:
-    """Run only the SymDiffLowering pass."""
+    """Run SymDiffLowering (no inlining or stage folding)."""
     from dgen.passes.compiler import IdentityPass
 
     return Compiler([SymDiffLowering()], IdentityPass()).run(value)
@@ -194,6 +225,7 @@ def lower_symdiff(value: dgen.Value) -> dgen.Value:
 symdiff_compiler: Compiler[Executable] = Compiler(
     passes=[
         InlineKnownCalls(),
+        StageFolding(),
         SymDiffLowering(),
         ControlFlowToGoto(),
         BuiltinToLLVM(),
@@ -448,19 +480,39 @@ def test_differentiate_composition():
     assert exe.run(0.5).to_json() == 4.0
 
 
-def test_differentiate_higher_order_function():
-    """A function containing differentiate(call(%g, ...), %x) where %g is
-    a BlockArgument can't be compiled standalone — the pass can't
-    differentiate through an opaque call.
+def test_differentiate_defers_on_opaque_call():
+    """differentiate(call(%g, ...), %x) where %g is a BlockArgument
+    can't be lowered directly — the pass emits a StageOp instead.
+    """
+    ir = strip_prefix("""
+        | import algebra
+        | import function
+        | import number
+        | import symdiff
+        |
+        | %diff_apply : function.Function<[function.Function<[number.Float64], number.Float64>, number.Float64], number.Float64> = function.function<number.Float64>() body(%g: function.Function<[number.Float64], number.Float64>, %x: number.Float64):
+        |     %gx : number.Float64 = function.call(%g, [%x])
+        |     %result : number.Float64 = symdiff.differentiate(%gx, %x)
+    """)
+    value = parse(ir)
+    lowered = lower_symdiff(value)
+    # The DifferentiateOp is wrapped in a StageOp (deferred).
+    from dgen.ir.traversal import all_values
 
-    This is the generic higher-order case that would need either:
-    - Staging-based specialization (resolve %g to a concrete function, then
-      inline and differentiate)
-    - Per-op derivative rules for CallOp (so differentiate doesn't need
-      to see through the call)
+    assert any(isinstance(v, StageOp) for v in all_values(lowered))
 
-    For now, verify the pass correctly defers (returns None) and that the
-    inlined-at-call-site version works.
+
+def test_differentiate_higher_order_via_staging():
+    """Higher-order differentiation through explicit staging.
+
+    diff_apply(%g, %x) = differentiate(call(%g, [%x]), %x)
+
+    The SymDiffLowering pass wraps the opaque differentiate in a StageOp.
+    When diff_apply is inlined at a concrete call site:
+    1. InlineKnownCalls expands call(%diff_apply, [%square, %x])
+    2. InlineKnownCalls expands call(%square, [%x]) → multiply(%x, %x)
+    3. StageFolding inlines the stage body (args are now concrete)
+    4. SymDiffLowering differentiates: d/dx(x*x) = 2x
     """
     ir = strip_prefix("""
         | import algebra
@@ -471,15 +523,13 @@ def test_differentiate_higher_order_function():
         | %square : function.Function<[number.Float64], number.Float64> = function.function<number.Float64>() body(%t: number.Float64):
         |     %r : number.Float64 = algebra.multiply(%t, %t)
         |
-        | %diff_apply : function.Function<[function.Function<[number.Float64], number.Float64>, number.Float64], number.Float64> = function.function<number.Float64>() body(%g: function.Function<[number.Float64], number.Float64>, %x: number.Float64):
-        |     %gx : number.Float64 = function.call(%g, [%x])
-        |     %result : number.Float64 = symdiff.differentiate(%gx, %x)
+        | %main : function.Function<[number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64) captures(%square):
+        |     %fx : number.Float64 = function.call(%square, [%x])
+        |     %staged : number.Float64 = symdiff.stage([%fx, %x]) body(%v: number.Float64, %w: number.Float64):
+        |         %d : number.Float64 = symdiff.differentiate(%v, %w)
     """)
     value = parse(ir)
-    # The pass defers on the opaque call — differentiate survives in
-    # diff_apply's body. Verify it doesn't crash.
-    lowered = lower_symdiff(value)
-    # The DifferentiateOp survives (not lowered).
-    from dgen.ir.traversal import all_values
-
-    assert any(isinstance(v, DifferentiateOp) for v in all_values(lowered))
+    exe = symdiff_compiler.compile(value)
+    # d/dx(x^2) = 2x
+    assert exe.run(5.0).to_json() == 10.0
+    assert exe.run(3.0).to_json() == 6.0
