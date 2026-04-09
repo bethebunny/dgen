@@ -1,6 +1,5 @@
 """Tests for IR graph equivalence checking."""
 
-import pytest
 
 from dgen.asm.parser import parse
 from dgen.block import BlockArgument

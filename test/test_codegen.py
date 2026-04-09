@@ -282,7 +282,7 @@ def test_externs_function_with_typed_args():
         | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
         |     %size : index.Index = 48
-        |     %ptr : llvm.Ptr = function.call<%malloc>([%size])
+        |     %ptr : llvm.Ptr = function.call(%malloc, [%size])
     """)
     )
     externs = _externs(value)
@@ -316,7 +316,7 @@ def test_externs_nested_in_region():
         |     %init : index.Index = 0
         |     %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
         |         %print : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
-        |         %0 : Nil = function.call<%print>([])
+        |         %0 : Nil = function.call(%print, [])
         |         %1 : index.Index = 1
         |         %next : index.Index = llvm.add(%i, %1)
         |         %next2 : index.Index = chain(%next, %0)
@@ -338,8 +338,8 @@ def test_externs_no_duplicates():
         |
         | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
-        |     %0 : llvm.Ptr = function.call<%malloc>([])
-        |     %1 : llvm.Ptr = function.call<%malloc>([])
+        |     %0 : llvm.Ptr = function.call(%malloc, [])
+        |     %1 : llvm.Ptr = function.call(%malloc, [])
         |     %_ : Nil = chain(%0, %1)
     """)
     )
@@ -397,8 +397,8 @@ def test_externs_multiple_distinct():
         | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
         |     %print : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
-        |     %ptr : llvm.Ptr = function.call<%malloc>([])
-        |     %0 : Nil = function.call<%print>([])
+        |     %ptr : llvm.Ptr = function.call(%malloc, [])
+        |     %0 : Nil = function.call(%print, [])
         |     %_ : Nil = chain(%ptr, %0)
     """)
     )

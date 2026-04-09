@@ -258,7 +258,9 @@ def test_type_value_from_json_roundtrip():
     """Type.from_json reconstructs a Type from its self-describing dict."""
     from dgen.type import Type
 
-    original = builtin.Array(element_type=number.Float64(), n=builtin.Index().constant(8))
+    original = builtin.Array(
+        element_type=number.Float64(), n=builtin.Index().constant(8)
+    )
     data = original.to_json()
     reconstructed = Type.from_json(data)
     assert type(reconstructed).__name__ == "Array"

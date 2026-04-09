@@ -103,7 +103,7 @@ def test_call_op():
         | import number
         | import toy
         |
-        | %4 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%1, %3])
+        | %4 : toy.InferredShapeTensor<number.Float64> = function.call(%multiply_transpose, [%1, %3])
     """)
 
 

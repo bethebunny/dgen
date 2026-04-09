@@ -156,7 +156,7 @@ def test_verify_missing_capture_of_function_ref():
         |     %r : index.Index = algebra.add(%n, index.Index(1))
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %result : index.Index = function.call<%add_one>([%x])
+        |     %result : index.Index = function.call(%add_one, [%x])
     """)
     with pytest.raises(ClosedBlockError):
         verify_closed_blocks(parse(ir))
@@ -173,7 +173,7 @@ def test_verify_captured_function_ref_passes():
         |     %r : index.Index = algebra.add(%n, index.Index(1))
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
-        |     %result : index.Index = function.call<%add_one>([%x])
+        |     %result : index.Index = function.call(%add_one, [%x])
     """)
     verify_closed_blocks(parse(ir))
 
