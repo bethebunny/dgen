@@ -24,6 +24,7 @@ from dgen.llvm.codegen import Executable, LLVMCodegen
 from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.dialects.function import FunctionOp
 from dgen.ir.verification import CycleError, verify_dag
+from dgen.passes.staging import compute_stages
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Fields, TypeType, type_constant
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
@@ -495,35 +496,24 @@ def test_indirect_call_no_stage_bump():
     stage 2.  This avoids unnecessary callback-based JIT for plain
     indirect calls.
     """
-    from dgen.block import BlockArgument
-    from dgen.builtins import pack
-    from dgen.dialects.function import CallOp, Function, FunctionOp
-    from dgen.passes.staging import compute_stages
-
-    idx = Index()
-    func_type = Function(arguments=pack([idx]), result_type=idx)
-
-    f_arg = BlockArgument(name="f", type=func_type)
-    x_arg = BlockArgument(name="x", type=idx)
-    call_op = CallOp(
-        callee=f_arg,
-        arguments=pack([x_arg]),
-        type=idx,
-    )
-    func = FunctionOp(
-        name="apply",
-        body=dgen.Block(result=call_op, args=[f_arg, x_arg]),
-        result_type=idx,
-        type=Function(arguments=pack([func_type, idx]), result_type=idx),
-    )
-
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        |
+        | %apply : function.Function<[function.Function<[index.Index], index.Index>, index.Index], index.Index> = function.function<index.Index>() body(%f: function.Function<[index.Index], index.Index>, %x: index.Index):
+        |     %result : index.Index = function.call(%f, [%x])
+    """)
+    func = parse(ir)
     stages = compute_stages(func)
+    stage_by_name = {v.name: s for v, s in stages.items() if v.name}
     # BlockArguments are stage 1
-    assert stages[f_arg] == 1
-    assert stages[x_arg] == 1
+    assert stage_by_name["f"] == 1
+    assert stage_by_name["x"] == 1
     # The call should be stage 1 (max of operands), NOT stage 2
     # (which would happen if callee were a parameter: 1 + stage(f_arg) = 2)
-    assert stages[call_op] == 1
+    assert stage_by_name["result"] == 1
 
 
 def test_equal_jit():
