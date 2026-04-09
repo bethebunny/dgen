@@ -1,145 +1,120 @@
-# Dialect files
+# Dialect Specification
 
 **Generic DGEN principles**: simple, predictable, composable
 
-Dialect files have the `.dgen` extension.
+Dialect files have the `.dgen` extension. They specify types, ops, and traits for a dialect. At import time, a Python import hook (`dgen/__init__.py`) loads `.dgen` files and generates the corresponding Python classes. `.pyi` stubs are generated separately via `python -m dgen.spec`.
 
-They are _simple_ files. A dialect file must be able to be used to generate
-definitions in any language a compiler is authored in.
+## Design Constraints
 
-They may loosely be compared to TableGen `.td` files, but they depart substantially
-in terms of syntax, scope, and expressiveness.
+- Dialect files are specialized to generate DGEN dialects only -- not a general description language
+- They specify types, ops, and traits
+- No language-specific codegen passthroughs (no `extraClassDefinition` equivalent)
+- Must be usable to generate definitions in any implementation language
 
-### Simplifications
+## Conventions
 
-- DGEN dialect files _are not_ a general description language! They are specialized
-  to generate DGEN dialects only.
-- DGEN dialect files only specify types, ops, and traits
-- _No_ language specific codegen passthroughs, a la `extraClassDefinition`!
+- Ops: `lower_snake_case`
+- Types and traits: `UpperCamelCase`
+- Builtin types/ops referenced without a prefix
+- Other types/ops imported by namespace
 
-### Conventions
+## Grammar
 
-- ops are lower snake case
-- types and traits are upper camel case
-- builtin types and ops are referenced without a prefix
-- other types and ops are imported by namespace, not directly
-
-### Type semantics
-
-`Type` always means **type value** — a value that is itself a type.
-
-- **In parameters**: `element_type: Type` means this compile-time parameter holds a type.
-- **In return position**: `-> Type` means the op returns a type value, not a runtime value.
-- **Omitted return type**: The result type is supplied by the caller at construction time.
-- **Concrete return type**: `-> Nil`, `-> Float` means the return type is always that type.
-- **Parameterized return type**: `-> Tensor`, `-> MemRef` means the op returns that kind
-  of value, but the caller must specify the exact parameterization.
-- **Operand types**: Operands have types. Write `op add(lhs: Tensor, rhs: Tensor)`.
-  Use the base type name even for parameterized types.
-- **Variadic operands**: Bare `list` for variadic operands (`values: list`).
-  For variadic params, use `list<T>` (`labels: list<String>`).
-
-### Types have known memory layouts
-
-### Example
+### Imports
 
 ```dgen
-import affine
-
-trait DType:
-  static signed: Boolean
-  static bitwidth: Index
-  
-trait Integral
-trait FloatingPoint
-
-type Float64:
-  has trait DType
-  has trait FloatingPoint
-  
-  static signed: Boolean = True
-  static bitwidth: Index = 64
-  
-# Do Byte and Array have to be special?
-type Byte
-type Array<ElementType: Type, n: Index>
-  
-type Number<dtype: DType>:
-  # Expressions allow the simple function syntax
-  data: Array<Byte, dtype.bitwdith // 8>
-  
-type Shape<rank: Index>:
-  dims: Array<Index, rank>
-  
-  # Method syntax
-  method num_elements(self) -> Index:
-    count: Index = 1
-    for dim in self.dims:
-      count = count * dim
-    return count
-
-# Open question: How to specify the layout of _instances_
-# of the type
-# Open question: How to specify parameters of parameters
-type Tensor<shape: Shape, dtype: DType>:
-  data: Pointer<Number<DType>>
-  # alternatively
-  data: Array<Number<DType>, shape.num_elements()>
-  
-# Open question: How to specify input and output types
-# which are parameterized. Do we even need to?
-op tile<axis: Index>(x: $X) -> $Result:
-  requires $X ~= Tensor
-  requires $Result ~= Tensor
-  requires $X.rank == $Result.rank
-  requires $X.dtype == $Result.dtype
-  requires axis < $X.rank
-  
-trait Elementwise(x: $X) -> $Result:
-  requires $X == $Result
-  
-op sqrt(x) -> $Result:
-  has trait Elementwise
-  
-type Literal
-op constant(json: Literal) -> $Result
-
-# Generic functions and call
-# Open question: Is `List<Type>` right?
-# Open question: Are these parameters?
-type Function<args: List<Type>, result: Type>
-
-# Open question: what does this look like?
-op function<args: List<Type>, result: Type>():
-  block body
-  
-op call(function: $F, args: $Args) -> $Result:
-  require $F ~= Function<...>
-  require $Args ~= Tuple<$F.args>
-  require $Result == $F.result
-  
-# Does this need to be special, or is there some way to spell
-# what its layout must be?
-type Tuple<types: List<Type>>
+from builtin import Nil, Span, Index
+import number
 ```
 
-### Validation
+### Types
 
-- `require T ~= Pattern` where `Pattern` is a type pattern or trait
-- `require T == U` where `T` and `U` are types or type parameters
-  - uses the function definition mini-language
+```dgen
+type Label:
+    data: Nil
 
-### Function definitions
+type Shape<rank: Index>:
+    dims: Span
+```
 
-- _Simple_ function language
-- arguments, return type must be known Types
-- attribute access, indexing, python style if and return
+Types may have parameters (in angle brackets) and data fields. Each type gets a `__layout__` derived from its data fields.
 
-Everything in the function language needs to be expressible
-in any possible compiler implementation language! The permissable
-operations must be extremely simple.
+### Ops
 
-Any functions which cannot be expressed with this simple language
-should be implemented manually by the specific compiler.
-Providing a rich language for function definitions on
-types or ops is explicitly a non-goal.
+```dgen
+op region(initial_arguments: Span) -> Label:
+    block body
+
+op branch<target: Label>(arguments: Span) -> Nil
+
+op for<lower_bound: Index, upper_bound: Index>(initial_arguments: Span) -> Nil:
+    block body
+
+op if(condition: Index, then_arguments: Span, else_arguments: Span):
+    block then_body
+    block else_body
+```
+
+- **Parameters** (angle brackets): compile-time values -- these are `__params__` fields
+- **Operands** (parentheses): runtime SSA values -- these are `__operands__` fields
+- **Return type** (`-> Type`): fixed result type. Omitted means the caller supplies it at construction
+- **Blocks** (`block name`): nested regions
+
+### Traits
+
+```dgen
+trait Numeric
+trait DType
+```
+
+Traits are types that other types can inherit from. Ops can declare trait constraints:
+
+```dgen
+op add(lhs, rhs):
+    requires lhs has Numeric
+    requires rhs has Numeric
+```
+
+### Type Semantics
+
+`Type` always means **type value** -- a value that is itself a type.
+
+- **In parameters**: `element_type: Type` means a compile-time type parameter
+- **In return position**: `-> Type` means the op returns a type value
+- **Omitted return type**: result type supplied by the caller
+- **Concrete return type**: `-> Nil`, `-> Float64` -- always that type
+- **Operand types**: operands have types. Use the base type name for parameterized types
+- **Variadic operands**: bare `list`. For variadic params: `list<T>`
+
+## Constraint Features
+
+### Implemented
+
+- `requires operand has Trait` -- checked by `verify_constraints` in `dgen/ir/verification.py`
+
+### Aspirational (not yet implemented)
+
+- `requires T ~= Pattern` -- type pattern matching
+- `requires T == U` -- type equality constraints
+- Expression constraints in the `.dgen` function mini-language
+
+## Code Generation
+
+`.pyi` stubs can be regenerated from `.dgen` sources:
+
+```bash
+python -m dgen.spec dgen/dialects/builtin.dgen > dgen/dialects/builtin.pyi
+python -m dgen.spec dgen/dialects/goto.dgen > dgen/dialects/goto.pyi
+```
+
+Files marked `# GENERATED by dgen` must not be hand-edited. Fix the `.dgen` source or the generator (`dgen/spec/`) instead.
+
+## Key Files
+
+| File | Role |
+|------|------|
+| `dgen/spec/parser.py` | `.dgen` file parser |
+| `dgen/spec/ast.py` | AST node types for parsed `.dgen` files |
+| `dgen/spec/builder.py` | Builds Python classes from parsed AST |
+| `dgen/spec/stubs.py` | `.pyi` stub generation |
+| `dgen/spec/importer.py` | Import hook for runtime `.dgen` loading |
