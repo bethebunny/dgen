@@ -26,7 +26,7 @@ from dgen.dialects import (
 )
 from dgen.ir.traversal import all_values
 from dgen.layout import Layout
-from dgen.builtins import ConstantOp, PackOp, pack, string_value
+from dgen.builtins import ConstantOp, PackOp, pack, string_value, unpack
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function
 from dgen.memory import Memory
@@ -144,11 +144,6 @@ def _externs(root: dgen.Value) -> dict[str, builtin.ExternOp]:
     }
 
 
-def _reachable_functions(root: dgen.Value) -> list[function.FunctionOp]:
-    """All FunctionOps reachable from root, in topological order."""
-    return [v for v in all_values(root) if isinstance(v, function.FunctionOp)]
-
-
 def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
     """Emit LLVM IR text for root and every function reachable from it.
 
@@ -161,7 +156,8 @@ def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
     try:
 
         def _lines() -> Iterator[str]:
-            defined = {f.name for f in _reachable_functions(root)}
+            funcs = [v for v in all_values(root) if isinstance(v, function.FunctionOp)]
+            defined = {f.name for f in funcs}
             for extern in _externs(root).values():
                 sym = string_value(extern.symbol)
                 # Skip ExternOp if a FunctionOp with the same name
@@ -170,19 +166,13 @@ def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
                     continue
                 yield from emit_extern(extern)
             yield ""
-            for func in _reachable_functions(root):
+            for func in funcs:
                 prepare_function(func, ctx)
                 yield from emit(func)
 
         return "\n".join(_lines()), ctx.host_buffers
     finally:
         _emit_ctx.reset(token)
-
-
-def unpack(val: Value) -> list[Value]:
-    if isinstance(val, builtin.ChainOp):
-        return unpack(val.lhs)
-    return list(val) if isinstance(val, PackOp) else [val]
 
 
 # runtime_dependencies follows operands and block captures — NOT types
@@ -810,7 +800,7 @@ class Executable:
     input_types: list[Type]
     result_type: Type
     main_name: str
-    host_refs: list = field(default_factory=list)
+    host_refs: list[object] = field(default_factory=list)
 
     @functools.cached_property
     def func_constant(self) -> ConstantOp:
@@ -959,9 +949,7 @@ def build_callback_thunk(
     cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
 
     def _callback(*raw_args: object) -> object:
-        python_args = [
-            _raw_to_json(raw_args[i], orig_types[i]) for i in range(len(orig_types))
-        ]
+        python_args = [_raw_to_json(raw, typ) for raw, typ in zip(raw_args, orig_types)]
         mem = on_call(*python_args)
         if not mem.type.__layout__.register_passable:
             return mem.address

@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from functools import reduce
-from typing import Any
+from typing import Any, TypeVar
 
 from dgen import Block, Constant, Op, Type, Value
 from dgen.dialect import Dialect
@@ -310,25 +310,20 @@ def op_statement(parser: ASMParser) -> Op:
     return op
 
 
-def _block_argument(parser: ASMParser) -> BlockArgument:
-    name = parser.read(ssa_name)
-    parser.read(":")
-    arg = BlockArgument(name=name, type=value_expression(parser))
-    parser.name_table[name] = arg
-    return arg
+_B = TypeVar("_B", BlockArgument, BlockParameter)
 
 
-def _block_parameter(parser: ASMParser) -> BlockParameter:
+def _block_input(parser: ASMParser, cls: type[_B]) -> _B:
     name = parser.read(ssa_name)
     parser.read(":")
-    param = BlockParameter(name=name, type=value_expression(parser))
-    parser.name_table[name] = param
-    return param
+    result = cls(name=name, type=value_expression(parser))
+    parser.name_table[name] = result
+    return result
 
 
 def block_arguments(parser: ASMParser) -> list[BlockArgument]:
     parser.read("(")
-    args = parser.read_list(_block_argument)
+    args = parser.read_list(lambda p: _block_input(p, BlockArgument))
     parser.read(")")
     return args
 
@@ -403,11 +398,11 @@ def _read_block_body(parser: ASMParser) -> Block:
     # Optional block parameters: <%name: Type, ...>
     block_params: list[BlockParameter] = []
     if parser.try_read("<") is not None:
-        block_params = parser.read_list(_block_parameter)
+        block_params = parser.read_list(lambda p: _block_input(p, BlockParameter))
         parser.read(">")
     args = block_arguments(parser)
     # Optional captures: captures(%name, ...)
-    captures: list[dgen.Value] = []
+    captures: list[Value] = []
     if parser.try_read("captures") is not None:
         parser.read("(")
         while parser.try_read(")") is None:

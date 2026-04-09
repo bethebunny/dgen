@@ -37,7 +37,7 @@ def _path_to_module(dgen_path: Path) -> str | None:
     return None
 
 
-def find_dgen(module_name: str, extra_dirs: list[Path] | None = None) -> Path | None:
+def _find_dgen(module_name: str, extra_dirs: list[Path] | None = None) -> Path | None:
     """Find a ``.dgen`` file on ``sys.path`` for a (possibly dotted) module name.
 
     Converts dots to directory separators: ``foo.bar`` → ``foo/bar.dgen``.
@@ -63,7 +63,7 @@ def _resolve_import(module_name: str, dgen_dir: Path) -> str:
     whether the module is already loadable via Python's import system (which
     includes the DgenFinder hook for ``.dgen`` files in packages).
     """
-    dgen_file = find_dgen(module_name, extra_dirs=[dgen_dir])
+    dgen_file = _find_dgen(module_name, extra_dirs=[dgen_dir])
     if dgen_file is not None:
         py_path = _path_to_module(dgen_file)
         if py_path is not None:

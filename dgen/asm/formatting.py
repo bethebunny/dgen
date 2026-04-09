@@ -79,7 +79,7 @@ def _is_sugar_op(op: Op) -> bool:
     return isinstance(op, PackOp)
 
 
-def format_expr(value: object, tracker: SlotTracker) -> str:
+def _format_expr(value: object, tracker: SlotTracker) -> str:
     """Format a value as an expression string.
 
     Values dispatch to ``Value.format_asm``; plain Python literals (int, float,
@@ -94,21 +94,20 @@ def format_expr(value: object, tracker: SlotTracker) -> str:
 
 
 def _format_block_arg(arg: BlockArgument | BlockParameter, tracker: SlotTracker) -> str:
-    return f"%{tracker.track_name(arg)}: {format_expr(arg.type, tracker)}"
+    return f"%{tracker.track_name(arg)}: {_format_expr(arg.type, tracker)}"
 
 
 def op_asm(
     op: Op,
     tracker: SlotTracker | None = None,
-    formatted: set[int] | None = None,
+    formatted: set[Value] | None = None,
 ) -> Iterable[str]:
     """Generic asm emitter driven by field declarations."""
     if formatted is None:
         formatted = set()
-    oid = id(op)
-    if oid in formatted:
+    if op in formatted:
         return
-    formatted.add(oid)
+    formatted.add(op)
 
     # If no tracker provided, create one and register this op
     if tracker is None:
@@ -116,11 +115,11 @@ def op_asm(
         tracker.register([op])
 
     cls = type(op)
-    param_parts = [format_expr(param, tracker) for _, param in op.parameters]
-    operand_parts = [format_expr(operand, tracker) for _, operand in op.operands]
+    param_parts = [_format_expr(param, tracker) for _, param in op.parameters]
+    operand_parts = [_format_expr(operand, tracker) for _, operand in op.operands]
 
     result_name = tracker.track_name(op)
-    type_str = format_expr(op.type, tracker)
+    type_str = _format_expr(op.type, tracker)
     parts = [f"%{result_name} : {type_str} = "]
     if isinstance(op, ConstantOp):
         val = op.value

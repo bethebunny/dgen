@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from copy import deepcopy
+from itertools import chain as iterchain
 from typing import TYPE_CHECKING, TypeVar
 
 import dgen
@@ -100,7 +101,7 @@ def _unresolved_boundaries(
     recursive compilation once a parent staging resolution lands.
     """
     boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
-    for func in _reachable_functions(root):
+    for func in [v for v in all_values(root) if isinstance(v, FunctionOp)]:
         for op in func.body.ops:
             if not isinstance(op, dgen.Op):
                 continue
@@ -111,11 +112,6 @@ def _unresolved_boundaries(
                 boundaries.append((stages.get(op, 0), op, "type", op.type))
     boundaries.sort(key=lambda t: t[0])
     return boundaries
-
-
-def _reachable_functions(root: dgen.Value) -> list[FunctionOp]:
-    """FunctionOps reachable from root, in topological order."""
-    return [v for v in all_values(root) if isinstance(v, FunctionOp)]
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +249,7 @@ def compile_value(root: dgen.Value, compiler: Compiler[T]) -> T:
     # entry callback can call them. The root itself is the entry.
     entry = resolved if isinstance(resolved, FunctionOp) else None
     needs_callback = [
-        f for f in _reachable_functions(resolved) if _function_has_boundaries(f)
+        f for f in [v for v in all_values(resolved) if isinstance(v, FunctionOp)] if _function_has_boundaries(f)
     ]
     if not needs_callback:
         return compiler.run(resolved)
@@ -282,22 +278,23 @@ def compile_value(root: dgen.Value, compiler: Compiler[T]) -> T:
     return result
 
 
+def _has_unresolved(op: dgen.Op) -> bool:
+    """True if op has any unresolved params, type, or block arg/param types."""
+    if any(_is_unresolved(p) for _, p in op.parameters) or _is_unresolved(op.type):
+        return True
+    for _, block in op.blocks:
+        if any(_is_unresolved(arg.type) for arg in block.args):
+            return True
+        if any(_is_unresolved(param.type) for param in block.parameters):
+            return True
+    return False
+
+
 def _function_has_boundaries(func: FunctionOp) -> bool:
     """True if any op in ``func``'s own body has unresolved __params__ or
     an unresolved type. Does not cross into captured callees.
     """
-    for value in func.body.values:
-        if not isinstance(value, dgen.Op):
-            continue
-        if any(_is_unresolved(p) for _, p in value.parameters):
-            return True
-        if _is_unresolved(value.type):
-            return True
-        for inner in interior_values(value):
-            if not isinstance(inner, dgen.Op):
-                continue
-            if any(_is_unresolved(p) for _, p in inner.parameters):
-                return True
-            if _is_unresolved(inner.type):
-                return True
-    return False
+    all_ops = iterchain(
+        func.body.values, *(interior_values(v) for v in func.body.values)
+    )
+    return any(_has_unresolved(v) for v in all_ops if isinstance(v, dgen.Op))
