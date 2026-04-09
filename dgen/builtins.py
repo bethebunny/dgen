@@ -98,6 +98,11 @@ def pack(values: Iterable[Value] = ()) -> PackOp:
     return PackOp(values=vals, type=Span(pointee=vals[0].type if vals else Nil()))
 
 
+def unpack(val: Value) -> list[Value]:
+    """Unpack a PackOp into its elements, or wrap a single value in a list."""
+    return list(val) if isinstance(val, PackOp) else [val]
+
+
 # ===----------------------------------------------------------------------=== #
 # Helper functions
 # ===----------------------------------------------------------------------=== #

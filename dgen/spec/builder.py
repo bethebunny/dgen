@@ -73,7 +73,7 @@ def _is_span_of_types(param_type: type[Type]) -> bool:
     try:
         kwargs = {name: TypeType() for name, pt in params if _is_type_kinded(pt)}
         return isinstance(param_type(**kwargs).__layout__, layout.Span)
-    except Exception:
+    except (TypeError, KeyError):
         return False
 
 

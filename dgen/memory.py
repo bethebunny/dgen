@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import ctypes
 from copy import deepcopy as _deepcopy
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from .layout import Layout, _bytearray_address
 
 T = TypeVar("T", bound="Type")
-
-# Avoid circular import: type.py imports memory.py, not the reverse.
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .type import Type

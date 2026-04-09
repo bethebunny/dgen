@@ -48,17 +48,17 @@ def transitive_dependencies(
 
 def all_values(value: dgen.Value) -> Iterator[dgen.Value]:
     """Iterate over all values in topological order, including traversing into nested blocks."""
-    for value in transitive_dependencies(value):
-        yield from interior_values(value)
-        yield value
+    for v in transitive_dependencies(value):
+        yield from interior_values(v)
+        yield v
 
 
 def interior_values(value: dgen.Value) -> Iterator[dgen.Value]:
     """Iterate over all values nested in blocks within value."""
     for _, block in value.blocks:
-        for value in block.values:
-            yield value
-            yield from interior_values(value)
+        for v in block.values:
+            yield v
+            yield from interior_values(v)
 
 
 def interior_blocks(value: dgen.Value) -> Iterator[dgen.Block]:
@@ -73,3 +73,5 @@ def all_blocks(value: dgen.Value) -> Iterator[dgen.Block]:
     """All blocks reachable from value: own blocks + nested blocks of dependencies."""
     for v in transitive_dependencies(value):
         yield from interior_blocks(v)
+
+

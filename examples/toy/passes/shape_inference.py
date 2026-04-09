@@ -5,7 +5,7 @@ from __future__ import annotations
 import dgen
 from dgen.dialects import function
 from dgen.ir.traversal import all_blocks, all_values
-from dgen.builtins import PackOp
+from dgen.builtins import PackOp, unpack
 from dgen.type import Constant
 from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import shape_constant, toy
@@ -72,9 +72,7 @@ class ShapeInference(Pass):
 
     @lowering_for(function.CallOp)
     def infer_call(self, op: function.CallOp) -> dgen.Value | None:
-        args = (
-            list(op.arguments) if isinstance(op.arguments, PackOp) else [op.arguments]
-        )
+        args = unpack(op.arguments)
         callee = op.callee
         if not isinstance(callee, function.FunctionOp):
             return op

@@ -75,7 +75,7 @@ class Value(Generic[T]):
         """Format as ASM expression. Default: SSA reference ``%name``."""
         return f"%{slot(self)}"
 
-    def has_trait(self, trait: type[Trait]) -> bool:
+    def has_trait(self, trait: type) -> bool:
         """Check whether this value implements a trait."""
         return isinstance(self, trait)
 
@@ -165,10 +165,12 @@ class Type(Value["TypeType"]):
         assert isinstance(tag, str)
         dialect_name, type_name = tag.split(".")
         type_cls = Dialect.get(dialect_name).types[type_name]
-        return type_cls(**{
-            name: Type.from_json(tv["type"]).constant(tv["value"])
-            for name, tv in data["params"].items()
-        })
+        return type_cls(
+            **{
+                name: Type.from_json(tv["type"]).constant(tv["value"])
+                for name, tv in data["params"].items()
+            }
+        )
 
     @cached_property
     def __constant__(self) -> Memory[TypeType]:
@@ -218,8 +220,7 @@ class Constant(Value[T]):
         return self.value
 
 
-Field = tuple[str, type[Type]]
-Fields = tuple[Field, ...]
+Fields = tuple[tuple[str, type[Type]], ...]
 
 
 class TypeType(Type):
@@ -230,10 +231,7 @@ class TypeType(Type):
     layout (self-describing via tag), not in the TypeType itself.
     """
 
-    @property
-    def __layout__(self) -> TypeValue:
-        """Layout for this type as a value — a pointer to a self-describing Record."""
-        return TypeValue()
+    __layout__ = TypeValue()
 
     @property
     def ready(self) -> bool:

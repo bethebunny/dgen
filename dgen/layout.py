@@ -220,10 +220,10 @@ class Record(Layout):
         return hash(tuple((name, type(lay).__name__) for name, lay in self.fields))
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
-        result: dict[str, object] = {}
-        for (name, lay), field_offset in zip(self.fields, self._offsets):
-            result[name] = lay.to_json(buf, offset + field_offset)
-        return result
+        return {
+            name: layout.to_json(buf, offset + field_offset)
+            for (name, layout), field_offset in zip(self.fields, self._offsets)
+        }
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
@@ -250,6 +250,7 @@ def _descriptor_layout(type_instance: Type) -> Record:
             ]))
         ])
     """
+    # fmt: off
     return Record([
         ("tag", String()),
         ("params", Record([
@@ -257,6 +258,7 @@ def _descriptor_layout(type_instance: Type) -> Record:
             for name, param in type_instance.parameters
         ])),
     ])
+    # fmt: on
 
 
 class TypeValue(Layout):

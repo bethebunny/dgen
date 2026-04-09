@@ -104,4 +104,3 @@ class Block:
                 param.type = new
         if self.result is old:
             self.result = new
-
