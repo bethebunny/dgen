@@ -12,7 +12,7 @@ import toy
     %0 : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
     %1 : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
     %2 : llvm.Int<index.Index(64)> = llvm.mul(index.Index(6), llvm.Int<index.Index(64)>(8))
-    %3 : llvm.Ptr = function.call<%1>([%2])
+    %3 : llvm.Ptr = function.call(%1, [%2])
     %4 : index.Index = 0
     %5 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     %loop_header0 : goto.Label = goto.region([%4]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index) captures(%3, %5):
@@ -40,4 +40,4 @@ import toy
         %27 : number.Boolean = algebra.less_than(%i0, index.Index(2))
         %28 : Nil = goto.conditional_branch<%loop_body0, %exit0>(%27, [%i0], [])
     %29 : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(2)>([3, 2]), number.Float64> = chain(%3, %loop_header0)
-    %30 : Nil = function.call<%0>([%29, index.Index(6)])
+    %30 : Nil = function.call(%0, [%29, index.Index(6)])

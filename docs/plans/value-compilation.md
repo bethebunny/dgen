@@ -124,7 +124,7 @@ scope where it's used. This is function nesting (closures). `%helper` is defined
 %main = function.function<Nil>() body():
     %helper = function.function<Float64>() body(%a):
         ...
-    %result = function.call<%helper>([%x])
+    %result = function.call(%helper, [%x])
 ```
 
 Alternatively, captures from an implicit top-level scope. But nesting is simpler — it

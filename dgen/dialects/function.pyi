@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Span
+from dgen.dialects.builtin import Nil, Span
 
 function = Dialect("function")
 
@@ -23,6 +23,6 @@ class FunctionOp(Op):
 
 @dataclass(eq=False, kw_only=True)
 class CallOp(Op):
-    callee: Value[Function]
+    callee: Value
     arguments: Value
     type: Type

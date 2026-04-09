@@ -28,6 +28,7 @@
 
 ## Parser / formatting improvements
 - Support `%_ = %ref` syntax (alias an SSA ref without an op). Currently blocks whose result is a block argument need `chain(%arg, ())` as a workaround.
+- Format blocks whose result is a constant (e.g. `body(%x): number.Float64(1.0)` when the gradient of a constant function produces a body with no ops). Currently the formatter emits an empty body that the parser rejects.
 - Massively simplify / clean the asm parser and formatter code
 - Add parser failure tests
 

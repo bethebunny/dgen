@@ -24,6 +24,7 @@ from dgen.llvm.codegen import Executable, LLVMCodegen
 from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.dialects.function import FunctionOp
 from dgen.ir.verification import CycleError, verify_dag
+from dgen.passes.staging import compute_stages
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Fields, TypeType, type_constant
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
@@ -387,12 +388,12 @@ def test_call_op_roundtrip():
         |     %r : index.Index = algebra.add(%n, index.Index(1))
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
-        |     %result : index.Index = function.call<%add_one>([%x])
+        |     %result : index.Index = function.call(%add_one, [%x])
     """)
     value = parse(ir)
     asm_text = asm.format(value)
     print(asm_text)
-    assert "function.call<%add_one>" in asm_text
+    assert "function.call(%add_one, " in asm_text
 
 
 def test_call_jit():
@@ -407,7 +408,7 @@ def test_call_jit():
         |     %r : index.Index = algebra.add(%n, index.Index(1))
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
-        |     %result : index.Index = function.call<%add_one>([%x])
+        |     %result : index.Index = function.call(%add_one, [%x])
     """)
     value = parse(ir)
     exe = llvm_compile(value)
@@ -432,12 +433,87 @@ def test_multi_function_staged():
         |     %z : Type = peano.zero()
         |     %s1 : Type = peano.successor<%z>()
         |     %n : index.Index = peano.value<%s1>()
-        |     %result : index.Index = function.call<%add_one>([%n])
+        |     %result : index.Index = function.call(%add_one, [%n])
     """)
     value = parse(ir)
     exe = peano_compiler.compile(value)
     result = exe.run()
     assert result.to_json() == 2  # value(Successor(Zero)) = 1, then add 1 = 2
+
+
+# ============================================================================
+# Indirect calls (callee as operand)
+# ============================================================================
+
+
+def test_indirect_call_roundtrip():
+    """Indirect call round-trips: callee is a BlockArgument, not a FunctionOp."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        |
+        | %apply : function.Function<[function.Function<[index.Index], index.Index>, index.Index], index.Index> = function.function<index.Index>() body(%f: function.Function<[index.Index], index.Index>, %x: index.Index):
+        |     %result : index.Index = function.call(%f, [%x])
+    """)
+    value = parse(ir)
+    asm_text = asm.format(value)
+    assert "function.call(%f, [%x])" in asm_text
+    # Round-trip: parse the printed ASM back
+    reparsed = parse(asm_text)
+    assert asm.format(reparsed) == asm_text
+
+
+def test_indirect_call_jit():
+    """Indirect call via JIT: pass a function as an argument and call it."""
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        |
+        | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %r : index.Index = algebra.add(%n, index.Index(1))
+        |
+        | %apply : function.Function<[function.Function<[index.Index], index.Index>, index.Index], index.Index> = function.function<index.Index>() body(%f: function.Function<[index.Index], index.Index>, %x: index.Index):
+        |     %result : index.Index = function.call(%f, [%x])
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one, %apply):
+        |     %result : index.Index = function.call(%apply, [%add_one, %x])
+    """)
+    value = parse(ir)
+    exe = llvm_compile(value)
+    assert exe.run(5).to_json() == 6
+    assert exe.run(0).to_json() == 1
+
+
+def test_indirect_call_no_stage_bump():
+    """Callee as operand does not add a stage boundary.
+
+    When call's callee is an operand (not a parameter), a BlockArgument
+    callee should NOT bump the stage — the call stays at stage 1, not
+    stage 2.  This avoids unnecessary callback-based JIT for plain
+    indirect calls.
+    """
+    ir = strip_prefix("""
+        | import algebra
+        | import number
+        | import function
+        | import index
+        |
+        | %apply : function.Function<[function.Function<[index.Index], index.Index>, index.Index], index.Index> = function.function<index.Index>() body(%f: function.Function<[index.Index], index.Index>, %x: index.Index):
+        |     %result : index.Index = function.call(%f, [%x])
+    """)
+    func = parse(ir)
+    stages = compute_stages(func)
+    stage_by_name = {v.name: s for v, s in stages.items() if v.name}
+    # BlockArguments are stage 1
+    assert stage_by_name["f"] == 1
+    assert stage_by_name["x"] == 1
+    # The call should be stage 1 (max of operands), NOT stage 2
+    # (which would happen if callee were a parameter: 1 + stage(f_arg) = 2)
+    assert stage_by_name["result"] == 1
 
 
 def test_equal_jit():
@@ -503,7 +579,7 @@ def test_recursive_peano():
         | import index
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%natural):
-        |     %n : peano.Natural = function.call<%natural>([%x])
+        |     %n : peano.Natural = function.call(%natural, [%x])
         |     %result : index.Index = peano.value<%n>()
         |
         | %natural : function.Function<[index.Index], peano.Natural> = function.function<peano.Natural>() body(%n: index.Index):
@@ -513,7 +589,7 @@ def test_recursive_peano():
         |         %s : Type = peano.successor<%z>()
         |     else_body() captures(%natural):
         |         %n_minus_one : index.Index = algebra.subtract(%n, index.Index(1))
-        |         %predecessor : peano.Natural = function.call<%natural>([%n_minus_one])
+        |         %predecessor : peano.Natural = function.call(%natural, [%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()
     """)
     value = parse(ir)

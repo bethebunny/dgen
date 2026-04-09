@@ -12,5 +12,5 @@ import toy
 %main : function.Function<[], Nil> = function.function<Nil>() body() captures(%multiply_transpose):
     %3 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.reshape(toy.Tensor<ndbuffer.Shape<index.Index(1)>([6]), number.Float64>([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
     %4 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.reshape(toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64>([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]))
-    %5 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%3, %4])
+    %5 : toy.InferredShapeTensor<number.Float64> = function.call(%multiply_transpose, [%3, %4])
     %6 : Nil = toy.print(%5)

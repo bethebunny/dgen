@@ -92,10 +92,10 @@ def test_generate_function_define_op_with_block():
 
 
 def test_generate_function_call_op():
-    """CallOp.callee should be Value[Function], not list[Value[...]]."""
+    """CallOp.callee is an operand (Value), not a parameter."""
     mod = importlib.import_module("dgen.dialects.function")
     code = generate_pyi(mod, "function")
-    assert "callee: Value[Function]" in code
+    assert "callee: Value" in code
 
 
 def test_generate_function_valid_python():

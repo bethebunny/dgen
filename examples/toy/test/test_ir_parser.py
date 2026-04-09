@@ -105,7 +105,7 @@ def test_roundtrip_call():
         |     %_ : Nil = ()
         |
         | %f : function.Function<[toy.InferredShapeTensor<number.Float64>], toy.InferredShapeTensor<number.Float64>> = function.function<toy.InferredShapeTensor<number.Float64>>() body(%a: toy.InferredShapeTensor<number.Float64>) captures(%helper):
-        |     %0 : toy.InferredShapeTensor<number.Float64> = function.call<%helper>([%a])
+        |     %0 : toy.InferredShapeTensor<number.Float64> = function.call(%helper, [%a])
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -235,8 +235,8 @@ def test_roundtrip_full_program():
         |     %1 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.reshape(%0)
         |     %2 : toy.Tensor<ndbuffer.Shape<index.Index(1)>([6]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         |     %3 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.reshape(%2)
-        |     %4 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%1, %3])
-        |     %5 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%3, %1])
+        |     %4 : toy.InferredShapeTensor<number.Float64> = function.call(%multiply_transpose, [%1, %3])
+        |     %5 : toy.InferredShapeTensor<number.Float64> = function.call(%multiply_transpose, [%3, %1])
         |     %6 : toy.InferredShapeTensor<number.Float64> = chain(%5, %4)
         |     %7 : Nil = toy.print(%6)
     """)
