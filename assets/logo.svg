@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 144" role="img" aria-label="dgen — the dialect generation toolkit">
+  <title>dgen — the dialect generation toolkit</title>
+
+  <style>
+    svg {
+      --ink: #1a1a1a;
+      --accent: #d97757;
+    }
+    @media (prefers-color-scheme: dark) {
+      svg {
+        --ink: #e8e8e8;
+        --accent: #f5a05f;
+      }
+    }
+    .stroke { stroke: var(--ink); fill: none; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+    .fill { fill: var(--ink); }
+    .accent { fill: var(--accent); }
+    .serif { font-family: Georgia, "Source Serif Pro", "Times New Roman", serif; }
+  </style>
+
+  <!-- Icon: angle brackets enclosing a value, echoing the IR's parameterized-type syntax.
+       Visible top at y=45 (midline / x-height line of the headword), visible bottom
+       at y=108 (baseline of the definition line), accounting for stroke-width/2. -->
+  <g transform="translate(24, 48)">
+    <polyline class="stroke" points="40,0 12,28 40,57" />
+    <polyline class="stroke" points="56,0 84,28 56,57" />
+    <circle class="accent" cx="48" cy="28" r="6" />
+  </g>
+
+  <!-- Dictionary entry: top line. The headword sits on baseline y=66; the IPA and
+       part-of-speech sit on baseline y=61 so their lowercase x-height region is
+       visually centered against the headword's lowercase x-height region (the
+       quarter-way point between baseline and midline matches at y≈55.5). -->
+  <text class="serif fill" x="144" y="66" dominant-baseline="alphabetic">
+    <tspan font-size="44" font-weight="700">dgen</tspan>
+    <tspan font-size="22" font-style="italic" dx="18" dy="-5">/ˈdiːdʒɛn/</tspan>
+    <tspan font-size="22" font-style="italic" dx="14">n.</tspan>
+  </text>
+
+  <!-- Dictionary entry: definition on its own line -->
+  <text class="serif fill" x="144" y="108" font-size="26" dominant-baseline="alphabetic">the dialect generation toolkit</text>
+</svg>
