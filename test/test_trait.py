@@ -414,12 +414,16 @@ def test_verify_type_equality_expression_violated() -> None:
         verify_constraints(fn)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="match constraint verification not yet implemented"
-)
 def test_verify_match_constraint_violated() -> None:
     """Match constraint should fail when operand type doesn't match."""
     op = RequiresMatchOp(input=MyStr().constant("x"))
     fn = _make_function(op)
     with pytest.raises(ConstraintError):
         verify_constraints(fn)
+
+
+def test_verify_match_constraint_satisfied() -> None:
+    """Match constraint should pass when operand type matches the pattern."""
+    op = RequiresMatchOp(input=MyInt().constant(1))
+    fn = _make_function(op)
+    verify_constraints(fn)

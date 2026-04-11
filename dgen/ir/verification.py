@@ -6,7 +6,7 @@ import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialect import Dialect
 from dgen.dialects.function import FunctionOp
-from dgen.spec.ast import HasTraitConstraint
+from dgen.spec.ast import HasTraitConstraint, HasTypeConstraint, TypeRef
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
 from dgen.trait import Trait
@@ -240,11 +240,52 @@ def _verify_has_trait(
         )
 
 
+def _resolve_type_pattern(type_ref: TypeRef, op: dgen.Op) -> type[dgen.Type]:
+    """Look up a Type class by name from the dialect registry.
+
+    Parameterised type patterns (``Tensor<n>``) aren't yet supported —
+    structural matching against the args would need an evaluator. For now
+    only the unparameterised name is honoured; raise on anything else so
+    callers don't silently get a too-permissive check.
+    """
+    if type_ref.args:
+        raise ConstraintError(
+            f"parameterised type patterns are not yet supported in "
+            f"has-type constraints: {type_ref.name}<...> on "
+            f"{type(op).__name__} %{op.name}"
+        )
+    for dialect in Dialect._registry.values():
+        cls = dialect.types.get(type_ref.name)
+        if cls is not None and issubclass(cls, dgen.Type):
+            return cls
+    raise ConstraintError(
+        f"unknown type {type_ref.name!r} referenced in constraint on "
+        f"{type(op).__name__} %{op.name}"
+    )
+
+
+def _verify_has_type(
+    constraint: HasTypeConstraint, op: dgen.Op, root: dgen.Value
+) -> None:
+    """Verify a single has-type constraint on an op."""
+    subject = _resolve_subject(constraint.lhs, op)
+    type_class = _resolve_type_pattern(constraint.type, op)
+    subject_type = _subject_type(subject)
+    if not isinstance(subject_type, type_class):
+        raise ConstraintError(
+            f"{type(op).__name__} %{op.name}: "
+            f"subject {constraint.lhs!r} ({type(subject_type).__name__}) "
+            f"does not match type {constraint.type.name}\n\n" + _annotated_asm(root, op)
+        )
+
+
 def verify_constraints(root: dgen.Value) -> None:
-    """Check trait constraints on all ops reachable from root."""
+    """Check has-trait and has-type constraints on all ops reachable from root."""
     for value in all_values(root):
         if not isinstance(value, dgen.Op):
             continue
         for constraint in value.__constraints__:
             if isinstance(constraint, HasTraitConstraint):
                 _verify_has_trait(constraint, value, root)
+            elif isinstance(constraint, HasTypeConstraint):
+                _verify_has_type(constraint, value, root)
