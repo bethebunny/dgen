@@ -13,7 +13,14 @@ from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
 from dgen.builtins import string_value
 from dgen.testing import strip_prefix
 from dgen.memory import Memory
-from dgen.type import Constant, Fields, Type, TypeType, Value
+from dgen.type import (
+    Constant,
+    Fields,
+    Type,
+    TypeType,
+    Value,
+    constant as resolve_constant,
+)
 
 
 def test_primitive_sizes():
@@ -487,6 +494,41 @@ def test_some_projects_trait_from_bound():
     boxed_index = existential.Some(bound=builtin.Index())
     assert boxed_index.has_trait(builtin.Index)
     assert not boxed_index.has_trait(algebra.AddMagma)
+
+
+def test_pack_folds_to_some_constant():
+    """``pack<bound>(constant)`` materialises a Some<bound> Memory at compile time."""
+    inner = builtin.Index().constant(42)
+    pack = existential.PackOp(
+        bound=builtin.Index(),
+        value=inner,
+        type=existential.Some(bound=builtin.Index()),
+    )
+    mem = pack.__constant__
+    assert isinstance(mem.type, existential.Some)
+    assert mem.layout.byte_size == 16
+    # The rich form recovers the witness type via the TypeValue field;
+    # the value slot is opaque ``Reference<Byte>`` so it reads as None.
+    payload = resolve_constant(pack)
+    assert isinstance(payload, dict)
+    assert isinstance(payload["existential"], builtin.Index)
+    assert payload["value"] is None
+
+
+def test_pack_with_trait_bound():
+    """``pack<Trait>(value)`` packs a concrete value into a trait-bounded existential."""
+    inner = builtin.Index().constant(7)
+    pack = existential.PackOp(
+        bound=algebra.AddMagma(),
+        value=inner,
+        type=existential.Some(bound=algebra.AddMagma()),
+    )
+    mem = pack.__constant__
+    assert isinstance(mem.type, existential.Some)
+    # The witness in the constant payload is Index, not AddMagma — the
+    # bound is the static upper bound, the witness is the runtime type.
+    payload = resolve_constant(pack)
+    assert isinstance(payload["existential"], builtin.Index)
 
 
 def test_existential_any_example_roundtrip():

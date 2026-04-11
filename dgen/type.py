@@ -127,32 +127,23 @@ class Value(Generic[T]):
 def constant(value: Value) -> object:
     """Resolve a constant ``Value`` to its rich Python representation.
 
-    Returns:
-    - For a ``Type`` instance: the type itself. ``TypeType`` is the
-      identity case — every type *is* its own constant.
-    - For a ``ConstantOp`` whose ``value`` field is still an unmaterialised
-      Python object (the parser stashes the raw user input here when the
-      op's type is an SSA ref that can't be resolved at parse time):
-      the raw object, returned as-is. We can't go through ``__constant__``
-      yet because materialising it requires the type to be resolvable.
-    - Otherwise: the rich form of ``value.__constant__`` — scalars for
-      primitive types, lists for spans/arrays, dicts for records, and
-      ``Type`` instances at every type-valued leaf.
+    For a ``Type`` instance, returns the type itself (TypeType is the
+    identity case). Otherwise reads ``value.__constant__`` as the rich
+    form: scalars for primitive types, lists for spans/arrays, dicts
+    for records, and ``Type`` instances at every type-valued leaf.
+
+    Each op subclass owns whatever materialisation logic it needs in
+    its own ``__constant__`` property — for example, ``ConstantOp``
+    materialises a parser-stashed raw value lazily when the type can
+    finally be resolved, and ``existential.PackOp`` builds a ``Some``
+    Memory directly from its operand.
 
     Subsumes ``type_constant`` (TypeType ↦ Type) and the
     ``v.__constant__.to_native_value()`` pattern with a single free
-    function that reads cleanly at call sites and centralises the
-    short-circuits previously sprinkled across the formatter.
+    function that reads cleanly at call sites.
     """
     if isinstance(value, Type):
         return value
-    # ``ConstantOp.value`` is ``Memory | object``; the object case is the
-    # parser stash (raw user input that can't yet be materialised because
-    # the op's type is an SSA ref). Pass it through unchanged.
-    _UNSET = object()
-    raw = getattr(value, "value", _UNSET)
-    if raw is not _UNSET and not isinstance(raw, Memory):
-        return raw
     return value.__constant__.to_native_value()
 
 
