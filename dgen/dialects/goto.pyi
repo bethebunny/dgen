@@ -4,33 +4,35 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import Nil, Span
 
 goto = Dialect("goto")
 
-@dataclass(frozen=True, eq=False)
-class Label(Type): ...
+@dataclass(eq=False)
+class Label(Type):
+    ...
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class RegionOp(Op):
     initial_arguments: Value
-    type: Type = Label()
     body: Block
+    type: Type = Label()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LabelOp(Op):
     initial_arguments: Value
-    type: Type = Label()
     body: Block
+    type: Type = Label()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class BranchOp(Op):
     target: Value[Label]
     arguments: Value
     type: Type = Nil()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ConditionalBranchOp(Op):
     true_target: Value[Label]
     false_target: Value[Label]
@@ -38,3 +40,4 @@ class ConditionalBranchOp(Op):
     true_arguments: Value
     false_arguments: Value
     type: Type = Nil()
+

@@ -9,7 +9,6 @@ module walks those live objects to emit ``.pyi`` type stubs.
 from __future__ import annotations
 
 import dataclasses
-import typing
 from collections.abc import Iterator
 from types import ModuleType
 
@@ -81,45 +80,24 @@ def _build_type_to_name(
 # ---------------------------------------------------------------------------
 
 
-_TRAIT_INTERNAL: frozenset[str] = frozenset({"__module__", "asm_name", "dialect"})
-
-
 def _trait_stub(name: str, cls: type) -> Iterator[str]:
-    """Yield stub lines for a trait class."""
-    annotations = typing.get_type_hints(cls)
-    has_body = False
+    """Yield stub lines for a trait class.
+
+    Traits have no fields of their own at the .dgen level — everything else
+    (asm_name, dialect, __layout__, etc.) is bound by the decorator at runtime
+    and doesn't belong in a type stub.
+    """
     yield f"class {name}(Trait):"
-    for attr_name, ann in annotations.items():
-        has_body = True
-        attr_val = getattr(cls, attr_name, dataclasses.MISSING)
-        if attr_val is not dataclasses.MISSING:
-            yield f"    {attr_name} = {attr_val!r}"
-        else:
-            yield f"    {attr_name}: {ann}"
-    for attr_name, attr_val in vars(cls).items():
-        if (
-            attr_name not in annotations
-            and not attr_name.startswith("_")
-            and attr_name not in _TRAIT_INTERNAL
-        ):
-            has_body = True
-            yield f"    {attr_name} = {attr_val!r}"
-    if not has_body:
-        yield "    ..."
+    yield "    ..."
     yield ""
 
 
 def _stub_class(
     cls: type,
     type_to_name: dict[type, str],
-    *,
-    frozen: bool,
 ) -> Iterator[str]:
     """Yield stub lines for one type or op dataclass."""
-    if frozen:
-        yield "@dataclass(frozen=True, eq=False)"
-    else:
-        yield "@dataclass(eq=False, kw_only=True)"
+    yield "@dataclass(eq=False)"
 
     bases = ", ".join(
         type_to_name.get(b, b.__name__) for b in cls.__bases__ if b is not object
@@ -219,8 +197,8 @@ def generate_pyi(module: ModuleType, dialect_name: str) -> str:
         if issubclass(cls, Trait):
             lines.extend(_trait_stub(name, cls))
         else:
-            lines.extend(_stub_class(cls, type_to_name, frozen=True))
+            lines.extend(_stub_class(cls, type_to_name))
     for cls in dialect.ops.values():
-        lines.extend(_stub_class(cls, type_to_name, frozen=False))
+        lines.extend(_stub_class(cls, type_to_name))
 
     return "\n".join(lines) + "\n"

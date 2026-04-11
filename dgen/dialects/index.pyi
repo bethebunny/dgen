@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Type
+import dgen
+from dgen import Dialect, Op, Type, Value
 
 index = Dialect("index")
 
-@dataclass(frozen=True, eq=False)
-class Index(Type): ...
+@dataclass(eq=False)
+class Index(Type):
+    ...
+

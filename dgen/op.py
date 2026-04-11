@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 from .dialect import Dialect
@@ -11,6 +11,9 @@ from .type import Value
 class Op(Value):
     """Base class for all dialect operations."""
 
-    name: str | None = None
+    # `name` is kw_only so subclasses can declare positional fields without
+    # colliding with this default — otherwise every subclass dataclass would
+    # need kw_only=True to avoid "non-default argument follows default".
+    name: str | None = field(default=None, kw_only=True)
     asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]

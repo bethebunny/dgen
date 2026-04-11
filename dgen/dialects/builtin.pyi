@@ -10,47 +10,52 @@ from dgen.dialects.index import Index
 
 builtin = Dialect("builtin")
 
-@dataclass(frozen=True, eq=False)
-class Nil(Type): ...
+@dataclass(eq=False)
+class Nil(Type):
+    ...
 
-@dataclass(frozen=True, eq=False)
-class String(Type): ...
+@dataclass(eq=False)
+class String(Type):
+    ...
 
-@dataclass(frozen=True, eq=False)
-class TypeTag(Type): ...
+@dataclass(eq=False)
+class TypeTag(Type):
+    ...
 
-@dataclass(frozen=True, eq=False)
-class Byte(Type): ...
+@dataclass(eq=False)
+class Byte(Type):
+    ...
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Array(Type):
     element_type: Value[dgen.TypeType]
     n: Value[Index]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Pointer(Type):
     pointee: Value[dgen.TypeType]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Span(Type):
     pointee: Value[dgen.TypeType]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Tuple(Type):
     types: Value[Span]
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ChainOp(Op):
     lhs: Value
     rhs: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class TypeOp(Op):
     value: Value
     type: Type = dgen.TypeType()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ExternOp(Op):
     symbol: Value[String]
     type: Type
+

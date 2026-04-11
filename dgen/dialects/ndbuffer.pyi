@@ -6,40 +6,40 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import Array, Nil, Pointer
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 
 ndbuffer = Dialect("ndbuffer")
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Shape(Type):
     rank: Value[Index]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class NDBuffer(Type):
     shape: Value[Shape]
     dtype: Value[dgen.TypeType] = Float64()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class AllocOp(Op):
     shape: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class DeallocOp(Op):
     mem: Value
     input: Value
     type: Type = Nil()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LoadOp(Op):
     mem: Value
     memref: Value
     indices: Value
     type: Type = Float64()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class StoreOp(Op):
     mem: Value
     value: Value
@@ -47,7 +47,8 @@ class StoreOp(Op):
     indices: Value
     type: Type = Nil()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class PrintMemrefOp(Op):
     input: Value
     type: Type = Nil()
+

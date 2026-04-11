@@ -11,171 +11,172 @@ from dgen.dialects.index import Index
 
 c = Dialect("c")
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Struct(Type):
     tag: Value[String]
     fields: Value[Span]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class StructField(Type):
     field_name: Value[String]
     field_type: Value[dgen.TypeType]
     offset: Value[Index]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Union(Type):
     tag: Value[String]
     fields: Value[Span]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Enum(Type):
     tag: Value[String]
     underlying: Value[dgen.TypeType]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class CFunctionType(Type):
     arguments: Value[Span]
     result_type: Value[dgen.TypeType]
     is_variadic: Value[Index]
     n_fixed_params: Value[Index]
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LvalueVarOp(Op):
     var_name: Value[String]
     source: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LvalueDerefOp(Op):
     ptr: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LvalueSubscriptOp(Op):
     base: Value
     index: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LvalueMemberOp(Op):
     field: Value[String]
     base: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LvalueArrowOp(Op):
     field: Value[String]
     ptr: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LvalueToRvalueOp(Op):
     lvalue: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class AddressOfOp(Op):
     lvalue: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class AssignOp(Op):
     lvalue: Value
     rvalue: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class CompoundAssignOp(Op):
     operator: Value[String]
     lvalue: Value
     rvalue: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class PreIncrementOp(Op):
     lvalue: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class PostIncrementOp(Op):
     lvalue: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class PreDecrementOp(Op):
     lvalue: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class PostDecrementOp(Op):
     lvalue: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class IntegerPromoteOp(Op):
     input: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ArithmeticConvertOp(Op):
     input: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ArrayDecayOp(Op):
     array: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class FunctionDecayOp(Op):
     func: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class NullToPointerOp(Op):
     zero: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ScalarToBoolOp(Op):
     val: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class CReturnOp(Op):
     value: Value
     type: Type = Nil()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class CSizeofOp(Op):
     target_type: Value[dgen.TypeType]
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ModuloOp(Op):
     lhs: Value
     rhs: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ShiftLeftOp(Op):
     lhs: Value
     rhs: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ShiftRightOp(Op):
     lhs: Value
     rhs: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LogicalNotOp(Op):
     operand: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class CommaOp(Op):
     lhs: Value
     rhs: Value
     type: Type
+

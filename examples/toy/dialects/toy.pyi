@@ -7,68 +7,69 @@ from dataclasses import dataclass
 import dgen
 from dgen import Dialect, Op, Type, Value
 import dgen.dialects.ndbuffer as ndbuffer
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import Nil, Span, String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 
 toy = Dialect("toy")
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Tensor(Type):
     shape: Value[ndbuffer.Shape]
     dtype: Value[dgen.TypeType] = Float64()
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class InferredShapeTensor(Type):
     dtype: Value[dgen.TypeType] = Float64()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class TransposeOp(Op):
     input: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ReshapeOp(Op):
     input: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ConcatOp(Op):
     axis: Value[Index]
     lhs: Value
     rhs: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class TileOp(Op):
     count: Value[Index]
     input: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class NonzeroCountOp(Op):
     input: Value
     type: Type = Index()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class DimSizeOp(Op):
     axis: Value[Index]
     input: Value
     type: Type = Index()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class PrintOp(Op):
     input: Value
     type: Type = Nil()
+
