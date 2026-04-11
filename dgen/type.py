@@ -281,16 +281,31 @@ class Constant(Value[T]):
 
     def required_dialects(self) -> Iterator[Dialect]:
         """Constants can carry type references in their payload that aren't
-        reachable via the use-def graph (a TypeType constant whose value is
-        ``index.Index``, say). When the rich payload is itself a ``Value``,
-        walk its transitive dependencies and surface their dialects so the
-        formatter's import block stays honest.
+        reachable via the use-def graph — a TypeType constant whose value is
+        ``index.Index``, or an ``Any`` whose existential field is a
+        ``number.SignedInteger``. Walk the rich payload, descending through
+        any dicts/lists produced by container layouts (Record/Span), and
+        surface dialects from every embedded ``Value`` so the formatter's
+        import block stays honest. Dicts/lists go away once compound
+        constants store their payloads as trees of Values rather than
+        Python collections; until then this is the bridge.
         """
         yield from super().required_dialects()
-        payload = constant(self)
-        if isinstance(payload, Value):
-            for v in transitive_dependencies(payload):
+        for embedded in _embedded_values(constant(self)):
+            for v in transitive_dependencies(embedded):
                 yield from v.required_dialects()
+
+
+def _embedded_values(payload: object) -> Iterator[Value]:
+    """Yield every ``Value`` instance reachable from a rich payload."""
+    if isinstance(payload, Value):
+        yield payload
+    elif isinstance(payload, dict):
+        for v in payload.values():
+            yield from _embedded_values(v)
+    elif isinstance(payload, list):
+        for item in payload:
+            yield from _embedded_values(item)
 
 
 Fields = tuple[tuple[str, type[Type]], ...]
