@@ -125,12 +125,12 @@ def constant(value: Value) -> object:
     every type-valued leaf.
 
     Subsumes the previous ``type_constant`` (TypeType ↦ Type) and the
-    ``v.__constant__.to_value()`` pattern with a single free function
+    ``v.__constant__.to_native_value()`` pattern with a single free function
     that reads cleanly at call sites.
     """
     if isinstance(value, Type):
         return value
-    return value.__constant__.to_value()
+    return value.__constant__.to_native_value()
 
 
 class Type(Value["TypeType"]):

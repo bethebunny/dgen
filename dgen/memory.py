@@ -61,7 +61,7 @@ class Memory(Generic[T]):
         """
         return self.layout.to_json(self.buffer, 0)
 
-    def to_value(self) -> object:
+    def to_native_value(self) -> object:
         """Read the buffer as rich Python objects.
 
         Same shape as ``to_json`` but type values are returned as first-class
@@ -69,7 +69,7 @@ class Memory(Generic[T]):
         survive nesting. Use this from IR-side code that wants to format
         types with sugar or walk for dialects.
         """
-        return self.layout.to_value(self.buffer, 0)
+        return self.layout.to_native_value(self.buffer, 0)
 
     @classmethod
     def from_json(cls, type: Type, value: object) -> Memory:
