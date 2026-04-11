@@ -30,7 +30,7 @@ def test_generate_builtin_no_trait():
 def test_generate_number_simple_type():
     mod = importlib.import_module("dgen.dialects.number")
     code = generate_pyi(mod, "number")
-    assert "@dataclass(frozen=True, eq=False)" in code
+    assert "@dataclass(eq=False)" in code
     assert "class Float64(Type):" in code
 
 
@@ -63,10 +63,12 @@ def test_generate_builtin_op_with_optional_operand():
     assert "lhs: Value" in code
 
 
-def test_generate_builtin_op_kw_only_decorator():
+def test_generate_builtin_op_decorator():
+    """Ops are emitted with the same decorator as Types (plain eq=False)."""
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
-    assert "@dataclass(eq=False, kw_only=True)" in code
+    assert "@dataclass(eq=False)" in code
+    assert "kw_only" not in code
 
 
 # ---------------------------------------------------------------------------

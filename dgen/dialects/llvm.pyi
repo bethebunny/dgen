@@ -4,138 +4,144 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil, String
+from dgen.dialects.builtin import Nil, Pointer, Span, String
 from dgen.dialects.index import Index
+from dgen.dialects.number import Float64
 
 llvm = Dialect("llvm")
 
-@dataclass(frozen=True, eq=False)
-class Ptr(Type): ...
+@dataclass(eq=False)
+class Ptr(Type):
+    ...
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Int(Type):
     bits: Value[Index]
 
-@dataclass(frozen=True, eq=False)
-class Float(Type): ...
+@dataclass(eq=False)
+class Float(Type):
+    ...
 
-@dataclass(frozen=True, eq=False)
-class Void(Type): ...
+@dataclass(eq=False)
+class Void(Type):
+    ...
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class AllocaOp(Op):
     elem_count: Value[Index]
     type: Type = Ptr()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class GepOp(Op):
     base: Value
     index: Value
     type: Type = Ptr()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class FaddOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Float()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class FsubOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Float()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class FmulOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Float()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class FdivOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Float()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class FnegOp(Op):
     input: Value
     type: Type = Float()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class AddOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class SubOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class MulOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class SdivOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class AndOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class OrOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class XorOp(Op):
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class IcmpOp(Op):
     pred: Value[String]
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(1))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class FcmpOp(Op):
     pred: Value[String]
     lhs: Value
     rhs: Value
     type: Type = Int(bits=Index().constant(1))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ZextOp(Op):
     input: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class PtrtointOp(Op):
     input: Value
     type: Type = Int(bits=Index().constant(64))
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class InttoptrOp(Op):
     input: Value
     type: Type = Ptr()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class CallOp(Op):
     callee: Value[String]
     args: Value
     type: Type = Nil()
+

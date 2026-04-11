@@ -6,46 +6,48 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import Nil, Pointer
+from dgen.dialects.index import Index
 
 memory = Dialect("memory")
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class Reference(Type):
     element_type: Value[dgen.TypeType]
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class StackAllocateOp(Op):
     element_type: Value[dgen.TypeType]
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class HeapAllocateOp(Op):
     element_type: Value[dgen.TypeType]
     count: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class DeallocateOp(Op):
     mem: Value
     ptr: Value
     type: Type = Nil()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LoadOp(Op):
     mem: Value
     ptr: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class StoreOp(Op):
     mem: Value
     value: Value
     ptr: Value
     type: Type = Nil()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class OffsetOp(Op):
     ptr: Value
     index: Value
     type: Type
+

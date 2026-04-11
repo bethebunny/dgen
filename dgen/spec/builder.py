@@ -257,7 +257,7 @@ def _build_type(td: TypeDecl, dialect: Dialect, ns: dict[str, object]) -> type:
         type_ns["__annotations__"] = annotations
 
     bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in td.traits) + (Type,)
-    cls = dataclasses.dataclass(frozen=True, eq=False)(type(td.name, bases, type_ns))
+    cls = dataclasses.dataclass(eq=False)(type(td.name, bases, type_ns))
     dialect.type(td.name)(cls)
     return cls
 
@@ -286,6 +286,10 @@ def _build_op(
         {op.name: _resolve_type(op.default, ns)() for op in od.operands if op.default}
     )
 
+    # Blocks come before `type` so that any default value on `type` is a
+    # trailing default — required now that we no longer emit kw_only=True.
+    annotations.update({block_name: "Block" for block_name in od.blocks})
+
     annotations["type"] = "Type"
     ret = od.return_type
     if ret is not None:
@@ -295,8 +299,6 @@ def _build_op(
             default = _make_type_default(ret, type_map, known_names, ns)
             if default is not None:
                 op_ns["type"] = default
-
-    annotations.update({block_name: "Block" for block_name in od.blocks})
 
     if od.params:
         op_ns["__params__"] = tuple(
@@ -314,7 +316,7 @@ def _build_op(
 
     op_ns["__annotations__"] = annotations
     bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in od.traits) + (Op,)
-    cls = dataclasses.dataclass(eq=False, kw_only=True)(
+    cls = dataclasses.dataclass(eq=False)(
         type(_op_class_name(od.name), bases, op_ns)
     )
     dialect.op(od.name)(cls)

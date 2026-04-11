@@ -11,132 +11,108 @@ from dgen.dialects.builtin import Nil
 algebra = Dialect("algebra")
 
 class AddMagma(Trait):
-    __params__ = ()
-    __operands__ = ()
-    __blocks__ = ()
-    __constraints__ = ()
-    name = None
-    type = <functools.cached_property object at 0x7effc69cbe10>
-    __layout__ = <property object at 0x7effc69cede0>
-    dialect = <dgen.dialect.Dialect object at 0x7effc676e350>
-    asm_name = 'AddMagma'
+    ...
 
 class MulMagma(Trait):
-    __params__ = ()
-    __operands__ = ()
-    __blocks__ = ()
-    __constraints__ = ()
-    name = None
-    type = <functools.cached_property object at 0x7effc69cbe10>
-    __layout__ = <property object at 0x7effc69cede0>
-    dialect = <dgen.dialect.Dialect object at 0x7effc676e350>
-    asm_name = 'MulMagma'
+    ...
 
 class TotalOrder(Trait):
-    __params__ = ()
-    __operands__ = ()
-    __blocks__ = ()
-    __constraints__ = ()
-    name = None
-    type = <functools.cached_property object at 0x7effc69cbe10>
-    __layout__ = <property object at 0x7effc69cede0>
-    dialect = <dgen.dialect.Dialect object at 0x7effc676e350>
-    asm_name = 'TotalOrder'
+    ...
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class AddOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class NegateOp(Op):
     input: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class SubtractOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class MultiplyOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ReciprocalOp(Op):
     input: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class DivideOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class MeetOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class JoinOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ComplementOp(Op):
     input: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class SymmetricDifferenceOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class EqualOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class NotEqualOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LessThanOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class LessEqualOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class GreaterThanOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class GreaterEqualOp(Op):
     left: Value
     right: Value
     type: Type
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class CastOp(Op):
     input: Value
     type: Type

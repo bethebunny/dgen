@@ -4,21 +4,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dgen import Dialect, Type, Value
+import dgen
+from dgen import Dialect, Op, Type, Value
+from dgen.dialects.builtin import Byte
 from dgen.dialects.index import Index
 
 number = Dialect("number")
 
-@dataclass(frozen=True, eq=False)
-class Boolean(Type): ...
+@dataclass(eq=False)
+class Boolean(Type):
+    ...
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class SignedInteger(Type):
     bits: Value[Index]
 
-@dataclass(frozen=True, eq=False)
+@dataclass(eq=False)
 class UnsignedInteger(Type):
     bits: Value[Index]
 
-@dataclass(frozen=True, eq=False)
-class Float64(Type): ...
+@dataclass(eq=False)
+class Float64(Type):
+    ...
+
