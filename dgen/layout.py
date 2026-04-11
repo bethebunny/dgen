@@ -58,15 +58,16 @@ class Layout:
     ) -> None:
         raise NotImplementedError
 
-    def to_value(self, buf: bytes | bytearray, offset: int) -> object:
-        """Read this layout's bytes as rich Python objects.
+    def to_native_value(self, buf: bytes | bytearray, offset: int) -> object:
+        """Read this layout's bytes as rich native Python objects.
 
-        Same as ``to_json`` for most layouts, but type values are returned as
+        ("native" as in "Python-native", not as in dgen ``Value``.) Same as
+        ``to_json`` for most layouts, but type values are returned as
         first-class ``Type`` instances and container layouts (Record, Span,
-        Array) recurse via ``to_value`` so embedded types are preserved
-        through nesting. This is the form the IR formatter and the use-def
-        walker want — raw JSON would force them to sniff for type-shaped
-        dicts to recover types.
+        Array) recurse via ``to_native_value`` so embedded types are
+        preserved through nesting. This is the form the IR formatter and
+        the use-def walker want — raw JSON would force them to sniff for
+        type-shaped dicts to recover types.
         """
         return self.to_json(buf, offset)
 
@@ -146,9 +147,9 @@ class Array(Layout):
             for i in range(self.count)
         ]
 
-    def to_value(self, buf: bytes | bytearray, offset: int) -> list[object]:
+    def to_native_value(self, buf: bytes | bytearray, offset: int) -> list[object]:
         return [
-            self.element.to_value(buf, offset + i * self.element.struct.size)
+            self.element.to_native_value(buf, offset + i * self.element.struct.size)
             for i in range(self.count)
         ]
 
@@ -176,11 +177,11 @@ class Pointer(Layout):
         data = bytes((ctypes.c_char * pointee.struct.size).from_address(ptr))
         return pointee.to_json(data, 0)
 
-    def to_value(self, buf: bytes | bytearray, offset: int) -> object:
+    def to_native_value(self, buf: bytes | bytearray, offset: int) -> object:
         (ptr,) = self.struct.unpack_from(buf, offset)
         pointee = self.pointee
         data = bytes((ctypes.c_char * pointee.struct.size).from_address(ptr))
-        return pointee.to_value(data, 0)
+        return pointee.to_native_value(data, 0)
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
@@ -208,12 +209,12 @@ class Span(Layout):
         data = bytes((ctypes.c_char * (length * ps)).from_address(ptr))
         return [pointee.to_json(data, i * ps) for i in range(length)]
 
-    def to_value(self, buf: bytes | bytearray, offset: int) -> list[object]:
+    def to_native_value(self, buf: bytes | bytearray, offset: int) -> list[object]:
         ptr, length = self.struct.unpack_from(buf, offset)
         pointee = self.pointee
         ps = pointee.struct.size
         data = bytes((ctypes.c_char * (length * ps)).from_address(ptr))
-        return [pointee.to_value(data, i * ps) for i in range(length)]
+        return [pointee.to_native_value(data, i * ps) for i in range(length)]
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
@@ -262,9 +263,9 @@ class Record(Layout):
             for (name, layout), field_offset in zip(self.fields, self._offsets)
         }
 
-    def to_value(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
+    def to_native_value(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
         return {
-            name: layout.to_value(buf, offset + field_offset)
+            name: layout.to_native_value(buf, offset + field_offset)
             for (name, layout), field_offset in zip(self.fields, self._offsets)
         }
 
@@ -330,7 +331,7 @@ class TypeValue(Layout):
         layout.from_json(origin, 0, value, origins)
         self.struct.pack_into(buf, offset, _bytearray_address(origin))
 
-    def to_value(self, buf: bytes | bytearray, offset: int) -> object:
+    def to_native_value(self, buf: bytes | bytearray, offset: int) -> object:
         from .type import Type
 
         # Rich form: rehydrate the type descriptor into a real Type instance,
@@ -381,9 +382,9 @@ class String(Span):
         byte_list = super().to_json(buf, offset)
         return bytes(bytearray(byte_list)).decode("utf-8")
 
-    def to_value(self, buf: bytes | bytearray, offset: int) -> str:
+    def to_native_value(self, buf: bytes | bytearray, offset: int) -> str:
         # A Python ``str`` is already rich and JSON-compat — don't fall through
-        # to ``Span.to_value``, which would walk byte-by-byte and lose the
+        # to ``Span.to_native_value``, which would walk byte-by-byte and lose the
         # str decoding from ``to_json``.
         return self.to_json(buf, offset)
 
