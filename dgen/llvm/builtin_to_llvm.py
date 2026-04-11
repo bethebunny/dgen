@@ -6,7 +6,7 @@ import dgen
 from dgen.dialects.builtin import TypeOp
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.builtins import ConstantOp
-from dgen.type import TypeType, type_constant
+from dgen.type import TypeType, constant
 
 
 class BuiltinToLLVM(Pass):
@@ -14,7 +14,4 @@ class BuiltinToLLVM(Pass):
 
     @lowering_for(TypeOp)
     def lower_type(self, op: TypeOp) -> dgen.Value:
-        resolved = type_constant(op.value.type)
-        return ConstantOp.from_constant(
-            TypeType().constant(resolved.__constant__.to_json())
-        )
+        return ConstantOp.from_constant(TypeType().constant(constant(op.value.type)))

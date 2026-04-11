@@ -37,6 +37,14 @@
 
 ## Block / value infrastructure
 - Have values track their uses for forward iteration and fast `replace_uses`
+- Make `Block` a `Value`
+
+## Existentials
+- Add a runtime `pack_existential` (or extend `algebra.cast`) op that boxes a runtime value into `Some<X>` / `Any`. Currently `Some`/`Any` only have constant construction; the cast example can't yet do "math, then return `Some<IntegralType>`" because there's no op that takes a runtime SignedInteger and produces a Some at runtime.
+- Symmetric `unpack_existential` op for compile-time projection — a stage-boundary that resolves the witness type and yields a typed value.
+
+## Recursive types
+- The layout system can't currently express recursive type definitions: `type Foo: data: Bar` / `type Bar: data: Foo` would loop forever in `_make_layout` since each side eagerly expands the other's layout. To support this we'd need either auto-boxing on cycle detection (insert a `Pointer` indirection when a layout would recurse into a type already on the stack) or an explicit "boxed" annotation in `.dgen`. The current `Some<bound>` / `Any` definition sidesteps this by using `Pointer<Nil>` as the value field — a fixed-size opaque slot — rather than a true mutually-recursive `value: Any`.
 
 ## Codegen
 - `SignedInteger`/`UnsignedInteger` layout vs bit-width mismatch: the `.dgen` definition uses `data: Index` (always 64-bit) regardless of `bits`. `llvm_type` currently works around this by using `max(declared_bits, layout_bits)`, but the proper fix is parameterizing the layout on `bits` so a 32-bit integer actually has a 32-bit layout.

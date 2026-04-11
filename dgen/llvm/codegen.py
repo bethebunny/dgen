@@ -30,7 +30,7 @@ from dgen.builtins import ConstantOp, PackOp, pack, string_value, unpack
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function
 from dgen.memory import Memory
-from dgen.type import Constant, TypeType, Value, type_constant
+from dgen.type import Constant, TypeType, Value, constant
 from dgen.type import _format_float as format_float
 
 # ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ def _ctype(layout: Layout) -> type[ctypes._CData]:
 
 
 def llvm_type(t: dgen.Value[TypeType]) -> str:
-    resolved = type_constant(t)
+    resolved = constant(t)
     match resolved:
         case memory.Reference():
             return "ptr"
@@ -837,7 +837,7 @@ def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
 
 def _function_arg_types(func_type: function.Function) -> list[Type]:
     """Extract the runtime Type instances for each argument of a Function type."""
-    return [type_constant(v) for v in func_type.arguments.values]
+    return [constant(v) for v in func_type.arguments.values]
 
 
 def jit_function(
@@ -873,7 +873,7 @@ def call(func_constant: Value, *args: Memory | object) -> Memory:
     func_type = func_constant.type
     assert isinstance(func_type, function.Function)
     input_types = _function_arg_types(func_type)
-    result_type = type_constant(func_type.result_type)
+    result_type = constant(func_type.result_type)
     func_mem = func_constant.__constant__
     (func_ptr,) = func_mem.layout.struct.unpack(func_mem.buffer)
 
@@ -940,8 +940,8 @@ def build_callback_thunk(
     """
     assert func_op.name is not None
     callback_name = f"_stage2_{func_op.name}"
-    orig_types = [dgen.type.type_constant(arg.type) for arg in func_op.body.args]
-    result_type = dgen.type.type_constant(func_op.result_type)
+    orig_types = [dgen.type.constant(arg.type) for arg in func_op.body.args]
+    result_type = dgen.type.constant(func_op.result_type)
     result_ctype: type[ctypes._CData] | None = (
         None if isinstance(result_type, builtin.Nil) else _ctype(result_type.__layout__)
     )
@@ -1032,8 +1032,8 @@ class LLVMCodegen:
 
         func_type = entry.type
         assert isinstance(func_type, function.Function)
-        input_types = [type_constant(v) for v in unpack(func_type.arguments)]
-        result_type = type_constant(func_type.result_type)
+        input_types = [constant(v) for v in unpack(func_type.arguments)]
+        result_type = constant(func_type.result_type)
         assert entry.name is not None
 
         ir, host_buffers = emit_llvm_ir(entry)
@@ -1053,7 +1053,7 @@ def _wrap_callable(callable_value: dgen.Value) -> function.FunctionOp:
     assert isinstance(func_type, function.Function)
     arg_types = unpack(func_type.arguments)
     result_type_value = func_type.result_type
-    result_type = type_constant(result_type_value)
+    result_type = constant(result_type_value)
     args = [BlockArgument(name=f"a{i}", type=t) for i, t in enumerate(arg_types)]
     call_op = function.CallOp(
         callee=callable_value,

@@ -115,13 +115,22 @@ class Value(Generic[T]):
             block.replace_uses_of(old, new)
 
 
-def type_constant(value: Value[TypeType]) -> Type:
-    """Resolve a Value[TypeType] to a concrete Type."""
+def constant(value: Value) -> object:
+    """Resolve a constant ``Value`` to its rich Python representation.
+
+    For a ``Type`` instance, returns the type itself (TypeType is the
+    identity case). For any other ``Value`` whose payload can be
+    materialised, returns the rich form: scalars for primitive types,
+    lists for spans/arrays, dicts for records, and ``Type`` instances at
+    every type-valued leaf.
+
+    Subsumes the previous ``type_constant`` (TypeType ↦ Type) and the
+    ``v.__constant__.to_value()`` pattern with a single free function
+    that reads cleanly at call sites.
+    """
     if isinstance(value, Type):
         return value
-    data = value.__constant__.to_json()
-    assert isinstance(data, dict)
-    return Type.from_json(data)
+    return value.__constant__.to_value()
 
 
 class Type(Value["TypeType"]):
@@ -169,7 +178,7 @@ class Type(Value["TypeType"]):
             "tag": self.qualified_name,
             "params": {
                 name: {
-                    "type": type_constant(param.type).to_json(),
+                    "type": constant(param.type).to_json(),
                     "value": param.__constant__.to_json(),
                 }
                 for name, param in self.parameters
@@ -232,8 +241,8 @@ class Constant(Value[T]):
 
     def format_asm(self, slot: SlotFn = _default_slot) -> str:
         """Format as Type(value) — always includes the type prefix."""
-        json_str = format_json(self.__constant__.to_json(), slot)
-        return f"{self.type.format_asm(slot)}({json_str})"
+        body = format_value(constant(self), slot)
+        return f"{self.type.format_asm(slot)}({body})"
 
     @property
     def ready(self) -> bool:
@@ -285,16 +294,12 @@ def _format_float(v: float) -> str:
 def format_value(value: object, slot: SlotFn = _default_slot) -> str:
     """Format a value as an ASM expression.
 
-    Values dispatch to ``format_asm``; plain Python literals (int, float,
-    str, list, dict) are formatted as JSON.
+    ``Value`` instances (including ``Type``) dispatch to ``format_asm`` and
+    print as named SSA references / type-ASM sugar. Plain Python literals
+    (int, float, str, list, dict, None) format as ASM literals.
     """
     if isinstance(value, Value):
         return value.format_asm(slot)
-    return format_json(value, slot)
-
-
-def format_json(value: object, slot: SlotFn = _default_slot) -> str:
-    """Format a plain Python value as an ASM literal."""
     if isinstance(value, list):
         return "[" + ", ".join(format_value(v, slot) for v in value) + "]"
     if isinstance(value, dict):

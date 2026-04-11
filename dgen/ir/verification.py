@@ -10,7 +10,7 @@ from dgen.spec.ast import HasTraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
 from dgen.trait import Trait
-from dgen.type import type_constant
+from dgen.type import constant
 
 
 class VerificationError(Exception):
@@ -221,7 +221,7 @@ def _subject_type(subject: dgen.Value) -> dgen.Type:
     """
     if isinstance(subject, dgen.Type):
         return subject
-    return type_constant(subject.type)
+    return constant(subject.type)
 
 
 def _verify_has_trait(
