@@ -12,9 +12,13 @@ from dgen.llvm.codegen import Executable, LLVMCodegen
 from dgen.testing import llvm_compile as compile_module
 from dgen.passes.compiler import Compiler, IdentityPass
 from dgen import layout
-from dgen.dialects import algebra, builtin, llvm
+from dgen.dialects import algebra, builtin, llvm, number
 from dgen.dialects.index import Index
 from dgen.dialects.function import FunctionOp
+from dgen.passes.staging import (
+    _unresolved_compile_dependencies,
+    constant_fold_compile_dependencies,
+)
 from dgen.layout import TypeValue
 from dgen.builtins import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
@@ -575,6 +579,81 @@ def test_staging_with_ssa_result_type():
     )
     exe = compiler.compile(inner_func)
     assert exe.run({"tag": "index.Index", "params": {}}, 21).to_json() == 42
+
+
+def test_type_with_ssa_param_parses():
+    """number.SignedInteger<%w> — SSA value as type parameter.
+
+    %x's type is a SignedInteger instance whose `bits` field is the AddOp %w.
+    This is the parse-level shape that the staging engine needs to see.
+    """
+    ir = strip_prefix("""
+        | import algebra
+        | import function
+        | import index
+        | import number
+        |
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %w1 : index.Index = 8
+        |     %w2 : index.Index = 16
+        |     %w  : index.Index = algebra.add(%w1, %w2)
+        |     %x  : number.SignedInteger<%w> = 0
+    """)
+    value = parse(ir)
+    ops = list(value.body.ops)
+    w_op = ops[2]
+    x_op = ops[3]
+    assert isinstance(x_op.type, number.SignedInteger)
+    assert x_op.type.bits is w_op
+
+
+def test_unresolved_compile_dependencies_finds_ssa_refs_inside_types():
+    """``_unresolved_compile_dependencies`` surfaces SSA refs nested inside
+    a concrete Type. A SignedInteger whose ``bits`` field is a non-Constant
+    op should appear as an unresolved compile-time dependency.
+    """
+    ir = strip_prefix("""
+        | import algebra
+        | import function
+        | import index
+        | import number
+        |
+        | %main : function.Function<[index.Index], Nil> = function.function<Nil>() body(%a: index.Index):
+        |     %w : index.Index = algebra.add(%a, %a)
+        |     %x : number.SignedInteger<%w> = 0
+    """)
+    value = parse(ir)
+    ops = list(value.body.ops)
+    w_op = ops[-2]
+    assert w_op in _unresolved_compile_dependencies(value)
+
+
+def test_constant_fold_compile_dependencies_resolves_signed_integer_width():
+    """SignedInteger<%w> where %w = add(const, const) is folded to
+    SignedInteger<24> in place.
+    """
+    ir = strip_prefix("""
+        | import algebra
+        | import function
+        | import index
+        | import number
+        |
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %w1 : index.Index = 8
+        |     %w2 : index.Index = 16
+        |     %w  : index.Index = algebra.add(%w1, %w2)
+        |     %x  : number.SignedInteger<%w> = 0
+    """)
+    value = parse(ir)
+    compiler: Compiler[Executable] = Compiler(
+        passes=[AlgebraToLLVM(), BuiltinToLLVM()], exit=LLVMCodegen()
+    )
+    constant_fold_compile_dependencies(value, compiler)
+    x_op = list(value.body.ops)[-1]
+    assert isinstance(x_op.type, number.SignedInteger)
+    bits = x_op.type.bits
+    assert isinstance(bits, ConstantOp)
+    assert bits.value.to_json() == 24
 
 
 def test_staging_resolves_type_value():

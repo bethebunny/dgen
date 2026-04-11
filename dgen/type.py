@@ -64,6 +64,24 @@ class Value(Generic[T]):
             yield from block.dependencies
 
     @property
+    def compile_dependencies(self) -> Iterator[Value]:
+        """Compile-time dependencies — values that must be materialized
+        before this value can be lowered.
+
+        Yields the type, the compile-time parameters, and the arg/parameter
+        types of any owned blocks. Excludes operands (runtime dataflow) and
+        block captures (runtime references from inner scopes to outer ones).
+        """
+        yield self.type
+        for _, param in self.parameters:
+            yield param
+        for _, block in self.blocks:
+            for arg in block.args:
+                yield arg.type
+            for block_param in block.parameters:
+                yield block_param.type
+
+    @property
     def __constant__(self) -> Memory[T]:
         raise NotImplementedError
 
@@ -197,6 +215,12 @@ class Type(Value["TypeType"]):
     @property
     def dependencies(self) -> Iterator[Value]:
         """Types only depend on their parameters — skip type/operands/blocks."""
+        for _, param in self.parameters:
+            yield param
+
+    @property
+    def compile_dependencies(self) -> Iterator[Value]:
+        """Same as ``dependencies`` for Types — params only."""
         for _, param in self.parameters:
             yield param
 
