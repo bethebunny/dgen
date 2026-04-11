@@ -10,7 +10,6 @@ from collections.abc import Iterable
 
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.builtins import ConstantOp, PackOp
-from dgen.memory import Memory
 from dgen.type import constant, format_value
 
 from ..op import Op
@@ -122,11 +121,7 @@ def op_asm(
     type_str = _format_expr(op.type, tracker)
     parts = [f"%{result_name} : {type_str} = "]
     if isinstance(op, ConstantOp):
-        # When ``op.value`` is unmaterialised (the raw Python value the user
-        # typed, with an SSA-ref'd type that can't yet resolve), pass it
-        # straight through; otherwise resolve to the rich form.
-        rich = op.value if not isinstance(op.value, Memory) else constant(op)
-        parts.append(format_value(rich, tracker.track_name))
+        parts.append(format_value(constant(op), tracker.track_name))
     else:
         op_str = op.dialect.qualified_name(cls.asm_name)
         if param_parts:

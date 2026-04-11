@@ -8,6 +8,7 @@ from typing import ClassVar, Generic, Iterator, Self, TypeVar
 import dgen
 
 from .dialect import Dialect
+from .ir.traversal import transitive_dependencies
 from .layout import Layout, TypeValue
 from .memory import Memory
 
@@ -126,18 +127,32 @@ class Value(Generic[T]):
 def constant(value: Value) -> object:
     """Resolve a constant ``Value`` to its rich Python representation.
 
-    For a ``Type`` instance, returns the type itself (TypeType is the
-    identity case). For any other ``Value`` whose payload can be
-    materialised, returns the rich form: scalars for primitive types,
-    lists for spans/arrays, dicts for records, and ``Type`` instances at
-    every type-valued leaf.
+    Returns:
+    - For a ``Type`` instance: the type itself. ``TypeType`` is the
+      identity case — every type *is* its own constant.
+    - For a ``ConstantOp`` whose ``value`` field is still an unmaterialised
+      Python object (the parser stashes the raw user input here when the
+      op's type is an SSA ref that can't be resolved at parse time):
+      the raw object, returned as-is. We can't go through ``__constant__``
+      yet because materialising it requires the type to be resolvable.
+    - Otherwise: the rich form of ``value.__constant__`` — scalars for
+      primitive types, lists for spans/arrays, dicts for records, and
+      ``Type`` instances at every type-valued leaf.
 
-    Subsumes the previous ``type_constant`` (TypeType ↦ Type) and the
-    ``v.__constant__.to_native_value()`` pattern with a single free function
-    that reads cleanly at call sites.
+    Subsumes ``type_constant`` (TypeType ↦ Type) and the
+    ``v.__constant__.to_native_value()`` pattern with a single free
+    function that reads cleanly at call sites and centralises the
+    short-circuits previously sprinkled across the formatter.
     """
     if isinstance(value, Type):
         return value
+    # ``ConstantOp.value`` is ``Memory | object``; the object case is the
+    # parser stash (raw user input that can't yet be materialised because
+    # the op's type is an SSA ref). Pass it through unchanged.
+    _UNSET = object()
+    raw = getattr(value, "value", _UNSET)
+    if raw is not _UNSET and not isinstance(raw, Memory):
+        return raw
     return value.__constant__.to_native_value()
 
 
@@ -241,6 +256,10 @@ class Type(Value["TypeType"]):
         for _, param in self.parameters:
             yield param
 
+    def required_dialects(self) -> Iterator[Dialect]:
+        yield self.dialect
+        yield from super().required_dialects()
+
 
 @dataclass(eq=False, kw_only=True)
 class Constant(Value[T]):
@@ -261,29 +280,17 @@ class Constant(Value[T]):
         return self.value
 
     def required_dialects(self) -> Iterator[Dialect]:
-        """Walk the rich payload and yield dialects of any embedded
-        ``Type`` instances. Constants can carry type references in their
-        bytes that aren't reachable via ``Value.dependencies`` (e.g. a
-        TypeType constant whose value is from a non-builtin dialect, or
-        an existential whose witness type is). The asm formatter calls
-        this when collecting imports.
+        """Constants can carry type references in their payload that aren't
+        reachable via the use-def graph (a TypeType constant whose value is
+        ``index.Index``, say). When the rich payload is itself a ``Value``,
+        walk its transitive dependencies and surface their dialects so the
+        formatter's import block stays honest.
         """
-        return _walk_for_dialects(constant(self))
-
-
-def _walk_for_dialects(value: object) -> Iterator[Dialect]:
-    if isinstance(value, Type):
-        yield value.dialect
-        for _, param in value.parameters:
-            yield from _walk_for_dialects(param)
-    elif isinstance(value, Value):
-        yield from _walk_for_dialects(value.type)
-    elif isinstance(value, dict):
-        for v in value.values():
-            yield from _walk_for_dialects(v)
-    elif isinstance(value, list):
-        for item in value:
-            yield from _walk_for_dialects(item)
+        yield from super().required_dialects()
+        payload = constant(self)
+        if isinstance(payload, Value):
+            for v in transitive_dependencies(payload):
+                yield from v.required_dialects()
 
 
 Fields = tuple[tuple[str, type[Type]], ...]
