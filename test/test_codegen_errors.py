@@ -3,8 +3,11 @@
 import pytest
 
 from dgen.asm.parser import parse
+from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
+from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.llvm.codegen import LLVMCodegen
 from dgen.passes.compiler import Compiler
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.testing import strip_prefix
 
 
@@ -45,7 +48,7 @@ def test_empty_non_label_group_in_mixed_block():
         |         %br : Nil = goto.branch<%self>([%next])
     """)
     value = parse(ir)
-    from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-
-    exe = Compiler([ControlFlowToGoto()], LLVMCodegen()).compile(value)
+    exe = Compiler(
+        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
+    ).compile(value)
     assert "define" in exe.ir

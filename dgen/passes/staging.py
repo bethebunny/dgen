@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from copy import deepcopy
-from itertools import chain as iterchain
 from typing import TYPE_CHECKING, TypeVar
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.llvm.codegen import Executable, build_callback_thunk, register_executable
 from dgen.dialects.function import Function, FunctionOp
-from dgen.ir.traversal import all_values, interior_values
-from dgen.builtins import ConstantOp, pack
+from dgen.ir.traversal import all_values, transitive_dependencies
+from dgen.builtins import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass
 from dgen.memory import Memory
 from dgen.type import Constant
@@ -24,94 +23,74 @@ T = TypeVar("T")
 
 
 # ---------------------------------------------------------------------------
-# Stage computation
+# Resolution predicates and walkers
 # ---------------------------------------------------------------------------
 
 
 def _is_unresolved(value: dgen.Value) -> bool:
-    """True if value is an unresolved parameter (not yet a constant/type/function)."""
-    return not isinstance(value, (Constant, dgen.Type, FunctionOp))
+    """True if value is a bare SSA reference that needs JIT evaluation to
+    become a Constant.
 
+    The exclusion list — values that are *not* unresolved — covers everything
+    that's already a complete value or a structural container the walker
+    descends into separately rather than recursively here:
 
-def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
-    """Get all Value inputs from a set of fields, flattening list-valued ones."""
-    return [getattr(op, name) for name, _ in fields]
-
-
-def compute_stages(root: dgen.Value) -> dict[dgen.Value, int]:
-    """Assign a stage number to every Value reachable from root.
-
-    Stage 0 means the value can be evaluated at compile time (no runtime
-    dependencies). Stage 1+ means it depends on runtime values.
-
-    Base cases:
-      - Constant / ConstantOp / Type / FunctionOp / BlockParameter: stage 0
-      - BlockArgument: stage 1
-
-    For ops, params bump the stage only when they depend on runtime::
-
-        stage = max((
-            *((1 + stage(p) if stage(p) > 0 else stage(p)) for p in __params__),
-            *(stage(v) for v in __operands__),
-        ))
-
-    Returns a dict mapping ``value → stage_number``.
+    - ``Constant``: a literal value, by definition.
+    - ``dgen.Type``: a Type instance is the materialized form of a type.
+      If its parameters reference unresolved SSA values, they surface
+      naturally because the walker visits the Type as its own node in
+      ``all_values`` and walks ``Type.compile_dependencies`` (= its params)
+      from there. No recursive predicate needed.
+    - ``FunctionOp``: a function value is materialized once you have a
+      reference to it; you don't JIT-evaluate a function to "produce" it.
+      Its body's compile dependencies are reached via the normal
+      ``interior_values`` traversal as part of ``all_values``.
+    - ``BlockParameter``: a structural placeholder bound at IR construction
+      time (e.g. ``%self`` for the back-edge of a goto label). It's not a
+      runtime SSA value and the staging engine has nothing to resolve.
+    - ``PackOp``: ``[a, b, c]`` is shaped like a constant — a list literal
+      whose elements are independently-walked SSA values. It only inherits
+      ``Op`` for IR convenience (codegen treats it as a noop and inlines
+      its elements at every use site). Like a Type, the walker descends
+      into a PackOp's element values via the normal walk, not by recursing
+      through the PackOp itself.
     """
-    stages: dict[dgen.Value, int] = {}
-
-    def _stage(value: dgen.Value) -> int:
-        if value in stages:
-            return stages[value]
-        if isinstance(value, (Constant, dgen.Type, FunctionOp, BlockParameter)):
-            stages[value] = 0
-            return 0
-        if isinstance(value, BlockArgument):
-            stages[value] = 1
-            return 1
-        if not isinstance(value, dgen.Op):
-            stages[value] = 0
-            return 0
-        parts: list[int] = []
-        for pv in _field_values(value, value.__params__):
-            s = _stage(pv)
-            # +1 only when the param depends on runtime values (stage > 0).
-            parts.append(1 + s if s > 0 else s)
-        for ov in _field_values(value, value.__operands__):
-            parts.append(_stage(ov))
-        if _is_unresolved(value.type):
-            s = _stage(value.type)
-            parts.append(1 + s if s > 0 else s)
-        result = max(parts, default=0)
-        stages[value] = result
-        return result
-
-    for value in all_values(root):
-        _stage(value)
-    return stages
+    return not isinstance(
+        value, (Constant, dgen.Type, FunctionOp, BlockParameter, PackOp)
+    )
 
 
-def _unresolved_boundaries(
-    root: dgen.Value,
-    stages: dict[dgen.Value, int],
-) -> list[tuple[int, dgen.Op, str, dgen.Value]]:
-    """Find unresolved __params__ / type boundaries sorted by stage.
+def _is_constant_foldable(value: dgen.Value) -> bool:
+    """True if ``value``'s entire dependency subgraph reaches no
+    ``BlockArgument`` — i.e. it can be JIT-evaluated at compile time
+    without any runtime input."""
+    return not any(isinstance(d, BlockArgument) for d in transitive_dependencies(value))
 
-    Walks each reachable function's top-level body ops; does not descend into
-    nested blocks (loop bodies etc.) — those boundaries are resolved by
-    recursive compilation once a parent staging resolution lands.
+
+def _unresolved_compile_dependencies(root: dgen.Value) -> list[dgen.Value]:
+    """The unresolved SSA references that appear as compile-time dependencies
+    of some value reachable from ``root``, in topological (dataflow) order
+    with duplicates removed.
+
+    These are the staging engine's resolution targets: each one needs to be
+    JIT-evaluated to a Constant (or, if it depends on runtime input, deferred
+    to a callback thunk). Replacement happens via ``replace_uses_of`` so the
+    caller doesn't need to track where each one is referenced.
+
+    Topological order matters when targets are chained: JITing a value
+    requires its own compile-time dependencies to already be Constants (so
+    e.g. ``ShapeInference`` inside the JIT pipeline can finish). Walking via
+    ``all_values`` yields dependencies before dependents; ``dict.fromkeys``
+    deduplicates while preserving that order.
     """
-    boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
-    for func in [v for v in all_values(root) if isinstance(v, FunctionOp)]:
-        for op in func.body.ops:
-            if not isinstance(op, dgen.Op):
-                continue
-            for field_name, param in op.parameters:
-                if _is_unresolved(param):
-                    boundaries.append((stages.get(op, 0), op, field_name, param))
-            if _is_unresolved(op.type):
-                boundaries.append((stages.get(op, 0), op, "type", op.type))
-    boundaries.sort(key=lambda t: t[0])
-    return boundaries
+    return list(
+        dict.fromkeys(
+            dep
+            for v in all_values(root)
+            for dep in v.compile_dependencies
+            if _is_unresolved(dep)
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -151,28 +130,18 @@ class ConstantFold(Pass):
     allow_unregistered_ops = True
 
 
-def resolve_stage0(
+def constant_fold_compile_dependencies(
     root: dgen.Value,
     compiler: Compiler[object],
 ) -> dgen.Value:
-    """Deepcopy + resolve all stage-0 comptime boundaries.
-
-    Iteratively resolves the lowest-stage boundary whose value can be
-    evaluated without runtime values (no BlockArgument dependencies).
-    Stops when only runtime-dependent boundaries remain.
+    """Fold every constant-foldable unresolved compile-time dependency in
+    ``root`` to a Constant via JIT evaluation. Mutates ``root`` in place and
+    returns it. Anything still unresolved after this depends on a runtime
+    BlockArgument and must be deferred to a callback thunk.
     """
-    root = deepcopy(root)
-    while True:
-        stages = compute_stages(root)
-        boundaries = [
-            (op, field, value)
-            for (_, op, field, value) in _unresolved_boundaries(root, stages)
-            if stages.get(value, 0) == 0
-        ]
-        if not boundaries:
-            break
-        op, field_name, value = boundaries[0]
-        setattr(op, field_name, _jit_evaluate(value, compiler))
+    for target in _unresolved_compile_dependencies(root):
+        if _is_constant_foldable(target):
+            root.replace_uses_of(target, _jit_evaluate(target, compiler))
     return root
 
 
@@ -181,19 +150,15 @@ def _resolve_with_runtime_args(
     compiler: Compiler[object],
     python_args: Sequence[object],
 ) -> None:
-    """Substitute func.body.args with runtime-value constants, then
-    resolve any remaining stage-0 boundaries in func."""
+    """Substitute ``func``'s block args with runtime-value constants, then
+    fold every remaining unresolved compile-time dependency. After
+    substitution every leaf is constant-foldable, so no filter is needed.
+    """
     for block_arg, py_val in zip(func.body.args, python_args):
         const = ConstantOp.from_constant(block_arg.type.constant(py_val))
         func.body.replace_uses_of(block_arg, const)
-
-    while True:
-        stages = compute_stages(func)
-        boundaries = _unresolved_boundaries(func, stages)
-        if not boundaries:
-            break
-        _stage, op, field_name, value = boundaries[0]
-        setattr(op, field_name, _jit_evaluate(value, compiler))
+    for target in _unresolved_compile_dependencies(func):
+        func.body.replace_uses_of(target, _jit_evaluate(target, compiler))
 
 
 def _build_callback_thunk_for(
@@ -240,7 +205,7 @@ def compile_value(root: dgen.Value, compiler: Compiler[T]) -> T:
     boundaries, each is compiled as a callback thunk and registered as a
     global symbol so cross-function calls (including recursion) work.
     """
-    resolved = resolve_stage0(root, compiler)
+    resolved = constant_fold_compile_dependencies(root, compiler)
 
     # Remaining boundaries depend on runtime (BlockArgument) values. Each
     # reachable function that contains such a boundary needs its own
@@ -249,7 +214,9 @@ def compile_value(root: dgen.Value, compiler: Compiler[T]) -> T:
     # entry callback can call them. The root itself is the entry.
     entry = resolved if isinstance(resolved, FunctionOp) else None
     needs_callback = [
-        f for f in [v for v in all_values(resolved) if isinstance(v, FunctionOp)] if _function_has_boundaries(f)
+        f
+        for f in (v for v in all_values(resolved) if isinstance(v, FunctionOp))
+        if _unresolved_compile_dependencies(f)
     ]
     if not needs_callback:
         return compiler.run(resolved)
@@ -276,25 +243,3 @@ def compile_value(root: dgen.Value, compiler: Compiler[T]) -> T:
     assert isinstance(result, Executable)
     result.host_refs.extend(all_host_refs)
     return result
-
-
-def _has_unresolved(op: dgen.Op) -> bool:
-    """True if op has any unresolved params, type, or block arg/param types."""
-    if any(_is_unresolved(p) for _, p in op.parameters) or _is_unresolved(op.type):
-        return True
-    for _, block in op.blocks:
-        if any(_is_unresolved(arg.type) for arg in block.args):
-            return True
-        if any(_is_unresolved(param.type) for param in block.parameters):
-            return True
-    return False
-
-
-def _function_has_boundaries(func: FunctionOp) -> bool:
-    """True if any op in ``func``'s own body has unresolved __params__ or
-    an unresolved type. Does not cross into captured callees.
-    """
-    all_ops = iterchain(
-        func.body.values, *(interior_values(v) for v in func.body.values)
-    )
-    return any(_has_unresolved(v) for v in all_ops if isinstance(v, dgen.Op))
