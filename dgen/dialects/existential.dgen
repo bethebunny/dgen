@@ -1,0 +1,14 @@
+from builtin import Byte
+import memory
+
+type Some<bound: Type>:
+    existential: Type
+    value: memory.Reference<Byte>
+
+type Any:
+    data: Some<Type>
+
+op pack<bound: Type>(value) -> Some<bound>:
+    requires value has type bound
+
+op unpack<witness: Type>(box: Some) -> witness

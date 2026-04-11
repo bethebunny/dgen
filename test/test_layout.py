@@ -8,7 +8,7 @@ from typing import ClassVar
 from dgen import Dialect, asm, layout
 from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse
-from dgen.dialects import algebra, builtin, number
+from dgen.dialects import algebra, builtin, existential, number
 from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
 from dgen.builtins import string_value
 from dgen.testing import strip_prefix
@@ -436,45 +436,51 @@ def test_parse_type_with_pointer_array_param():
 
 
 def test_some_layout_record_shape():
-    """Some<bound> derives a 16-byte Record(existential: TypeValue, value: Pointer)."""
-    ly = builtin.Some(bound=builtin.TypeTag()).__layout__
+    """Some<bound> derives a 16-byte Record(existential: TypeValue, value: Reference)."""
+    ly = existential.Some(bound=builtin.TypeTag()).__layout__
     assert isinstance(ly, layout.Record)
     assert ly.byte_size == 16
     fields = dict(ly.fields)
     assert isinstance(fields["existential"], TypeValue)
+    # value is memory.Reference<Byte>, which is a single-field type whose
+    # layout is Pointer<Nil> at the byte level.
     assert isinstance(fields["value"], layout.Pointer)
 
 
 def test_any_aliases_some_type():
     """Any has the same 16-byte Record layout as Some<Type>."""
-    any_ly = builtin.Any().__layout__
-    some_ly = builtin.Some(bound=builtin.TypeTag()).__layout__
+    any_ly = existential.Any().__layout__
+    some_ly = existential.Some(bound=builtin.TypeTag()).__layout__
     assert isinstance(any_ly, layout.Record)
     assert any_ly.byte_size == some_ly.byte_size == 16
 
 
 def test_some_type_asm_format():
-    """Some<bound> and Any format with no dialect prefix (builtin)."""
-    assert type_asm(builtin.Some(bound=builtin.TypeTag())) == "Some<TypeTag>"
-    assert type_asm(builtin.Any()) == "Any"
+    """Some<bound> and Any format with the existential dialect prefix."""
+    assert (
+        type_asm(existential.Some(bound=builtin.TypeTag()))
+        == "existential.Some<TypeTag>"
+    )
+    assert type_asm(existential.Any()) == "existential.Any"
 
 
 def test_some_with_trait_bound():
     """A trait can serve as the bound for Some<Trait>."""
-    ty = builtin.Some(bound=algebra.AddMagma())
+    ty = existential.Some(bound=algebra.AddMagma())
     assert isinstance(ty.__layout__, layout.Record)
     assert ty.__layout__.byte_size == 16
 
 
 def test_existential_any_example_roundtrip():
-    """The existential_any example uses sugared type ASM and round-trips."""
+    """The existential.Any example uses sugared type ASM and round-trips."""
     text = strip_prefix("""
+        | import existential
         | import function
         | import index
         | import number
         |
-        | %main : function.Function<[], Any> = function.function<Any>() body():
-        |     %r : Any = {"existential": number.SignedInteger<index.Index(32)>, "value": ()}
+        | %main : function.Function<[], existential.Any> = function.function<existential.Any>() body():
+        |     %r : existential.Any = {"existential": number.SignedInteger<index.Index(32)>, "value": ()}
     """)
     value = parse(text)
     formatted = asm.format(value)
