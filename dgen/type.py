@@ -85,6 +85,14 @@ class Value(Generic[T]):
     def __constant__(self) -> Memory[T]:
         raise NotImplementedError
 
+    def required_dialects(self) -> Iterator[Dialect]:
+        """Dialects that must be importable for this value to round-trip
+        through ASM. The default is empty — overridden by ``Constant`` to
+        walk the rich payload and yield dialects of any embedded ``Type``
+        instances that aren't reachable via the use-def graph.
+        """
+        return iter(())
+
     @property
     def ready(self) -> bool:
         return self.type.ready and all(val.ready for _, val in self.parameters)
@@ -251,6 +259,31 @@ class Constant(Value[T]):
     @property
     def __constant__(self) -> Memory[T]:
         return self.value
+
+    def required_dialects(self) -> Iterator[Dialect]:
+        """Walk the rich payload and yield dialects of any embedded
+        ``Type`` instances. Constants can carry type references in their
+        bytes that aren't reachable via ``Value.dependencies`` (e.g. a
+        TypeType constant whose value is from a non-builtin dialect, or
+        an existential whose witness type is). The asm formatter calls
+        this when collecting imports.
+        """
+        return _walk_for_dialects(constant(self))
+
+
+def _walk_for_dialects(value: object) -> Iterator[Dialect]:
+    if isinstance(value, Type):
+        yield value.dialect
+        for _, param in value.parameters:
+            yield from _walk_for_dialects(param)
+    elif isinstance(value, Value):
+        yield from _walk_for_dialects(value.type)
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _walk_for_dialects(v)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_for_dialects(item)
 
 
 Fields = tuple[tuple[str, type[Type]], ...]
