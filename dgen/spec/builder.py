@@ -55,14 +55,12 @@ def _resolve_type(name: str, ns: dict[str, object]) -> type:
 
 def _resolve_param_type(ref: TypeRef, ns: dict[str, object]) -> type[Type]:
     """Convert a TypeRef to its actual Python Type class (AST boundary)."""
-    if ref.name == "Type":
-        return TypeType
     return _resolve_type(ref.name, ns)  # type: ignore[return-value]
 
 
 def _is_type_kinded(param_type: type[Type]) -> bool:
     """True when *param_type* values are themselves types (metatype params)."""
-    return param_type is Type or issubclass(param_type, TypeType)
+    return issubclass(param_type, TypeType)
 
 
 def _is_span_of_types(param_type: type[Type]) -> bool:
@@ -97,7 +95,7 @@ def _layout_fn(
         pname = ref.name
         if _is_type_kinded(param_type):
             return lambda self, _n=pname: (
-                dgen.type.type_constant(getattr(self, _n)).__layout__
+                dgen.type.constant(getattr(self, _n)).__layout__
             )
         return lambda self, _n=pname: getattr(self, _n).__constant__.to_json()
     if ctor := _CONSTRUCTOR_LAYOUTS.get(ref.name):
@@ -139,7 +137,7 @@ def _make_layout(
             return property(
                 lambda self, _n=pname: layout.Record(
                     [
-                        (str(i), dgen.type.type_constant(t).__layout__)
+                        (str(i), dgen.type.constant(t).__layout__)
                         for i, t in enumerate(getattr(self, _n))
                     ]
                 )
@@ -339,7 +337,11 @@ def build(
 
     ns.setdefault("dgen", dgen)
     ns.setdefault("layout", layout)
-    ns.setdefault("Type", Type)
+    # ``Type`` in dgen source is the metatype: any value of type ``Type`` is
+    # itself a type, with ``TypeValue`` layout. Bind the dgen name to
+    # ``TypeType`` so all resolution paths (params, fields, return types,
+    # static fallbacks in ``_layout_fn``) reach a class that has ``__layout__``.
+    ns.setdefault("Type", TypeType)
     ns.setdefault("Value", Value)
     ns.setdefault("Op", Op)
     ns.setdefault("Block", Block)

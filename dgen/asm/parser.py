@@ -233,7 +233,8 @@ def value_expression(parser: ASMParser) -> object:
 def _named_type(parser: ASMParser) -> Type:
     name = parser.read(qualified_name)
     type_cls = parser.scope.lookup(name)
-    assert issubclass(type_cls, Type)
+    if not issubclass(type_cls, Type):
+        raise ParseError(f"Expected type, got {name}")
     if not type_cls.__params__ or parser.try_read("<") is None:
         return type_cls()
     values = parser.read_list(value_expression)
@@ -289,6 +290,15 @@ def op_statement(parser: ASMParser) -> Op:
         op = _make_constant_op(val, pre_type, name)
         parser.name_table[name] = op
         return op
+    # Type-ASM expressions on the RHS (bare ``Type`` or sugared ``Type(value)``)
+    # — e.g. ``%t : Type = index.Index`` or ``%c : SignedInteger<...> = SignedInteger<...>(42)``.
+    # ``try_read`` backtracks if the RHS isn't a value expression (e.g. it's
+    # actually an op call), so the op-expression branch below still runs.
+    if pre_type is not None:
+        if (val := parser.try_read(value_expression)) is not None:
+            op = _make_constant_op(val, pre_type, name)
+            parser.name_table[name] = op
+            return op
     op_cls, parameters, operands, blocks = op_expression(parser)
     if issubclass(op_cls, ConstantOp):
         assert len(operands) == 1

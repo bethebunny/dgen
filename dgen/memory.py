@@ -53,8 +53,23 @@ class Memory(Generic[T]):
         return cls.from_json(type, value)
 
     def to_json(self) -> object:
-        """Convert to a JSON-compatible Python value by reading from the buffer."""
+        """Convert to a JSON-compatible Python value by reading from the buffer.
+
+        Pure JSON: dicts, lists, scalars only. Type values are returned as
+        ``{"tag": ..., "params": ...}`` descriptor dicts. Use this for wire
+        formats and external IO (CLI output, equivalence hashing).
+        """
         return self.layout.to_json(self.buffer, 0)
+
+    def to_value(self) -> object:
+        """Read the buffer as rich Python objects.
+
+        Same shape as ``to_json`` but type values are returned as first-class
+        ``Type`` instances and container layouts recurse, so embedded types
+        survive nesting. Use this from IR-side code that wants to format
+        types with sugar or walk for dialects.
+        """
+        return self.layout.to_value(self.buffer, 0)
 
     @classmethod
     def from_json(cls, type: Type, value: object) -> Memory:

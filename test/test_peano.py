@@ -25,7 +25,7 @@ from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.dialects.function import FunctionOp
 from dgen.ir.verification import CycleError, verify_dag
 from dgen.passes.pass_ import Pass, lowering_for
-from dgen.type import Fields, TypeType, type_constant
+from dgen.type import Fields, TypeType, constant
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
@@ -63,7 +63,7 @@ def count_nat(t: Type) -> int:
     n = 0
     while isinstance(t, Successor):
         n += 1
-        t = type_constant(t.pred)
+        t = constant(t.pred)
     assert isinstance(t, Zero)
     return n
 
@@ -110,12 +110,12 @@ class PeanoLowering(Pass):
 
     @lowering_for(SuccessorOp)
     def lower_successor(self, op: SuccessorOp) -> Value | None:
-        succ = Successor(pred=type_constant(op.pred))
+        succ = Successor(pred=constant(op.pred))
         return TypeType().constant(succ.__constant__.to_json())
 
     @lowering_for(ValueOp)
     def lower_value(self, op: ValueOp) -> Value | None:
-        return Index().constant(count_nat(type_constant(op.nat)))
+        return Index().constant(count_nat(constant(op.nat)))
 
 
 def lower_peano(value: dgen.Value) -> dgen.Value:
@@ -182,7 +182,7 @@ def test_recursive_type_roundtrip():
     nat = Successor(pred=Successor(pred=Zero()))
     assert count_nat(nat) == 2
     data = nat.__constant__.to_json()
-    reconstructed = type_constant(TypeType().constant(data))
+    reconstructed = constant(TypeType().constant(data))
     assert count_nat(reconstructed) == 2
 
 

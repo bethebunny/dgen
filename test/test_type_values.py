@@ -14,6 +14,7 @@ from dgen.passes.compiler import Compiler, IdentityPass
 from dgen import layout
 from dgen.dialects import algebra, builtin, llvm, number
 from dgen.dialects.index import Index
+from dgen.dialects.index import Index
 from dgen.dialects.function import FunctionOp
 from dgen.passes.staging import (
     _unresolved_compile_dependencies,
@@ -23,7 +24,7 @@ from dgen.layout import TypeValue
 from dgen.builtins import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.memory import Memory
-from dgen.type import TypeType, type_constant
+from dgen.type import TypeType, constant
 from dgen.testing import strip_prefix
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
@@ -47,12 +48,17 @@ def test_parse_dict_literal():
 
 
 def test_format_dict_literal():
-    """format_value handles dicts."""
-    result = format_value({"tag": "index.Index", "params": {}})
-    assert result == '{"tag": "index.Index", "params": {}}'
+    """format_value emits dicts as JSON-shaped literals."""
+    result = format_value({"k1": 1, "k2": "v"})
+    assert result == '{"k1": 1, "k2": "v"}'
 
 
-def test_typetype_constant_asm_roundtrip():
+def test_format_type_instance_as_sugar():
+    """A Type instance formats as type-ASM sugar (no dict sniff needed)."""
+    assert format_value(Index()) == "index.Index"
+
+
+def test_typeconstant_asm_roundtrip():
     """TypeType constant with dict literal round-trips through ASM."""
     ir = strip_prefix("""
         | import function
@@ -109,7 +115,7 @@ def test_typetype_memory_roundtrip():
     assert mem2.to_json() == data
 
 
-def test_parameterized_typetype_constant_roundtrip():
+def test_parameterized_typeconstant_roundtrip():
     """TypeType for Array<index.Index, 4> round-trips with self-describing params."""
     arr_ty = builtin.Array(
         element_type=Index(),
@@ -184,7 +190,7 @@ def test_array_with_ssa_element_type():
 
 
 def test_array_with_ssa_element_type_layout():
-    """Array<%t, index.Index(4)> — type_constant resolves the element type for layout computation."""
+    """Array<%t, index.Index(4)> — constant resolves the element type for layout computation."""
     ir = strip_prefix("""
         | import function
         | import index
@@ -200,7 +206,7 @@ def test_array_with_ssa_element_type_layout():
     # element_type is an SSA ref but the type is ready (ConstantOp is resolved)
     assert arr_op.type.ready
     assert arr_op.ready
-    # type_constant resolves the element_type to compute the layout
+    # constant resolves the element_type to compute the layout
     arr_layout = arr_op.type.__layout__
     assert arr_layout == layout.Array(layout.Int(), 4)
 
@@ -243,7 +249,7 @@ def test_type_value_jit_identity():
     assert result.to_json() == mem.to_json()
 
 
-def test_type_constant_jit_return():
+def test_constant_jit_return():
     """JIT function returns a TypeType constant, read back via Memory.from_raw."""
     ir = strip_prefix("""
         | import function
@@ -341,13 +347,13 @@ def test_block_argument_constant_raises_type_error():
     with pytest.raises(TypeError):
         add_op.type.__constant__
 
-    # type_constant also fails on a BlockArgument
+    # constant also fails on a BlockArgument
     with pytest.raises(TypeError):
-        type_constant(add_op.type)
+        constant(add_op.type)
 
 
-def test_type_constant_resolves_ssa_constant():
-    """type_constant resolves a ConstantOp TypeType value to a concrete Type."""
+def test_constant_resolves_ssa_constant():
+    """constant resolves a ConstantOp TypeType value to a concrete Type."""
     ir = strip_prefix("""
         | import function
         | import index
@@ -358,7 +364,7 @@ def test_type_constant_resolves_ssa_constant():
     """)
     value = parse(ir)
     t_op = list(value.body.ops)[0]
-    resolved = type_constant(t_op)
+    resolved = constant(t_op)
     assert isinstance(resolved, Index)
 
 
@@ -383,7 +389,7 @@ def test_compile_function_with_ssa_typed_block_arg():
     """compile() handles block args whose type is a ConstantOp (SSA ref).
 
     If a function's block arg has type = ConstantOp (not a concrete Type),
-    codegen must resolve it via type_constant before accessing __layout__.
+    codegen must resolve it via constant before accessing __layout__.
     """
     ir = strip_prefix("""
         | import function
@@ -399,7 +405,7 @@ def test_compile_function_with_ssa_typed_block_arg():
     # The block arg %x has type = ConstantOp (SSA ref %t), not a concrete Type
     x_arg = inner_func.body.args[0]
     assert isinstance(x_arg.type, ConstantOp)
-    # compile() must resolve this via type_constant (not crash on __layout__)
+    # compile() must resolve this via constant (not crash on __layout__)
     exe = compile_module(inner_func)
     exe.run(42)
 
@@ -410,7 +416,7 @@ def test_compile_constant_with_ssa_type():
     %t : Type = {"tag": "index.Index", "params": {}}
     %x : %t = 42
 
-    codegen must resolve %x's type via type_constant to get __layout__.
+    codegen must resolve %x's type via constant to get __layout__.
     """
     ir = strip_prefix("""
         | import function
@@ -430,7 +436,7 @@ def test_compile_constant_with_ssa_type():
 
 
 def test_compile_input_types_resolved_from_ssa():
-    """compile() resolves input_types via type_constant for ConstantOp-typed args.
+    """compile() resolves input_types via constant for ConstantOp-typed args.
 
     Executable.run() uses input_types to convert Python values to Memory,
     so they must be concrete Types, not ConstantOps.

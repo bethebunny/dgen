@@ -18,7 +18,7 @@ from dgen.dialects.builtin import (
     builtin,
 )
 from dgen.memory import Memory
-from dgen.type import Fields, SlotFn, _default_slot, format_value, type_constant
+from dgen.type import Fields, SlotFn, _default_slot, format_value, constant
 
 # ===----------------------------------------------------------------------=== #
 # ConstantOp (custom __init__, multiple inheritance)
@@ -38,7 +38,7 @@ class ConstantOp(Op, Constant):
         if isinstance(self.value, Memory):
             return self.value
         # Deferred: type was an SSA ref at parse time, resolve now.
-        return Memory.from_value(type_constant(self.type), self.value)
+        return Memory.from_value(constant(self.type), self.value)
 
     @classmethod
     def from_constant(

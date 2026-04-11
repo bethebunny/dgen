@@ -5,10 +5,10 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 
-from dgen import Dialect, layout
+from dgen import Dialect, asm, layout
 from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse
-from dgen.dialects import builtin, number
+from dgen.dialects import algebra, builtin, number
 from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
 from dgen.builtins import string_value
 from dgen.testing import strip_prefix
@@ -428,3 +428,58 @@ def test_parse_type_with_pointer_array_param():
         |     %_ : Nil = ()
     """)
     parse(ir)
+
+
+# ===----------------------------------------------------------------------=== #
+# Existential (Some / Any) layout
+# ===----------------------------------------------------------------------=== #
+
+
+def test_some_layout_record_shape():
+    """Some<bound> derives a 16-byte Record(existential: TypeValue, value: Pointer)."""
+    ly = builtin.Some(bound=builtin.TypeTag()).__layout__
+    assert isinstance(ly, layout.Record)
+    assert ly.byte_size == 16
+    fields = dict(ly.fields)
+    assert isinstance(fields["existential"], TypeValue)
+    assert isinstance(fields["value"], layout.Pointer)
+
+
+def test_any_aliases_some_type():
+    """Any has the same 16-byte Record layout as Some<Type>."""
+    any_ly = builtin.Any().__layout__
+    some_ly = builtin.Some(bound=builtin.TypeTag()).__layout__
+    assert isinstance(any_ly, layout.Record)
+    assert any_ly.byte_size == some_ly.byte_size == 16
+
+
+def test_some_type_asm_format():
+    """Some<bound> and Any format with no dialect prefix (builtin)."""
+    assert type_asm(builtin.Some(bound=builtin.TypeTag())) == "Some<TypeTag>"
+    assert type_asm(builtin.Any()) == "Any"
+
+
+def test_some_with_trait_bound():
+    """A trait can serve as the bound for Some<Trait>."""
+    ty = builtin.Some(bound=algebra.AddMagma())
+    assert isinstance(ty.__layout__, layout.Record)
+    assert ty.__layout__.byte_size == 16
+
+
+def test_existential_any_example_roundtrip():
+    """The existential_any example uses sugared type ASM and round-trips."""
+    text = strip_prefix("""
+        | import function
+        | import index
+        | import number
+        |
+        | %main : function.Function<[], Any> = function.function<Any>() body():
+        |     %r : Any = {"existential": number.SignedInteger<index.Index(32)>, "value": ()}
+    """)
+    value = parse(text)
+    formatted = asm.format(value)
+    # Sugared type-ASM, not raw {tag, params} dict.
+    assert "number.SignedInteger<index.Index(32)>" in formatted
+    assert '"tag":' not in formatted
+    # And it parses back.
+    parse(formatted)

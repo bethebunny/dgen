@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import dgen
 from dgen.ir.traversal import all_values, transitive_dependencies
 from dgen.memory import Memory
-from dgen.type import Type, Value
+from dgen.type import Constant, Type, Value, constant
 
 from .formatting import SlotTracker, _is_sugar_op, indent, op_asm
 from .parser import ASMParser, parse, value_expression
@@ -16,6 +16,30 @@ from .parser import ASMParser, parse, value_expression
 def format(value: Value) -> str:
     """Format a value as ASM text with dialect ``import`` lines."""
     return "\n".join(asm_with_imports(value))
+
+
+def _embedded_type_dialects(value: object) -> Iterator[dgen.Dialect]:
+    """Walk a rich payload and yield dialects of any embedded ``Type`` instances.
+
+    Constants can carry type references in their payload that aren't
+    reachable through ``Value.dependencies`` — e.g. a TypeType constant
+    whose value is ``index.Index``, or an ``Any`` whose existential field
+    is ``number.SignedInteger``. The structurally clean fix would be to
+    expose those types as Constant dependencies; until then this walker
+    keeps the import discovery honest.
+    """
+    if isinstance(value, Type):
+        yield value.dialect
+        for _, param in value.parameters:
+            yield from _embedded_type_dialects(param)
+    elif isinstance(value, Value):
+        yield from _embedded_type_dialects(value.type)
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _embedded_type_dialects(v)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _embedded_type_dialects(item)
 
 
 def asm_with_imports(value: Value) -> Iterator[str]:
@@ -31,6 +55,9 @@ def asm_with_imports(value: Value) -> Iterator[str]:
     dialects: set[dgen.Dialect] = {
         v.dialect for v in all_values(value) if hasattr(v, "dialect")
     }
+    for v in all_values(value):
+        if isinstance(v, Constant):
+            dialects.update(_embedded_type_dialects(constant(v)))
     dialects.discard(builtin_dialect)
 
     for d in sorted(dialects, key=lambda d: d.name):
