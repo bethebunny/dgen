@@ -30,6 +30,7 @@
 - Support `%_ = %ref` syntax (alias an SSA ref without an op). Currently blocks whose result is a block argument need `chain(%arg, ())` as a workaround.
 - Massively simplify / clean the asm parser and formatter code
 - Add parser failure tests
+- Restore Python-style `#` line comments in ASM. The parser should skip from `#` to end-of-line in `_skip_ws`/`_skip_all`. Tried writing a comment in `examples/dependent_types/existential_any.dgen.asm` and it choked on `#`.
 
 ## Cleanup
 - Remove spurious utf8 decoding stuff from Memory/Value
