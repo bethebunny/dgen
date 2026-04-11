@@ -43,6 +43,7 @@
 ## Existentials
 - Add a runtime `pack_existential` (or extend `algebra.cast`) op that boxes a runtime value into `Some<X>` / `Any`. Currently `Some`/`Any` only have constant construction; the cast example can't yet do "math, then return `Some<IntegralType>`" because there's no op that takes a runtime SignedInteger and produces a Some at runtime.
 - Symmetric `unpack_existential` op for compile-time projection — a stage-boundary that resolves the witness type and yields a typed value.
+- Spec-syntax support for `has trait <param-name>`. The `existential.Some<bound: Type>` projection over its `bound` parameter is currently a hand-written monkey-patch in `dgen/dialects/__init__.py` because the spec parser/builder only resolves trait names to classes at build time. Lifting this into the spec syntax would let any parameterised type declare a trait that depends on its parameters, removing the special case.
 - Compound constants (`Any`, `Some<X>`, future record-shaped existentials) currently store their rich payload as a Python dict produced by `Layout.Record.to_native_value`, and `Constant.required_dialects` peeks through dicts/lists to find embedded `Value`s. The structurally clean version is to make compound constants' rich form a tree of real `Value`s (e.g. a synthetic `pack_existential(witness=<Type>, value=<Value>)` op) so `transitive_dependencies` walks them naturally and the dict-peeking helper goes away. Probably falls out of the runtime `pack_existential` work above.
 
 ## Recursive types

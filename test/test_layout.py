@@ -258,7 +258,9 @@ def test_type_value_from_json_roundtrip():
     """Type.from_json reconstructs a Type from its self-describing dict."""
     from dgen.type import Type
 
-    original = builtin.Array(element_type=number.Float64(), n=builtin.Index().constant(8))
+    original = builtin.Array(
+        element_type=number.Float64(), n=builtin.Index().constant(8)
+    )
     data = original.to_json()
     reconstructed = Type.from_json(data)
     assert type(reconstructed).__name__ == "Array"
@@ -469,6 +471,22 @@ def test_some_with_trait_bound():
     ty = existential.Some(bound=algebra.AddMagma())
     assert isinstance(ty.__layout__, layout.Record)
     assert ty.__layout__.byte_size == 16
+
+
+def test_some_projects_trait_from_bound():
+    """``Some<Trait>`` answers ``has_trait(Trait)`` via its bound parameter.
+
+    The dgen syntax can't yet express ``has trait <param-name>``, so this
+    is a hand-written override on ``Some``. Verifies the projection.
+    """
+    boxed_addmagma = existential.Some(bound=algebra.AddMagma())
+    assert boxed_addmagma.has_trait(algebra.AddMagma)
+    # Unrelated traits don't get satisfied just because the bound exists.
+    assert not boxed_addmagma.has_trait(algebra.MulMagma)
+    # Concrete-type bounds still work as identity.
+    boxed_index = existential.Some(bound=builtin.Index())
+    assert boxed_index.has_trait(builtin.Index)
+    assert not boxed_index.has_trait(algebra.AddMagma)
 
 
 def test_existential_any_example_roundtrip():
