@@ -29,10 +29,8 @@ def asm_with_imports(value: Value) -> Iterator[str]:
     """
     builtin_dialect = dgen.Dialect.get("builtin")
     dialects: set[dgen.Dialect] = {
-        v.dialect for v in all_values(value) if hasattr(v, "dialect")
+        d for v in all_values(value) for d in v.required_dialects()
     }
-    for v in all_values(value):
-        dialects.update(v.required_dialects())
     dialects.discard(builtin_dialect)
 
     for d in sorted(dialects, key=lambda d: d.name):

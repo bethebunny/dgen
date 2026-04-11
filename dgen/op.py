@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -17,3 +18,7 @@ class Op(Value):
     name: str | None = field(default=None, kw_only=True)
     asm_name: ClassVar[str]
     dialect: ClassVar[Dialect]
+
+    def required_dialects(self) -> Iterator[Dialect]:
+        yield self.dialect
+        yield from super().required_dialects()
