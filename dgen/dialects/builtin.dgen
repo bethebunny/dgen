@@ -24,13 +24,6 @@ type Span<pointee: Type>:
 type Tuple<types: Span<Type>>:
     layout Record
 
-type Some<bound: Type>:
-    existential: Type
-    value: Pointer<Nil>
-
-type Any:
-    data: Some<Type>
-
 op chain(lhs, rhs)
 op type(value) -> Type
 op extern<symbol: String>()

@@ -323,6 +323,7 @@ class TypeValue(Layout):
     """
 
     struct = Struct("P")
+    register_passable = True
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
@@ -385,6 +386,65 @@ class TypeValue(Layout):
         result = layout.to_json(data, 0)
         assert isinstance(result, dict)
         return result
+
+
+class Some(Layout):
+    """Runtime-typed value: a witness type descriptor paired with a value
+    whose layout is determined by the witness.
+
+    Binary format: 16 bytes = ``(TypeValue, Pointer)``. The first 8
+    bytes are a TypeValue (pointer to a self-describing type descriptor).
+    The second 8 bytes are a Pointer to the value's bytes, interpreted
+    per the witness type's ``__layout__``.
+
+    Composes ``TypeValue.to_json`` / ``from_json`` for the witness and
+    ``Pointer(witness.__layout__).to_json`` / ``from_json`` for the value.
+    The ``bound`` is a compile-time annotation (e.g. a trait); it
+    doesn't affect the binary layout.
+    """
+
+    struct = Struct("PP")
+    register_passable = True
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list
+    ) -> None:
+        from .type import Type
+
+        assert isinstance(value, dict)
+        type_json = value["type"]
+        val_json = value["value"]
+        # Pack the witness via TypeValue.
+        tv = TypeValue()
+        if isinstance(type_json, Type):
+            type_inst = type_json
+        else:
+            type_inst = Type.from_json(type_json)
+        tv.from_json(buf, offset, type_json, origins)
+        # Pack the value via a Pointer whose pointee is the witness's layout.
+        value_ptr = Pointer(type_inst.__layout__)
+        value_ptr.from_json(buf, offset + tv.byte_size, val_json, origins)
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
+        from .type import Type
+
+        tv = TypeValue()
+        type_json = tv.to_json(buf, offset)
+        # Resolve the witness to get the value's layout.
+        type_inst = Type.from_json(type_json)
+        value_ptr = Pointer(type_inst.__layout__)
+        val_json = value_ptr.to_json(buf, offset + tv.byte_size)
+        return {"type": type_json, "value": val_json}
+
+    def to_native_value(self, buf: bytes | bytearray, offset: int) -> object:
+        from .type import Type
+
+        tv = TypeValue()
+        type_inst = tv.to_native_value(buf, offset)
+        assert isinstance(type_inst, Type)
+        value_ptr = Pointer(type_inst.__layout__)
+        val = value_ptr.to_native_value(buf, offset + tv.byte_size)
+        return {"type": type_inst, "value": val}
 
 
 class String(Span):

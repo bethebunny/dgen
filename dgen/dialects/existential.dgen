@@ -1,0 +1,8 @@
+type Some<bound: Type>:
+    layout Some
+
+type Any:
+    data: Some<Type>
+
+op pack(value) -> Some
+op unpack(box: Some)

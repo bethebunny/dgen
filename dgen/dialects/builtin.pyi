@@ -44,14 +44,6 @@ class Tuple(Type):
     types: Value[Span]
 
 @dataclass(eq=False)
-class Some(Type):
-    bound: Value[dgen.TypeType]
-
-@dataclass(eq=False)
-class Any(Type):
-    ...
-
-@dataclass(eq=False)
 class ChainOp(Op):
     lhs: Value
     rhs: Value

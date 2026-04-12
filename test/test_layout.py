@@ -8,7 +8,7 @@ from typing import ClassVar
 from dgen import Dialect, asm, layout
 from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse
-from dgen.dialects import algebra, builtin, number
+from dgen.dialects import algebra, builtin, existential, number
 from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
 from dgen.testing import strip_prefix
 from dgen.memory import Memory
@@ -169,6 +169,12 @@ def test_nested_span_from_json_roundtrip():
     assert mem.to_json() == [[1, 2], [3, 4, 5]]
 
 
+def test_typevalue_is_register_passable():
+    """TypeValue is register-passable (8-byte pointer, same shape as Pointer)."""
+    assert TypeValue().register_passable
+    assert TypeValue().byte_size == 8
+
+
 def test_type_layout_non_parametric():
     """Non-parametric type layout is a fixed-size TypeValue pointer (8 bytes)."""
     ty = builtin.Index()
@@ -256,7 +262,9 @@ def test_type_value_from_json_roundtrip():
     """Type.from_json reconstructs a Type from its self-describing dict."""
     from dgen.type import Type
 
-    original = builtin.Array(element_type=number.Float64(), n=builtin.Index().constant(8))
+    original = builtin.Array(
+        element_type=number.Float64(), n=builtin.Index().constant(8)
+    )
     data = original.to_json()
     reconstructed = Type.from_json(data)
     assert type(reconstructed).__name__ == "Array"
@@ -433,51 +441,49 @@ def test_parse_type_with_pointer_array_param():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_some_layout_record_shape():
-    """Some<bound> derives a 16-byte Record(existential: TypeValue, value: Pointer)."""
-    ly = builtin.Some(bound=builtin.TypeTag()).__layout__
-    assert isinstance(ly, layout.Record)
+def test_some_layout():
+    """Some<bound> uses the Some layout: 16 bytes, register-passable."""
+    ly = existential.Some(bound=builtin.TypeTag()).__layout__
+    assert isinstance(ly, layout.Some)
     assert ly.byte_size == 16
-    fields = dict(ly.fields)
-    assert isinstance(fields["existential"], TypeValue)
-    assert isinstance(fields["value"], layout.Pointer)
+    assert ly.register_passable
 
 
 def test_any_aliases_some_type():
-    """Any has the same 16-byte Record layout as Some<Type>."""
-    any_ly = builtin.Any().__layout__
-    some_ly = builtin.Some(bound=builtin.TypeTag()).__layout__
-    assert isinstance(any_ly, layout.Record)
+    """Any has the same 16-byte Some layout as Some<Type>."""
+    any_ly = existential.Any().__layout__
+    some_ly = existential.Some(bound=builtin.TypeTag()).__layout__
+    assert isinstance(any_ly, layout.Some)
     assert any_ly.byte_size == some_ly.byte_size == 16
 
 
 def test_some_type_asm_format():
-    """Some<bound> and Any format with no dialect prefix (builtin)."""
-    assert type_asm(builtin.Some(bound=builtin.TypeTag())) == "Some<TypeTag>"
-    assert type_asm(builtin.Any()) == "Any"
+    """Some<bound> and Any use the existential dialect prefix."""
+    assert (
+        type_asm(existential.Some(bound=builtin.TypeTag()))
+        == "existential.Some<TypeTag>"
+    )
+    assert type_asm(existential.Any()) == "existential.Any"
 
 
 def test_some_with_trait_bound():
     """A trait can serve as the bound for Some<Trait>."""
-    ty = builtin.Some(bound=algebra.AddMagma())
-    assert isinstance(ty.__layout__, layout.Record)
+    ty = existential.Some(bound=algebra.AddMagma())
+    assert isinstance(ty.__layout__, layout.Some)
     assert ty.__layout__.byte_size == 16
 
 
-def test_existential_any_example_roundtrip():
-    """The existential_any example uses sugared type ASM and round-trips."""
+def test_existential_pack_asm_roundtrip():
+    """An existential.pack op parses and round-trips through ASM formatting."""
     text = strip_prefix("""
+        | import existential
         | import function
         | import index
-        | import number
         |
-        | %main : function.Function<[], Any> = function.function<Any>() body():
-        |     %r : Any = {"existential": number.SignedInteger<index.Index(32)>, "value": ()}
+        | %main : function.Function<[index.Index], existential.Some<index.Index>> = function.function<existential.Some<index.Index>>() body(%x: index.Index):
+        |     %packed : existential.Some<index.Index> = existential.pack(%x)
     """)
     value = parse(text)
     formatted = asm.format(value)
-    # Sugared type-ASM, not raw {tag, params} dict.
-    assert "number.SignedInteger<index.Index(32)>" in formatted
-    assert '"tag":' not in formatted
-    # And it round-trips through the parser cleanly.
+    assert "existential.pack" in formatted
     parse(formatted)
