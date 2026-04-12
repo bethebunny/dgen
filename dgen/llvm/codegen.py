@@ -123,7 +123,9 @@ def _from_raw_result(raw: object, ty: dgen.Type) -> Memory:
     Non-register-passable returns are pointers — copy the bytes from
     the address. Register-passable aggregates come back as
     ctypes.Structure instances — copy their bytes into a fresh Memory
-    buffer. Register-passable scalars go through Memory.from_value.
+    buffer. Register-passable scalars are packed directly into the
+    buffer via the layout's struct (bypasses ``from_json``, which may
+    expect a higher-level format like a dict for TypeValue).
     """
     layout = ty.__layout__
     if not layout.register_passable:

@@ -321,12 +321,18 @@ class TypeValue(Layout):
     """
 
     struct = Struct("P")
+    register_passable = True
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         from .type import Type
 
+        # Raw pointer integer — from a register-passable JIT return or a
+        # ctypes callback. Just pack the pointer directly.
+        if isinstance(value, int):
+            self.struct.pack_into(buf, offset, value)
+            return
         # Accept either a self-describing dict or a parsed Type instance —
         # the parser produces the latter when type-ASM sugar appears in
         # value position (e.g. inside a literal dict).

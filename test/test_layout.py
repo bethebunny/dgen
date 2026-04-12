@@ -171,6 +171,12 @@ def test_nested_span_from_json_roundtrip():
     assert mem.to_json() == [[1, 2], [3, 4, 5]]
 
 
+def test_typevalue_is_register_passable():
+    """TypeValue is register-passable (8-byte pointer, same shape as Pointer)."""
+    assert TypeValue().register_passable
+    assert TypeValue().byte_size == 8
+
+
 def test_type_layout_non_parametric():
     """Non-parametric type layout is a fixed-size TypeValue pointer (8 bytes)."""
     ty = builtin.Index()
@@ -258,7 +264,9 @@ def test_type_value_from_json_roundtrip():
     """Type.from_json reconstructs a Type from its self-describing dict."""
     from dgen.type import Type
 
-    original = builtin.Array(element_type=number.Float64(), n=builtin.Index().constant(8))
+    original = builtin.Array(
+        element_type=number.Float64(), n=builtin.Index().constant(8)
+    )
     data = original.to_json()
     reconstructed = Type.from_json(data)
     assert type(reconstructed).__name__ == "Array"
