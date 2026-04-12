@@ -12,7 +12,7 @@ from copy import deepcopy
 import pytest
 
 from dgen import Block, asm
-from dgen.type import format_value
+from dgen.type import format_value, constant
 from dgen.asm.parser import ASMParser, parse, value_expression
 from dgen.testing import assert_ir_equivalent
 from dgen.block import BlockArgument
@@ -22,7 +22,7 @@ from dgen.passes.compiler import Compiler
 from dgen.dialects import builtin, llvm, number
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
-from dgen.builtins import ConstantOp, pack, string_value
+from dgen.builtins import ConstantOp, pack
 from dgen.memory import Memory
 from toy.dialects import shape_constant
 from dgen.dialects.ndbuffer import NDBuffer, Shape
@@ -409,9 +409,9 @@ def test_packop_mixed_constants_and_refs(ir_snapshot):
 
 
 def test_string_constant_roundtrip():
-    """String().constant creates a Constant[String], string_value extracts it."""
+    """String().constant creates a Constant[String], constant() extracts it."""
     c = String().constant("hello")
-    assert string_value(c) == "hello"
+    assert constant(c) == "hello"
 
 
 def test_string_constant_different_lengths():

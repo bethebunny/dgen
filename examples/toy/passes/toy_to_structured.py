@@ -92,9 +92,9 @@ class ToyToStructured(Pass):
         alloc = self._alloc(op.type.shape)
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
-            load = ndbuffer.LoadOp(mem=op.input, memref=op.input, indices=pack(ivars))
+            load = ndbuffer.LoadOp(mem=op.input, buffer=op.input, indices=pack(ivars))
             return ndbuffer.StoreOp(
-                mem=load, value=load, memref=alloc, indices=pack(reversed(list(ivars)))
+                mem=load, value=load, buffer=alloc, indices=pack(reversed(list(ivars)))
             )
 
         loop = _nested_for(in_shape, body, captures=[alloc, op.input])
@@ -119,14 +119,14 @@ class ToyToStructured(Pass):
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = pack(ivars)
-            lhs_elem = ndbuffer.LoadOp(mem=lhs, memref=lhs, indices=idx)
-            rhs_elem = ndbuffer.LoadOp(mem=rhs, memref=rhs, indices=idx)
+            lhs_elem = ndbuffer.LoadOp(mem=lhs, buffer=lhs, indices=idx)
+            rhs_elem = ndbuffer.LoadOp(mem=rhs, buffer=rhs, indices=idx)
             res = cls(
                 left=lhs_elem,
                 right=rhs_elem,
                 type=lhs_elem.type,
             )
-            return ndbuffer.StoreOp(mem=res, value=res, memref=alloc, indices=idx)
+            return ndbuffer.StoreOp(mem=res, value=res, buffer=alloc, indices=idx)
 
         loop = _nested_for(shape, body, captures=[alloc, lhs, rhs])
         return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
@@ -137,7 +137,7 @@ class ToyToStructured(Pass):
 
     @lowering_for(toy.PrintOp)
     def lower_print(self, op: toy.PrintOp) -> dgen.Value | None:
-        return ndbuffer.PrintMemrefOp(input=op.input)
+        return ndbuffer.PrintMemrefOp(buffer=op.input)
 
     @lowering_for(toy.DimSizeOp)
     def lower_dim_size(self, op: toy.DimSizeOp) -> dgen.Value | None:
@@ -156,10 +156,10 @@ class ToyToStructured(Pass):
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             load = ndbuffer.LoadOp(
-                mem=op.input, memref=op.input, indices=pack(ivars[1:])
+                mem=op.input, buffer=op.input, indices=pack(ivars[1:])
             )
             return ndbuffer.StoreOp(
-                mem=load, value=load, memref=alloc, indices=pack(ivars)
+                mem=load, value=load, buffer=alloc, indices=pack(ivars)
             )
 
         loop = _nested_for(out_shape, body, captures=[alloc, op.input])
@@ -177,8 +177,8 @@ class ToyToStructured(Pass):
 
         def lhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             idx = pack(ivars)
-            load = ndbuffer.LoadOp(mem=op.lhs, memref=op.lhs, indices=idx)
-            return ndbuffer.StoreOp(mem=load, value=load, memref=alloc, indices=idx)
+            load = ndbuffer.LoadOp(mem=op.lhs, buffer=op.lhs, indices=idx)
+            return ndbuffer.StoreOp(mem=load, value=load, buffer=alloc, indices=idx)
 
         lhs_loop = _nested_for(lhs_shape, lhs_body, captures=[alloc, op.lhs])
         offset = Index().constant(lhs_shape[axis])
@@ -186,9 +186,9 @@ class ToyToStructured(Pass):
         def rhs_body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             shifted = list(ivars)
             shifted[axis] = algebra.AddOp(left=ivars[axis], right=offset, type=Index())
-            load = ndbuffer.LoadOp(mem=lhs_loop, memref=op.rhs, indices=pack(ivars))
+            load = ndbuffer.LoadOp(mem=lhs_loop, buffer=op.rhs, indices=pack(ivars))
             return ndbuffer.StoreOp(
-                mem=load, value=load, memref=alloc, indices=pack(shifted)
+                mem=load, value=load, buffer=alloc, indices=pack(shifted)
             )
 
         rhs_loop = _nested_for(
@@ -212,7 +212,7 @@ class ToyToStructured(Pass):
 
         def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
             element = ndbuffer.LoadOp(
-                mem=op.input, memref=op.input, indices=pack(ivars)
+                mem=op.input, buffer=op.input, indices=pack(ivars)
             )
             nonzero = algebra.NotEqualOp(left=element, right=zero, type=Boolean())
             current = memory.LoadOp(mem=initial_store, ptr=accumulator, type=Index())

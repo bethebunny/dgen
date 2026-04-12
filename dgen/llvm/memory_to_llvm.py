@@ -15,7 +15,9 @@ from dgen.dialects import function, llvm, memory
 from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
 from dgen.dialects.index import Index
 from dgen.builtins import pack
+from dgen.layout import align_up
 from dgen.passes.pass_ import Pass, lowering_for
+from dgen.type import constant
 
 
 class MemoryToLLVM(Pass):
@@ -34,7 +36,11 @@ class MemoryToLLVM(Pass):
 
     @lowering_for(memory.StackAllocateOp)
     def lower_stack_allocate(self, op: memory.StackAllocateOp) -> dgen.Value | None:
-        return llvm.AllocaOp(elem_count=Index().constant(1))
+        element_type = constant(op.element_type)
+        byte_size = element_type.__layout__.byte_size
+        # alloca uses 8-byte (double) units; round up.
+        count = max(1, align_up(byte_size, 8))
+        return llvm.AllocaOp(elem_count=Index().constant(count))
 
     @lowering_for(memory.DeallocateOp)
     def lower_deallocate(self, op: memory.DeallocateOp) -> dgen.Value | None:

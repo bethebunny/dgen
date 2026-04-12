@@ -10,10 +10,9 @@ from dgen.type import format_value as type_asm
 from dgen.asm.parser import parse
 from dgen.dialects import algebra, builtin, number
 from dgen.layout import Array, Byte, Float64, Pointer, Span, TypeValue
-from dgen.builtins import string_value
 from dgen.testing import strip_prefix
 from dgen.memory import Memory
-from dgen.type import Constant, Fields, Type, TypeType, Value
+from dgen.type import Constant, Fields, Type, TypeType, Value, constant
 
 
 def test_primitive_sizes():
@@ -63,8 +62,7 @@ def test_string_constant_fatpointer():
     # Pointer dereferences to "hello"
     data = bytes((ctypes.c_char * length).from_address(ptr))
     assert data == b"hello"
-    # string_value still works
-    assert string_value(c) == "hello"
+    assert constant(c) == "hello"
 
 
 def test_string_type_asm_no_params():

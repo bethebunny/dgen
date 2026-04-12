@@ -104,18 +104,6 @@ def unpack(val: Value) -> list[Value]:
 
 
 # ===----------------------------------------------------------------------=== #
-# Helper functions
-# ===----------------------------------------------------------------------=== #
-
-
-def string_value(v: Value[String]) -> str:
-    """Extract the Python str from a string Value (must be Constant)."""
-    result = v.__constant__.to_json()
-    assert isinstance(result, str)
-    return result
-
-
-# ===----------------------------------------------------------------------=== #
 # Monkey-patches (activated on import)
 # ===----------------------------------------------------------------------=== #
 
