@@ -34,17 +34,25 @@ from dgen.type import Constant, TypeType, Value, constant
 from dgen.type import _format_float as format_float
 
 # ---------------------------------------------------------------------------
-# Layout → LLVM / ctypes mapping
+# ---------------------------------------------------------------------------
+# Layout → LLVM type / ctypes bridge
+#
+# The layout's struct format IS the ABI. These helpers map it to
+# LLVM IR type strings and ctypes types for the Python FFI bridge.
+# Non-register-passable values always flow as ``ptr`` / ``c_void_p``.
+# Register-passable scalars map 1:1 via their struct format character.
+# Register-passable aggregates (small Record/Array) map to LLVM
+# ``{i64, ...}`` and a ctypes.Structure of matching shape.
 # ---------------------------------------------------------------------------
 
-_FMT_LLVM = {
+_SCALAR_LLVM: dict[str, str] = {
     "q": "i64",
     "d": "double",
     "B": "i1",
     "P": "ptr",
-    "0s": "ptr",  # Void/Nil — never actually called as a value
+    "0s": "ptr",  # Void/Nil — 0-byte, never used as a real value
 }
-_FMT_CTYPE = {
+_SCALAR_CTYPE: dict[str, type[ctypes._CData]] = {
     "q": ctypes.c_int64,
     "d": ctypes.c_double,
     "B": ctypes.c_bool,
@@ -52,41 +60,39 @@ _FMT_CTYPE = {
     "0s": ctypes.c_void_p,
 }
 
-
-# Cache of register-passable aggregate ctypes.Structure classes, keyed by
-# byte size. ctypes treats two distinct Structure classes with identical
-# fields as different types, so we need to dedup.
+# ctypes.Structure classes are cached because ctypes treats two distinct
+# classes with identical fields as different types.
 _AGGREGATE_CTYPE_CACHE: dict[int, type[ctypes.Structure]] = {}
 
 
-def _aggregate_ctype(byte_size: int) -> type[ctypes.Structure]:
-    """ctypes.Structure for a register-passable aggregate of ``byte_size`` bytes.
+def _scalar_fmt(layout: Layout) -> str | None:
+    """Return the bare struct format character if it's a known scalar, else None."""
+    if not layout.register_passable:
+        return None
+    fmt = layout.struct.format.lstrip("=@<>!")
+    return fmt if fmt in _SCALAR_LLVM else None
 
-    The struct is N ``c_uint64`` fields where N rounds ``byte_size`` up
-    to the next 8-byte chunk. ABI-wise this matches an LLVM ``{ i64,
-    i64, ... }`` so the value flows through integer registers under
-    SysV.
-    """
-    if byte_size not in _AGGREGATE_CTYPE_CACHE:
-        n = (byte_size + 7) // 8
-        fields = [(f"_{i}", ctypes.c_uint64) for i in range(n)]
-        _AGGREGATE_CTYPE_CACHE[byte_size] = type(
-            f"_Agg{byte_size}", (ctypes.Structure,), {"_fields_": fields}
+
+def _aggregate_ctype(n_chunks: int) -> type[ctypes.Structure]:
+    if n_chunks not in _AGGREGATE_CTYPE_CACHE:
+        fields = [(f"_{i}", ctypes.c_uint64) for i in range(n_chunks)]
+        _AGGREGATE_CTYPE_CACHE[n_chunks] = type(
+            f"_Agg{n_chunks}", (ctypes.Structure,), {"_fields_": fields}
         )
-    return _AGGREGATE_CTYPE_CACHE[byte_size]
+    return _AGGREGATE_CTYPE_CACHE[n_chunks]
+
+
+def _n_chunks(layout: Layout) -> int:
+    return (layout.byte_size + 7) // 8
 
 
 def _llvm_type(layout: Layout) -> str:
     if not layout.register_passable:
         return "ptr"
-    fmt = layout.struct.format.lstrip("=@<>!")
-    if fmt in _FMT_LLVM:
-        return _FMT_LLVM[fmt]
-    # Register-passable aggregate (Record/Array). Use {i64, i64, ...}
-    # (or i64 for the single-chunk case) so the value flows through
-    # integer registers under SysV.
-    n = (layout.byte_size + 7) // 8
-    if n == 1:
+    if (fmt := _scalar_fmt(layout)) is not None:
+        return _SCALAR_LLVM[fmt]
+    n = _n_chunks(layout)
+    if n <= 1:
         return "i64"
     return "{ " + ", ".join(["i64"] * n) + " }"
 
@@ -94,36 +100,32 @@ def _llvm_type(layout: Layout) -> str:
 def _ctype(layout: Layout) -> type[ctypes._CData]:
     if not layout.register_passable:
         return ctypes.c_void_p
-    fmt = layout.struct.format.lstrip("=@<>!")
-    if fmt in _FMT_CTYPE:
-        return _FMT_CTYPE[fmt]
-    return _aggregate_ctype(layout.byte_size)
+    if (fmt := _scalar_fmt(layout)) is not None:
+        return _SCALAR_CTYPE[fmt]
+    return _aggregate_ctype(_n_chunks(layout))
 
 
-def _to_raw_arg(mem: Memory, ty: dgen.Type) -> object:
-    """Convert a Memory into the right shape for a ctypes function call.
+def _mem_to_ffi(mem: Memory) -> object:
+    """Convert a Memory to its FFI representation for calling into JIT code.
 
-    Non-register-passable types are passed by address. Register-passable
-    aggregates (Record/Array ≤ 16 bytes) are passed as a ctypes.Structure
-    instance constructed from the memory bytes. Register-passable scalars
-    are unpacked to a single Python int/float/bool.
+    Scalars unpack to a Python int/float/bool. Aggregates become a
+    ctypes.Structure built from the raw bytes. Non-register-passable
+    values pass their buffer address.
     """
-    layout = ty.__layout__
+    layout = mem.type.__layout__
     if not layout.register_passable:
         return mem.address
-    fmt = layout.struct.format.lstrip("=@<>!")
-    if fmt in _FMT_CTYPE:
+    if _scalar_fmt(layout) is not None:
         return mem.unpack()[0]
-    return _aggregate_ctype(layout.byte_size).from_buffer_copy(mem.buffer)
+    return _aggregate_ctype(_n_chunks(layout)).from_buffer_copy(mem.buffer)
 
 
-def _from_raw_result(raw: object, ty: dgen.Type) -> Memory:
-    """Convert a raw ctypes return value back into a Memory.
+def _mem_from_ffi(raw: object, ty: dgen.Type) -> Memory:
+    """Reconstruct a Memory from a JIT function's return value.
 
-    Non-register-passable returns are pointers — copy the bytes from
-    the address. Register-passable aggregates come back as
-    ctypes.Structure instances — copy their bytes into a fresh Memory
-    buffer. Register-passable scalars go through Memory.from_value.
+    Aggregates arrive as ctypes.Structure — copy bytes. Scalars arrive
+    as Python int/float — pack via the layout. Non-register-passable
+    values arrive as an address — copy bytes from that address.
     """
     layout = ty.__layout__
     if not layout.register_passable:
@@ -975,9 +977,9 @@ def call(func_constant: Value, *args: Memory | object) -> Memory:
         *(_ctype(t.__layout__) for t in input_types),
     )
     cfunc = cfunc_type(func_ptr)
-    raw_args = [_to_raw_arg(m, t) for m, t in zip(memories, input_types)]
+    raw_args = [_mem_to_ffi(m) for m in memories]
     raw_result = cfunc(*raw_args)
-    result = _from_raw_result(raw_result, result_type)
+    result = _mem_from_ffi(raw_result, result_type)
     # Keep the JIT engine, input memories, and any callback closures alive
     # for as long as the result lives (non-register-passable results embed
     # pointers into those buffers).
