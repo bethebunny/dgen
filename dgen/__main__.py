@@ -28,6 +28,7 @@ from dgen.llvm.codegen import LLVMCodegen
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.existential_to_memory import ExistentialToMemory
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 
 
@@ -36,6 +37,7 @@ def _default_compiler() -> Compiler:
         passes=[
             ControlFlowToGoto(),
             NDBufferToMemory(),
+            ExistentialToMemory(),
             MemoryToLLVM(),
             BuiltinToLLVM(),
             AlgebraToLLVM(),

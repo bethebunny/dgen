@@ -8,7 +8,6 @@ type Some<bound: Type>:
 type Any:
     data: Some<Type>
 
-op pack<bound: Type>(value) -> Some<bound>:
-    requires value has type bound
+op pack<bound: Type>(value) -> Some<bound>
 
 op unpack<witness: Type>(box: Some) -> witness
