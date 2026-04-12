@@ -19,81 +19,43 @@ from dgen.dialects import (
     builtin,
     function,
     goto,
-    index,
     llvm,
     memory,
     number,
 )
 from dgen.ir.traversal import all_values
-from dgen.layout import Layout
-from dgen.builtins import ConstantOp, PackOp, pack, string_value, unpack
+from dgen.layout import Layout, Pointer
+from dgen.builtins import ConstantOp, PackOp, pack, unpack
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function
 from dgen.memory import Memory
 from dgen.type import Constant, TypeType, Value, constant
-from dgen.type import _format_float as format_float
 
 # ---------------------------------------------------------------------------
-# Layout → LLVM / ctypes mapping
-# ---------------------------------------------------------------------------
-
-_FMT_LLVM = {"q": "i64", "d": "double", "B": "i1"}
-_FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double, "B": ctypes.c_bool}
+from dgen.llvm import ffi
 
 
-def _llvm_type(layout: Layout) -> str:
-    if not layout.register_passable:
-        return "ptr"
-    fmt = layout.struct.format.lstrip("=@<>!")
-    return _FMT_LLVM.get(fmt, "ptr")
-
-
-def _ctype(layout: Layout) -> type[ctypes._CData]:
-    if not layout.register_passable:
-        return ctypes.c_void_p
-    fmt = layout.struct.format.lstrip("=@<>!")
-    return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
+def _ffi_ctype(layout: Layout) -> type[ctypes._CData]:
+    """ctypes type for a layout, normalizing non-register-passable to c_void_p."""
+    return ctypes.c_void_p if not layout.register_passable else ffi.ctype(layout)
 
 
 def llvm_type(t: dgen.Value[TypeType]) -> str:
     resolved = constant(t)
+    # Types whose declared bit width differs from their layout width.
     match resolved:
-        case memory.Reference():
-            return "ptr"
-        case llvm.Ptr():
-            return "ptr"
-        case llvm.Float():
-            return "double"
-        case llvm.Void():
-            return "void"
-        case index.Index():
-            return "i64"
-        case number.SignedInteger(bits):
-            # Layout may be wider than declared bits (data: Index is always
-            # 64-bit); use the wider of the two so codegen matches the ABI.
+        case number.SignedInteger(bits) | number.UnsignedInteger(bits):
             declared = bits.__constant__.to_json()
             layout_bits = resolved.__layout__.struct.size * 8
             return f"i{max(declared, layout_bits)}"
-        case number.UnsignedInteger(bits):
-            declared = bits.__constant__.to_json()
-            layout_bits = resolved.__layout__.struct.size * 8
-            return f"i{max(declared, layout_bits)}"
-        case number.Boolean():
-            return "i1"
-        case number.Float64():
-            return "double"
-        case builtin.Nil():
-            return "void"
         case goto.Label():
             return "label"
         case _:
             pass
-    # Handle llvm.Int which has a Value parameter (not directly matchable)
     if isinstance(resolved, llvm.Int):
-        bits = resolved.bits.__constant__.to_json()
-        return f"i{bits}"
-    # Fallback: use the type's layout to determine the LLVM type
-    return _llvm_type(resolved.__layout__)
+        return f"i{resolved.bits.__constant__.to_json()}"
+    layout = resolved.__layout__
+    return "ptr" if not layout.register_passable else ffi.llvm_type(layout)
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +100,7 @@ def _ensure_initialized() -> None:
 def _externs(root: dgen.Value) -> dict[str, builtin.ExternOp]:
     """Discover extern declarations reachable from root, deduped by symbol."""
     return {
-        string_value(v.symbol): v
+        constant(v.symbol): v
         for v in all_values(root)
         if isinstance(v, builtin.ExternOp)
     }
@@ -150,26 +112,25 @@ def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
     Returns (ir_text, host_buffers) where host_buffers keeps Memory objects
     alive for the lifetime of the JIT engine.
     """
+
+    def _lines() -> Iterator[str]:
+        funcs = [v for v in all_values(root) if isinstance(v, function.FunctionOp)]
+        defined = {f.name for f in funcs}
+        for extern in _externs(root).values():
+            sym = constant(extern.symbol)
+            # Skip ExternOp if a FunctionOp with the same name
+            # provides the definition (avoids duplicate symbols).
+            if sym in defined:
+                continue
+            yield from emit_extern(extern)
+        yield ""
+        for func in funcs:
+            prepare_function(func, ctx)
+            yield from emit(func)
+
     ctx = EmitContext()
     token = _emit_ctx.set(ctx)
-
     try:
-
-        def _lines() -> Iterator[str]:
-            funcs = [v for v in all_values(root) if isinstance(v, function.FunctionOp)]
-            defined = {f.name for f in funcs}
-            for extern in _externs(root).values():
-                sym = string_value(extern.symbol)
-                # Skip ExternOp if a FunctionOp with the same name
-                # provides the definition (avoids duplicate symbols).
-                if sym in defined:
-                    continue
-                yield from emit_extern(extern)
-            yield ""
-            for func in funcs:
-                prepare_function(func, ctx)
-                yield from emit(func)
-
         return "\n".join(_lines()), ctx.host_buffers
     finally:
         _emit_ctx.reset(token)
@@ -564,7 +525,7 @@ def noop(op: dgen.Op) -> Iterator[str]:
 
 
 def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
-    sym = string_value(extern.symbol)
+    sym = constant(extern.symbol)
     if isinstance(extern.type, function.Function):
         result_type = llvm_type(extern.type.result_type)
         arg_types = ", ".join(llvm_type(arg) for arg in extern.type.arguments)
@@ -583,21 +544,17 @@ def value_reference(v: dgen.Value) -> str:
             ctx = _ctx()
             ctx.host_buffers.append(mem)
             return f"inttoptr (i64 {mem.address} to ptr)"
-        ty = llvm_type(v.type)
-        if ty == "ptr":
-            raw = mem.unpack()[0]
-            return "null" if raw == 0 else f"inttoptr (i64 {raw} to ptr)"
-        if ty == "void":
-            # Void/Nil constant has no LLVM value. Callers that print a
-            # typed_reference for it will produce "void undef", which is
-            # invalid but also unreachable in well-formed IR.
-            return "undef"
-        raw = mem.unpack()[0]
-        return f"{format_float(raw) if isinstance(raw, float) else raw}"
+        return ffi.llvm_constant(bytes(mem.buffer), mem.layout)
     if isinstance(v, builtin.ChainOp):
         return value_reference(v.lhs)
     if isinstance(v, builtin.ExternOp):
-        return f"@{string_value(v.symbol)}"
+        sym = constant(v.symbol)
+        if isinstance(v.type, function.Function):
+            return f"@{sym}"
+        # Global variable: the LLVM symbol is a pointer to the value.
+        # Emit an inline load to dereference it.
+        ty = llvm_type(v.type)
+        return f"load {ty}, ptr @{sym}"
     if isinstance(v, function.FunctionOp) and v.name:
         return f"@{v.name}"
     # Self parameters resolve to their owning RegionOp/LabelOp name
@@ -695,14 +652,14 @@ def emit_inttoptr(op: llvm.InttoptrOp) -> Iterator[str]:
 
 @emitter_for(llvm.IcmpOp)
 def emit_icmp(op: llvm.IcmpOp) -> Iterator[str]:
-    pred = string_value(op.pred)
+    pred = constant(op.pred)
     ty = llvm_type(op.lhs.type)
     yield f"  icmp {pred} {ty} {vr(op.lhs)}, {vr(op.rhs)}"
 
 
 @emitter_for(llvm.FcmpOp)
 def emit_fcmp(op: llvm.FcmpOp) -> Iterator[str]:
-    pred = string_value(op.pred)
+    pred = constant(op.pred)
     yield f"  fcmp {pred} double {vr(op.lhs)}, {vr(op.rhs)}"
 
 
@@ -723,12 +680,21 @@ def emit_gep(op: llvm.GepOp) -> Iterator[str]:
 
 @emitter_for(memory.StoreOp)
 def emit_store(op: memory.StoreOp) -> Iterator[str]:
-    yield f"  store {typed_reference(op.value)}, {typed_reference(op.ptr)}"
+    yield f"  store {typed_reference(op.value)}, ptr {vr(op.ptr)}"
 
 
 @emitter_for(memory.LoadOp)
 def emit_load(op: memory.LoadOp) -> Iterator[str]:
-    yield f"  load {llvm_type(op.type)}, {typed_reference(op.ptr)}"
+    # TODO: _deref in ndbuffer_to_memory abuses LoadOp to extract the data
+    # pointer from a Span-shaped Tensor. With Span register-passable, the
+    # "pointer" is actually an inline {ptr, i64} — emit extractvalue instead
+    # of load. The real fix is a proper field-extraction op or fixing Tensor's
+    # layout to be a bare Pointer.
+    ptr_layout = constant(op.ptr.type).__layout__
+    if ptr_layout.register_passable and not isinstance(ptr_layout, Pointer):
+        yield f"  extractvalue {typed_reference(op.ptr)}, 0"
+    else:
+        yield f"  load {llvm_type(op.type)}, ptr {vr(op.ptr)}"
 
 
 # ---------------------------------------------------------------------------
@@ -742,7 +708,7 @@ def emit_function_call(op: function.CallOp) -> Iterator[str]:
     callee = op.callee
     ret = llvm_type(op.type)
     if isinstance(callee, builtin.ExternOp):
-        callee_ref = f"@{string_value(callee.symbol)}"
+        callee_ref = f"@{constant(callee.symbol)}"
     elif isinstance(callee, function.FunctionOp):
         callee_ref = f"@{callee.name}"
     else:
@@ -754,7 +720,7 @@ def emit_function_call(op: function.CallOp) -> Iterator[str]:
 @emitter_for(llvm.CallOp)
 def emit_llvm_call(op: llvm.CallOp) -> Iterator[str]:
     args = ", ".join(typed_reference(v) for v in unpack(op.args))
-    callee = string_value(op.callee)
+    callee = constant(op.callee)
     ret = llvm_type(op.type)
     yield f"  call {ret} @{callee}({args})"
 
@@ -882,17 +848,20 @@ def call(func_constant: Value, *args: Memory | object) -> Memory:
         for arg, ty in zip(args, input_types)
     ]
     cfunc_type = ctypes.CFUNCTYPE(
-        _ctype(result_type.__layout__),
-        *(_ctype(t.__layout__) for t in input_types),
+        _ffi_ctype(result_type.__layout__),
+        *(_ffi_ctype(t.__layout__) for t in input_types),
     )
     cfunc = cfunc_type(func_ptr)
     raw_args = [
-        m.unpack()[0] if t.__layout__.register_passable else m.address
+        ffi.to_ffi(t.__layout__, m.buffer)
+        if t.__layout__.register_passable
+        else m.address
         for m, t in zip(memories, input_types)
     ]
     raw_result = cfunc(*raw_args)
-    if result_type.__layout__.register_passable:
-        result = Memory.from_value(result_type, raw_result)
+    result_layout = result_type.__layout__
+    if result_layout.register_passable:
+        result = Memory(result_type, ffi.from_ffi(result_layout, raw_result))
     else:
         result = Memory.from_raw(result_type, raw_result)
     # Keep the JIT engine, input memories, and any callback closures alive
@@ -914,15 +883,13 @@ def register_executable(exe: Executable) -> list[object]:
 
 
 def _raw_to_json(raw: object, ty: dgen.Type) -> object:
-    """Convert a raw ctypes callback value to a Python value.
-
-    Scalars (int, float) pass through. Pointer types are read from memory
-    via Memory.from_raw().to_json().
-    """
-    if not ty.__layout__.register_passable:
-        assert isinstance(raw, int)
+    """Convert a raw ctypes callback arg to a Python value."""
+    layout = ty.__layout__
+    if not layout.register_passable:
         return Memory.from_raw(ty, raw).to_json()
-    return raw
+    if isinstance(raw, ctypes.Structure):
+        return Memory(ty, ffi.from_ffi(layout, raw)).to_json()
+    return raw  # scalar int/float passes through
 
 
 def build_callback_thunk(
@@ -943,17 +910,20 @@ def build_callback_thunk(
     orig_types = [dgen.type.constant(arg.type) for arg in func_op.body.args]
     result_type = dgen.type.constant(func_op.result_type)
     result_ctype: type[ctypes._CData] | None = (
-        None if isinstance(result_type, builtin.Nil) else _ctype(result_type.__layout__)
+        None
+        if isinstance(result_type, builtin.Nil)
+        else _ffi_ctype(result_type.__layout__)
     )
-    param_ctypes = [_ctype(t.__layout__) for t in orig_types]
+    param_ctypes = [_ffi_ctype(t.__layout__) for t in orig_types]
     cb_type = ctypes.CFUNCTYPE(result_ctype, *param_ctypes)
 
     def _callback(*raw_args: object) -> object:
         python_args = [_raw_to_json(raw, typ) for raw, typ in zip(raw_args, orig_types)]
         mem = on_call(*python_args)
-        if not mem.type.__layout__.register_passable:
-            return mem.address
-        return mem.to_json()
+        layout = mem.type.__layout__
+        if layout.register_passable:
+            return ffi.to_ffi(layout, mem.buffer)
+        return mem.address
 
     callback_func = cb_type(_callback)
 

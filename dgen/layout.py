@@ -11,6 +11,8 @@ for pack/unpack operations.
 from __future__ import annotations
 
 import ctypes
+from functools import cached_property
+from itertools import accumulate
 from struct import Struct
 from typing import TYPE_CHECKING
 
@@ -20,21 +22,35 @@ if TYPE_CHECKING:
     from .type import Type
 
 
+def align_up(size: int, alignment: int) -> int:
+    """Round ``size`` up to the next multiple of ``alignment``."""
+    return (size + alignment - 1) // alignment
+
+
 def _bytearray_address(buf: bytearray) -> int:
     """Get the raw ctypes address of a bytearray."""
     ct = (ctypes.c_char * len(buf)).from_buffer(buf)
     return ctypes.addressof(ct)
 
 
+# Aggregates ≤ 16 bytes fit in two 64-bit registers under x86_64 SysV
+# and can be passed/returned by value. Above that, they have to be
+# passed in memory.
+_REGISTER_SIZE_LIMIT = 16
+
+
 class Layout:
     """Base for memory layout types."""
 
     struct: Struct
-    register_passable: bool = False
 
     @property
     def byte_size(self) -> int:
         return self.struct.size
+
+    @property
+    def register_passable(self) -> bool:
+        return self.byte_size <= _REGISTER_SIZE_LIMIT
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Layout):
@@ -76,7 +92,6 @@ class Void(Layout):
     """Zero-size layout for types with no runtime representation."""
 
     struct = Struct("0s")
-    register_passable = True
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> None:
         return None
@@ -105,7 +120,6 @@ class Int(Layout):
     """64-bit integer (i64)."""
 
     struct = Struct("q")
-    register_passable = True
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
@@ -121,7 +135,6 @@ class Float64(Layout):
     """64-bit float (f64)."""
 
     struct = Struct("d")
-    register_passable = True
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> float:
         return self.struct.unpack_from(buf, offset)[0]
@@ -139,7 +152,10 @@ class Array(Layout):
     def __init__(self, element: Layout, count: int) -> None:
         self.element = element
         self.count = count
-        self.struct = Struct(f"{count}{element.struct.format}")
+
+    @cached_property
+    def struct(self) -> Struct:
+        return Struct(f"{self.count}{self.element.struct.format}")
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
         return [
@@ -166,7 +182,6 @@ class Pointer(Layout):
     """8-byte pointer to T."""
 
     struct = Struct("P")
-    register_passable = True
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
@@ -235,14 +250,20 @@ class Record(Layout):
 
     def __init__(self, fields: list[tuple[str, Layout]]) -> None:
         self.fields = fields
-        self._offsets: list[int] = []
-        offset = 0
-        for _, lay in fields:
-            self._offsets.append(offset)
-            offset += lay.byte_size
-        self._total_size = offset
-        # Use a raw byte format for the total size
-        self.struct = Struct(f"{offset}s") if offset > 0 else Struct("0s")
+
+    @cached_property
+    def _offsets(self) -> list[int]:
+        sizes = (layout.byte_size for _, layout in self.fields)
+        return list(accumulate(sizes, initial=0))[:-1]
+
+    @cached_property
+    def struct(self) -> Struct:
+        format = (
+            "".join(layout.struct.format for _, layout in self.fields)
+            if self.fields
+            else "0s"
+        )
+        return Struct(format)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Record):
@@ -282,18 +303,7 @@ class Record(Layout):
 
 
 def _descriptor_layout(type_instance: Type) -> Record:
-    """Build the Record layout for a concrete type's self-describing descriptor.
-
-    The layout mirrors the JSON structure produced by ``Type.to_json()``::
-
-        Record([
-            ("tag", String()),
-            ("params", Record([
-                (name, Record([("type", TypeValue()), ("value", <layout>)])),
-                ...
-            ]))
-        ])
-    """
+    """Build the Record layout for a concrete type's self-describing descriptor."""
     # fmt: off
     return Record([
         ("tag", String()),
@@ -319,6 +329,11 @@ class TypeValue(Layout):
     ) -> None:
         from .type import Type
 
+        # Raw pointer integer — from a register-passable JIT return or a
+        # ctypes callback. Pack the pointer directly.
+        if isinstance(value, int):
+            self.struct.pack_into(buf, offset, value)
+            return
         # Accept either a self-describing dict or a parsed Type instance —
         # the parser produces the latter when type-ASM sugar appears in
         # value position (e.g. inside a literal dict).

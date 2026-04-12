@@ -90,13 +90,13 @@ class NDBufferToMemory(Pass):
 
     @lowering_for(ndbuffer.DeallocOp)
     def lower_dealloc(self, op: ndbuffer.DeallocOp) -> dgen.Value | None:
-        return memory.DeallocateOp(mem=op.mem, ptr=op.input)
+        return memory.DeallocateOp(mem=op.mem, ptr=op.buffer)
 
     @lowering_for(ndbuffer.LoadOp)
     def lower_load(self, op: ndbuffer.LoadOp) -> dgen.Value | None:
-        ptr = _deref(op.memref)
+        ptr = _deref(op.buffer)
         assert isinstance(op.indices, PackOp)
-        shape = self._resolve_shape(op.memref)
+        shape = self._resolve_shape(op.buffer)
         offset = _linearize(shape, list(op.indices))
         ref_type = (
             ptr.type
@@ -108,9 +108,9 @@ class NDBufferToMemory(Pass):
 
     @lowering_for(ndbuffer.StoreOp)
     def lower_store(self, op: ndbuffer.StoreOp) -> dgen.Value | None:
-        ptr = _deref(op.memref)
+        ptr = _deref(op.buffer)
         assert isinstance(op.indices, PackOp)
-        shape = self._resolve_shape(op.memref)
+        shape = self._resolve_shape(op.buffer)
         offset = _linearize(shape, list(op.indices))
         ref_type = (
             ptr.type
@@ -122,8 +122,8 @@ class NDBufferToMemory(Pass):
 
     @lowering_for(ndbuffer.PrintMemrefOp)
     def lower_print(self, op: ndbuffer.PrintMemrefOp) -> dgen.Value | None:
-        ptr = _deref(op.input)
-        shape = self._resolve_shape(op.input)
+        ptr = _deref(op.buffer)
+        shape = self._resolve_shape(op.buffer)
         size = prod(shape)
         print_memref = ExternOp(
             symbol=String().constant("print_memref"),

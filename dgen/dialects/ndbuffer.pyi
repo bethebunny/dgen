@@ -29,13 +29,13 @@ class AllocOp(Op):
 @dataclass(eq=False)
 class DeallocOp(Op):
     mem: Value
-    input: Value
+    buffer: Value
     type: Type = Nil()
 
 @dataclass(eq=False)
 class LoadOp(Op):
     mem: Value
-    memref: Value
+    buffer: Value
     indices: Value
     type: Type = Float64()
 
@@ -43,12 +43,12 @@ class LoadOp(Op):
 class StoreOp(Op):
     mem: Value
     value: Value
-    memref: Value
+    buffer: Value
     indices: Value
     type: Type = Nil()
 
 @dataclass(eq=False)
 class PrintMemrefOp(Op):
-    input: Value
+    buffer: Value
     type: Type = Nil()
 
