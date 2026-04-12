@@ -37,22 +37,101 @@ from dgen.type import _format_float as format_float
 # Layout → LLVM / ctypes mapping
 # ---------------------------------------------------------------------------
 
-_FMT_LLVM = {"q": "i64", "d": "double", "B": "i1"}
-_FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double, "B": ctypes.c_bool}
+_FMT_LLVM = {
+    "q": "i64",
+    "d": "double",
+    "B": "i1",
+    "P": "ptr",
+    "0s": "ptr",  # Void/Nil — never actually called as a value
+}
+_FMT_CTYPE = {
+    "q": ctypes.c_int64,
+    "d": ctypes.c_double,
+    "B": ctypes.c_bool,
+    "P": ctypes.c_void_p,
+    "0s": ctypes.c_void_p,
+}
+
+
+# Cache of register-passable aggregate ctypes.Structure classes, keyed by
+# byte size. ctypes treats two distinct Structure classes with identical
+# fields as different types, so we need to dedup.
+_AGGREGATE_CTYPE_CACHE: dict[int, type[ctypes.Structure]] = {}
+
+
+def _aggregate_ctype(byte_size: int) -> type[ctypes.Structure]:
+    """ctypes.Structure for a register-passable aggregate of ``byte_size`` bytes.
+
+    The struct is N ``c_uint64`` fields where N rounds ``byte_size`` up
+    to the next 8-byte chunk. ABI-wise this matches an LLVM ``{ i64,
+    i64, ... }`` so the value flows through integer registers under
+    SysV.
+    """
+    if byte_size not in _AGGREGATE_CTYPE_CACHE:
+        n = (byte_size + 7) // 8
+        fields = [(f"_{i}", ctypes.c_uint64) for i in range(n)]
+        _AGGREGATE_CTYPE_CACHE[byte_size] = type(
+            f"_Agg{byte_size}", (ctypes.Structure,), {"_fields_": fields}
+        )
+    return _AGGREGATE_CTYPE_CACHE[byte_size]
 
 
 def _llvm_type(layout: Layout) -> str:
     if not layout.register_passable:
         return "ptr"
     fmt = layout.struct.format.lstrip("=@<>!")
-    return _FMT_LLVM.get(fmt, "ptr")
+    if fmt in _FMT_LLVM:
+        return _FMT_LLVM[fmt]
+    # Register-passable aggregate (Record/Array). Use {i64, i64, ...}
+    # (or i64 for the single-chunk case) so the value flows through
+    # integer registers under SysV.
+    n = (layout.byte_size + 7) // 8
+    if n == 1:
+        return "i64"
+    return "{ " + ", ".join(["i64"] * n) + " }"
 
 
 def _ctype(layout: Layout) -> type[ctypes._CData]:
     if not layout.register_passable:
         return ctypes.c_void_p
     fmt = layout.struct.format.lstrip("=@<>!")
-    return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
+    if fmt in _FMT_CTYPE:
+        return _FMT_CTYPE[fmt]
+    return _aggregate_ctype(layout.byte_size)
+
+
+def _to_raw_arg(mem: Memory, ty: dgen.Type) -> object:
+    """Convert a Memory into the right shape for a ctypes function call.
+
+    Non-register-passable types are passed by address. Register-passable
+    aggregates (Record/Array ≤ 16 bytes) are passed as a ctypes.Structure
+    instance constructed from the memory bytes. Register-passable scalars
+    are unpacked to a single Python int/float/bool.
+    """
+    layout = ty.__layout__
+    if not layout.register_passable:
+        return mem.address
+    fmt = layout.struct.format.lstrip("=@<>!")
+    if fmt in _FMT_CTYPE:
+        return mem.unpack()[0]
+    return _aggregate_ctype(layout.byte_size).from_buffer_copy(mem.buffer)
+
+
+def _from_raw_result(raw: object, ty: dgen.Type) -> Memory:
+    """Convert a raw ctypes return value back into a Memory.
+
+    Non-register-passable returns are pointers — copy the bytes from
+    the address. Register-passable aggregates come back as
+    ctypes.Structure instances — copy their bytes into a fresh Memory
+    buffer. Register-passable scalars go through Memory.from_value.
+    """
+    layout = ty.__layout__
+    if not layout.register_passable:
+        assert isinstance(raw, int)
+        return Memory.from_raw(ty, raw)
+    if isinstance(raw, ctypes.Structure):
+        return Memory(ty, bytearray(bytes(raw)))
+    return Memory.from_value(ty, raw)
 
 
 def llvm_type(t: dgen.Value[TypeType]) -> str:
@@ -592,6 +671,16 @@ def value_reference(v: dgen.Value) -> str:
             # typed_reference for it will produce "void undef", which is
             # invalid but also unreachable in well-formed IR.
             return "undef"
+        if ty.startswith("{"):
+            # Register-passable aggregate (small Record/Array). Slice the
+            # bytes into 8-byte chunks and emit a literal struct constant.
+            buf = bytes(mem.buffer)
+            n = (len(buf) + 7) // 8
+            padded = buf.ljust(n * 8, b"\0")
+            chunks = [
+                int.from_bytes(padded[i : i + 8], "little") for i in range(0, n * 8, 8)
+            ]
+            return "{ " + ", ".join(f"i64 {c}" for c in chunks) + " }"
         raw = mem.unpack()[0]
         return f"{format_float(raw) if isinstance(raw, float) else raw}"
     if isinstance(v, builtin.ChainOp):
@@ -886,15 +975,9 @@ def call(func_constant: Value, *args: Memory | object) -> Memory:
         *(_ctype(t.__layout__) for t in input_types),
     )
     cfunc = cfunc_type(func_ptr)
-    raw_args = [
-        m.unpack()[0] if t.__layout__.register_passable else m.address
-        for m, t in zip(memories, input_types)
-    ]
+    raw_args = [_to_raw_arg(m, t) for m, t in zip(memories, input_types)]
     raw_result = cfunc(*raw_args)
-    if result_type.__layout__.register_passable:
-        result = Memory.from_value(result_type, raw_result)
-    else:
-        result = Memory.from_raw(result_type, raw_result)
+    result = _from_raw_result(raw_result, result_type)
     # Keep the JIT engine, input memories, and any callback closures alive
     # for as long as the result lives (non-register-passable results embed
     # pointers into those buffers).

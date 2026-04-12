@@ -26,6 +26,12 @@ def _bytearray_address(buf: bytearray) -> int:
     return ctypes.addressof(ct)
 
 
+# Aggregates ≤ 16 bytes fit in two 64-bit registers under x86_64 SysV
+# and can be passed/returned by value. Above that, they have to be
+# passed in memory.
+_AGGREGATE_REGISTER_LIMIT = 16
+
+
 class Layout:
     """Base for memory layout types."""
 
@@ -140,6 +146,7 @@ class Array(Layout):
         self.element = element
         self.count = count
         self.struct = Struct(f"{count}{element.struct.format}")
+        self.register_passable = self.byte_size <= _AGGREGATE_REGISTER_LIMIT
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
         return [
@@ -243,6 +250,7 @@ class Record(Layout):
         self._total_size = offset
         # Use a raw byte format for the total size
         self.struct = Struct(f"{offset}s") if offset > 0 else Struct("0s")
+        self.register_passable = self.byte_size <= _AGGREGATE_REGISTER_LIMIT
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Record):
