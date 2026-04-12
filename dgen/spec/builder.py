@@ -33,6 +33,7 @@ _PRIMITIVE_LAYOUTS: dict[str, layout.Layout] = {
     "Void": layout.Void(),
     "Byte": layout.Byte(),
     "String": layout.String(),
+    "Some": layout.Some(),
 }
 
 _CONSTRUCTOR_LAYOUTS: dict[str, type[layout.Layout]] = {
@@ -314,9 +315,7 @@ def _build_op(
 
     op_ns["__annotations__"] = annotations
     bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in od.traits) + (Op,)
-    cls = dataclasses.dataclass(eq=False)(
-        type(_op_class_name(od.name), bases, op_ns)
-    )
+    cls = dataclasses.dataclass(eq=False)(type(_op_class_name(od.name), bases, op_ns))
     dialect.op(od.name)(cls)
     return cls
 

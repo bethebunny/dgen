@@ -19,7 +19,7 @@ from dgen.block import BlockArgument
 from dgen.llvm.codegen import Executable, LLVMCodegen
 from dgen.testing import llvm_compile as compile_module
 from dgen.passes.compiler import Compiler
-from dgen.dialects import builtin, llvm, number
+from dgen.dialects import builtin, existential, llvm, number
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function, FunctionOp
 from dgen.builtins import ConstantOp, pack
@@ -262,23 +262,21 @@ def test_jit_identity_roundtrip(ty, value, _asm, expected):
 
 _ANY_PAYLOADS = [
     pytest.param(
-        builtin.Any(),
+        existential.Any(),
         {
-            "existential": number.SignedInteger(
-                bits=builtin.Index().constant(32)
-            ).to_json(),
-            "value": None,
+            "type": number.SignedInteger(bits=builtin.Index().constant(32)).to_json(),
+            "value": 0,
         },
         id="any.signed_i32",
     ),
     pytest.param(
-        builtin.Any(),
-        {"existential": number.Float64().to_json(), "value": None},
+        existential.Any(),
+        {"type": number.Float64().to_json(), "value": 0.0},
         id="any.float64",
     ),
     pytest.param(
-        builtin.Some(bound=builtin.TypeTag()),
-        {"existential": builtin.Index().to_json(), "value": None},
+        existential.Some(bound=builtin.TypeTag()),
+        {"type": builtin.Index().to_json(), "value": 0},
         id="some.index",
     ),
 ]
@@ -286,14 +284,12 @@ _ANY_PAYLOADS = [
 
 @pytest.mark.parametrize("ty,payload", _ANY_PAYLOADS)
 def test_any_jit_identity_roundtrip(ty, payload):
-    """Pass an existential through a JIT identity function. The value field
-    is currently a `Pointer<Nil>` (opaque box) — round-trip preserves the
-    type descriptor; semantic value packing awaits a pack_existential op."""
+    """Pass an existential through a JIT identity function. The Some value
+    is register-passable (16 bytes) so the witness+value flow by value."""
     exe = _identity_exe(ty)
     mem = Memory.from_json(ty, payload)
     result = exe.run(mem)
-    # Existential descriptor must round-trip through the JIT.
-    assert result.to_json()["existential"] == payload["existential"]
+    assert result.to_json() == payload
 
 
 # ---------------------------------------------------------------------------

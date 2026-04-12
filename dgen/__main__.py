@@ -28,7 +28,9 @@ from dgen.llvm.codegen import LLVMCodegen
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.existential_to_memory import ExistentialToMemory
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.type import format_value
 
 
 def _default_compiler() -> Compiler:
@@ -36,6 +38,7 @@ def _default_compiler() -> Compiler:
         passes=[
             ControlFlowToGoto(),
             NDBufferToMemory(),
+            ExistentialToMemory(),
             MemoryToLLVM(),
             BuiltinToLLVM(),
             AlgebraToLLVM(),
@@ -65,7 +68,7 @@ def main(source: Path, args: tuple[str, ...]) -> None:
     exe = _default_compiler().compile(value)
     parsed_args = [json.loads(a) for a in args]
     result = exe.run(*parsed_args)
-    click.echo(json.dumps(result.to_json()))
+    click.echo(format_value(result.to_native_value()))
 
 
 if __name__ == "__main__":
