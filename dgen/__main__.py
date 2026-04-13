@@ -22,30 +22,16 @@ import dgen
 from dgen.asm.parser import parse
 from dgen.builtins import pack
 from dgen.dialects.function import Function, FunctionOp
-from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
-from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
-from dgen.llvm.codegen import LLVMCodegen
-from dgen.llvm.memory_to_llvm import MemoryToLLVM
+from dgen.llvm import lower_to_llvm
+from dgen.passes import lower_builtin_dialects
 from dgen.passes.compiler import Compiler
-from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-from dgen.passes.existential_to_memory import ExistentialToMemory
-from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
-from dgen.passes.record_to_memory import RecordToMemory
 from dgen.type import format_value
 
 
 def _default_compiler() -> Compiler:
     return Compiler(
-        passes=[
-            ControlFlowToGoto(),
-            NDBufferToMemory(),
-            ExistentialToMemory(),
-            RecordToMemory(),
-            MemoryToLLVM(),
-            BuiltinToLLVM(),
-            AlgebraToLLVM(),
-        ],
-        exit=LLVMCodegen(),
+        passes=[lower_builtin_dialects()],
+        exit=lower_to_llvm(),
     )
 
 

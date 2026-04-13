@@ -1,0 +1,23 @@
+"""Core dgen lowering passes."""
+
+from __future__ import annotations
+
+import dgen
+from dgen.passes.compiler import Compiler, IdentityPass
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.existential_to_memory import ExistentialToMemory
+from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.record_to_memory import RecordToMemory
+
+
+def lower_builtin_dialects() -> Compiler[dgen.Value]:
+    """Core dgen dialect lowerings: control flow, ndbuffer, existential, record."""
+    return Compiler(
+        passes=[
+            ControlFlowToGoto(),
+            NDBufferToMemory(),
+            ExistentialToMemory(),
+            RecordToMemory(),
+        ],
+        exit=IdentityPass(),
+    )
