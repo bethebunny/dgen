@@ -8,39 +8,23 @@ import ast
 import click
 
 from dgen import Dialect
-from dgen.llvm.codegen import Executable, LLVMCodegen
+from dgen.llvm import lower_to_llvm
+from dgen.llvm.codegen import Executable
 from dgen.passes.compiler import Compiler
 from dgen.dialects.function import FunctionOp
-from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
-from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
-from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-from dgen.llvm.memory_to_llvm import MemoryToLLVM
-from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
-from dgen.passes.record_to_memory import RecordToMemory
+from dgen.passes import lower_builtin_dialects
 from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
-from toy.passes.optimize import ToyOptimize
-from toy.passes.shape_inference import ShapeInference
-from toy.passes.toy_to_structured import ToyToStructured
+from toy.passes import lower_toy
 
 # Make toy dialects discoverable for IR parsing round-trips.
 Dialect.paths.append(Path(__file__).parent / "dialects")
 
 toy_compiler: Compiler[Executable] = Compiler(
-    passes=[
-        ToyOptimize(),
-        ShapeInference(),
-        ToyToStructured(),
-        ControlFlowToGoto(),
-        NDBufferToMemory(),
-        RecordToMemory(),
-        MemoryToLLVM(),
-        BuiltinToLLVM(),
-        AlgebraToLLVM(),
-    ],
-    exit=LLVMCodegen(),
+    passes=[lower_toy(), lower_builtin_dialects()],
+    exit=lower_to_llvm(),
 )
 
 

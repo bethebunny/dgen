@@ -36,6 +36,10 @@ class Compiler(Generic[T]):
     values), staging resolves them and the pipeline proceeds normally.
     When stage-1+ boundaries remain (runtime-dependent), the compiler
     builds callback thunks that JIT-compile at runtime.
+
+    A ``Compiler[Value]`` (with ``IdentityPass`` as exit) satisfies the
+    ``Pass`` interface, so compilers can be nested as passes inside other
+    compilers. This enables grouping passes into reusable sub-pipelines.
     """
 
     def __init__(self, passes: list[Pass], exit: ExitPass[T]) -> None:
@@ -48,8 +52,14 @@ class Compiler(Generic[T]):
 
         return compile_value(value, self)
 
-    def run(self, value: dgen.Value) -> T:
-        """Run passes + exit (no staging)."""
+    def run(self, value: dgen.Value, compiler: Compiler[object] | None = None) -> T:
+        """Run passes + exit (no staging).
+
+        The optional *compiler* argument makes ``Compiler[Value]``
+        usable as a ``Pass`` inside another compiler's pass list.
+        When used as a pass, the outer compiler's continuation is
+        ignored — this compiler runs its own complete pipeline.
+        """
         for i, p in enumerate(self.passes):
             if verify_passes.get():
                 p.verify_preconditions(value)
@@ -58,3 +68,13 @@ class Compiler(Generic[T]):
             if verify_passes.get():
                 p.verify_postconditions(value)
         return self.exit.run(value)
+
+    def verify_preconditions(self, value: dgen.Value) -> None:
+        """Delegate to the first pass, if any."""
+        if self.passes:
+            self.passes[0].verify_preconditions(value)
+
+    def verify_postconditions(self, value: dgen.Value) -> None:
+        """Delegate to the last pass, if any."""
+        if self.passes:
+            self.passes[-1].verify_postconditions(value)
