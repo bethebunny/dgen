@@ -1,12 +1,13 @@
 """Lower record ops to memory dialect ops.
 
 Records follow C-struct semantics: mutable in place, copied at boundaries.
-The pass allocates one stack slot per record value, shared across all
-record_get/record_set calls on that value so mutations are visible.
+record_pack allocates a stack slot, stores fields, and loads by value.
+record_get/record_set look up the backing slot from record_pack and
+operate on it directly.
 
     record_pack([v0, v1, ...])       →  stack_allocate + store-per-field + load
-    record_get<i>(mem, record)       →  slot_for(record) + offset + load
-    record_set<i>(mem, record, val)  →  slot_for(record) + offset + store
+    record_get<i>(mem, record)       →  offset(slot, i) + load
+    record_set<i>(mem, record, val)  →  offset(slot, i) + store
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 import dgen
 from dgen.builtins import unpack
 from dgen.dialects import memory
-from dgen.dialects.builtin import ChainOp, RecordGetOp, RecordPackOp, RecordSetOp
+from dgen.dialects.builtin import RecordGetOp, RecordPackOp, RecordSetOp
 from dgen.dialects.index import Index
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import constant
@@ -31,31 +32,29 @@ class RecordToMemory(Pass):
     allow_unregistered_ops = True
 
     def __init__(self) -> None:
-        # Shared stack slots: record value → (ref, initial store op).
-        # All get/set on the same record value within a block share the
-        # same backing slot. Reset per block to avoid cross-block sharing.
-        self._slots: dict[dgen.Value, tuple[dgen.Value, dgen.Value]] = {}
-
-    def _lower_block(self, block: dgen.Block) -> None:
-        saved = self._slots
-        self._slots = {}
-        super()._lower_block(block)
-        self._slots = saved
+        # Maps a record_pack's result (LoadOp) → its backing stack slot (ref).
+        # record_get/record_set look up their record operand here to find the
+        # slot that record_pack already allocated.
+        self._slots: dict[dgen.Value, dgen.Value] = {}
 
     def _slot_for(
         self, record: dgen.Value, mem: dgen.Value
     ) -> tuple[dgen.Value, dgen.Value]:
-        """Get or create a shared stack slot for *record*.
+        """Look up the backing slot for *record*, or create one on demand.
 
-        On first access, allocates a stack slot and stores the record value
-        into it (so un-touched fields are readable). Returns (ref, initial_store).
+        Records from record_pack already have a slot (cached in lower_pack).
+        Records from other sources (e.g. function arguments) get a fresh
+        slot — not cached, to avoid sharing across blocks.
+
+        Returns (ref, mem) where mem chains through the initial store
+        if one was created.
         """
-        if record not in self._slots:
-            ref_type = memory.Reference(element_type=record.type)
-            ref = memory.StackAllocateOp(element_type=record.type, type=ref_type)
-            store = memory.StoreOp(mem=mem, value=record, ptr=ref)
-            self._slots[record] = (ref, store)
-        return self._slots[record]
+        if record in self._slots:
+            return self._slots[record], mem
+        ref_type = memory.Reference(element_type=record.type)
+        ref = memory.StackAllocateOp(element_type=record.type, type=ref_type)
+        store = memory.StoreOp(mem=mem, value=record, ptr=ref)
+        return ref, store
 
     @lowering_for(RecordPackOp)
     def lower_pack(self, op: RecordPackOp) -> dgen.Value | None:
@@ -72,16 +71,20 @@ class RecordToMemory(Pass):
             ptr = _field_ptr(ref, i, ref_type)
             mem = memory.StoreOp(mem=mem, value=field_val, ptr=ptr)
 
-        # Load the complete record by value.
-        return memory.LoadOp(mem=mem, ptr=ref, type=record_type)
+        # Load the complete record by value (for function boundaries).
+        result = memory.LoadOp(mem=mem, ptr=ref, type=record_type)
+
+        # Cache: after replace_uses_of, record_get/record_set will see
+        # this LoadOp as their record operand and can look up the slot.
+        self._slots[result] = ref
+
+        return result
 
     @lowering_for(RecordGetOp)
     def lower_get(self, op: RecordGetOp) -> dgen.Value | None:
         index = constant(op.index)
         assert isinstance(index, int)
-        ref, initial_store = self._slot_for(op.record, op.mem)
-        # Depend on both the initial store and op.mem (e.g. a prior record_set).
-        mem = ChainOp(lhs=op.mem, rhs=initial_store, type=op.mem.type)
+        ref, mem = self._slot_for(op.record, op.mem)
         ref_type = memory.Reference(element_type=op.record.type)
         ptr = _field_ptr(ref, index, ref_type)
         return memory.LoadOp(mem=mem, ptr=ptr, type=op.type)
@@ -90,9 +93,7 @@ class RecordToMemory(Pass):
     def lower_set(self, op: RecordSetOp) -> dgen.Value | None:
         index = constant(op.index)
         assert isinstance(index, int)
-        ref, initial_store = self._slot_for(op.record, op.mem)
-        # Depend on both the initial store and op.mem.
-        mem = ChainOp(lhs=op.mem, rhs=initial_store, type=op.mem.type)
+        ref, mem = self._slot_for(op.record, op.mem)
         ref_type = memory.Reference(element_type=op.record.type)
         ptr = _field_ptr(ref, index, ref_type)
         return memory.StoreOp(mem=mem, value=op.value, ptr=ptr)
