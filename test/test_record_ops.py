@@ -17,12 +17,6 @@ from dgen.passes.existential_to_memory import ExistentialToMemory
 from dgen.passes.record_to_memory import RecordToMemory
 from dgen.testing import strip_prefix
 
-# Span<Index> has layout "PQ" (ptr + u64, 16 bytes, register-passable).
-# We use it as the record type for testing.
-
-_SPAN = "Span<index.Index>"
-_REF = f"memory.Reference<{_SPAN}>"
-
 
 def _compile(ir_text: str):
     """Parse ASM and compile through the record-aware pipeline."""
@@ -98,17 +92,17 @@ def test_record_pack_get_multiple_values() -> None:
 def test_record_set_then_load_get() -> None:
     """Pack, store to ref, set field 1, load back, get field 1."""
     exe = _compile(
-        strip_prefix(f"""
+        strip_prefix("""
         | import function
         | import index
         | import memory
         |
         | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_b: index.Index):
-        |     %packed : {_SPAN} = record_pack([%a, %b])
-        |     %ref : {_REF} = memory.stack_allocate<{_SPAN}>()
+        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
         |     %st : Nil = memory.store(%ref, %packed, %ref)
         |     %st2 : Nil = record_set<index.Index(1)>(%st, %ref, %new_b)
-        |     %updated : {_SPAN} = memory.load(%st2, %ref)
+        |     %updated : Span<index.Index> = memory.load(%st2, %ref)
         |     %result : index.Index = record_get<index.Index(1)>(%updated)
     """)
     )
@@ -118,17 +112,17 @@ def test_record_set_then_load_get() -> None:
 def test_record_set_preserves_other_field() -> None:
     """Set field 1, verify field 0 is unchanged."""
     exe = _compile(
-        strip_prefix(f"""
+        strip_prefix("""
         | import function
         | import index
         | import memory
         |
         | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_b: index.Index):
-        |     %packed : {_SPAN} = record_pack([%a, %b])
-        |     %ref : {_REF} = memory.stack_allocate<{_SPAN}>()
+        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
         |     %st : Nil = memory.store(%ref, %packed, %ref)
         |     %st2 : Nil = record_set<index.Index(1)>(%st, %ref, %new_b)
-        |     %updated : {_SPAN} = memory.load(%st2, %ref)
+        |     %updated : Span<index.Index> = memory.load(%st2, %ref)
         |     %result : index.Index = record_get<index.Index(0)>(%updated)
     """)
     )
@@ -138,17 +132,17 @@ def test_record_set_preserves_other_field() -> None:
 def test_record_set_field_zero() -> None:
     """Set field 0, read it back."""
     exe = _compile(
-        strip_prefix(f"""
+        strip_prefix("""
         | import function
         | import index
         | import memory
         |
         | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_a: index.Index):
-        |     %packed : {_SPAN} = record_pack([%a, %b])
-        |     %ref : {_REF} = memory.stack_allocate<{_SPAN}>()
+        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
         |     %st : Nil = memory.store(%ref, %packed, %ref)
         |     %st2 : Nil = record_set<index.Index(0)>(%st, %ref, %new_a)
-        |     %updated : {_SPAN} = memory.load(%st2, %ref)
+        |     %updated : Span<index.Index> = memory.load(%st2, %ref)
         |     %result : index.Index = record_get<index.Index(0)>(%updated)
     """)
     )
@@ -158,17 +152,17 @@ def test_record_set_field_zero() -> None:
 def test_record_set_field_zero_preserves_field_one() -> None:
     """Set field 0, verify field 1 is unchanged."""
     exe = _compile(
-        strip_prefix(f"""
+        strip_prefix("""
         | import function
         | import index
         | import memory
         |
         | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_a: index.Index):
-        |     %packed : {_SPAN} = record_pack([%a, %b])
-        |     %ref : {_REF} = memory.stack_allocate<{_SPAN}>()
+        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
         |     %st : Nil = memory.store(%ref, %packed, %ref)
         |     %st2 : Nil = record_set<index.Index(0)>(%st, %ref, %new_a)
-        |     %updated : {_SPAN} = memory.load(%st2, %ref)
+        |     %updated : Span<index.Index> = memory.load(%st2, %ref)
         |     %result : index.Index = record_get<index.Index(1)>(%updated)
     """)
     )
