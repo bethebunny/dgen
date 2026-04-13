@@ -15,6 +15,8 @@ from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.existential_to_memory import ExistentialToMemory
 from dgen.passes.record_to_memory import RecordToMemory
+import pytest
+
 from dgen.testing import strip_prefix
 
 # Span<Index> has layout "PQ" (ptr + u64, 16 bytes, register-passable).
@@ -155,3 +157,59 @@ def test_record_set_field_zero_preserves_field_one() -> None:
     """)
     )
     assert exe.run(10, 20, 99).to_json() == 20
+
+
+# ---------------------------------------------------------------------------
+# Known limitations
+# ---------------------------------------------------------------------------
+
+
+def test_record_pack_snapshot_after_set() -> None:
+    """record_pack returns a snapshot; record_set mutates the backing slot
+    but the pack's LoadOp value is already materialized. To observe the
+    mutation, use record_get — not the original pack value.
+
+    This test documents the current behavior (C copy semantics).
+    """
+    exe = _compile(
+        strip_prefix("""
+        | import function
+        | import index
+        |
+        | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_b: index.Index):
+        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %st : Nil = record_set<index.Index(1)>(%packed, %packed, %new_b)
+        |     %result : index.Index = record_get<index.Index(1)>(%st, %packed)
+    """)
+    )
+    # record_get reads from the mutated slot — sees the new value.
+    assert exe.run(10, 20, 77).to_json() == 77
+
+
+@pytest.mark.xfail(
+    reason="Non-pack values get independent spill slots; set+get don't share storage"
+)
+def test_record_set_get_on_function_arg() -> None:
+    """record_set then record_get on a function argument (not from record_pack).
+
+    Currently each creates its own spill slot, so the mutation is invisible.
+    """
+    exe = _compile(
+        strip_prefix("""
+        | import existential
+        | import function
+        | import index
+        |
+        | %main : function.Function<[existential.Some<index.Index>, index.Index], index.Index> = function.function<index.Index>() body(%some: existential.Some<index.Index>, %new_witness: index.Index):
+        |     %st : Nil = record_set<index.Index(0)>(%some, %some, %new_witness)
+        |     %result : index.Index = record_get<index.Index(0)>(%st, %some)
+    """)
+    )
+    from dgen.dialects import existential
+    from dgen.dialects.index import Index
+    from dgen.memory import Memory
+
+    some_index = existential.Some(bound=Index())
+    payload = {"type": Index().to_json(), "value": 42}
+    mem = Memory.from_json(some_index, payload)
+    assert exe.run(mem, 999).to_json() == 999
