@@ -22,7 +22,8 @@ from __future__ import annotations
 import dgen
 from dgen.builtins import pack
 from dgen.dialects import existential, memory
-from dgen.dialects.builtin import ChainOp, RecordGetOp, RecordPackOp, TypeOp
+from dgen.dialects.builtin import ChainOp, TypeOp
+from dgen.dialects.record import GetOp as RecordGetOp, PackOp as RecordPackOp
 from dgen.dialects.index import Index
 from dgen.layout import align_up
 from dgen.passes.pass_ import Pass, lowering_for

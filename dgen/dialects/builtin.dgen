@@ -27,7 +27,3 @@ type Tuple<types: Span<Type>>:
 op chain(lhs, rhs)
 op type(value) -> Type
 op extern<symbol: String>()
-
-op record_pack(values: Span)
-op record_get<index: Index>(record)
-op record_set<index: Index>(mem, ptr, value) -> Nil

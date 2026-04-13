@@ -149,6 +149,7 @@ To regenerate `.pyi` stubs (run from repo root):
 python -m dgen.spec dgen/dialects/builtin.dgen > dgen/dialects/builtin.pyi
 python -m dgen.spec dgen/dialects/llvm.dgen > dgen/dialects/llvm.pyi
 python -m dgen.spec dgen/dialects/ndbuffer.dgen > dgen/dialects/ndbuffer.pyi
+python -m dgen.spec dgen/dialects/record.dgen > dgen/dialects/record.pyi
 python -m dgen.spec examples/toy/dialects/toy.dgen > examples/toy/dialects/toy.pyi
 ```
 

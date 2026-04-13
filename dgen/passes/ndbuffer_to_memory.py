@@ -17,7 +17,8 @@ from math import prod
 import dgen
 from dgen.builtins import PackOp, pack
 from dgen.dialects import algebra, function, llvm, memory, ndbuffer
-from dgen.dialects.builtin import ExternOp, Nil, RecordGetOp, String
+from dgen.dialects.builtin import ExternOp, Nil, String
+from dgen.dialects.record import GetOp as RecordGetOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.passes.pass_ import Pass, lowering_for

@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import dgen
 from dgen.dialects import function, llvm, memory
-from dgen.dialects.builtin import ChainOp, ExternOp, Nil, RecordGetOp, String
+from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
+from dgen.dialects.record import GetOp as RecordGetOp
 from dgen.dialects.index import Index
 from dgen.builtins import pack
 from dgen.layout import align_up
@@ -52,7 +53,7 @@ class MemoryToLLVM(Pass):
 
     @lowering_for(RecordGetOp)
     def lower_record_get(self, op: RecordGetOp) -> dgen.Value | None:
-        from dgen.llvm.ffi import _struct_fields, _LLVM
+        from dgen.llvm.ffi import _LLVM, _struct_fields
 
         record_type = constant(op.record.type)
         assert isinstance(record_type, dgen.Type)
