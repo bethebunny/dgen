@@ -1,0 +1,5 @@
+from builtin import Index, Nil, Span
+
+op pack(values: Span)
+op get<index: Index>(record)
+op set<index: Index>(mem, ptr, value) -> Nil

@@ -1,4 +1,4 @@
-"""End-to-end tests for record ops (record_pack, record_get, record_set).
+"""End-to-end tests for record ops (record.pack, record.get, record.set).
 
 Tests through the full JIT pipeline: ASM parse → lowering → LLVM codegen →
 JIT execution → result verification.
@@ -44,10 +44,11 @@ def test_record_pack_get_field_zero() -> None:
         strip_prefix("""
         | import function
         | import index
+        | import record
         |
         | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
-        |     %packed : Span<index.Index> = record_pack([%a, %b])
-        |     %result : index.Index = record_get<index.Index(0)>(%packed)
+        |     %packed : Span<index.Index> = record.pack([%a, %b])
+        |     %result : index.Index = record.get<index.Index(0)>(%packed)
     """)
     )
     assert exe.run(10, 20).to_json() == 10
@@ -59,10 +60,11 @@ def test_record_pack_get_field_one() -> None:
         strip_prefix("""
         | import function
         | import index
+        | import record
         |
         | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
-        |     %packed : Span<index.Index> = record_pack([%a, %b])
-        |     %result : index.Index = record_get<index.Index(1)>(%packed)
+        |     %packed : Span<index.Index> = record.pack([%a, %b])
+        |     %result : index.Index = record.get<index.Index(1)>(%packed)
     """)
     )
     assert exe.run(10, 20).to_json() == 20
@@ -74,10 +76,11 @@ def test_record_pack_get_multiple_values() -> None:
         strip_prefix("""
         | import function
         | import index
+        | import record
         |
         | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
-        |     %packed : Span<index.Index> = record_pack([%a, %b])
-        |     %result : index.Index = record_get<index.Index(1)>(%packed)
+        |     %packed : Span<index.Index> = record.pack([%a, %b])
+        |     %result : index.Index = record.get<index.Index(1)>(%packed)
     """)
     )
     for a, b in [(0, 0), (1, 2), (42, 99), (2**32, 2**48)]:
@@ -95,15 +98,16 @@ def test_record_set_then_load_get() -> None:
         strip_prefix("""
         | import function
         | import index
+        | import record
         | import memory
         |
         | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_b: index.Index):
-        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %packed : Span<index.Index> = record.pack([%a, %b])
         |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
         |     %st : Nil = memory.store(%ref, %packed, %ref)
-        |     %st2 : Nil = record_set<index.Index(1)>(%st, %ref, %new_b)
+        |     %st2 : Nil = record.set<index.Index(1)>(%st, %ref, %new_b)
         |     %updated : Span<index.Index> = memory.load(%st2, %ref)
-        |     %result : index.Index = record_get<index.Index(1)>(%updated)
+        |     %result : index.Index = record.get<index.Index(1)>(%updated)
     """)
     )
     assert exe.run(10, 20, 77).to_json() == 77
@@ -115,15 +119,16 @@ def test_record_set_preserves_other_field() -> None:
         strip_prefix("""
         | import function
         | import index
+        | import record
         | import memory
         |
         | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_b: index.Index):
-        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %packed : Span<index.Index> = record.pack([%a, %b])
         |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
         |     %st : Nil = memory.store(%ref, %packed, %ref)
-        |     %st2 : Nil = record_set<index.Index(1)>(%st, %ref, %new_b)
+        |     %st2 : Nil = record.set<index.Index(1)>(%st, %ref, %new_b)
         |     %updated : Span<index.Index> = memory.load(%st2, %ref)
-        |     %result : index.Index = record_get<index.Index(0)>(%updated)
+        |     %result : index.Index = record.get<index.Index(0)>(%updated)
     """)
     )
     assert exe.run(10, 20, 77).to_json() == 10
@@ -135,15 +140,16 @@ def test_record_set_field_zero() -> None:
         strip_prefix("""
         | import function
         | import index
+        | import record
         | import memory
         |
         | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_a: index.Index):
-        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %packed : Span<index.Index> = record.pack([%a, %b])
         |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
         |     %st : Nil = memory.store(%ref, %packed, %ref)
-        |     %st2 : Nil = record_set<index.Index(0)>(%st, %ref, %new_a)
+        |     %st2 : Nil = record.set<index.Index(0)>(%st, %ref, %new_a)
         |     %updated : Span<index.Index> = memory.load(%st2, %ref)
-        |     %result : index.Index = record_get<index.Index(0)>(%updated)
+        |     %result : index.Index = record.get<index.Index(0)>(%updated)
     """)
     )
     assert exe.run(10, 20, 99).to_json() == 99
@@ -155,15 +161,16 @@ def test_record_set_field_zero_preserves_field_one() -> None:
         strip_prefix("""
         | import function
         | import index
+        | import record
         | import memory
         |
         | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_a: index.Index):
-        |     %packed : Span<index.Index> = record_pack([%a, %b])
+        |     %packed : Span<index.Index> = record.pack([%a, %b])
         |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
         |     %st : Nil = memory.store(%ref, %packed, %ref)
-        |     %st2 : Nil = record_set<index.Index(0)>(%st, %ref, %new_a)
+        |     %st2 : Nil = record.set<index.Index(0)>(%st, %ref, %new_a)
         |     %updated : Span<index.Index> = memory.load(%st2, %ref)
-        |     %result : index.Index = record_get<index.Index(1)>(%updated)
+        |     %result : index.Index = record.get<index.Index(1)>(%updated)
     """)
     )
     assert exe.run(10, 20, 99).to_json() == 20

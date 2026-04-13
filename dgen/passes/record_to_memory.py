@@ -1,8 +1,8 @@
 """Lower record ops to memory dialect ops.
 
-record_pack([v0, v1, ...])        →  stack_allocate + store-per-field + load
-record_get<i>(record)             →  lowered by MemoryToLLVM (extractvalue)
-record_set<i>(mem, ptr, value)    →  offset + store
+    record.pack([v0, v1, ...])        →  stack_allocate + store-per-field + load
+    record.get<i>(record)             →  lowered by MemoryToLLVM (extractvalue)
+    record.set<i>(mem, ptr, value)    →  offset + store
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from __future__ import annotations
 import dgen
 from dgen.builtins import unpack
 from dgen.dialects import memory
-from dgen.dialects.builtin import RecordPackOp, RecordSetOp
 from dgen.dialects.index import Index
+from dgen.dialects.record import PackOp, SetOp
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import constant
 
@@ -26,8 +26,8 @@ def _field_ptr(ptr: dgen.Value, index: int, ref_type: memory.Reference) -> dgen.
 class RecordToMemory(Pass):
     allow_unregistered_ops = True
 
-    @lowering_for(RecordPackOp)
-    def lower_pack(self, op: RecordPackOp) -> dgen.Value | None:
+    @lowering_for(PackOp)
+    def lower_pack(self, op: PackOp) -> dgen.Value | None:
         record_type = op.type
         ref_type = memory.Reference(element_type=record_type)
         fields = unpack(op.values)
@@ -41,8 +41,8 @@ class RecordToMemory(Pass):
 
         return memory.LoadOp(mem=mem, ptr=ref, type=record_type)
 
-    @lowering_for(RecordSetOp)
-    def lower_set(self, op: RecordSetOp) -> dgen.Value | None:
+    @lowering_for(SetOp)
+    def lower_set(self, op: SetOp) -> dgen.Value | None:
         index = constant(op.index)
         assert isinstance(index, int)
         ref_type = op.ptr.type

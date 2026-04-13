@@ -59,22 +59,3 @@ class ExternOp(Op):
     symbol: Value[String]
     type: Type
 
-@dataclass(eq=False)
-class RecordPackOp(Op):
-    values: Value
-    type: Type
-
-@dataclass(eq=False)
-class RecordGetOp(Op):
-    index: Value[Index]
-    record: Value
-    type: Type
-
-@dataclass(eq=False)
-class RecordSetOp(Op):
-    index: Value[Index]
-    mem: Value
-    ptr: Value
-    value: Value
-    type: Type = Nil()
-
