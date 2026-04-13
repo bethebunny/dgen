@@ -67,7 +67,6 @@ class RecordPackOp(Op):
 @dataclass(eq=False)
 class RecordGetOp(Op):
     index: Value[Index]
-    mem: Value
     record: Value
     type: Type
 
@@ -75,7 +74,7 @@ class RecordGetOp(Op):
 class RecordSetOp(Op):
     index: Value[Index]
     mem: Value
-    record: Value
+    ptr: Value
     value: Value
     type: Type = Nil()
 

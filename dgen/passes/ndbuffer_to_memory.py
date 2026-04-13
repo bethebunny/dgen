@@ -59,7 +59,6 @@ def _deref(val: dgen.Value) -> dgen.Value:
     # field 0 is the data pointer. Use record_get to extract it.
     return RecordGetOp(
         index=Index().constant(0),
-        mem=val,
         record=val,
         type=memory.Reference(element_type=Float64()),
     )
