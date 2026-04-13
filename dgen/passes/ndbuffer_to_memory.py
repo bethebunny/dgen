@@ -17,7 +17,7 @@ from math import prod
 import dgen
 from dgen.builtins import PackOp, pack
 from dgen.dialects import algebra, function, llvm, memory, ndbuffer
-from dgen.dialects.builtin import ExternOp, Nil, String
+from dgen.dialects.builtin import ExternOp, Nil, RecordGetOp, String
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.passes.pass_ import Pass, lowering_for
@@ -52,12 +52,16 @@ def _linearize(shape: list[int], indices: list[dgen.Value]) -> dgen.Value:
 
 
 def _deref(val: dgen.Value) -> dgen.Value:
-    """If val's type is a shaped buffer (not Reference or NDBuffer), load its data pointer."""
+    """If val's type is a shaped buffer (not Reference or NDBuffer), extract the data pointer."""
     if isinstance(val.type, (memory.Reference, ndbuffer.NDBuffer)):
         return val
-    # Upstream types (e.g. toy.Tensor) store a data pointer that needs dereferencing.
-    return memory.LoadOp(
-        mem=val, ptr=val, type=memory.Reference(element_type=Float64())
+    # Upstream types (e.g. toy.Tensor) have a Span-shaped layout where
+    # field 0 is the data pointer. Use record_get to extract it.
+    return RecordGetOp(
+        index=Index().constant(0),
+        mem=val,
+        record=val,
+        type=memory.Reference(element_type=Float64()),
     )
 
 

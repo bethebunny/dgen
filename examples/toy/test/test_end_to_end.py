@@ -13,6 +13,7 @@ from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.record_to_memory import RecordToMemory
 from toy.parser.lowering import lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.optimize import ToyOptimize
@@ -27,6 +28,7 @@ compiler = Compiler(
         ToyToStructured(),
         ControlFlowToGoto(),
         NDBufferToMemory(),
+        RecordToMemory(),
         MemoryToLLVM(),
     ],
     exit=IdentityPass(),
@@ -199,6 +201,7 @@ def test_transpose_phi_emission():
             ToyToStructured(),
             ControlFlowToGoto(),
             NDBufferToMemory(),
+            RecordToMemory(),
             MemoryToLLVM(),
             AlgebraToLLVM(),
         ],

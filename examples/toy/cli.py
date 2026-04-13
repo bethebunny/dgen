@@ -16,6 +16,7 @@ from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.record_to_memory import RecordToMemory
 from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
 from toy.parser.lowering import lower
@@ -34,6 +35,7 @@ toy_compiler: Compiler[Executable] = Compiler(
         ToyToStructured(),
         ControlFlowToGoto(),
         NDBufferToMemory(),
+        RecordToMemory(),
         MemoryToLLVM(),
         BuiltinToLLVM(),
         AlgebraToLLVM(),

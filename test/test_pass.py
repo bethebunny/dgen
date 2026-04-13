@@ -19,6 +19,7 @@ from dgen.ir.verification import ClosedBlockError
 from toy.dialects import toy
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.record_to_memory import RecordToMemory
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.testing import strip_prefix
 
@@ -314,6 +315,7 @@ def test_constant_fold_resolves_stage0_boundary():
         def run(self, value: dgen.Value, compiler: Compiler) -> dgen.Value:
             value = ControlFlowToGoto().run(value, compiler)
             value = NDBufferToMemory().run(value, compiler)
+            value = RecordToMemory().run(value, compiler)
             return MemoryToLLVM().run(value, compiler)
 
     compiler: Compiler[Executable] = Compiler(

@@ -16,12 +16,14 @@ from dgen.memory import Memory
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.record_to_memory import RecordToMemory
 
 actor_compiler: Compiler[Executable] = Compiler(
     passes=[
         ActorToAffine(),
         ControlFlowToGoto(),
         NDBufferToMemory(),
+        RecordToMemory(),
         MemoryToLLVM(),
         AlgebraToLLVM(),
     ],

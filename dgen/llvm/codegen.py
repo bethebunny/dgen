@@ -24,7 +24,7 @@ from dgen.dialects import (
     number,
 )
 from dgen.ir.traversal import all_values
-from dgen.layout import Layout, Pointer
+from dgen.layout import Layout
 from dgen.builtins import ConstantOp, PackOp, pack, unpack
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function
@@ -685,16 +685,7 @@ def emit_store(op: memory.StoreOp) -> Iterator[str]:
 
 @emitter_for(memory.LoadOp)
 def emit_load(op: memory.LoadOp) -> Iterator[str]:
-    # TODO: _deref in ndbuffer_to_memory abuses LoadOp to extract the data
-    # pointer from a Span-shaped Tensor. With Span register-passable, the
-    # "pointer" is actually an inline {ptr, i64} — emit extractvalue instead
-    # of load. The real fix is a proper field-extraction op or fixing Tensor's
-    # layout to be a bare Pointer.
-    ptr_layout = constant(op.ptr.type).__layout__
-    if ptr_layout.register_passable and not isinstance(ptr_layout, Pointer):
-        yield f"  extractvalue {typed_reference(op.ptr)}, 0"
-    else:
-        yield f"  load {llvm_type(op.type)}, ptr {vr(op.ptr)}"
+    yield f"  load {llvm_type(op.type)}, ptr {vr(op.ptr)}"
 
 
 # ---------------------------------------------------------------------------
