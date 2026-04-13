@@ -3,9 +3,9 @@
 Converts shaped N-dimensional buffer ops to flat pointer ops with
 index linearization.
 
-    ndbuffer.alloc(shape) → memory.heap_allocate(total)
-    ndbuffer.load(mem, buf, [i, j]) → memory.load(mem, memory.offset(buf, i*stride+j))
-    ndbuffer.store(mem, val, buf, [i, j]) → memory.store(mem, val, memory.offset(buf, ...))
+    ndbuffer.alloc(shape) → record.pack([heap_allocate(total), total])
+    ndbuffer.load(mem, buf, [i, j]) → memory.load(mem, memory.offset(deref(buf), linear))
+    ndbuffer.store(mem, val, buf, [i, j]) → memory.store(mem, val, memory.offset(...))
     ndbuffer.dealloc → memory.deallocate
     ndbuffer.print_memref → llvm.call<"print_memref">
 """
@@ -18,17 +18,11 @@ import dgen
 from dgen.builtins import PackOp, pack
 from dgen.dialects import algebra, function, llvm, memory, ndbuffer
 from dgen.dialects.builtin import ExternOp, Nil, String
-from dgen.dialects.record import GetOp as RecordGetOp
+from dgen.dialects.record import GetOp as RecordGetOp, PackOp as RecordPackOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.passes.pass_ import Pass, lowering_for
-
-
-def _shape_of(val: dgen.Value) -> list[int]:
-    """Extract static shape from a shaped type (NDBuffer or any type with .shape)."""
-    result = val.type.shape.__constant__.to_json()
-    assert isinstance(result, list)
-    return result
+from dgen.type import constant
 
 
 def _linearize(shape: list[int], indices: list[dgen.Value]) -> dgen.Value:
@@ -53,11 +47,7 @@ def _linearize(shape: list[int], indices: list[dgen.Value]) -> dgen.Value:
 
 
 def _deref(val: dgen.Value) -> dgen.Value:
-    """If val's type is a shaped buffer (not Reference or NDBuffer), extract the data pointer."""
-    if isinstance(val.type, (memory.Reference, ndbuffer.NDBuffer)):
-        return val
-    # Upstream types (e.g. toy.Tensor) have a Span-shaped layout where
-    # field 0 is the data pointer. Use record_get to extract it.
+    """Extract the data pointer from a shaped buffer (NDBuffer or Tensor)."""
     return RecordGetOp(
         index=Index().constant(0),
         record=val,
@@ -69,19 +59,22 @@ class NDBufferToMemory(Pass):
     allow_unregistered_ops = True
 
     def __init__(self) -> None:
-        # Track shapes for allocs that have been lowered to References.
+        # Track shapes for allocs that have been lowered.
         self._shapes: dict[dgen.Value, list[int]] = {}
 
     def _resolve_shape(self, val: dgen.Value) -> list[int]:
-        """Get shape from NDBuffer type or from tracked alloc shapes."""
+        """Get shape from tracked alloc or from the type's shape parameter."""
         if val in self._shapes:
             return self._shapes[val]
-        return _shape_of(val)
+        result = constant(val.type.shape)
+        assert isinstance(result, list)
+        return result
 
     @lowering_for(ndbuffer.AllocOp)
     def lower_alloc(self, op: ndbuffer.AllocOp) -> dgen.Value | None:
         assert isinstance(op.type, ndbuffer.NDBuffer)
-        shape = _shape_of(op)
+        shape = constant(op.type.shape)
+        assert isinstance(shape, list)
         total = prod(shape)
         dtype = Float64()
         alloc = memory.HeapAllocateOp(
@@ -89,12 +82,16 @@ class NDBufferToMemory(Pass):
             count=Index().constant(total),
             type=memory.Reference(element_type=dtype),
         )
-        self._shapes[alloc] = shape
-        return alloc
+        result = RecordPackOp(
+            values=pack([alloc, Index().constant(total)]),
+            type=op.type,
+        )
+        self._shapes[result] = shape
+        return result
 
     @lowering_for(ndbuffer.DeallocOp)
     def lower_dealloc(self, op: ndbuffer.DeallocOp) -> dgen.Value | None:
-        return memory.DeallocateOp(mem=op.mem, ptr=op.buffer)
+        return memory.DeallocateOp(mem=op.mem, ptr=_deref(op.buffer))
 
     @lowering_for(ndbuffer.LoadOp)
     def lower_load(self, op: ndbuffer.LoadOp) -> dgen.Value | None:
@@ -102,12 +99,7 @@ class NDBufferToMemory(Pass):
         assert isinstance(op.indices, PackOp)
         shape = self._resolve_shape(op.buffer)
         offset = _linearize(shape, list(op.indices))
-        ref_type = (
-            ptr.type
-            if isinstance(ptr.type, memory.Reference)
-            else memory.Reference(element_type=Float64())
-        )
-        offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ref_type)
+        offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ptr.type)
         return memory.LoadOp(mem=op.mem, ptr=offset_ptr, type=op.type)
 
     @lowering_for(ndbuffer.StoreOp)
@@ -116,12 +108,7 @@ class NDBufferToMemory(Pass):
         assert isinstance(op.indices, PackOp)
         shape = self._resolve_shape(op.buffer)
         offset = _linearize(shape, list(op.indices))
-        ref_type = (
-            ptr.type
-            if isinstance(ptr.type, memory.Reference)
-            else memory.Reference(element_type=Float64())
-        )
-        offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ref_type)
+        offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ptr.type)
         return memory.StoreOp(mem=op.mem, value=op.value, ptr=offset_ptr)
 
     @lowering_for(ndbuffer.PrintMemrefOp)
