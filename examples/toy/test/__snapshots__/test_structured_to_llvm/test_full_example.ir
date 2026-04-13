@@ -27,7 +27,7 @@ import toy
                 %loop_body1 : goto.Label = goto.label([]) body(%14: index.Index) captures(%13, %7, %9, %10):
                     %15 : index.Index = algebra.add(%14, index.Index(1))
                     %16 : llvm.Ptr = llvm.alloca<index.Index(2)>()
-                    %17 : Nil = memory.store(%9, %9, %16)
+                    %17 : Nil = memory.store(%16, %9, %16)
                     %18 : memory.Reference<number.Float64> = memory.load(%17, %16)
                     %19 : index.Index = algebra.multiply(%10, index.Index(3))
                     %20 : index.Index = algebra.add(%19, %14)
@@ -59,7 +59,7 @@ import toy
                 %loop_body3 : goto.Label = goto.label([]) body(%46: index.Index) captures(%45, %38, %40, %42):
                     %47 : index.Index = algebra.add(%46, index.Index(1))
                     %48 : llvm.Ptr = llvm.alloca<index.Index(2)>()
-                    %49 : Nil = memory.store(%40, %40, %48)
+                    %49 : Nil = memory.store(%48, %40, %48)
                     %50 : memory.Reference<number.Float64> = memory.load(%49, %48)
                     %51 : index.Index = algebra.multiply(%42, index.Index(3))
                     %52 : index.Index = algebra.add(%51, %46)

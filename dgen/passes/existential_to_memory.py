@@ -74,7 +74,6 @@ class ExistentialToMemory(Pass):
         inner_ref_type = memory.Reference(element_type=witness_type)
         inner_ptr = RecordGetOp(
             index=Index().constant(1),
-            mem=op.box,
             record=op.box,
             type=inner_ref_type,
         )
