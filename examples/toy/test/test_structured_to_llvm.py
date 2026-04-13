@@ -5,6 +5,7 @@ from dgen.asm.parser import parse
 from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.record_to_memory import RecordToMemory
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from toy.passes.toy_to_structured import ToyToStructured
 from toy.test.helpers import strip_prefix
@@ -13,7 +14,7 @@ from toy.test.helpers import strip_prefix
 def compile_to_llvm(ir_text: str) -> dgen.Value:
     m = parse(ir_text)
     return Compiler(
-        [ToyToStructured(), ControlFlowToGoto(), NDBufferToMemory(), MemoryToLLVM()],
+        [ToyToStructured(), ControlFlowToGoto(), NDBufferToMemory(), RecordToMemory(), MemoryToLLVM()],
         IdentityPass(),
     ).run(m)
 

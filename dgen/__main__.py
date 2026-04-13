@@ -30,6 +30,7 @@ from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.existential_to_memory import ExistentialToMemory
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.record_to_memory import RecordToMemory
 from dgen.type import format_value
 
 
@@ -39,6 +40,7 @@ def _default_compiler() -> Compiler:
             ControlFlowToGoto(),
             NDBufferToMemory(),
             ExistentialToMemory(),
+            RecordToMemory(),
             MemoryToLLVM(),
             BuiltinToLLVM(),
             AlgebraToLLVM(),

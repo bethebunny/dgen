@@ -14,7 +14,6 @@ from dgen.passes.compiler import Compiler, IdentityPass
 from dgen import layout
 from dgen.dialects import algebra, builtin, llvm, number
 from dgen.dialects.index import Index
-from dgen.dialects.index import Index
 from dgen.dialects.function import FunctionOp
 from dgen.passes.staging import (
     _unresolved_compile_dependencies,
@@ -30,12 +29,13 @@ from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.record_to_memory import RecordToMemory
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 
 
 def lower_to_llvm(m):
     return Compiler(
-        [ControlFlowToGoto(), NDBufferToMemory(), MemoryToLLVM()],
+        [ControlFlowToGoto(), NDBufferToMemory(), RecordToMemory(), MemoryToLLVM()],
         IdentityPass(),
     ).run(m)
 
@@ -478,6 +478,7 @@ def test_staging_resolves_block_arg_type():
             lower_calls += 1
             value = ControlFlowToGoto().run(value, compiler)
             value = NDBufferToMemory().run(value, compiler)
+            value = RecordToMemory().run(value, compiler)
             return MemoryToLLVM().run(value, compiler)
 
     ir = strip_prefix("""
@@ -578,6 +579,7 @@ def test_staging_with_ssa_result_type():
         def run(self, value: dgen.Value, compiler: Compiler) -> dgen.Value:
             value = ControlFlowToGoto().run(value, compiler)
             value = NDBufferToMemory().run(value, compiler)
+            value = RecordToMemory().run(value, compiler)
             return MemoryToLLVM().run(value, compiler)
 
     compiler: Compiler[Executable] = Compiler(
