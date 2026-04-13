@@ -442,19 +442,19 @@ def test_parse_type_with_pointer_array_param():
 
 
 def test_some_layout():
-    """Some<bound> uses the Some layout: 16 bytes, register-passable."""
+    """Some<bound> uses the Some layout: 8 bytes (pointer), register-passable."""
     ly = existential.Some(bound=builtin.TypeTag()).__layout__
     assert isinstance(ly, layout.Some)
-    assert ly.byte_size == 16
+    assert ly.byte_size == 8
     assert ly.register_passable
 
 
 def test_any_aliases_some_type():
-    """Any has the same 16-byte Some layout as Some<Type>."""
+    """Any has the same 8-byte Some layout as Some<Type>."""
     any_ly = existential.Any().__layout__
     some_ly = existential.Some(bound=builtin.TypeTag()).__layout__
     assert isinstance(any_ly, layout.Some)
-    assert any_ly.byte_size == some_ly.byte_size == 16
+    assert any_ly.byte_size == some_ly.byte_size == 8
 
 
 def test_some_type_asm_format():
@@ -470,7 +470,7 @@ def test_some_with_trait_bound():
     """A trait can serve as the bound for Some<Trait>."""
     ty = existential.Some(bound=algebra.AddMagma())
     assert isinstance(ty.__layout__, layout.Some)
-    assert ty.__layout__.byte_size == 16
+    assert ty.__layout__.byte_size == 8
 
 
 def test_existential_pack_asm_roundtrip():

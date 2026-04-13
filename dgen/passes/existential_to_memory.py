@@ -1,29 +1,26 @@
-"""Lower existential dialect ops to record and memory ops.
+"""Lower existential dialect ops to memory ops.
 
 ``existential.pack(value)`` becomes:
 
-    %witness   = builtin.type(value)
-    %inner_ref = memory.heap_allocate<value_type>(N)
-    %_         = memory.store(inner_ref, value, inner_ref)
-    %chained   = chain(inner_ref, _)
-    %result    = builtin.record_pack([witness, chained])
+    %witness    = builtin.type(value)
+    %inner_ref  = memory.heap_allocate<some_type>(N)
+    %_          = memory.store(inner_ref, witness, inner_ref)
+    %val_field  = memory.offset(inner_ref, 1)
+    %_          = memory.store(_, value, val_field)
+    %result     = inner_ref  (the pointer IS the Some)
 
-``existential.unpack(box)`` extracts the inner pointer via record_get
-and loads the value through it:
+``existential.unpack(box)`` dereferences the pointer and reads the
+value from offset 1:
 
-    %inner_ptr = builtin.record_get<1>(box, box)
-    %result    = memory.load(inner_ptr, inner_ptr)
-
-RecordToMemory then lowers the record ops to stack-allocate/store/load.
+    %val_field  = memory.offset(box, 1)
+    %result     = memory.load(box, val_field)
 """
 
 from __future__ import annotations
 
 import dgen
-from dgen.builtins import pack
 from dgen.dialects import existential, memory
 from dgen.dialects.builtin import ChainOp, TypeOp
-from dgen.dialects.record import GetOp as RecordGetOp, PackOp as RecordPackOp
 from dgen.dialects.index import Index
 from dgen.layout import align_up
 from dgen.passes.pass_ import Pass, lowering_for
@@ -42,46 +39,36 @@ class ExistentialToMemory(Pass):
         # Witness type as a compile-time TypeType constant.
         witness = TypeOp(value=op.value, type=TypeType())
 
-        # Heap-allocate storage for the inner value and write the bytes.
-        inner_ref_type = memory.Reference(element_type=value_type)
-        inner_count = max(1, align_up(value_type.__layout__.byte_size, 8))
+        # Heap-allocate a block for {TypeValue, value_bytes}.
+        # TypeValue is 8 bytes (one pointer), value follows inline.
+        inner_bytes = 8 + value_type.__layout__.byte_size
+        inner_count = max(1, align_up(inner_bytes, 8))
+        ref_type = memory.Reference(element_type=some_type)
         inner_ref = memory.HeapAllocateOp(
-            element_type=value_type,
-            count=Index().constant(inner_count),
-            type=inner_ref_type,
-        )
-        inner_store = memory.StoreOp(
-            mem=inner_ref,
-            value=op.value,
-            ptr=inner_ref,
+            element_type=some_type, count=Index().constant(inner_count), type=ref_type
         )
 
-        # Chain inner_ref through inner_store to ensure the heap write
-        # happens before the record is constructed.
-        chained_ref = ChainOp(lhs=inner_ref, rhs=inner_store, type=inner_ref.type)
+        # Store witness (TypeValue) at offset 0.
+        witness_store = memory.StoreOp(mem=inner_ref, value=witness, ptr=inner_ref)
 
-        # Pack the Some record: [witness, inner_pointer].
-        return RecordPackOp(
-            values=pack([witness, chained_ref]),
-            type=some_type,
+        # Store value at offset 1 (8-byte stride).
+        value_field = memory.OffsetOp(
+            ptr=inner_ref, index=Index().constant(1), type=ref_type
         )
+        value_store = memory.StoreOp(mem=witness_store, value=op.value, ptr=value_field)
+
+        # The pointer itself IS the Some value.
+        return ChainOp(lhs=inner_ref, rhs=value_store, type=inner_ref.type)
 
     @lowering_for(existential.UnpackOp)
     def lower_unpack(self, op: existential.UnpackOp) -> dgen.Value | None:
         witness_type = op.type
         assert isinstance(witness_type, dgen.Type)
 
-        # Extract the inner pointer from field 1 of the Some.
-        inner_ref_type = memory.Reference(element_type=witness_type)
-        inner_ptr = RecordGetOp(
-            index=Index().constant(1),
-            record=op.box,
-            type=inner_ref_type,
+        # The Some value is a pointer to {TypeValue, value_inline}.
+        # The value is at offset 1 (after the 8-byte TypeValue).
+        some_ref_type = memory.Reference(element_type=op.box.type)
+        value_field = memory.OffsetOp(
+            ptr=op.box, index=Index().constant(1), type=some_ref_type
         )
-
-        # Load the inner value through the pointer.
-        return memory.LoadOp(
-            mem=inner_ptr,
-            ptr=inner_ptr,
-            type=witness_type,
-        )
+        return memory.LoadOp(mem=op.box, ptr=value_field, type=witness_type)
