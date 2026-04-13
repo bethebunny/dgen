@@ -688,6 +688,12 @@ def emit_load(op: memory.LoadOp) -> Iterator[str]:
     yield f"  load {llvm_type(op.type)}, ptr {vr(op.ptr)}"
 
 
+@emitter_for(llvm.ExtractValueOp)
+def emit_extract_value(op: llvm.ExtractValueOp) -> Iterator[str]:
+    index = constant(op.index)
+    yield f"  extractvalue {typed_reference(op.aggregate)}, {index}"
+
+
 # ---------------------------------------------------------------------------
 # Call ops
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 """Lower record ops to memory dialect ops.
 
 record_pack([v0, v1, ...])        →  stack_allocate + store-per-field + load
-record_get<i>(record)             →  stack_allocate + store + offset + load
+record_get<i>(record)             →  lowered by MemoryToLLVM (extractvalue)
 record_set<i>(mem, ptr, value)    →  offset + store
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 import dgen
 from dgen.builtins import unpack
 from dgen.dialects import memory
-from dgen.dialects.builtin import RecordGetOp, RecordPackOp, RecordSetOp
+from dgen.dialects.builtin import RecordPackOp, RecordSetOp
 from dgen.dialects.index import Index
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import constant
@@ -40,19 +40,6 @@ class RecordToMemory(Pass):
             mem = memory.StoreOp(mem=mem, value=field_val, ptr=ptr)
 
         return memory.LoadOp(mem=mem, ptr=ref, type=record_type)
-
-    @lowering_for(RecordGetOp)
-    def lower_get(self, op: RecordGetOp) -> dgen.Value | None:
-        index = constant(op.index)
-        assert isinstance(index, int)
-        record_type = op.record.type
-        ref_type = memory.Reference(element_type=record_type)
-
-        # Spill to stack, read field. LLVM mem2reg eliminates the round-trip.
-        ref = memory.StackAllocateOp(element_type=record_type, type=ref_type)
-        store = memory.StoreOp(mem=ref, value=op.record, ptr=ref)
-        ptr = _field_ptr(ref, index, ref_type)
-        return memory.LoadOp(mem=store, ptr=ptr, type=op.type)
 
     @lowering_for(RecordSetOp)
     def lower_set(self, op: RecordSetOp) -> dgen.Value | None:

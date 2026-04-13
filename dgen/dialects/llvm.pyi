@@ -140,6 +140,12 @@ class InttoptrOp(Op):
     type: Type = Ptr()
 
 @dataclass(eq=False)
+class ExtractValueOp(Op):
+    index: Value[Index]
+    aggregate: Value
+    type: Type
+
+@dataclass(eq=False)
 class CallOp(Op):
     callee: Value[String]
     args: Value
