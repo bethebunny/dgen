@@ -102,9 +102,33 @@ def _layout_fn(
     if ctor := _CONSTRUCTOR_LAYOUTS.get(ref.name):
         sub_fns = [_layout_fn(a, resolved_params, ns) for a in ref.args]
         return lambda self, _c=ctor, _fs=sub_fns: _c(*[f(self) for f in _fs])
-    static: object = (
-        _PRIMITIVE_LAYOUTS.get(ref.name) or _resolve_type(ref.name, ns).__layout__
-    )
+    resolved_type = _resolve_type(ref.name, ns)
+    static: object = _PRIMITIVE_LAYOUTS.get(ref.name) or resolved_type.__layout__
+    if isinstance(static, property) and ref.args:
+        # Parametric type used as a field (e.g. NDBuffer<shape, dtype>).
+        # Build a closure that constructs the type with resolved args
+        # and reads its layout at instance time.
+        arg_fns = [_layout_fn(a, resolved_params, ns) for a in ref.args]
+        param_names = [name for name, _ in resolved_type.__params__]
+
+        def _resolve_layout(
+            self: object,
+            _cls: type[Type] = resolved_type,
+            _pnames: list[str] = param_names,
+            _afns: list[_LayoutFn] = arg_fns,
+        ) -> layout.Layout:
+            kwargs = {}
+            for pname, afn in zip(_pnames, _afns):
+                val = afn(self)
+                if isinstance(val, layout.Layout):
+                    # Layout → need to find the original type value, not the layout.
+                    # Pass the attribute from self directly.
+                    kwargs[pname] = getattr(self, pname)
+                else:
+                    kwargs[pname] = val
+            return _cls(**kwargs).__layout__  # type: ignore[return-value]
+
+        return _resolve_layout
     return lambda self, _l=static: _l
 
 

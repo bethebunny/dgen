@@ -1,0 +1,24 @@
+import algebra
+import function
+import index
+import memory
+import ndbuffer
+import number
+import record
+
+%main : function.Function<[number.Float64, number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64, %y: number.Float64):
+    %0 : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(index.Index(4))
+    %1 : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(1)>([4]), number.Float64> = record.pack([%0, index.Index(4)])
+    %2 : memory.Reference<number.Float64> = record.get<index.Index(0)>(%1)
+    %3 : memory.Reference<number.Float64> = memory.offset(%2, index.Index(0))
+    %4 : Nil = memory.store(%1, %x, %3)
+    %5 : memory.Reference<number.Float64> = record.get<index.Index(0)>(%1)
+    %6 : memory.Reference<number.Float64> = memory.offset(%5, index.Index(1))
+    %7 : Nil = memory.store(%4, %y, %6)
+    %8 : memory.Reference<number.Float64> = record.get<index.Index(0)>(%1)
+    %9 : memory.Reference<number.Float64> = memory.offset(%8, index.Index(0))
+    %10 : number.Float64 = memory.load(%7, %9)
+    %11 : memory.Reference<number.Float64> = record.get<index.Index(0)>(%1)
+    %12 : memory.Reference<number.Float64> = memory.offset(%11, index.Index(1))
+    %13 : number.Float64 = memory.load(%7, %12)
+    %result : number.Float64 = algebra.add(%10, %13)

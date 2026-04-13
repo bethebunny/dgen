@@ -1,14 +1,14 @@
-from builtin import Index, Nil, Array, Pointer
+from builtin import Index, Nil, Array, Span
 from number import Float64
 
 type Shape<rank: Index>:
     dims: Array<Index, rank>
 
 type NDBuffer<shape: Shape, dtype: Type = Float64>:
-    data: Pointer<Nil>
+    data: Span<dtype>
 
 op alloc(shape: Shape) -> NDBuffer
 op dealloc(mem, buffer: NDBuffer) -> Nil
-op load(mem, buffer: NDBuffer, indices: Index) -> Float64
-op store(mem, value: Float64, buffer: NDBuffer, indices: Index) -> Nil
+op load(mem, buffer: NDBuffer, indices: Span<Index>) -> Float64
+op store(mem, value: Float64, buffer: NDBuffer, indices: Span<Index>) -> Nil
 op print_memref(buffer: NDBuffer) -> Nil
