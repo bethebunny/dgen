@@ -304,15 +304,22 @@ class Record(Layout):
 
 def _descriptor_layout(type_instance: Type) -> Record:
     """Build the Record layout for a concrete type's self-describing descriptor."""
-    # fmt: off
-    return Record([
-        ("tag", String()),
-        ("params", Record([
-            (name, Record([("type", TypeValue()), ("value", param.type.__layout__)]))
-            for name, param in type_instance.parameters
-        ])),
-    ])
-    # fmt: on
+    return _descriptor_layout_for_cls(type(type_instance))
+
+
+def _some_inner_layout(type_instance: Type) -> Record:
+    """Layout for the heap block behind a Some pointer: {TypeValue, value}."""
+    return Record([("type", TypeValue()), ("value", type_instance.__layout__)])
+
+
+def _descriptor_layout_for_cls(cls: type[Type]) -> Record:
+    """Build the descriptor Record layout from a type class (no instance needed)."""
+    return Record(
+        [
+            ("tag", String()),
+            ("params", Record([(name, Some()) for name, _ in cls.__params__])),
+        ]
+    )
 
 
 class TypeValue(Layout):
@@ -356,32 +363,16 @@ class TypeValue(Layout):
         return Type.from_json(self.to_json(buf, offset))
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
-        from .type import Type
-
         (ptr,) = self.struct.unpack_from(buf, offset)
-        # Read the tag to look up param names, then read each param's type
-        # descriptor to determine its value layout.
+        # Read the tag to look up param names.
         tag_layout = String()
         tag_bytes = bytes((ctypes.c_char * tag_layout.byte_size).from_address(ptr))
         tag = tag_layout.to_json(tag_bytes, 0)
         assert isinstance(tag, str)
         dialect_name, type_name = tag.split(".")
         cls = Dialect.get(dialect_name).types[type_name]
-        # Build the full Record layout by reading type descriptors sequentially.
-        read_offset = tag_layout.byte_size
-        param_fields: list[tuple[str, Layout]] = []
-        for param_name, _param_cls in cls.__params__:
-            tv = TypeValue()
-            tv_bytes = bytes(
-                (ctypes.c_char * tv.byte_size).from_address(ptr + read_offset)
-            )
-            param_type = Type.from_json(tv.to_json(tv_bytes, 0))
-            value_layout = param_type.__layout__
-            param_fields.append(
-                (param_name, Record([("type", tv), ("value", value_layout)]))
-            )
-            read_offset += tv.byte_size + value_layout.byte_size
-        layout = Record([("tag", tag_layout), ("params", Record(param_fields))])
+        # Each param is a Some (pointer to {TypeValue, value_inline}).
+        layout = _descriptor_layout_for_cls(cls)
         data = bytes((ctypes.c_char * layout.byte_size).from_address(ptr))
         result = layout.to_json(data, 0)
         assert isinstance(result, dict)
@@ -389,21 +380,18 @@ class TypeValue(Layout):
 
 
 class Some(Layout):
-    """Runtime-typed value: a witness type descriptor paired with a value
-    whose layout is determined by the witness.
+    """Runtime-typed value: pointer to a heap block containing a witness
+    type descriptor followed by the value bytes inline.
 
-    Binary format: 16 bytes = ``(TypeValue, Pointer)``. The first 8
-    bytes are a TypeValue (pointer to a self-describing type descriptor).
-    The second 8 bytes are a Pointer to the value's bytes, interpreted
-    per the witness type's ``__layout__``.
+    Binary format: 8 bytes = single pointer. Behind the pointer:
+    ``{TypeValue, value_bytes}``. The TypeValue is read first to
+    determine the value's layout, then the value is read inline.
 
-    Composes ``TypeValue.to_json`` / ``from_json`` for the witness and
-    ``Pointer(witness.__layout__).to_json`` / ``from_json`` for the value.
     The ``bound`` is a compile-time annotation (e.g. a trait); it
     doesn't affect the binary layout.
     """
 
-    struct = Struct("PP")
+    struct = Struct("P")
     register_passable = True
 
     def from_json(
@@ -414,37 +402,45 @@ class Some(Layout):
         assert isinstance(value, dict)
         type_json = value["type"]
         val_json = value["value"]
-        # Pack the witness via TypeValue.
-        tv = TypeValue()
-        if isinstance(type_json, Type):
-            type_inst = type_json
-        else:
-            type_inst = Type.from_json(type_json)
-        tv.from_json(buf, offset, type_json, origins)
-        # Pack the value via a Pointer whose pointee is the witness's layout.
-        value_ptr = Pointer(type_inst.__layout__)
-        value_ptr.from_json(buf, offset + tv.byte_size, val_json, origins)
+        type_inst = (
+            Type.from_json(type_json) if not isinstance(type_json, Type) else type_json
+        )
+        # Build the inner layout: {TypeValue, value_inline}.
+        inner = _some_inner_layout(type_inst)
+        origin = bytearray(inner.byte_size)
+        origins.append(origin)
+        inner.from_json(origin, 0, {"type": type_json, "value": val_json}, origins)
+        self.struct.pack_into(buf, offset, _bytearray_address(origin))
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
         from .type import Type
 
+        (ptr,) = self.struct.unpack_from(buf, offset)
+        # Read the TypeValue first to determine the value layout.
         tv = TypeValue()
-        type_json = tv.to_json(buf, offset)
-        # Resolve the witness to get the value's layout.
+        tv_bytes = bytes((ctypes.c_char * tv.byte_size).from_address(ptr))
+        type_json = tv.to_json(tv_bytes, 0)
         type_inst = Type.from_json(type_json)
-        value_ptr = Pointer(type_inst.__layout__)
-        val_json = value_ptr.to_json(buf, offset + tv.byte_size)
-        return {"type": type_json, "value": val_json}
+        # Read the full inner record.
+        inner = _some_inner_layout(type_inst)
+        data = bytes((ctypes.c_char * inner.byte_size).from_address(ptr))
+        result = inner.to_json(data, 0)
+        assert isinstance(result, dict)
+        return result
 
     def to_native_value(self, buf: bytes | bytearray, offset: int) -> object:
         from .type import Type
 
+        (ptr,) = self.struct.unpack_from(buf, offset)
         tv = TypeValue()
-        type_inst = tv.to_native_value(buf, offset)
+        tv_bytes = bytes((ctypes.c_char * tv.byte_size).from_address(ptr))
+        type_inst = tv.to_native_value(tv_bytes, 0)
         assert isinstance(type_inst, Type)
-        value_ptr = Pointer(type_inst.__layout__)
-        val = value_ptr.to_native_value(buf, offset + tv.byte_size)
-        return {"type": type_inst, "value": val}
+        inner = _some_inner_layout(type_inst)
+        data = bytes((ctypes.c_char * inner.byte_size).from_address(ptr))
+        inner_json = inner.to_json(data, 0)
+        assert isinstance(inner_json, dict)
+        return {"type": type_inst, "value": inner_json["value"]}
 
 
 class String(Span):
