@@ -32,4 +32,5 @@ op fcmp<pred: String>(lhs: Float, rhs: Float) -> Int<1>
 op zext(input: Int<1>) -> Int<64>
 op ptrtoint(input: Ptr) -> Int<64>
 op inttoptr(input: Int<64>) -> Ptr
+op extract_value<index: Index>(aggregate)
 op call<callee: String>(args: Span) -> Nil
