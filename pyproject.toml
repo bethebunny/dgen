@@ -23,6 +23,7 @@ version = "0.1.0"
 dependencies = [
     "click",
     "llvmlite",
+    "typing_extensions",
 ]
 
 [project.optional-dependencies]
