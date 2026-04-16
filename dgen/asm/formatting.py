@@ -138,9 +138,7 @@ def op_asm(
         args_str = ", ".join(_format_block_arg(a, tracker) for a in block.args)
         header = name
         if block.params:
-            params_str = ", ".join(
-                _format_block_arg(p, tracker) for p in block.params
-            )
+            params_str = ", ".join(_format_block_arg(p, tracker) for p in block.params)
             header += f"<{params_str}>"
         header += f"({args_str})"
         if block.captures:

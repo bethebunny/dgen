@@ -75,8 +75,13 @@ def _verify_block(
     # Captures must chain: every capture of a child block must be
     # reachable in the parent (in values, local, or parent's own captures).
     parent_scope = local | set(block.captures) | set(block.values)
-    for op in block.ops:
-        for _, child_block in op.blocks:
+    for value in block.values:
+        child_blocks: list[Block] = []
+        if isinstance(value, Block):
+            child_blocks.append(value)
+        elif isinstance(value, dgen.Op):
+            child_blocks.extend(b for _, b in value.blocks)
+        for child_block in child_blocks:
             for capture in child_block.captures:
                 if capture not in parent_scope:
                     raise ClosedBlockError(

@@ -103,13 +103,17 @@ class Pass(metaclass=_PassMeta):
     def _lower_block(self, block: dgen.Block) -> None:
         """Lower all ops in block (topo order), recursing into nested blocks.
 
-        For each op, dispatch handlers. After lowering (whether the op was
-        replaced or not), recurse into the effective op's blocks — before
-        processing any downstream uses. This ensures handler-created blocks
-        are lowered before they're referenced elsewhere.
+        Block values appear in block.values as operands — recurse into them
+        directly.  For ops, dispatch handlers then recurse into any blocks
+        on the effective result.
         """
         for v in block.values:
-            for _, child_block in ((result := self._dispatch_handlers(v)) or v).blocks:
+            if isinstance(v, dgen.Block):
+                self._lower_block(v)
+                continue
+            result = self._dispatch_handlers(v)
+            target = result if result is not None else v
+            for _, child_block in target.blocks:
                 self._lower_block(child_block)
             if result is not None:
                 block.replace_uses_of(v, result)

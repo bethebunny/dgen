@@ -44,8 +44,11 @@ def _reachable_ops(root: dgen.Value) -> list[dgen.Op]:
 
 def _register_blocks(fp: Fingerprinter, root: dgen.Value) -> None:
     for v in all_values(root):
-        for _, block in v.blocks:
-            fp.register_block(block)
+        if isinstance(v, dgen.Block):
+            fp.register_block(v)
+        elif isinstance(v, dgen.Op):
+            for _, block in v.blocks:
+                fp.register_block(block)
 
 
 def _op_line(op: dgen.Op, tracker: SlotTracker) -> str:
