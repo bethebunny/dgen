@@ -614,6 +614,146 @@ class TestCLI:
         assert result.exit_code != 0
 
 
+class TestFunctionCalls:
+    """Brick 7: Cross-function calls via ExternOp + function.CallOp."""
+
+    def test_single_call(self) -> None:
+        assert (
+            run_c("int g(int x) { return x + 1; } int f(int x) { return g(x); }", 5)
+            == 6
+        )
+
+    def test_multi_arg_call(self) -> None:
+        assert (
+            run_c(
+                "int add(int a, int b) { return a + b; }"
+                " int f(int a, int b) { return add(a, b); }",
+                3,
+                4,
+            )
+            == 7
+        )
+
+    def test_nested_call(self) -> None:
+        """Compose two calls into one expression."""
+        assert (
+            run_c(
+                "int sq(int x) { return x * x; } int f(int x) { return sq(sq(x)); }",
+                3,
+            )
+            == 81
+        )
+
+    def test_call_in_expression(self) -> None:
+        """Call appears as a subexpression of a larger expression."""
+        assert (
+            run_c(
+                "int sq(int x) { return x * x; }"
+                " int f(int x) { return sq(x) + sq(x + 1); }",
+                3,
+            )
+            == 25  # 9 + 16
+        )
+
+    def test_call_with_mixed_operand(self) -> None:
+        """Callee result used alongside a local variable."""
+        assert (
+            run_c(
+                "int inc(int x) { return x + 1; }"
+                " int f(int x) { int y = inc(x); return y + inc(y); }",
+                5,
+            )
+            == 13  # (5+1) + (6+1)
+        )
+
+    def test_forward_declared_call(self) -> None:
+        """Caller appears before the callee's definition in source order."""
+        assert (
+            run_c(
+                "int g(int x);"
+                " int f(int x) { return g(x) + 1; }"
+                " int g(int x) { return x * 2; }"
+                " int h(int x) { return f(x); }",
+                4,
+            )
+            == 9  # (4*2) + 1
+        )
+
+    @pytest.mark.skip(
+        reason="self-recursion hangs the DAG walker; needs func.recursive (TODO.md)"
+    )
+    def test_self_recursion(self) -> None:
+        """int fact(int n) { ... n * fact(n-1) ... }."""
+        assert (
+            run_c(
+                "int fact(int n)"
+                " { int r; if (n <= 1) r = 1; else r = n * fact(n - 1); return r; }",
+                5,
+            )
+            == 120
+        )
+
+    @pytest.mark.skip(
+        reason="mutual recursion forms a FunctionOp↔FunctionOp capture cycle; hangs"
+    )
+    def test_mutual_recursion(self) -> None:
+        assert (
+            run_c(
+                "int is_odd(int n);"
+                " int is_even(int n)"
+                "   { int r; if (n == 0) r = 1; else r = is_odd(n - 1); return r; }"
+                " int is_odd(int n)"
+                "   { int r; if (n == 0) r = 0; else r = is_even(n - 1); return r; }"
+                " int f(int n) { return is_even(n); }",
+                4,
+            )
+            == 1
+        )
+
+    @pytest.mark.skip(reason="variadic call lowering not yet implemented; hangs")
+    def test_variadic_call(self) -> None:
+        """pycparser accepts `...` in prototypes; lowering omits it."""
+        run_c('int printf(const char *fmt, ...); int f(void) { return printf("hi"); }')
+
+    def test_discarded_call_is_reachable(self) -> None:
+        """A call whose return value is discarded must still be reachable
+        from block.result. Without effect threading, the first call here
+        would be dropped as dead code."""
+        ir = lower(
+            parse_c_string(
+                "int g(int x) { return x + 1; } int f(int x) { g(x); return g(x) + 2; }"
+            )
+        )
+        f_calls = [op for op in ir.body.values if isinstance(op, function.CallOp)]
+        assert len(f_calls) == 2
+        reachable = set(transitive_dependencies(ir.body.result))
+        for call in f_calls:
+            assert call in reachable, f"CallOp {call} not reachable"
+
+    def test_void_call_statement_preserved(self) -> None:
+        """A bare void call in statement position (non-final) must appear
+        in the lowered function body — it's the only observable evidence
+        that the callee ran."""
+        ir = lower(parse_c_string("void g(int x); int f(int x) { g(x); return x; }"))
+        f_calls = [op for op in ir.body.values if isinstance(op, function.CallOp)]
+        assert len(f_calls) == 1
+        reachable = set(transitive_dependencies(ir.body.result))
+        assert f_calls[0] in reachable
+
+    @pytest.mark.xfail(
+        reason="indirect calls through function pointers not implemented"
+    )
+    def test_indirect_call(self) -> None:
+        assert (
+            run_c(
+                "int g(int x) { return x + 1; }"
+                " int f(int x) { int (*p)(int) = g; return p(x); }",
+                5,
+            )
+            == 6
+        )
+
+
 class TestMemoryOrdering:
     """Structural tests for the use-def ordering of memory operations."""
 

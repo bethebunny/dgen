@@ -19,6 +19,7 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, control_flow, function
 from dgen.dialects.builtin import ChainOp, ExternOp, Never, Nil, String
+from dgen.ir.traversal import all_values
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Boolean, Float64
@@ -307,7 +308,37 @@ class Parser:
 
         if not functions:
             raise LoweringError("no functions defined")
+        self._resolve_same_file_calls(functions)
         return functions[-1]
+
+    def _resolve_same_file_calls(self, functions: list[function.FunctionOp]) -> None:
+        """Replace ExternOp callees with FunctionOps defined in this unit.
+
+        Lowering resolves every callee to the ExternOp registered by the
+        first pass. For calls to functions defined in this translation
+        unit, we swap the ExternOp for the actual FunctionOp so the JIT
+        walks into it via captures and emits its body.
+
+        Self-recursion keeps the ExternOp: introducing a FunctionOp as a
+        capture of its own body would create a cycle (tracked in TODO.md
+        as the ``func.recursive`` item).
+        """
+        by_name: dict[str, function.FunctionOp] = {
+            f.name: f for f in functions if f.name is not None
+        }
+        for func in functions:
+            seen: set[ExternOp] = set()
+            for value in list(all_values(func)):
+                if not isinstance(value, function.CallOp):
+                    continue
+                callee = value.callee
+                if not isinstance(callee, ExternOp) or callee in seen:
+                    continue
+                target = by_name.get(callee.name) if callee.name else None
+                if target is None or target is func:
+                    continue
+                seen.add(callee)
+                func.body.replace_uses_of(callee, target)
 
     def _bind_extern(self, name: str, type_node: c_ast.Node) -> None:
         """Bind a file-scope function name to an ExternOp. Idempotent."""
@@ -383,7 +414,9 @@ class Parser:
         return function.FunctionOp(
             name=name,
             result_type=return_type,
-            body=dgen.Block(result=block_result, args=arguments),
+            body=dgen.Block(
+                result=block_result, args=arguments, captures=scope.captures
+            ),
             type=function_type,
         )
 
@@ -393,19 +426,39 @@ class Parser:
         Stops processing on _Return (propagated upward) or jump ops
         (BreakOp, ContinueOp — remaining statements are dead code).
         Preceding effects are chained into the jump so they execute first.
+
+        Side-effecting ops with no scope-tracked consumer (function calls
+        in statement position) would otherwise be unreachable from the
+        compound's result. They accumulate in ``pending`` and chain into
+        the block's final value as use-def dependencies.
         """
         last: dgen.Value | None = None
+        pending: list[dgen.Value] = []
         if node.block_items:
             for item in node.block_items:
                 result = self._statement(item, scope)
                 if isinstance(result, _Return):
-                    return result
+                    if last is not None and _is_orphan_effect(last):
+                        pending.append(last)
+                    value = result.value
+                    for effect in pending:
+                        value = ChainOp(lhs=value, rhs=effect, type=value.type)
+                    return _Return(value)
                 if isinstance(result.type, Never):
+                    # last (if present) is the primary value; the jump and
+                    # any pending effects become its use-def dependencies.
                     if last is not None:
-                        return ChainOp(lhs=last, rhs=result, type=result.type)
+                        result = ChainOp(lhs=last, rhs=result, type=result.type)
+                    for effect in pending:
+                        result = ChainOp(lhs=result, rhs=effect, type=result.type)
                     return result
+                if last is not None and _is_orphan_effect(last):
+                    pending.append(last)
                 last = result
-        return last if last is not None else Nil().constant(None)
+        final = last if last is not None else Nil().constant(None)
+        for effect in pending:
+            final = ChainOp(lhs=final, rhs=effect, type=final.type)
+        return final
 
     # --- Statements ---
 
@@ -771,6 +824,34 @@ class Parser:
     def _ternary(self, node: c_ast.TernaryOp, scope: Scope) -> dgen.Value:
         raise LoweringError("ternary operator (?:) not yet supported")
 
+    @_expr(c_ast.FuncCall)
+    def _func_call(self, node: c_ast.FuncCall, scope: Scope) -> dgen.Value:
+        """Lower a function call.
+
+        Resolves the callee by name through file scope (capturing the
+        ExternOp into the caller's body) and emits function.CallOp. Same-file
+        definitions are patched back in by _resolve_same_file_calls after
+        all functions are lowered.
+        """
+        if not isinstance(node.name, c_ast.ID):
+            raise LoweringError(
+                f"indirect calls not yet supported: {type(node.name).__name__}"
+            )
+        callee = scope.resolve(node.name.name)
+        if not isinstance(callee.type, FunctionType):
+            raise LoweringError(f"{node.name.name!r} is not callable")
+        result_type = callee.type.result_type
+        assert isinstance(result_type, dgen.Type)
+        args: list[dgen.Value] = []
+        if node.args is not None:
+            for arg in node.args.exprs:
+                args.append(self._expression(arg, scope))
+        return function.CallOp(
+            callee=callee,
+            arguments=pack(args),
+            type=result_type,
+        )
+
     @_expr(c_ast.Assignment)
     def _assignment_expression(
         self, node: c_ast.Assignment, scope: Scope
@@ -790,6 +871,14 @@ class _Return:
 
     def __init__(self, value: dgen.Value) -> None:
         self.value = value
+
+
+def _is_orphan_effect(value: dgen.Value) -> bool:
+    """True for statement-position ops whose side effects aren't
+    preserved by any other thread (variable scope ordering, control
+    flow, etc.). Function calls are the canonical case — a bare
+    ``g(x);`` statement would otherwise be dead."""
+    return isinstance(value, function.CallOp)
 
 
 # ---------------------------------------------------------------------------

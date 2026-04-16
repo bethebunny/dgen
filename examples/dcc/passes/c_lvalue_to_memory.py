@@ -43,13 +43,16 @@ class CLvalueToMemory(Pass):
     allow_unregistered_ops = True
 
     def __init__(self) -> None:
-        self._alloca: dict[str, memory.StackAllocateOp] = {}
-        self._alloca_owner: dict[str, dgen.Block] = {}
+        # Allocas belong to the function body, not to C-lexical scopes.
+        # The first block in the stack is the Pass's root wrapper; the
+        # second is the function body, which is the owner. Keyed by
+        # (owner_block, name) so variables with the same name in different
+        # functions don't collide.
+        self._alloca: dict[tuple[dgen.Block, str], memory.StackAllocateOp] = {}
         self._block_stack: list[dgen.Block] = []
 
     def run(self, value: dgen.Value, compiler: object) -> dgen.Value:
         self._alloca = {}
-        self._alloca_owner = {}
         self._block_stack = []
         return super().run(value, compiler)
 
@@ -58,10 +61,11 @@ class CLvalueToMemory(Pass):
         super()._lower_block(block)
         self._block_stack.pop()
 
-    def _capture_alloca(self, name: str, alloca: memory.StackAllocateOp) -> None:
+    def _capture_alloca(
+        self, alloca: memory.StackAllocateOp, owner: dgen.Block
+    ) -> None:
         """Add alloca as a capture to every block in the stack that isn't
         the block where the alloca was created."""
-        owner = self._alloca_owner[name]
         for block in self._block_stack:
             if block is not owner and alloca not in block.captures:
                 block.captures = [*block.captures, alloca]
@@ -71,8 +75,9 @@ class CLvalueToMemory(Pass):
         if not isinstance(op.lvalue, LvalueVarOp):
             return None
         name = _var_name(op.lvalue)
-        alloca = self._ensure_alloca(name, op.rvalue.type)
-        self._capture_alloca(name, alloca)
+        owner = self._block_stack[1]
+        alloca = self._ensure_alloca(owner, name, op.rvalue.type)
+        self._capture_alloca(alloca, owner)
         source = op.lvalue.source
         mem = alloca if isinstance(source, _INITIAL_VALUE_TYPES) else source
         return memory.StoreOp(mem=mem, value=op.rvalue, ptr=alloca)
@@ -82,28 +87,25 @@ class CLvalueToMemory(Pass):
         if not isinstance(op.lvalue, LvalueVarOp):
             return None
         name = _var_name(op.lvalue)
-        alloca = self._alloca.get(name)
+        owner = self._block_stack[1]
+        alloca = self._alloca.get((owner, name))
         if alloca is None:
             return op.lvalue.source
-        self._capture_alloca(name, alloca)
+        self._capture_alloca(alloca, owner)
         source = op.lvalue.source
         mem = alloca if isinstance(source, _INITIAL_VALUE_TYPES) else source
         return memory.LoadOp(mem=mem, ptr=alloca, type=op.type)
 
     def _ensure_alloca(
-        self, name: str, element_type: dgen.Type
+        self, owner: dgen.Block, name: str, element_type: dgen.Type
     ) -> memory.StackAllocateOp:
-        """Get or create a stack allocation for a variable."""
-        alloca = self._alloca.get(name)
+        """Get or create a stack allocation for a variable within a function."""
+        alloca = self._alloca.get((owner, name))
         if alloca is not None:
             return alloca
         alloca = memory.StackAllocateOp(
             element_type=element_type,
             type=memory.Reference(element_type=element_type),
         )
-        self._alloca[name] = alloca
-        # Allocas belong to the outermost block (function body), not
-        # wherever they're first encountered. The first block in the
-        # stack is the root wrapper; the second is the function body.
-        self._alloca_owner[name] = self._block_stack[1]
+        self._alloca[(owner, name)] = alloca
         return alloca
