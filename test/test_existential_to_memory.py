@@ -19,7 +19,7 @@ from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.memory import Memory
 from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
-from dgen.passes.existential_to_memory import ExistentialToMemory
+from dgen.passes.existential_to_record import ExistentialToRecord
 from dgen.passes.record_to_memory import RecordToMemory
 from dgen.testing import strip_prefix
 
@@ -29,7 +29,7 @@ def _compile(ir_text: str):
     return Compiler(
         passes=[
             ControlFlowToGoto(),
-            ExistentialToMemory(),
+            ExistentialToRecord(),
             RecordToMemory(),
             MemoryToLLVM(),
             BuiltinToLLVM(),
