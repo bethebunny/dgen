@@ -484,6 +484,22 @@ class TestEndToEnd:
         assert run_c("int f(int x, int y) { return x || y; }", 0, 1) == 1
         assert run_c("int f(int x, int y) { return x || y; }", 1, 0) == 1
 
+    def test_logical_not(self) -> None:
+        """!x is 1 when x is zero, 0 otherwise."""
+        assert run_c("int f(int x) { return !x; }", 0) == 1
+        assert run_c("int f(int x) { return !x; }", 5) == 0
+        assert run_c("int f(int x) { return !x; }", -1) == 0
+
+    def test_logical_not_in_condition(self) -> None:
+        """!x inside an if-condition."""
+        assert run_c("int f(int x) { int r = 0; if (!x) r = 1; return r; }", 0) == 1
+        assert run_c("int f(int x) { int r = 0; if (!x) r = 1; return r; }", 7) == 0
+
+    def test_double_logical_not(self) -> None:
+        """!!x normalises any non-zero to 1."""
+        assert run_c("int f(int x) { return !!x; }", 0) == 0
+        assert run_c("int f(int x) { return !!x; }", 42) == 1
+
     def test_read_inside_if_then_write(self) -> None:
         """Read inside if-body must fence subsequent write (diamond pattern)."""
         assert (

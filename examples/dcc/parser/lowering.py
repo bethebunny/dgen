@@ -749,6 +749,12 @@ class Parser:
             return cls(**{field_name: inner, "type": inner.type})
         if node.op == "+":
             return self._expression(node.expr, scope)
+        if node.op == "!":
+            # C11 6.5.3.3p5: !E is equivalent to (0 == E), result type int.
+            inner = self._expression(node.expr, scope)
+            zero = inner.type.constant(0)
+            equal = _binop(algebra.EqualOp, inner, zero, inner.type)
+            return algebra.CastOp(input=equal, type=c_int(32))
         raise LoweringError(f"unsupported unary op: {node.op}")
 
     @_expr(c_ast.Cast)
