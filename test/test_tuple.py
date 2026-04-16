@@ -9,7 +9,7 @@ from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import Index, String, Tuple
 from dgen.dialects.number import Float64
 from dgen.builtins import pack
-from dgen.type import constant, Type
+from dgen.type import Type
 from dgen.testing import strip_prefix
 
 

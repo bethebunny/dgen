@@ -5,7 +5,7 @@ from __future__ import annotations
 import dgen
 from dgen.dialects import function
 from dgen.ir.traversal import all_blocks, all_values
-from dgen.builtins import PackOp, unpack
+from dgen.builtins import unpack
 from dgen.type import Constant
 from dgen.passes.pass_ import Pass, lowering_for
 from toy.dialects import shape_constant, toy

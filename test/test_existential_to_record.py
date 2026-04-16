@@ -55,21 +55,25 @@ def _compile(ir_text: str):
 
 def test_lowering_pack(ir_snapshot) -> None:
     """Lowered IR for existential.pack: record.pack + heap_box."""
-    assert _lower(
-        strip_prefix("""
+    assert (
+        _lower(
+            strip_prefix("""
         | import existential
         | import index
         |
         | %x : index.Index = 42
         | %packed : existential.Some<index.Index> = existential.pack(%x)
     """)
-    ) == ir_snapshot
+        )
+        == ir_snapshot
+    )
 
 
 def test_lowering_unpack(ir_snapshot) -> None:
     """Lowered IR for existential.unpack: memory.load + record.get."""
-    assert _lower(
-        strip_prefix("""
+    assert (
+        _lower(
+            strip_prefix("""
         | import existential
         | import index
         |
@@ -77,7 +81,9 @@ def test_lowering_unpack(ir_snapshot) -> None:
         | %packed : existential.Some<index.Index> = existential.pack(%x)
         | %result : index.Index = existential.unpack(%packed)
     """)
-    ) == ir_snapshot
+        )
+        == ir_snapshot
+    )
 
 
 # ---------------------------------------------------------------------------

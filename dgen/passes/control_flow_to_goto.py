@@ -232,7 +232,9 @@ class ControlFlowToGoto(Pass):
         # back-edge branch arguments. The branch already depends on body_result
         # transitively via the arguments operand.
         body_result = op.body.result
-        branch_args = body_result if isinstance(body_result, PackOp) else pack([body_result])
+        branch_args = (
+            body_result if isinstance(body_result, PackOp) else pack([body_result])
+        )
         back_br = goto.BranchOp(target=header_self, arguments=branch_args)
 
         body_block = dgen.Block(

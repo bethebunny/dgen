@@ -14,7 +14,6 @@ from dgen import Constant, Op, Type, TypeType, Value
 from dgen.dialects.builtin import (
     Nil,
     Span,
-    String,
     builtin,
 )
 from dgen.memory import Memory

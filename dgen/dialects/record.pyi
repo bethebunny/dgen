@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import dgen
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil, Span
+from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
 
 record = Dialect("record")
@@ -29,4 +28,3 @@ class SetOp(Op):
     ptr: Value
     value: Value
     type: Type = Nil()
-
