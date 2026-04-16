@@ -46,9 +46,12 @@ class Fingerprinter:
         """Register block argument/parameter positions and recurse into nested blocks."""
         for i, val in enumerate([*block.params, *block.args]):
             self._arg_positions[val] = i
-        for op in block.ops:
-            for _, nested in op.blocks:
-                self.register_block(nested)
+        for v in block.values:
+            if isinstance(v, Block):
+                self.register_block(v)
+            elif isinstance(v, dgen.Op):
+                for _, nested in v.blocks:
+                    self.register_block(nested)
 
     def fingerprint(self, value: Value) -> bytes:
         if value in self._cache:
@@ -98,12 +101,17 @@ class Fingerprinter:
                 return _hash_parts(b"list", element_fingerprints)
             case Type() as type_value:
                 return self._fingerprint_type(type_value)
+            case Block() as block:
+                return self._fingerprint_block(block)
             case dgen.Op() as op:
+                block_names = set(op.__blocks__)
                 param_fingerprints = b"".join(
                     self.fingerprint(v) for _, v in op.parameters
                 )
                 operand_fingerprints = b"".join(
-                    self.fingerprint(v) for _, v in op.operands
+                    self.fingerprint(v)
+                    for name, v in op.operands
+                    if name not in block_names
                 )
                 block_fingerprints = b"".join(
                     self._fingerprint_block(block) for _, block in op.blocks
@@ -134,8 +142,11 @@ def fingerprint(root: Value) -> bytes:
     """
     fp = Fingerprinter()
     for v in all_values(root):
-        for _, block in v.blocks:
-            fp.register_block(block)
+        if isinstance(v, Block):
+            fp.register_block(v)
+        elif isinstance(v, dgen.Op):
+            for _, block in v.blocks:
+                fp.register_block(block)
     return fp.fingerprint(root)
 
 

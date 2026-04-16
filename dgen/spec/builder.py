@@ -327,11 +327,13 @@ def _build_op(
         op_ns["__params__"] = tuple(
             (p.name, resolved_params[p.name]) for p in od.params
         )
-    if od.operands:
-        op_ns["__operands__"] = tuple(
-            (op.name, _resolve_type(op.type.name, ns) if op.type is not None else Value)
-            for op in od.operands
-        )
+    operand_entries = [
+        (op.name, _resolve_type(op.type.name, ns) if op.type is not None else Value)
+        for op in od.operands
+    ]
+    operand_entries.extend((block_name, Block) for block_name in od.blocks)
+    if operand_entries:
+        op_ns["__operands__"] = tuple(operand_entries)
     if od.blocks:
         op_ns["__blocks__"] = tuple(od.blocks)
     if od.constraints:

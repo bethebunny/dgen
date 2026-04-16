@@ -65,7 +65,17 @@ def all_values(value: dgen.Value) -> Iterator[dgen.Value]:
 
 
 def interior_values(value: dgen.Value) -> Iterator[dgen.Value]:
-    """Iterate over all values nested in blocks within value."""
+    """Iterate over all values nested in blocks within value.
+
+    When value is a Block, yields the block's interior ops.  When value
+    is an Op, finds Block operands declared via __blocks__ (transition)
+    and recurses into them.
+    """
+    if isinstance(value, dgen.Block):
+        for v in value.values:
+            yield v
+            yield from interior_values(v)
+        return
     for _, block in value.blocks:
         for v in block.values:
             yield v
@@ -73,7 +83,11 @@ def interior_values(value: dgen.Value) -> Iterator[dgen.Value]:
 
 
 def interior_blocks(value: dgen.Value) -> Iterator[dgen.Block]:
-    """Blocks nested within this value's block fields, recursively."""
+    """Blocks nested within this value, recursively."""
+    if isinstance(value, dgen.Block):
+        for v in value.values:
+            yield from interior_blocks(v)
+        return
     for _, block in value.blocks:
         yield block
         for v in block.values:

@@ -57,32 +57,30 @@ class Value(Generic[T]):
 
     @property
     def dependencies(self) -> Iterator[Value]:
-        """All Value dependencies for use-def graph traversal."""
+        """All Value dependencies for use-def graph traversal.
+
+        Block operands are yielded directly — their own ``dependencies``
+        property yields the block type and captures, keeping block interiors
+        hidden from the outer dependency graph.
+        """
         yield self.type
         for _, param in self.parameters:
             yield param
         for _, operand in self.operands:
             yield operand
-        for _, block in self.blocks:
-            yield from block.dependencies
 
     @property
     def compile_dependencies(self) -> Iterator[Value]:
         """Compile-time dependencies — values that must be materialized
         before this value can be lowered.
 
-        Yields the type, the compile-time parameters, and the arg/parameter
-        types of any owned blocks. Excludes operands (runtime dataflow) and
-        block captures (runtime references from inner scopes to outer ones).
+        Yields the type and the compile-time parameters.  Block operands
+        handle their own compile_dependencies via their Block type.
+        Excludes operands (runtime dataflow).
         """
         yield self.type
         for _, param in self.parameters:
             yield param
-        for _, block in self.blocks:
-            for arg in block.args:
-                yield arg.type
-            for block_param in block.params:
-                yield block_param.type
 
     @property
     def __constant__(self) -> Memory[T]:

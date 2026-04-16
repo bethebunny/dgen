@@ -114,8 +114,13 @@ def op_asm(
         tracker.register([op])
 
     cls = type(op)
+    block_names = set(op.__blocks__)
     param_parts = [_format_expr(param, tracker) for _, param in op.parameters]
-    operand_parts = [_format_expr(operand, tracker) for _, operand in op.operands]
+    operand_parts = [
+        _format_expr(operand, tracker)
+        for name, operand in op.operands
+        if name not in block_names
+    ]
 
     result_name = tracker.track_name(op)
     type_str = _format_expr(op.type, tracker)

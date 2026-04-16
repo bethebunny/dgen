@@ -309,9 +309,13 @@ def op_statement(parser: ASMParser) -> Op:
     kwargs: dict[str, object] = {"name": name}
     if pre_type is not None:
         kwargs["type"] = pre_type
+    block_names = set(op_cls.__blocks__)
     for (param_name, param_type), value in zip(op_cls.__params__, parameters):
         kwargs[param_name] = _coerce(parser, value, param_type)
-    for (field_name, field_type), value in zip(op_cls.__operands__, operands):
+    non_block_operands = [
+        (name, typ) for name, typ in op_cls.__operands__ if name not in block_names
+    ]
+    for (field_name, field_type), value in zip(non_block_operands, operands):
         kwargs[field_name] = _coerce(parser, value, field_type)
     for block_name, block in zip(op_cls.__blocks__, blocks):
         kwargs[block_name] = block
