@@ -84,5 +84,3 @@ def all_blocks(value: dgen.Value) -> Iterator[dgen.Block]:
     """All blocks reachable from value: own blocks + nested blocks of dependencies."""
     for v in transitive_dependencies(value):
         yield from interior_blocks(v)
-
-

@@ -1,8 +1,8 @@
 """Lower record ops to memory dialect ops.
 
-    record.pack([v0, v1, ...])        →  stack_allocate + store-per-field + load
-    record.get<i>(record)             →  lowered by MemoryToLLVM (extractvalue)
-    record.set<i>(mem, ptr, value)    →  offset + store
+record.pack([v0, v1, ...])        →  stack_allocate + store-per-field + load
+record.get<i>(record)             →  lowered by MemoryToLLVM (extractvalue)
+record.set<i>(mem, ptr, value)    →  offset + store
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil, Span
+from dgen.dialects.builtin import Span
 
 function = Dialect("function")
 
@@ -26,4 +26,3 @@ class CallOp(Op):
     callee: Value[Function]
     arguments: Value
     type: Type
-
