@@ -21,7 +21,7 @@ from dgen.builtins import pack
 from dcc.cli import c_compiler
 from dcc.dialects import c, c_double, c_float, c_int, c_ptr, c_void
 from dcc.parser.c_parser import parse_c_string
-from dcc.parser.lowering import lower
+from dcc.parser.lowering import LoweringError, Parser, Scope, lower
 from dcc.parser.type_resolver import TypeResolver, TypeResolverError
 
 # Make dcc dialect discoverable.
@@ -311,6 +311,26 @@ class TestEndToEnd:
 
     def test_return_negative(self) -> None:
         assert run_c("int f() { return -1; }") == -1
+
+    def test_integer_literal_suffixes(self) -> None:
+        """Integer literal suffixes (u, l, ll, ul, ull) now parse."""
+        assert run_c("int f() { return 42U; }") == 42
+        assert run_c("int f() { return 42L; }") == 42
+        assert run_c("int f() { return 42LL; }") == 42
+        assert run_c("int f() { return 42UL; }") == 42
+        assert run_c("int f() { return 42ULL; }") == 42
+
+    def test_hex_and_octal_literals(self) -> None:
+        """Hex and octal bases parse (pre-existing but re-verified)."""
+        assert run_c("int f() { return 0xFF; }") == 255
+        assert run_c("int f() { return 0x1FU; }") == 31
+        assert run_c("int f() { return 0777; }") == 511
+
+    def test_unknown_literal_type_raises(self) -> None:
+        """Unknown pycparser literal types raise rather than silently returning 0."""
+        bad = c_ast.Constant("string", '"hi"')
+        with pytest.raises(LoweringError, match="unsupported literal type"):
+            Parser()._constant(bad, Scope())
 
     def test_return_parameter(self) -> None:
         assert run_c("int f(int x) { return x; }", 7) == 7

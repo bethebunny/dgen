@@ -220,9 +220,15 @@ _UNARY: dict[str, tuple[type[dgen.Op], str]] = {
     "~": (algebra.ComplementOp, "input"),
 }
 
-# C literal type string -> (parser function, bits, signed).
+# pycparser Constant.type -> (parser function, bits, signed).
+# Matches the strings pycparser emits for integer literals with u/l/ll suffixes.
 _LITERAL_TYPES: dict[str, tuple[type, ...]] = {
     "int": (parse_c_int, 32, True),
+    "unsigned int": (parse_c_int, 32, False),
+    "long int": (parse_c_int, 64, True),
+    "unsigned long int": (parse_c_int, 64, False),
+    "long long int": (parse_c_int, 64, True),
+    "unsigned long long int": (parse_c_int, 64, False),
     "char": (parse_c_char, 8, True),
 }
 
@@ -663,7 +669,7 @@ class Parser:
             return c_int(bits, signed).constant(parser_fn(node.value))
         if node.type in ("float", "double"):
             return Float64().constant(float(node.value.rstrip("fFlL")))
-        return c_int(32).constant(0)
+        raise LoweringError(f"unsupported literal type: {node.type}")
 
     @_expr(c_ast.ID)
     def _identifier(self, node: c_ast.ID, scope: Scope) -> dgen.Value:
