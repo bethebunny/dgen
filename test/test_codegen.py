@@ -45,27 +45,20 @@ def test_emitter_for_label_registered():
 # ---------------------------------------------------------------------------
 
 
-def _parse(text: str):
-    """Parse IR and return the first function's body block."""
-    value = asm.parse(strip_prefix(text))
-    return value.body
-
-
 def test_runtime_dependencies_follows_operands():
     """runtime_dependencies yields operand dependencies in topo order."""
-    block = _parse("""
-        | import function
+    value = asm.parse(
+        strip_prefix("""
         | import llvm
         | import number
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %a : number.Float64 = 1.0
-        |     %b : number.Float64 = 2.0
-        |     %c : Nil = llvm.fadd(%a, %b)
+        | %a : number.Float64 = 1.0
+        | %b : number.Float64 = 2.0
+        | %c : Nil = llvm.fadd(%a, %b)
     """)
-    fadd = next(op for op in block.ops if isinstance(op, llvm.FaddOp))
-    deps = list(runtime_dependencies(fadd))
-    # fadd depends on %a and %b — both should appear
+    )
+    assert isinstance(value, llvm.FaddOp)
+    deps = list(runtime_dependencies(value))
     dep_names = [v.name for v in deps if v.name is not None]
     assert "a" in dep_names
     assert "b" in dep_names
@@ -73,19 +66,18 @@ def test_runtime_dependencies_follows_operands():
 
 def test_runtime_dependencies_excludes_type_deps():
     """runtime_dependencies does NOT follow type edges (only operands + captures)."""
-    block = _parse("""
-        | import function
+    value = asm.parse(
+        strip_prefix("""
         | import llvm
         | import number
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %a : number.Float64 = 1.0
-        |     %b : number.Float64 = 2.0
-        |     %c : Nil = llvm.fadd(%a, %b)
+        | %a : number.Float64 = 1.0
+        | %b : number.Float64 = 2.0
+        | %c : Nil = llvm.fadd(%a, %b)
     """)
-    fadd = next(op for op in block.ops if isinstance(op, llvm.FaddOp))
-    deps = list(runtime_dependencies(fadd))
-    # Type values (Float64, Nil) should NOT appear in runtime deps
+    )
+    assert isinstance(value, llvm.FaddOp)
+    deps = list(runtime_dependencies(value))
     from dgen import Type
 
     type_deps = [v for v in deps if isinstance(v, Type)]
@@ -94,71 +86,70 @@ def test_runtime_dependencies_excludes_type_deps():
 
 def test_runtime_dependencies_follows_captures():
     """runtime_dependencies follows block captures as runtime edges."""
-    block = _parse("""
-        | import function
+    value = asm.parse(
+        strip_prefix("""
         | import goto
         | import index
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %x : index.Index = 42
-        |     %lbl : goto.Label = goto.label([]) body() captures(%x):
-        |         %_ : Nil = ()
+        | %x : index.Index = 42
+        | %lbl : goto.Label = goto.label([]) body() captures(%x):
+        |     %_ : Nil = ()
     """)
-    label = next(op for op in block.ops if isinstance(op, goto.LabelOp))
-    deps = list(runtime_dependencies(label))
+    )
+    assert isinstance(value, goto.LabelOp)
+    deps = list(runtime_dependencies(value))
     dep_names = [v.name for v in deps if v.name is not None]
     assert "x" in dep_names
 
 
 def test_runtime_dependencies_no_duplicates():
     """Each value appears at most once even when referenced by multiple ops."""
-    block = _parse("""
-        | import function
+    value = asm.parse(
+        strip_prefix("""
         | import llvm
         | import number
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %a : number.Float64 = 1.0
-        |     %b : Nil = llvm.fadd(%a, %a)
+        | %a : number.Float64 = 1.0
+        | %b : Nil = llvm.fadd(%a, %a)
     """)
-    fadd = next(op for op in block.ops if isinstance(op, llvm.FaddOp))
-    deps = list(runtime_dependencies(fadd))
+    )
+    assert isinstance(value, llvm.FaddOp)
+    deps = list(runtime_dependencies(value))
     assert len(deps) == len(set(deps))
 
 
 def test_runtime_dependencies_empty_for_constant():
     """A constant has no runtime dependencies."""
-    block = _parse("""
-        | import function
+    value = asm.parse(
+        strip_prefix("""
         | import number
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %a : number.Float64 = 42.0
+        | %a : number.Float64 = 42.0
     """)
+    )
     from dgen import Constant
 
-    const = next(op for op in block.ops if isinstance(op, Constant))
-    deps = list(runtime_dependencies(const))
+    assert isinstance(value, Constant)
+    deps = list(runtime_dependencies(value))
     assert deps == []
 
 
 def test_runtime_dependencies_transitive():
     """Dependencies are transitive: a -> b -> c yields [a, b]."""
-    block = _parse("""
-        | import function
+    value = asm.parse(
+        strip_prefix("""
         | import llvm
         | import number
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %a : number.Float64 = 1.0
-        |     %b : number.Float64 = 2.0
-        |     %c : Nil = llvm.fadd(%a, %b)
-        |     %d : Nil = llvm.fmul(%c, %a)
+        | %a : number.Float64 = 1.0
+        | %b : number.Float64 = 2.0
+        | %c : Nil = llvm.fadd(%a, %b)
+        | %d : Nil = llvm.fmul(%c, %a)
     """)
-    fmul = next(op for op in block.ops if isinstance(op, llvm.FmulOp))
-    deps = list(runtime_dependencies(fmul))
+    )
+    assert isinstance(value, llvm.FmulOp)
+    deps = list(runtime_dependencies(value))
     dep_names = [v.name for v in deps if v.name is not None]
-    # %d depends on %c which depends on %a, %b — all three should appear
     assert "a" in dep_names
     assert "b" in dep_names
     assert "c" in dep_names
@@ -166,28 +157,25 @@ def test_runtime_dependencies_transitive():
 
 def test_runtime_dependencies_topological_order():
     """Dependencies are yielded before the values that depend on them."""
-    block = _parse("""
-        | import function
+    value = asm.parse(
+        strip_prefix("""
         | import llvm
         | import number
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %a : number.Float64 = 1.0
-        |     %b : number.Float64 = 2.0
-        |     %c : Nil = llvm.fadd(%a, %b)
-        |     %d : Nil = llvm.fmul(%c, %a)
+        | %a : number.Float64 = 1.0
+        | %b : number.Float64 = 2.0
+        | %c : Nil = llvm.fadd(%a, %b)
+        | %d : Nil = llvm.fmul(%c, %a)
     """)
-    fmul = next(op for op in block.ops if isinstance(op, llvm.FmulOp))
-    deps = list(runtime_dependencies(fmul))
+    )
+    assert isinstance(value, llvm.FmulOp)
+    deps = list(runtime_dependencies(value))
     idx = {v: i for i, v in enumerate(deps)}
-    # %a and %b must appear before %c (fadd uses them)
     fadd = next(v for v in deps if v.name == "c")
     a = next(v for v in deps if v.name == "a")
     b = next(v for v in deps if v.name == "b")
     assert idx[a] < idx[fadd]
     assert idx[b] < idx[fadd]
-    # %c must appear before %d (fmul uses it) — %d itself is not in deps
-    # since runtime_dependencies yields deps OF the value, not the value itself
 
 
 # ---------------------------------------------------------------------------
@@ -276,13 +264,11 @@ def test_externs_function_with_typed_args():
         strip_prefix("""
         | import function
         | import index
-        | import algebra
         | import llvm
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
-        |     %size : index.Index = 48
-        |     %ptr : llvm.Ptr = function.call<%malloc>([%size])
+        | %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
+        | %size : index.Index = 48
+        | %ptr : llvm.Ptr = function.call<%malloc>([%size])
     """)
     )
     externs = _externs(value)
@@ -293,10 +279,7 @@ def test_externs_non_function():
     """_externs discovers a non-function extern (global value)."""
     value = asm.parse(
         strip_prefix("""
-        | import function
-        |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %greeting : String = extern<String("hello_world")>()
+        | %greeting : String = extern<String("hello_world")>()
     """)
     )
     externs = _externs(value)
@@ -312,15 +295,14 @@ def test_externs_nested_in_region():
         | import index
         | import llvm
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %init : index.Index = 0
-        |     %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
-        |         %print : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
-        |         %0 : Nil = function.call<%print>([])
-        |         %1 : index.Index = 1
-        |         %next : index.Index = llvm.add(%i, %1)
-        |         %next2 : index.Index = chain(%next, %0)
-        |         %_ : Nil = goto.branch<%self>([%next2])
+        | %init : index.Index = 0
+        | %r : goto.Label = goto.region([%init]) body<%self: goto.Label, %exit: goto.Label>(%i: index.Index):
+        |     %print : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
+        |     %0 : Nil = function.call<%print>([])
+        |     %1 : index.Index = 1
+        |     %next : index.Index = llvm.add(%i, %1)
+        |     %next2 : index.Index = chain(%next, %0)
+        |     %_ : Nil = goto.branch<%self>([%next2])
     """)
     )
     externs = _externs(value)
@@ -333,14 +315,12 @@ def test_externs_no_duplicates():
         strip_prefix("""
         | import function
         | import index
-        | import algebra
         | import llvm
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
-        |     %0 : llvm.Ptr = function.call<%malloc>([])
-        |     %1 : llvm.Ptr = function.call<%malloc>([])
-        |     %_ : Nil = chain(%0, %1)
+        | %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
+        | %0 : llvm.Ptr = function.call<%malloc>([])
+        | %1 : llvm.Ptr = function.call<%malloc>([])
+        | %_ : Nil = chain(%0, %1)
     """)
     )
     externs = _externs(value)
@@ -391,15 +371,13 @@ def test_externs_multiple_distinct():
         strip_prefix("""
         | import function
         | import index
-        | import algebra
         | import llvm
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
-        |     %print : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
-        |     %ptr : llvm.Ptr = function.call<%malloc>([])
-        |     %0 : Nil = function.call<%print>([])
-        |     %_ : Nil = chain(%ptr, %0)
+        | %malloc : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
+        | %print : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
+        | %ptr : llvm.Ptr = function.call<%malloc>([])
+        | %0 : Nil = function.call<%print>([])
+        | %_ : Nil = chain(%ptr, %0)
     """)
     )
     externs = _externs(value)

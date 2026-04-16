@@ -1,9 +1,7 @@
-import function
 import index
 import ndbuffer
 import number
 import toy
 
-%main : function.Function<[], Nil> = function.function<Nil>() body():
-    %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    %1 : Nil = toy.print(%0)
+%0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+%1 : Nil = toy.print(%0)

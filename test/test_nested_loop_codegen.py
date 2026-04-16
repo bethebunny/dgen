@@ -16,14 +16,12 @@ from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
 NESTED_FOR = strip_prefix("""
     | import control_flow
-    | import function
     | import index
     |
-    | %test : function.Function<[], Nil> = function.function<Nil>() body():
-    |     %outer : Nil = control_flow.for<index.Index(0), index.Index(2)>([]) body(%i: index.Index):
-    |         %inner : Nil = control_flow.for<index.Index(0), index.Index(2)>([%i]) body(%j: index.Index, %i: index.Index):
-    |             %0 : index.Index = 0
-    |             %1 : Nil = chain(%0, %0)
+    | %outer : Nil = control_flow.for<index.Index(0), index.Index(2)>([]) body(%i: index.Index):
+    |     %inner : Nil = control_flow.for<index.Index(0), index.Index(2)>([%i]) body(%j: index.Index, %i: index.Index):
+    |         %0 : index.Index = 0
+    |         %1 : Nil = chain(%0, %0)
 """)
 
 

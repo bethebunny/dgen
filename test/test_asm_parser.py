@@ -120,12 +120,11 @@ class TestParseErrors:
 
     def test_bare_span_for_parameterized_type(self) -> None:
         ir = strip_prefix("""
-            | import function
             | import ndbuffer
             | import number
             | import toy
             |
-            | %f : function.Function<[], toy.Tensor<[2, 3], number.Float64>> = function.function<toy.Tensor<[2, 3], number.Float64>>() body():
+            | %0 : toy.Tensor<[2, 3], number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         """)
         with pytest.raises(RuntimeError, match=r"bare literal.*Shape.*Shape<\.\.\.>"):
             parse(ir)
@@ -133,11 +132,9 @@ class TestParseErrors:
     def test_unimported_dialect_rejected(self) -> None:
         """Referencing a dialect not declared via `import` should fail."""
         ir = strip_prefix("""
-            | import function
             | import toy
             |
-            | %f : function.Function<[], Nil> = function.function<Nil>() body():
-            |     %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+            | %0 : toy.Tensor<ndbuffer.Shape<2>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         """)
         with pytest.raises(Exception):
             parse(ir)

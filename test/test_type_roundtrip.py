@@ -349,11 +349,9 @@ def test_span_jit_identity():
 def test_span_constant_jit_return():
     """JIT function returns a list constant: main() -> List<index>."""
     ir = strip_prefix("""
-        | import function
         | import index
         |
-        | %main : function.Function<[], Span<index.Index>> = function.function<Span<index.Index>>() body():
-        |     %0 : Span<index.Index> = [3, 5, 7]
+        | %0 : Span<index.Index> = [3, 5, 7]
     """)
     exe = compile_module(parse(ir))
     result = exe.run()
@@ -421,15 +419,12 @@ def test_string_constant_different_lengths():
 def test_string_as_op_param():
     """String constants work as __params__ on ops — ASM round-trip."""
     ir = strip_prefix("""
-        | import function
         | import index
         | import llvm
-        | import index
         |
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %0 : index.Index = 1
-        |     %1 : index.Index = 2
-        |     %cmp : llvm.Int<index.Index(1)> = llvm.icmp<String("slt")>(%0, %1)
+        | %0 : index.Index = 1
+        | %1 : index.Index = 2
+        | %cmp : llvm.Int<index.Index(1)> = llvm.icmp<String("slt")>(%0, %1)
     """)
     parsed = parse(ir)
     assert_ir_equivalent(parsed, asm.parse(asm.format(parsed)))
@@ -549,19 +544,16 @@ def test_deepcopy_module_with_span_constant():
     The list constant's backing data must survive the copy.
     """
     ir = strip_prefix("""
-        | import function
         | import index
         |
-        | %main : function.Function<[], Span<index.Index>> = function.function<Span<index.Index>>() body():
-        |     %0 : Span<index.Index> = [3, 5, 7]
+        | %0 : Span<index.Index> = [3, 5, 7]
     """)
     value = parse(ir)
     copied = deepcopy(value)
 
     # The copied value's constant should still be readable
-    copied_const = list(copied.body.ops)[0]
-    assert isinstance(copied_const, ConstantOp)
-    assert copied_const.value.to_json() == [3, 5, 7]
+    assert isinstance(copied, ConstantOp)
+    assert copied.value.to_json() == [3, 5, 7]
 
 
 # ---------------------------------------------------------------------------

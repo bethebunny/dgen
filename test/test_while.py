@@ -28,25 +28,21 @@ def test_while_basic_roundtrip():
         | import number
         | import control_flow
         | import index
-        | import function
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %zero : index.Index = 0
-        |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
-        |         %ten : index.Index = 10
-        |         %cmp : number.Boolean = algebra.less_than(%i, %ten)
-        |     body(%i: index.Index):
-        |         %one : index.Index = 1
-        |         %next : index.Index = algebra.add(%i, %one)
+        | %zero : index.Index = 0
+        | %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
+        |     %ten : index.Index = 10
+        |     %cmp : number.Boolean = algebra.less_than(%i, %ten)
+        | body(%i: index.Index):
+        |     %one : index.Index = 1
+        |     %next : index.Index = algebra.add(%i, %one)
     """)
-    fn = parse(ir)
-    assert isinstance(fn, control_flow.WhileOp) is False  # it's a FunctionOp
-    while_op = fn.body.result
+    while_op = parse(ir)
     assert isinstance(while_op, control_flow.WhileOp)
     assert len(while_op.condition.args) == 1
     assert while_op.condition.args[0].name == "i"
     assert len(while_op.body.args) == 1
     assert while_op.body.args[0].name == "i"
-    assert_ir_equivalent(fn, asm.parse(asm.format(fn)))
+    assert_ir_equivalent(while_op, asm.parse(asm.format(while_op)))
 
 
 def test_while_with_capture_roundtrip():
@@ -78,19 +74,16 @@ def test_while_no_ivs_roundtrip():
     ir = strip_prefix("""
         | import control_flow
         | import index
-        | import function
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %loop : Nil = control_flow.while([]) condition():
-        |         %cond : index.Index = 1
-        |     body():
-        |         %nop : index.Index = 0
+        | %loop : Nil = control_flow.while([]) condition():
+        |     %cond : index.Index = 1
+        | body():
+        |     %nop : index.Index = 0
     """)
-    value = parse(ir)
-    while_op = value.body.result
+    while_op = parse(ir)
     assert isinstance(while_op, control_flow.WhileOp)
     assert while_op.condition.args == []
     assert while_op.body.args == []
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+    assert_ir_equivalent(while_op, asm.parse(asm.format(while_op)))
 
 
 # -- Lowering tests (while → goto) --
@@ -99,17 +92,15 @@ def test_while_no_ivs_roundtrip():
 SIMPLE_WHILE = strip_prefix("""
     | import algebra
     | import control_flow
-    | import function
     | import index
     | import number
-    | %main : function.Function<[], Nil> = function.function<Nil>() body():
-    |     %zero : index.Index = 0
-    |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
-    |         %ten : index.Index = 10
-    |         %cmp : number.Boolean = algebra.less_than(%i, %ten)
-    |     body(%i: index.Index):
-    |         %one : index.Index = 1
-    |         %next : index.Index = algebra.add(%i, %one)
+    | %zero : index.Index = 0
+    | %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
+    |     %ten : index.Index = 10
+    |     %cmp : number.Boolean = algebra.less_than(%i, %ten)
+    | body(%i: index.Index):
+    |     %one : index.Index = 1
+    |     %next : index.Index = algebra.add(%i, %one)
 """)
 
 
@@ -132,25 +123,23 @@ def test_while_llvm_ir(snapshot):
 NESTED_WHILE = strip_prefix("""
     | import algebra
     | import control_flow
-    | import function
     | import index
     | import number
-    | %main : function.Function<[], Nil> = function.function<Nil>() body():
-    |     %zero : index.Index = 0
-    |     %outer : Nil = control_flow.while([%zero]) condition(%i: index.Index):
-    |         %two : index.Index = 2
-    |         %cmp : number.Boolean = algebra.less_than(%i, %two)
-    |     body(%oi: index.Index):
-    |         %izero : index.Index = 0
-    |         %inner : Nil = control_flow.while([%izero]) condition(%j: index.Index):
-    |             %jtwo : index.Index = 2
-    |             %jcmp : number.Boolean = algebra.less_than(%j, %jtwo)
-    |         body(%j2: index.Index):
-    |             %nop : index.Index = 0
-    |             %nop2 : Nil = chain(%nop, %nop)
-    |         %one : index.Index = 1
-    |         %next : index.Index = algebra.add(%oi, %one)
-    |         %next2 : index.Index = chain(%next, %inner)
+    | %zero : index.Index = 0
+    | %outer : Nil = control_flow.while([%zero]) condition(%i: index.Index):
+    |     %two : index.Index = 2
+    |     %cmp : number.Boolean = algebra.less_than(%i, %two)
+    | body(%oi: index.Index):
+    |     %izero : index.Index = 0
+    |     %inner : Nil = control_flow.while([%izero]) condition(%j: index.Index):
+    |         %jtwo : index.Index = 2
+    |         %jcmp : number.Boolean = algebra.less_than(%j, %jtwo)
+    |     body(%j2: index.Index):
+    |         %nop : index.Index = 0
+    |         %nop2 : Nil = chain(%nop, %nop)
+    |     %one : index.Index = 1
+    |     %next : index.Index = algebra.add(%oi, %one)
+    |     %next2 : index.Index = chain(%next, %inner)
 """)
 
 

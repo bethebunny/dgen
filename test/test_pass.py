@@ -13,6 +13,7 @@ from dgen.dialects.builtin import Nil
 from dgen.dialects.function import FunctionOp
 from dgen.builtins import ConstantOp
 import dgen
+from dgen.ir.traversal import transitive_dependencies
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.passes.staging import ConstantFold
 from dgen.ir.verification import ClosedBlockError
@@ -62,26 +63,28 @@ def test_multiple_handlers_per_op_type():
 def test_block_replace_uses_of(ir_snapshot):
     """replace_uses_of eagerly updates all referencing ops."""
     ir_text = strip_prefix("""
-        | import function
         | import index
         | import llvm
-        | import index
         |
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %0 : index.Index = 1
-        |     %1 : index.Index = 2
-        |     %2 : index.Index = llvm.add(%0, %0)
-        |     %3 : index.Index = chain(%2, %1)
+        | %0 : index.Index = 1
+        | %1 : index.Index = 2
+        | %2 : index.Index = llvm.add(%0, %0)
+        | %3 : index.Index = chain(%2, %1)
     """)
     m = parse(ir_text)
-    func = m
-    ops_by_name = {op.name: op for op in func.body.ops}
+
+    ops_by_name = {
+        v.name: v
+        for v in transitive_dependencies(m)
+        if isinstance(v, dgen.Op) and v.name is not None
+    }
     old = ops_by_name["0"]  # %0 = 1
     new = ops_by_name["1"]  # %1 = 2
 
-    func.body.replace_uses_of(old, new)
+    block = dgen.Block(result=m)
+    block.replace_uses_of(old, new)
 
-    assert m == ir_snapshot
+    assert block.result == ir_snapshot
 
 
 def test_block_replace_uses_of_op_type():
@@ -166,17 +169,15 @@ def test_block_replace_uses_of_block_parameter_type():
 def test_pass_run_eliminates_double_transpose(ir_snapshot):
     """A pass that eliminates transpose(transpose(x)) -> x."""
     ir_text = strip_prefix("""
-        | import function
         | import index
         | import ndbuffer
         | import number
         | import toy
         |
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([3, 2]), number.Float64> = toy.transpose(%0)
-        |     %2 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.transpose(%1)
-        |     %3 : Nil = toy.print(%2)
+        | %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %1 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([3, 2]), number.Float64> = toy.transpose(%0)
+        | %2 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.transpose(%1)
+        | %3 : Nil = toy.print(%2)
     """)
 
     class ElimTranspose(Pass):
@@ -197,15 +198,13 @@ def test_pass_run_eliminates_double_transpose(ir_snapshot):
 def test_pass_unregistered_ops_error():
     """allow_unregistered_ops=False raises on unhandled ops."""
     ir_text = strip_prefix("""
-        | import function
         | import index
         | import ndbuffer
         | import number
         | import toy
         |
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        |     %1 : Nil = toy.print(%0)
+        | %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %1 : Nil = toy.print(%0)
     """)
 
     class StrictPass(Pass):
@@ -235,11 +234,9 @@ def test_pass_multiple_handlers_first_wins():
             return op
 
     ir_text = strip_prefix("""
-        | import function
         | import index
         |
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %0 : index.Index = 42
+        | %0 : index.Index = 42
     """)
     m = parse(ir_text)
     compiler = Compiler(passes=[MultiPass()], exit=IdentityPass())
@@ -334,11 +331,9 @@ def test_constant_fold_resolves_stage0_boundary():
 def test_constant_fold_is_noop_without_boundaries():
     """ConstantFold does nothing when there are no stage-0 boundaries."""
     ir_text = strip_prefix("""
-        | import function
         | import index
         |
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %0 : index.Index = 42
+        | %0 : index.Index = 42
     """)
     m = parse(ir_text)
     before = asm.format(m)
@@ -360,11 +355,9 @@ def test_pass_run_receives_continuation_compiler():
             return value
 
     ir_text = strip_prefix("""
-        | import function
         | import index
         |
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %0 : index.Index = 42
+        | %0 : index.Index = 42
     """)
     m = parse(ir_text)
     compiler = Compiler(passes=[SpyPass(), SpyPass(), SpyPass()], exit=IdentityPass())
