@@ -22,7 +22,7 @@ import dgen
 from dgen.dialects import existential, memory
 from dgen.dialects.builtin import ChainOp, TypeOp
 from dgen.dialects.index import Index
-from dgen.layout import align_up
+from dgen.layout import TypeValue, align_up
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import TypeType, constant
 
@@ -40,8 +40,8 @@ class ExistentialToMemory(Pass):
         witness = TypeOp(value=op.value, type=TypeType())
 
         # Heap-allocate a block for {TypeValue, value_bytes}.
-        # TypeValue is 8 bytes (one pointer), value follows inline.
-        inner_bytes = 8 + value_type.__layout__.byte_size
+        inner_bytes = TypeValue().byte_size + value_type.__layout__.byte_size
+        # HeapAllocate counts in 8-byte units (GEP stride = double).
         inner_count = max(1, align_up(inner_bytes, 8))
         ref_type = memory.Reference(element_type=some_type)
         inner_ref = memory.HeapAllocateOp(

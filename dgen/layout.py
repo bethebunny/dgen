@@ -33,6 +33,22 @@ def _bytearray_address(buf: bytearray) -> int:
     return ctypes.addressof(ct)
 
 
+def _read_ptr(ptr: int, size: int) -> bytes:
+    """Read ``size`` bytes from raw memory address ``ptr``."""
+    return bytes((ctypes.c_char * size).from_address(ptr))
+
+
+def _alloc_and_pack(layout: Layout, value: object, origins: list) -> int:
+    """Heap-allocate a buffer, pack ``value`` via ``layout``, return its address.
+
+    The buffer is appended to ``origins`` to prevent garbage collection.
+    """
+    origin = bytearray(layout.byte_size)
+    origins.append(origin)
+    layout.from_json(origin, 0, value, origins)
+    return _bytearray_address(origin)
+
+
 # Aggregates ≤ 16 bytes fit in two 64-bit registers under x86_64 SysV
 # and can be passed/returned by value. Above that, they have to be
 # passed in memory.
@@ -188,25 +204,18 @@ class Pointer(Layout):
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> object:
         (ptr,) = self.struct.unpack_from(buf, offset)
-        pointee = self.pointee
-        data = bytes((ctypes.c_char * pointee.struct.size).from_address(ptr))
-        return pointee.to_json(data, 0)
+        return self.pointee.to_json(_read_ptr(ptr, self.pointee.byte_size), 0)
 
     def to_native_value(self, buf: bytes | bytearray, offset: int) -> object:
         (ptr,) = self.struct.unpack_from(buf, offset)
-        pointee = self.pointee
-        data = bytes((ctypes.c_char * pointee.struct.size).from_address(ptr))
-        return pointee.to_native_value(data, 0)
+        return self.pointee.to_native_value(_read_ptr(ptr, self.pointee.byte_size), 0)
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
-        pointee = self.pointee
-        origin = bytearray(pointee.struct.size)
-        origins.append(origin)
-        pointee.from_json(origin, 0, value, origins)
-        ptr = _bytearray_address(origin)
-        self.struct.pack_into(buf, offset, ptr)
+        self.struct.pack_into(
+            buf, offset, _alloc_and_pack(self.pointee, value, origins)
+        )
 
 
 class Span(Layout):
@@ -219,17 +228,15 @@ class Span(Layout):
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
         ptr, length = self.struct.unpack_from(buf, offset)
-        pointee = self.pointee
-        ps = pointee.struct.size
-        data = bytes((ctypes.c_char * (length * ps)).from_address(ptr))
-        return [pointee.to_json(data, i * ps) for i in range(length)]
+        ps = self.pointee.byte_size
+        data = _read_ptr(ptr, length * ps)
+        return [self.pointee.to_json(data, i * ps) for i in range(length)]
 
     def to_native_value(self, buf: bytes | bytearray, offset: int) -> list[object]:
         ptr, length = self.struct.unpack_from(buf, offset)
-        pointee = self.pointee
-        ps = pointee.struct.size
-        data = bytes((ctypes.c_char * (length * ps)).from_address(ptr))
-        return [pointee.to_native_value(data, i * ps) for i in range(length)]
+        ps = self.pointee.byte_size
+        data = _read_ptr(ptr, length * ps)
+        return [self.pointee.to_native_value(data, i * ps) for i in range(length)]
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
@@ -349,10 +356,7 @@ class TypeValue(Layout):
             value = value.to_json()
         assert isinstance(value, dict)
         layout = _descriptor_layout(Type.from_json(value))
-        origin = bytearray(layout.byte_size)
-        origins.append(origin)
-        layout.from_json(origin, 0, value, origins)
-        self.struct.pack_into(buf, offset, _bytearray_address(origin))
+        self.struct.pack_into(buf, offset, _alloc_and_pack(layout, value, origins))
 
     def to_native_value(self, buf: bytes | bytearray, offset: int) -> object:
         from .type import Type
@@ -366,15 +370,13 @@ class TypeValue(Layout):
         (ptr,) = self.struct.unpack_from(buf, offset)
         # Read the tag to look up param names.
         tag_layout = String()
-        tag_bytes = bytes((ctypes.c_char * tag_layout.byte_size).from_address(ptr))
-        tag = tag_layout.to_json(tag_bytes, 0)
+        tag = tag_layout.to_json(_read_ptr(ptr, tag_layout.byte_size), 0)
         assert isinstance(tag, str)
         dialect_name, type_name = tag.split(".")
         cls = Dialect.get(dialect_name).types[type_name]
         # Each param is a Some (pointer to {TypeValue, value_inline}).
         layout = _descriptor_layout_for_cls(cls)
-        data = bytes((ctypes.c_char * layout.byte_size).from_address(ptr))
-        result = layout.to_json(data, 0)
+        result = layout.to_json(_read_ptr(ptr, layout.byte_size), 0)
         assert isinstance(result, dict)
         return result
 
@@ -407,10 +409,8 @@ class Some(Layout):
         )
         # Build the inner layout: {TypeValue, value_inline}.
         inner = _some_inner_layout(type_inst)
-        origin = bytearray(inner.byte_size)
-        origins.append(origin)
-        inner.from_json(origin, 0, {"type": type_json, "value": val_json}, origins)
-        self.struct.pack_into(buf, offset, _bytearray_address(origin))
+        ptr = _alloc_and_pack(inner, {"type": type_json, "value": val_json}, origins)
+        self.struct.pack_into(buf, offset, ptr)
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
         from .type import Type
@@ -418,13 +418,11 @@ class Some(Layout):
         (ptr,) = self.struct.unpack_from(buf, offset)
         # Read the TypeValue first to determine the value layout.
         tv = TypeValue()
-        tv_bytes = bytes((ctypes.c_char * tv.byte_size).from_address(ptr))
-        type_json = tv.to_json(tv_bytes, 0)
+        type_json = tv.to_json(_read_ptr(ptr, tv.byte_size), 0)
         type_inst = Type.from_json(type_json)
         # Read the full inner record.
         inner = _some_inner_layout(type_inst)
-        data = bytes((ctypes.c_char * inner.byte_size).from_address(ptr))
-        result = inner.to_json(data, 0)
+        result = inner.to_json(_read_ptr(ptr, inner.byte_size), 0)
         assert isinstance(result, dict)
         return result
 
@@ -433,14 +431,10 @@ class Some(Layout):
 
         (ptr,) = self.struct.unpack_from(buf, offset)
         tv = TypeValue()
-        tv_bytes = bytes((ctypes.c_char * tv.byte_size).from_address(ptr))
-        type_inst = tv.to_native_value(tv_bytes, 0)
+        type_inst = tv.to_native_value(_read_ptr(ptr, tv.byte_size), 0)
         assert isinstance(type_inst, Type)
         inner = _some_inner_layout(type_inst)
-        data = bytes((ctypes.c_char * inner.byte_size).from_address(ptr))
-        inner_json = inner.to_json(data, 0)
-        assert isinstance(inner_json, dict)
-        return {"type": type_inst, "value": inner_json["value"]}
+        return inner.to_native_value(_read_ptr(ptr, inner.byte_size), 0)
 
 
 class String(Span):
