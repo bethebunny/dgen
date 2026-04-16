@@ -58,11 +58,10 @@ def test_lowering_pack(ir_snapshot) -> None:
     assert _lower(
         strip_prefix("""
         | import existential
-        | import function
         | import index
         |
-        | %main : function.Function<[index.Index], existential.Some<index.Index>> = function.function<existential.Some<index.Index>>() body(%x: index.Index):
-        |     %packed : existential.Some<index.Index> = existential.pack(%x)
+        | %x : index.Index = 42
+        | %packed : existential.Some<index.Index> = existential.pack(%x)
     """)
     ) == ir_snapshot
 
@@ -72,12 +71,11 @@ def test_lowering_unpack(ir_snapshot) -> None:
     assert _lower(
         strip_prefix("""
         | import existential
-        | import function
         | import index
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %packed : existential.Some<index.Index> = existential.pack(%x)
-        |     %result : index.Index = existential.unpack(%packed)
+        | %x : index.Index = 42
+        | %packed : existential.Some<index.Index> = existential.pack(%x)
+        | %result : index.Index = existential.unpack(%packed)
     """)
     ) == ir_snapshot
 
