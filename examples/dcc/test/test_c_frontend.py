@@ -18,11 +18,15 @@ from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
 from dgen.ir.traversal import transitive_dependencies
 from dgen.builtins import pack
 
-from dcc.cli import c_compiler
+from click.testing import CliRunner
+
+from dcc.cli import c_compiler, main, run_file
 from dcc.dialects import c, c_double, c_float, c_int, c_ptr, c_void
 from dcc.parser.c_parser import parse_c_string
 from dcc.parser.lowering import lower
 from dcc.parser.type_resolver import TypeResolver, TypeResolverError
+
+TESTDATA_DIR = Path(__file__).parent / "testdata"
 
 # Make dcc dialect discoverable.
 Dialect.paths.append(Path(__file__).parent.parent / "dialects")
@@ -550,6 +554,28 @@ class TestBreakContinue:
             )
             == 12  # 1+2+4+5
         )
+
+
+class TestCLI:
+    """Brick 2: the dcc CLI compiles and runs .c files."""
+
+    def test_run_file_returns_result(self) -> None:
+        """run_file compiles a .c file and returns the last function's output."""
+        path = TESTDATA_DIR / "square.c"
+        assert run_file(path, ["7"]) == 49
+
+    def test_main_prints_result(self) -> None:
+        """`python -m dcc square.c 7` prints 49."""
+        path = TESTDATA_DIR / "square.c"
+        runner = CliRunner()
+        result = runner.invoke(main, [str(path), "7"])
+        assert result.exit_code == 0, result.output
+        assert result.output.strip() == "49"
+
+    def test_main_rejects_missing_file(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(main, ["/no/such/file.c"])
+        assert result.exit_code != 0
 
 
 class TestMemoryOrdering:

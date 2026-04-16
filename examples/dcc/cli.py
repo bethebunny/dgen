@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import click
 
 from dgen import Dialect
-from dgen.llvm.codegen import Executable, LLVMCodegen
-from dgen.passes.compiler import Compiler
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
-from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.llvm.codegen import Executable, LLVMCodegen
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
+from dgen.passes.compiler import Compiler
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
+from dcc.parser.c_parser import parse_c_file
+from dcc.parser.lowering import lower
 from dcc.passes.c_lvalue_to_memory import CLvalueToMemory
 
 # Make dcc dialects discoverable for IR parsing round-trips.
@@ -36,12 +39,24 @@ c_compiler: Compiler[Executable] = Compiler(
 )
 
 
+def run_file(path: str | Path, args: Sequence[str] = ()) -> object:
+    """Compile a .c file and run its last function with int-parsed args."""
+    ir = lower(parse_c_file(path))
+    exe = c_compiler.compile(ir)
+    result = exe.run(*(int(a) for a in args))
+    return result.to_json()
+
+
 @click.command()
 @click.argument("source_file", type=click.Path(exists=True))
 @click.argument("args", nargs=-1)
 def main(source_file: str, args: tuple[str, ...]) -> None:
-    """Compile and run a C source file."""
-    raise NotImplementedError("Full CLI not yet implemented (Brick 4+)")
+    """Compile and run a C source file.
+
+    Arguments after SOURCE_FILE are parsed as integers and passed to the
+    last function defined in the file.
+    """
+    click.echo(run_file(source_file, args))
 
 
 if __name__ == "__main__":
