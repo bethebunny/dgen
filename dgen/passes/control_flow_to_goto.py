@@ -152,22 +152,17 @@ class ControlFlowToGoto(Pass):
         append a branch to the merge point.
         """
         if isinstance(body.result.type, Never):
-            return goto.LabelOp(
-                name=name,
-                initial_arguments=pack([]),
-                body=dgen.Block(
-                    result=body.result,
-                    captures=list(body.captures),
-                ),
+            result = body.result
+            captures = list(body.captures)
+        else:
+            result = goto.BranchOp(
+                target=merge_self, arguments=pack([body.result])
             )
-        merge_br = goto.BranchOp(target=merge_self, arguments=pack([body.result]))
+            captures = [merge_self, *body.captures]
         return goto.LabelOp(
             name=name,
             initial_arguments=pack([]),
-            body=dgen.Block(
-                result=merge_br,
-                captures=[merge_self, *body.captures],
-            ),
+            body=dgen.Block(result=result, captures=captures),
         )
 
     @lowering_for(control_flow.IfOp)
