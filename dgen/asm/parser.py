@@ -315,13 +315,13 @@ def statement(parser: ASMParser) -> Value:
         kwargs[param_name] = _coerce(parser, value, param_type)
     for (field_name, field_type), value in zip(op_cls.__operands__, operands):
         kwargs[field_name] = _coerce(parser, value, field_type)
-    # Backward compat: if block fields are missing, try inline syntax
-    for block_name in op_cls.__blocks__:
-        if block_name not in kwargs:
+    # Backward compat: if block operands are missing, try inline syntax
+    for field_name, field_type in op_cls.__operands__:
+        if field_name not in kwargs and field_type is Block:
             saved_pos = parser.pos
             parser._skip_all()
-            if parser.parse_token(_IDENT) == block_name:
-                kwargs[block_name] = _read_block_body(parser)
+            if parser.parse_token(_IDENT) == field_name:
+                kwargs[field_name] = _read_block_body(parser)
             else:
                 parser.pos = saved_pos
     op = op_cls(**kwargs)

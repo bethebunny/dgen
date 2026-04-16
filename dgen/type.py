@@ -31,7 +31,6 @@ class Value(Generic[T]):
 
     __params__: ClassVar[Fields] = ()
     __operands__: ClassVar[Fields] = ()
-    __blocks__: ClassVar[tuple[str, ...]] = ()
     __constraints__: ClassVar[tuple[object, ...]] = ()
     name: str | None = None
     type: Value[TypeType]
@@ -52,8 +51,9 @@ class Value(Generic[T]):
 
     @property
     def blocks(self) -> Iterator[tuple[str, dgen.Block]]:
-        for name in self.__blocks__:
-            yield name, getattr(self, name)
+        for name, operand in self.operands:
+            if isinstance(operand, dgen.Block):
+                yield name, operand
 
     @property
     def dependencies(self) -> Iterator[Value]:

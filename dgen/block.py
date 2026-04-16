@@ -87,7 +87,6 @@ class Block(Value):
 
     __operands__: ClassVar[Fields] = ()
     __params__: ClassVar[Fields] = ()
-    __blocks__: ClassVar[tuple[str, ...]] = ()
 
     result: dgen.Value
     args: list[BlockArgument] = field(default_factory=list)

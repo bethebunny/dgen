@@ -334,8 +334,6 @@ def _build_op(
     operand_entries.extend((block_name, Block) for block_name in od.blocks)
     if operand_entries:
         op_ns["__operands__"] = tuple(operand_entries)
-    if od.blocks:
-        op_ns["__blocks__"] = tuple(od.blocks)
     if od.constraints:
         op_ns["__constraints__"] = tuple(od.constraints)
 

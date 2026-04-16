@@ -104,17 +104,11 @@ class Fingerprinter:
             case Block() as block:
                 return self._fingerprint_block(block)
             case dgen.Op() as op:
-                block_names = set(op.__blocks__)
                 param_fingerprints = b"".join(
                     self.fingerprint(v) for _, v in op.parameters
                 )
                 operand_fingerprints = b"".join(
-                    self.fingerprint(v)
-                    for name, v in op.operands
-                    if name not in block_names
-                )
-                block_fingerprints = b"".join(
-                    self._fingerprint_block(block) for _, block in op.blocks
+                    self.fingerprint(v) for _, v in op.operands
                 )
                 return _hash_parts(
                     op.dialect.name.encode(),
@@ -122,7 +116,6 @@ class Fingerprinter:
                     self._fingerprint_type(op.type),
                     param_fingerprints,
                     operand_fingerprints,
-                    block_fingerprints,
                 )
             case Value(type=Nil()):
                 return _hash_parts(b"nil")

@@ -148,9 +148,12 @@ def runtime_dependencies(value: dgen.Value) -> Iterator[dgen.Value]:
     seen = set()
 
     def visit(v: dgen.Value) -> Iterator[dgen.Value]:
-        block_names = set(v.__blocks__)
         dependencies = chain(
-            (operand for name, operand in v.operands if name not in block_names),
+            (
+                operand
+                for _, operand in v.operands
+                if not isinstance(operand, dgen.Block)
+            ),
             (capture for _, block in v.blocks for capture in block.captures),
         )
         for dependency in dependencies:
