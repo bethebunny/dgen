@@ -22,9 +22,9 @@ def test_roundtrip_label_with_self_param():
     """)
     label = parse(ir)
     assert isinstance(label, goto.LabelOp)
-    assert len(label.body.parameters) == 1
-    assert label.body.parameters[0].name == "self"
-    assert isinstance(label.body.parameters[0].type, goto.Label)
+    assert len(label.body.params) == 1
+    assert label.body.params[0].name == "self"
+    assert isinstance(label.body.params[0].type, goto.Label)
     assert len(label.body.args) == 1
     assert label.body.args[0].name == "i"
     assert_ir_equivalent(label, asm.parse(asm.format(label)))
@@ -41,7 +41,7 @@ def test_roundtrip_label_no_params():
     """)
     label = parse(ir)
     assert isinstance(label, goto.LabelOp)
-    assert label.body.parameters == []
+    assert label.body.params == []
     assert len(label.body.args) == 1
     assert_ir_equivalent(label, asm.parse(asm.format(label)))
 
@@ -69,7 +69,7 @@ def test_roundtrip_label_params_no_args():
     """)
     label = parse(ir)
     assert isinstance(label, goto.LabelOp)
-    assert len(label.body.parameters) == 1
+    assert len(label.body.params) == 1
     assert label.body.args == []
     assert_ir_equivalent(label, asm.parse(asm.format(label)))
 

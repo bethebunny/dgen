@@ -27,6 +27,9 @@ type Span<pointee: Type>:
 type Tuple<types: Span<Type>>:
     layout Record
 
+type Block<block_parameters: Span<Type>, block_arguments: Span<Type>, result_type: Type>:
+    layout Void
+
 op chain(lhs, rhs)
 op type(value) -> Type
 op extern<symbol: String>()

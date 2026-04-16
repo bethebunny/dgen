@@ -81,7 +81,7 @@ class Value(Generic[T]):
         for _, block in self.blocks:
             for arg in block.args:
                 yield arg.type
-            for block_param in block.parameters:
+            for block_param in block.params:
                 yield block_param.type
 
     @property

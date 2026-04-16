@@ -64,7 +64,7 @@ def _verify_block(
     # Closed-block invariant: the transitive dependencies of block.result,
     # stopping at captures, must contain BlockArguments/BlockParameters from
     # this block only — not from any other block.
-    local = set(block.parameters) | set(block.args)
+    local = set(block.params) | set(block.args)
     for value in block.values:
         if isinstance(value, (BlockArgument, BlockParameter)) and value not in local:
             raise ClosedBlockError(

@@ -11,19 +11,24 @@ from dgen.dialects.index import Index
 builtin = Dialect("builtin")
 
 @dataclass(eq=False)
-class Nil(Type): ...
+class Nil(Type):
+    ...
 
 @dataclass(eq=False)
-class Never(Type): ...
+class Never(Type):
+    ...
 
 @dataclass(eq=False)
-class String(Type): ...
+class String(Type):
+    ...
 
 @dataclass(eq=False)
-class TypeTag(Type): ...
+class TypeTag(Type):
+    ...
 
 @dataclass(eq=False)
-class Byte(Type): ...
+class Byte(Type):
+    ...
 
 @dataclass(eq=False)
 class Array(Type):
@@ -43,6 +48,12 @@ class Tuple(Type):
     types: Value[Span]
 
 @dataclass(eq=False)
+class Block(Type):
+    block_parameters: Value[Span]
+    block_arguments: Value[Span]
+    result_type: Value[dgen.TypeType]
+
+@dataclass(eq=False)
 class ChainOp(Op):
     lhs: Value
     rhs: Value
@@ -57,3 +68,4 @@ class TypeOp(Op):
 class ExternOp(Op):
     symbol: Value[String]
     type: Type
+

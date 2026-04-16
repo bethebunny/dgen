@@ -43,7 +43,7 @@ class SlotTracker:
                 continue
             self.track_name(op)
             for _, block in op.blocks:
-                for param in block.parameters:
+                for param in block.params:
                     self.track_name(param)
                 for arg in block.args:
                     self.track_name(arg)
@@ -132,9 +132,9 @@ def op_asm(
     def _format_block_header(name: str, block: Block) -> str:
         args_str = ", ".join(_format_block_arg(a, tracker) for a in block.args)
         header = name
-        if block.parameters:
+        if block.params:
             params_str = ", ".join(
-                _format_block_arg(p, tracker) for p in block.parameters
+                _format_block_arg(p, tracker) for p in block.params
             )
             header += f"<{params_str}>"
         header += f"({args_str})"

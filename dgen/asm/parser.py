@@ -435,4 +435,4 @@ def _read_block_body(parser: ASMParser) -> Block:
         last_op = op_statement(parser)
     parser.block_indent = saved_indent
     assert last_op is not None
-    return Block(result=last_op, args=args, parameters=block_params, captures=captures)
+    return Block(result=last_op, args=args, params=block_params, captures=captures)
