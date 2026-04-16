@@ -26,7 +26,7 @@ from dgen.dialects.number import Boolean, Float64
 from dgen.builtins import pack
 
 from dcc.dialects import c_int
-from dcc.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
+from dcc.dialects.c import AssignOp, CReturnOp, LvalueToRvalueOp, LvalueVarOp
 from dcc.parser.c_literals import parse_c_char, parse_c_int
 from dcc.parser.type_resolver import TypeResolver
 
@@ -565,18 +565,22 @@ class Parser:
         Returns a single value that transitively depends on every
         statement's result, keeping independent mutations alive.
 
-        Jump ops (BreakOp, ContinueOp) terminate the statement sequence.
-        Preceding effects are chained through the jump op so it becomes
-        the block's effective result.
+        Jump/terminator ops (BreakOp, ContinueOp, CReturnOp) are Never-typed
+        and terminate the statement sequence. Preceding effects are chained
+        through the terminator so it becomes the block's effective result.
+        A `return` inside the body lowers to a CReturnOp marker that the
+        codegen emitter turns into an LLVM `ret` directly.
         """
         if isinstance(node, c_ast.Compound) and node.block_items:
             results: list[dgen.Value] = []
             for item in node.block_items:
                 result = self._statement(item, scope)
                 if isinstance(result, _Return):
-                    raise LoweringError(
-                        "return inside control flow not yet supported (Brick 6.5)"
-                    )
+                    ret = CReturnOp(value=result.value)
+                    if results:
+                        effects = pack(results) if len(results) != 1 else results[0]
+                        return ChainOp(lhs=effects, rhs=ret, type=ret.type)
+                    return ret
                 if isinstance(result.type, Never):
                     if results:
                         effects = pack(results) if len(results) != 1 else results[0]
@@ -586,9 +590,7 @@ class Parser:
             return pack(results) if len(results) != 1 else results[0]
         result = self._statement(node, scope)
         if isinstance(result, _Return):
-            raise LoweringError(
-                "return inside control flow not yet supported (Brick 6.5)"
-            )
+            return CReturnOp(value=result.value)
         return result
 
     def _propagate_cf_ordering(
@@ -876,9 +878,35 @@ class _Return:
 def _is_orphan_effect(value: dgen.Value) -> bool:
     """True for statement-position ops whose side effects aren't
     preserved by any other thread (variable scope ordering, control
-    flow, etc.). Function calls are the canonical case — a bare
-    ``g(x);`` statement would otherwise be dead."""
-    return isinstance(value, function.CallOp)
+    flow, etc.).
+
+    - Function calls are the canonical case — a bare ``g(x);`` statement
+      would otherwise be dead.
+    - Control-flow ops whose body diverges (early return, break, continue
+      in a nested block that escapes) carry effects that scope ordering
+      doesn't see.  `if (x) return 1;` is the motivating case: no variable
+      is written, so the enclosing if otherwise has no downstream
+      dependent and gets dropped from the function body.
+    """
+    if isinstance(value, function.CallOp):
+        return True
+    if isinstance(value, (control_flow.IfOp, control_flow.WhileOp, control_flow.ForOp)):
+        return any(_contains_divergence(b) for _, b in value.blocks)
+    return False
+
+
+def _contains_divergence(block: dgen.Block) -> bool:
+    """True if the block (or any block nested inside it) diverges —
+    i.e. its result is Never-typed or reaches a Never-typed op."""
+    if isinstance(block.result.type, Never):
+        return True
+    for value in block.values:
+        if isinstance(value, CReturnOp):
+            return True
+        for _, inner in value.blocks:
+            if _contains_divergence(inner):
+                return True
+    return False
 
 
 # ---------------------------------------------------------------------------

@@ -754,6 +754,68 @@ class TestFunctionCalls:
         )
 
 
+class TestEarlyReturn:
+    """Brick 6.5: `return` inside an if/while/for body.
+
+    The lowering emits a c.CReturnOp terminator; ControlFlowToGoto's
+    existing Never-body handling keeps the branch label unmerged, and
+    codegen emits an LLVM `ret` from the emitter registered in
+    dcc.codegen.
+    """
+
+    def test_return_in_if_then(self) -> None:
+        assert run_c("int f(int x) { if (x < 0) return -1; return x; }", -7) == -1
+        assert run_c("int f(int x) { if (x < 0) return -1; return x; }", 5) == 5
+
+    def test_return_in_if_with_block_body(self) -> None:
+        assert run_c("int f(int x) { if (x < 0) { return -1; } return x; }", -7) == -1
+
+    def test_return_in_nested_if(self) -> None:
+        src = (
+            "int f(int x) {"
+            " if (x < 0) { if (x < -10) return -99; return -1; }"
+            " return x; }"
+        )
+        assert run_c(src, 5) == 5
+        assert run_c(src, -5) == -1
+        assert run_c(src, -20) == -99
+
+    def test_return_inside_while(self) -> None:
+        """Early exit from a loop via return."""
+        src = (
+            "int f(int n) {"
+            " int i = 0; while (i < 10) { if (i == n) return i * 2; i = i + 1; }"
+            " return -1; }"
+        )
+        assert run_c(src, 3) == 6
+        assert run_c(src, 99) == -1
+
+    def test_return_inside_while_true(self) -> None:
+        """A while(1) loop exits only via return."""
+        src = (
+            "int f(int n) {"
+            " int i = 0; while (1) { if (i == n) return i; i = i + 1; }"
+            " return -1; }"
+        )
+        assert run_c(src, 4) == 4
+
+    def test_return_preserves_preceding_effects(self) -> None:
+        """Writes before a return-in-if must reach the alternative path."""
+        src = (
+            "int f(int x) {"
+            " int r = 100; if (x == 0) { r = r + 1; return r; } return r; }"
+        )
+        assert run_c(src, 0) == 101
+        assert run_c(src, 5) == 100
+
+    @pytest.mark.xfail(
+        reason="if-else where BOTH branches return needs merge-elision in codegen"
+    )
+    def test_return_in_both_if_branches(self) -> None:
+        assert run_c("int f(int x) { if (x > 0) return x; else return -x; }", -5) == 5
+        assert run_c("int f(int x) { if (x > 0) return x; else return -x; }", 7) == 7
+
+
 class TestMemoryOrdering:
     """Structural tests for the use-def ordering of memory operations."""
 

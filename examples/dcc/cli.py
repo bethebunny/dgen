@@ -15,6 +15,7 @@ from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
+from dcc import codegen as _codegen  # noqa: F401 -- registers c.CReturnOp emitter
 from dcc.parser.c_parser import parse_c_file
 from dcc.parser.lowering import lower
 from dcc.passes.c_lvalue_to_memory import CLvalueToMemory

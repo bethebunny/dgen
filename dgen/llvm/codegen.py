@@ -336,6 +336,12 @@ def emit_linearized(block: dgen.Block) -> Iterator[str]:
         yield from emit(op)
         if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
             return True
+        # Any Never-typed op is a terminator — nothing executes after it.
+        # Covers frontend-specific terminator ops (e.g. c.CReturnOp) without
+        # cross-layer imports; the emitter is expected to produce a valid
+        # LLVM basic-block terminator (ret, br, unreachable, ...).
+        if isinstance(op.type, builtin.Never):
+            return True
 
 
 EMITTERS: dict[type[dgen.Value], Callable[..., Iterator[str]]] = {}
@@ -363,8 +369,10 @@ def emit(value: dgen.Value) -> Iterator[str]:
             f"(dialect={value.dialect.name}, asm_name={value.asm_name})"
         )
     lines = emitter(value)
-    # Structural and noop ops handle their own output.
-    if isinstance(value, _NO_ASSIGN_OPS):
+    # Structural and noop ops handle their own output. Never-typed ops
+    # (terminators like c.CReturnOp, goto jumps, etc.) also produce no
+    # SSA value.
+    if isinstance(value, _NO_ASSIGN_OPS) or isinstance(value.type, builtin.Never):
         yield from lines
     else:
         # Prepend %name = for value-producing ops.
