@@ -1,4 +1,4 @@
-from builtin import Index, Nil, String, Span
+from builtin import Index, Never, Nil, Span, String
 
 # --- C-specific types ---
 
@@ -47,7 +47,11 @@ op scalar_to_bool(val)
 
 # --- Control flow ---
 
-op c_return(value) -> Nil
+# c_return diverges — its body terminates control flow. Emitted by the
+# lowering when a `return` appears inside an if/while/for body; the
+# surrounding control flow treats the block result as Never-typed and
+# handles it the same way it handles break/continue.
+op c_return(value) -> Never
 op c_sizeof<target_type: Type>()
 
 # --- C-specific arithmetic ---
