@@ -1,6 +1,7 @@
-"""End-to-end tests for the existential dialect.
+"""Tests for ExistentialToRecord pass.
 
-Tests pack/unpack through the full JIT pipeline: ASM parse →
+Lowering snapshots verify the IR after ExistentialToRecord only.
+End-to-end tests verify the full JIT pipeline: ASM parse →
 lowering → LLVM codegen → JIT execution → result verification.
 """
 
@@ -8,7 +9,7 @@ from __future__ import annotations
 
 import subprocess
 
-
+import dgen
 from dgen.asm.parser import parse
 from dgen.dialects import existential
 from dgen.dialects.index import Index
@@ -17,11 +18,19 @@ from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.llvm.codegen import LLVMCodegen
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.memory import Memory
-from dgen.passes.compiler import Compiler
+from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.existential_to_record import ExistentialToRecord
 from dgen.passes.record_to_memory import RecordToMemory
 from dgen.testing import strip_prefix
+
+
+def _lower(ir_text: str) -> dgen.Value:
+    """Lower through ExistentialToRecord only."""
+    return Compiler(
+        [ExistentialToRecord()],
+        IdentityPass(),
+    ).run(parse(ir_text))
 
 
 def _compile(ir_text: str):
@@ -37,6 +46,40 @@ def _compile(ir_text: str):
         ],
         exit=LLVMCodegen(),
     ).run(parse(ir_text))
+
+
+# ---------------------------------------------------------------------------
+# Lowering snapshots: verify the IR after ExistentialToRecord only
+# ---------------------------------------------------------------------------
+
+
+def test_lowering_pack(ir_snapshot) -> None:
+    """Lowered IR for existential.pack: record.pack + heap_box."""
+    assert _lower(
+        strip_prefix("""
+        | import existential
+        | import function
+        | import index
+        |
+        | %main : function.Function<[index.Index], existential.Some<index.Index>> = function.function<existential.Some<index.Index>>() body(%x: index.Index):
+        |     %packed : existential.Some<index.Index> = existential.pack(%x)
+    """)
+    ) == ir_snapshot
+
+
+def test_lowering_unpack(ir_snapshot) -> None:
+    """Lowered IR for existential.unpack: memory.load + record.get."""
+    assert _lower(
+        strip_prefix("""
+        | import existential
+        | import function
+        | import index
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %packed : existential.Some<index.Index> = existential.pack(%x)
+        |     %result : index.Index = existential.unpack(%packed)
+    """)
+    ) == ir_snapshot
 
 
 # ---------------------------------------------------------------------------
