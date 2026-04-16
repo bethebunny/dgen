@@ -1,4 +1,4 @@
-from builtin import Index, Nil, Span
+from builtin import Index, Never, Nil, Span
 
 op for<lower_bound: Index, upper_bound: Index>(initial_arguments: Span) -> Nil:
     block body
@@ -8,3 +8,5 @@ op while(initial_arguments: Span) -> Nil:
 op if(condition: Index, then_arguments: Span, else_arguments: Span):
     block then_body
     block else_body
+op break() -> Never
+op continue() -> Never

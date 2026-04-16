@@ -70,12 +70,48 @@ from __future__ import annotations
 import dgen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import algebra, control_flow, goto
-from dgen.dialects.builtin import ChainOp
+from dgen.dialects.builtin import ChainOp, Never
 from dgen.ir.traversal import all_values
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean
 from dgen.builtins import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
+
+
+def _resolve_jump_markers(
+    block: dgen.Block,
+    self_param: BlockParameter,
+    exit_param: BlockParameter,
+) -> None:
+    """Replace BreakOp/ContinueOp with goto.BranchOp targeting exit/self.
+
+    Recurses into child blocks but skips nested WhileOp/ForOp bodies —
+    inner loops resolve their own markers when they are lowered.
+    Adds captures at each nesting level so the branch targets are accessible.
+    """
+    replacements: list[tuple[dgen.Value, dgen.Value]] = []
+    child_needs_captures = False
+    for v in list(block.values):
+        if isinstance(v, control_flow.BreakOp):
+            replacements.append(
+                (v, goto.BranchOp(target=exit_param, arguments=pack([])))
+            )
+        elif isinstance(v, control_flow.ContinueOp):
+            replacements.append(
+                (v, goto.BranchOp(target=self_param, arguments=pack([])))
+            )
+        elif not isinstance(v, (control_flow.WhileOp, control_flow.ForOp)):
+            for _, child_block in v.blocks:
+                prev_len = len(child_block.captures)
+                _resolve_jump_markers(child_block, self_param, exit_param)
+                if len(child_block.captures) > prev_len:
+                    child_needs_captures = True
+    if replacements or child_needs_captures:
+        for param in (exit_param, self_param):
+            if param not in block.captures and param not in block.parameters:
+                block.captures.append(param)
+    for old, new in replacements:
+        block.replace_uses_of(old, new)
 
 
 class ControlFlowToGoto(Pass):
@@ -91,6 +127,8 @@ class ControlFlowToGoto(Pass):
                 continue
             then_type = value.then_body.result.type
             else_type = value.else_body.result.type
+            if isinstance(then_type, Never) or isinstance(else_type, Never):
+                continue
             if then_type is not value.type and type(then_type) is not type(value.type):
                 raise TypeError(
                     f"IfOp then-branch result type {then_type} "
@@ -102,6 +140,37 @@ class ControlFlowToGoto(Pass):
                     f"does not match declared type {value.type}"
                 )
 
+    @staticmethod
+    def _make_branch_label(
+        name: str,
+        body: dgen.Block,
+        merge_self: BlockParameter,
+    ) -> goto.LabelOp:
+        """Build a label for one branch of an IfOp.
+
+        If the body diverges (result type is Never), the body already
+        terminates elsewhere — don't add a merge branch. Otherwise,
+        append a branch to the merge point.
+        """
+        if isinstance(body.result.type, Never):
+            return goto.LabelOp(
+                name=name,
+                initial_arguments=pack([]),
+                body=dgen.Block(
+                    result=body.result,
+                    captures=list(body.captures),
+                ),
+            )
+        merge_br = goto.BranchOp(target=merge_self, arguments=pack([body.result]))
+        return goto.LabelOp(
+            name=name,
+            initial_arguments=pack([]),
+            body=dgen.Block(
+                result=merge_br,
+                captures=[merge_self, *body.captures],
+            ),
+        )
+
     @lowering_for(control_flow.IfOp)
     def lower_if(self, op: control_flow.IfOp) -> dgen.Value | None:
         lid = self._loop_counter
@@ -111,30 +180,8 @@ class ControlFlowToGoto(Pass):
         merge_exit = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
         merge_result = BlockArgument(name=f"if_result{lid}", type=op.type)
 
-        # Both branches carry their body result to %self.
-        then_br = goto.BranchOp(
-            target=merge_self, arguments=pack([op.then_body.result])
-        )
-        then_label = goto.LabelOp(
-            name=f"if_then{lid}",
-            initial_arguments=pack([]),
-            body=dgen.Block(
-                result=then_br,
-                captures=[merge_self, *op.then_body.captures],
-            ),
-        )
-
-        else_br = goto.BranchOp(
-            target=merge_self, arguments=pack([op.else_body.result])
-        )
-        else_label = goto.LabelOp(
-            name=f"if_else{lid}",
-            initial_arguments=pack([]),
-            body=dgen.Block(
-                result=else_br,
-                captures=[merge_self, *op.else_body.captures],
-            ),
-        )
+        then_label = self._make_branch_label(f"if_then{lid}", op.then_body, merge_self)
+        else_label = self._make_branch_label(f"if_else{lid}", op.else_body, merge_self)
 
         cond_br = goto.ConditionalBranchOp(
             condition=op.condition,
@@ -173,15 +220,18 @@ class ControlFlowToGoto(Pass):
             rhs=op.body.result,
             type=Index(),
         )
+        body_block = dgen.Block(
+            result=goto.BranchOp(target=header_self, arguments=pack([next_iv])),
+            args=[iv],
+            captures=[header_self, header_exit, *op.body.captures],
+        )
         body_label = goto.LabelOp(
             name=f"loop_body{lid}",
             initial_arguments=pack([]),
-            body=dgen.Block(
-                result=goto.BranchOp(target=header_self, arguments=pack([next_iv])),
-                args=[iv],
-                captures=[header_self, *op.body.captures],
-            ),
+            body=body_block,
         )
+
+        _resolve_jump_markers(body_block, header_self, header_exit)
 
         # Header: compare, branch to body or %exit.
         hi = Index().constant(op.upper_bound.__constant__.to_json())
@@ -240,13 +290,15 @@ class ControlFlowToGoto(Pass):
         body_block = dgen.Block(
             result=back_br,
             args=body_args,
-            captures=[header_self] + list(op.body.captures),
+            captures=[header_self, header_exit, *op.body.captures],
         )
         body_label = goto.LabelOp(
             name=f"while_body{lid}",
             initial_arguments=pack([]),
             body=body_block,
         )
+
+        _resolve_jump_markers(body_block, header_self, header_exit)
 
         # --- Header: remap condition block args, append conditional branch ---
         for orig, new in zip(op.condition.args, header_args):
