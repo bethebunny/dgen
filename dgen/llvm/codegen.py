@@ -266,7 +266,7 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
             if isinstance(op, (goto.RegionOp, goto.LabelOp)):
                 for arg in op.body.args:
                     ctx.tracker.track_name(arg)
-                for param in op.body.params:
+                for param in op.body.parameters:
                     ctx.tracker.track_name(param)
                     ctx.param_to_owner[param] = op
 
@@ -279,7 +279,7 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                     body_block = f"{op.name}_entry" if has_merge else op.name
 
                     # Region bodies have exactly (self, exit).
-                    self_param, exit_param = op.body.params
+                    self_param, exit_param = op.body.parameters
                     ctx.self_params.add(self_param)
 
                 # Record fall-through entry as a predecessor.
@@ -428,7 +428,7 @@ def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
     Every region body has exactly two parameters: (self, exit).  The exit
     parameter becomes a separate LLVM basic block after the region body.
     """
-    _self_param, exit_param = op.body.params
+    _self_param, exit_param = op.body.parameters
     has_initial_args = bool(unpack(op.initial_arguments))
     has_merge_args = bool(op.body.args) and not has_initial_args
 

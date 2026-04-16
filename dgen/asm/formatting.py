@@ -43,11 +43,19 @@ class SlotTracker:
                 continue
             self.track_name(op)
             for _, block in op.blocks:
-                for param in block.params:
-                    self.track_name(param)
-                for arg in block.args:
-                    self.track_name(arg)
-                self.register(block.ops)
+                self._register_block(block)
+
+    def _register_block(self, block: Block) -> None:
+        self.track_name(block)
+        for param in block.parameters:
+            self.track_name(param)
+        for arg in block.args:
+            self.track_name(arg)
+        for v in block.values:
+            if isinstance(v, Block):
+                self._register_block(v)
+            elif isinstance(v, Op) and not _is_sugar_op(v):
+                self.track_name(v)
 
     def __getitem__(self, value: Value) -> str:
         return self._slots[value]
@@ -57,7 +65,6 @@ class SlotTracker:
             return self._slots[value]
         if value.name is not None and value.name not in self._used:
             name = value.name
-            # If it's a numeric name, advance counter past it
             if name.isdigit():
                 self._counter = max(self._counter, int(name) + 1)
         else:
@@ -96,6 +103,41 @@ def _format_block_arg(arg: BlockArgument | BlockParameter, tracker: SlotTracker)
     return f"%{tracker.track_name(arg)}: {_format_expr(arg.type, tracker)}"
 
 
+def block_asm(
+    block: Block,
+    tracker: SlotTracker,
+    formatted: set[Value],
+) -> Iterable[str]:
+    """Emit a block as a standalone named value with indented body."""
+    if block in formatted:
+        return
+    formatted.add(block)
+
+    name = tracker.track_name(block)
+    type_str = _format_expr(block.type, tracker)
+
+    args_str = ", ".join(_format_block_arg(a, tracker) for a in block.args)
+    header = "block"
+    if block.parameters:
+        params_str = ", ".join(_format_block_arg(p, tracker) for p in block.parameters)
+        header += f"<{params_str}>"
+    header += f"({args_str})"
+    if block.captures:
+        caps_str = ", ".join(f"%{tracker.track_name(v)}" for v in block.captures)
+        header += f" captures({caps_str})"
+    header += ":"
+
+    yield f"%{name} : {type_str} = {header}"
+
+    for v in block.values:
+        if isinstance(v, Block):
+            yield from indent(block_asm(v, tracker, formatted))
+        elif isinstance(v, Op) and not _is_sugar_op(v):
+            yield from indent(op_asm(v, tracker, formatted))
+
+    yield ""
+
+
 def op_asm(
     op: Op,
     tracker: SlotTracker | None = None,
@@ -108,19 +150,13 @@ def op_asm(
         return
     formatted.add(op)
 
-    # If no tracker provided, create one and register this op
     if tracker is None:
         tracker = SlotTracker()
         tracker.register([op])
 
     cls = type(op)
-    block_names = set(op.__blocks__)
     param_parts = [_format_expr(param, tracker) for _, param in op.parameters]
-    operand_parts = [
-        _format_expr(operand, tracker)
-        for name, operand in op.operands
-        if name not in block_names
-    ]
+    operand_parts = [_format_expr(operand, tracker) for _, operand in op.operands]
 
     result_name = tracker.track_name(op)
     type_str = _format_expr(op.type, tracker)
@@ -134,35 +170,4 @@ def op_asm(
         op_str += f"({', '.join(operand_parts)})"
         parts.append(op_str)
 
-    def _format_block_header(name: str, block: Block) -> str:
-        args_str = ", ".join(_format_block_arg(a, tracker) for a in block.args)
-        header = name
-        if block.params:
-            params_str = ", ".join(_format_block_arg(p, tracker) for p in block.params)
-            header += f"<{params_str}>"
-        header += f"({args_str})"
-        if block.captures:
-            caps_str = ", ".join(f"%{tracker.track_name(v)}" for v in block.captures)
-            header += f" captures({caps_str})"
-        return header + ":"
-
-    blocks = list(op.blocks)
-    if blocks:
-        first_block_name, first_block = blocks[0]
-        parts.append(f" {_format_block_header(first_block_name, first_block)}")
-    else:
-        parts.append("")
-
-    line = "".join(parts)
-    yield line
-
-    for block_idx, (block_name, block) in enumerate(blocks):
-        if block_idx > 0:
-            yield _format_block_header(block_name, block)
-        for child_op in block.ops:
-            if _is_sugar_op(child_op):
-                continue
-            yield from indent(op_asm(child_op, tracker, formatted))
-
-    if blocks:
-        yield ""
+    yield "".join(parts)

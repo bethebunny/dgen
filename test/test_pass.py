@@ -154,7 +154,7 @@ def test_block_replace_uses_of_block_parameter_type():
     )
     param = BlockParameter(name="p", type=old_type)
     result = ConstantOp.from_constant(Index().constant(0), name="r")
-    block = dgen.Block(result=result, params=[param])
+    block = dgen.Block(result=result, parameters=[param])
 
     assert param.type is old_type
     block.replace_uses_of(old_type, new_type)

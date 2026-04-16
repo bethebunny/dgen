@@ -9,7 +9,7 @@ from dgen.ir.traversal import all_values, transitive_dependencies
 from dgen.memory import Memory
 from dgen.type import Type, Value
 
-from .formatting import SlotTracker, _is_sugar_op, indent, op_asm
+from .formatting import SlotTracker, _is_sugar_op, block_asm, indent, op_asm
 from .parser import ASMParser, parse, value_expression
 
 
@@ -39,10 +39,12 @@ def asm_with_imports(value: Value) -> Iterator[str]:
         yield ""
 
     tracker = SlotTracker()
-    formatted: set[int] = set()
+    formatted: set[Value] = set()
     for v in transitive_dependencies(value):
-        if isinstance(v, dgen.Op) and not _is_sugar_op(v):
-            yield from op_asm(v, tracker, formatted=formatted)
+        if isinstance(v, dgen.Block):
+            yield from block_asm(v, tracker, formatted)
+        elif isinstance(v, dgen.Op) and not _is_sugar_op(v):
+            yield from op_asm(v, tracker, formatted)
 
 
 def memory_from_asm(type: Type, text: str) -> Memory:

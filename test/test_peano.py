@@ -346,7 +346,6 @@ def test_if_else_parse_roundtrip():
     asm_text = asm.format(value)
     print(asm_text)
     assert "control_flow.if(" in asm_text
-    assert "else" in asm_text
     # Round-trip: parse the output again
     module2 = parse(asm_text)
     asm_text2 = asm.format(module2)

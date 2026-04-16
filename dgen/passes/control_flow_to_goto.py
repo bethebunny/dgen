@@ -189,7 +189,7 @@ class ControlFlowToGoto(Pass):
             type=op.type,
             body=dgen.Block(
                 result=ChainOp(lhs=merge_result, rhs=cond_br, type=op.type),
-                params=[merge_self, merge_exit],
+                parameters=[merge_self, merge_exit],
                 args=[merge_result],
                 captures=[op.condition, *op.then_body.captures, *op.else_body.captures],
             ),
@@ -243,7 +243,7 @@ class ControlFlowToGoto(Pass):
             initial_arguments=pack([lo]),
             body=dgen.Block(
                 result=cond_br,
-                params=[header_self, header_exit],
+                parameters=[header_self, header_exit],
                 args=[header_iv],
                 captures=list(op.body.captures),
             ),
@@ -310,7 +310,7 @@ class ControlFlowToGoto(Pass):
             initial_arguments=op.initial_arguments,
             body=dgen.Block(
                 result=cond_br,
-                params=[header_self, header_exit],
+                parameters=[header_self, header_exit],
                 args=header_args,
                 captures=list(op.condition.captures) + list(op.body.captures),
             ),

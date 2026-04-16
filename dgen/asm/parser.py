@@ -69,7 +69,7 @@ def parse(text: str) -> Value:
         if (name := parser.try_read(_import_line)) is not None:
             parser.scope.import_dialect(Dialect.get(name))
         else:
-            value = parser.read(op_statement)
+            value = parser.read(statement)
     if value is None:
         raise ParseError("parse: no statements in input")
     return value
@@ -248,7 +248,7 @@ def _named_type(parser: ASMParser) -> Type:
 
 def op_expression(
     parser: ASMParser,
-) -> tuple[type[Op], list[object], list[object], list[Block]]:
+) -> tuple[type[Op], list[object], list[object]]:
     name = parser.read(qualified_name)
     op_cls = parser.scope.lookup(name)
     assert issubclass(op_cls, Op)
@@ -260,15 +260,7 @@ def op_expression(
     parser.read("(")
     operands = parser.read_list(value_expression)
     parser.read(")")
-    blocks: list[Block] = []
-    for block_name in op_cls.__blocks__:
-        saved = parser.pos
-        parser._skip_all()
-        if parser.parse_token(_IDENT) != block_name:
-            parser.pos = saved
-            break
-        blocks.append(_read_block_body(parser))
-    return op_cls, parameters, operands, blocks
+    return op_cls, parameters, operands
 
 
 def _make_constant_op(val: object, pre_type: Value, name: str | None) -> ConstantOp:
@@ -281,47 +273,64 @@ def _make_constant_op(val: object, pre_type: Value, name: str | None) -> Constan
     return ConstantOp(value=val, type=pre_type, name=name)
 
 
-def op_statement(parser: ASMParser) -> Op:
+def statement(parser: ASMParser) -> Value:
+    """Parse an SSA statement: op definition or block definition."""
     name = parser.read(ssa_name)
     pre_type = value_expression(parser) if parser.try_read(":") is not None else None
     parser.read("=")
+
+    # Block definition: %name : type = block<params>(args) captures(...):
+    saved = parser.pos
+    kw = parser.parse_token(_IDENT)
+    if kw == "block":
+        block = _read_block_body(parser)
+        block.name = name
+        parser.name_table[name] = block
+        return block
+    parser.pos = saved
+
+    # Constant from literal
     if pre_type is not None and parser.peek() in _LITERAL_START:
         val = value_expression(parser)
         op = _make_constant_op(val, pre_type, name)
         parser.name_table[name] = op
         return op
-    # Type-ASM expressions on the RHS (bare ``Type`` or sugared ``Type(value)``)
-    # — e.g. ``%t : Type = index.Index`` or ``%c : SignedInteger<...> = SignedInteger<...>(42)``.
-    # ``try_read`` backtracks if the RHS isn't a value expression (e.g. it's
-    # actually an op call), so the op-expression branch below still runs.
+    # Type-ASM expression on the RHS
     if pre_type is not None:
         if (val := parser.try_read(value_expression)) is not None:
             op = _make_constant_op(val, pre_type, name)
             parser.name_table[name] = op
             return op
-    op_cls, parameters, operands, blocks = op_expression(parser)
+
+    op_cls, parameters, operands = op_expression(parser)
     if issubclass(op_cls, ConstantOp):
         assert len(operands) == 1
         op = _make_constant_op(operands[0], pre_type, name)
-
         parser.name_table[name] = op
         return op
     kwargs: dict[str, object] = {"name": name}
     if pre_type is not None:
         kwargs["type"] = pre_type
-    block_names = set(op_cls.__blocks__)
     for (param_name, param_type), value in zip(op_cls.__params__, parameters):
         kwargs[param_name] = _coerce(parser, value, param_type)
-    non_block_operands = [
-        (name, typ) for name, typ in op_cls.__operands__ if name not in block_names
-    ]
-    for (field_name, field_type), value in zip(non_block_operands, operands):
+    for (field_name, field_type), value in zip(op_cls.__operands__, operands):
         kwargs[field_name] = _coerce(parser, value, field_type)
-    for block_name, block in zip(op_cls.__blocks__, blocks):
-        kwargs[block_name] = block
+    # Backward compat: if block fields are missing, try inline syntax
+    for block_name in op_cls.__blocks__:
+        if block_name not in kwargs:
+            saved_pos = parser.pos
+            parser._skip_all()
+            if parser.parse_token(_IDENT) == block_name:
+                kwargs[block_name] = _read_block_body(parser)
+            else:
+                parser.pos = saved_pos
     op = op_cls(**kwargs)
     parser.name_table[name] = op
     return op
+
+
+# Keep op_statement as an alias for backward compatibility
+op_statement = statement
 
 
 _B = TypeVar("_B", BlockArgument, BlockParameter)
@@ -430,13 +439,15 @@ def _read_block_body(parser: ASMParser) -> Block:
         raise ParseError("Empty block body")
     saved_indent = parser.block_indent
     parser.block_indent = block_indent
-    last_op: Op | None = None
+    last_value: Value | None = None
     while parser.pos < len(parser.text):
         indent = newline(parser)
         if indent < block_indent:
             break
         parser.pos += indent
-        last_op = op_statement(parser)
+        last_value = statement(parser)
     parser.block_indent = saved_indent
-    assert last_op is not None
-    return Block(result=last_op, args=args, params=block_params, captures=captures)
+    assert last_value is not None
+    return Block(
+        result=last_value, args=args, parameters=block_params, captures=captures
+    )

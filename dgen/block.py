@@ -11,6 +11,25 @@ from dgen.ir.traversal import transitive_dependencies
 from .type import Fields, Memory, TypeType, Value
 
 
+class _InstanceField:
+    """Data descriptor that stores/retrieves from instance __dict__.
+
+    Installed on Block to shadow the inherited Value.parameters property
+    so that Block.parameters behaves as a plain instance attribute.
+    """
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    def __get__(self, obj: object, objtype: type | None = None) -> object:
+        if obj is None:
+            return self
+        return obj.__dict__[self._name]
+
+    def __set__(self, obj: object, value: object) -> None:
+        obj.__dict__[self._name] = value
+
+
 @dataclass(eq=False, kw_only=True)
 class BlockArgument(Value):
     """A runtime block argument — passed by callers at every branch site.
@@ -72,7 +91,7 @@ class Block(Value):
 
     result: dgen.Value
     args: list[BlockArgument] = field(default_factory=list)
-    params: list[BlockParameter] = field(default_factory=list)
+    parameters: list[BlockParameter] = field(default_factory=list)
     captures: list[dgen.Value] = field(default_factory=list)
     name: str | None = None
 
@@ -82,7 +101,7 @@ class Block(Value):
         from dgen.dialects.builtin import Block as BlockType
 
         return BlockType(
-            block_parameters=pack(p.type for p in self.params),
+            block_parameters=pack(p.type for p in self.parameters),
             block_arguments=pack(a.type for a in self.args),
             result_type=self.result.type,
         )
@@ -100,7 +119,7 @@ class Block(Value):
     @property
     def ready(self) -> bool:
         return all(a.type.ready for a in self.args) and all(
-            p.type.ready for p in self.params
+            p.type.ready for p in self.parameters
         )
 
     @property
@@ -127,10 +146,14 @@ class Block(Value):
         for arg in self.args:
             if arg.type is old:
                 arg.type = new
-        for param in self.params:
+        for param in self.parameters:
             if param.type is old:
                 param.type = new
         if self.result is old:
             self.result = new
         # Invalidate cached type since arg/param types or result may have changed
         self.__dict__.pop("type", None)
+
+
+# Shadow Value.parameters property so Block.parameters works as a plain field.
+Block.parameters = _InstanceField("parameters")  # type: ignore[assignment]
