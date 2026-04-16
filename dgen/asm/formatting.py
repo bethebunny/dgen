@@ -18,7 +18,7 @@ from ..type import Value
 
 def indent(it: Iterable[str], prefix: str = "    ") -> Iterable[str]:
     for line in it:
-        yield f"{prefix}{line}"
+        yield f"{prefix}{line}" if line else ""
 
 
 # ===----------------------------------------------------------------------=== #
@@ -160,3 +160,6 @@ def op_asm(
             if _is_sugar_op(child_op):
                 continue
             yield from indent(op_asm(child_op, tracker, formatted))
+
+    if blocks:
+        yield ""

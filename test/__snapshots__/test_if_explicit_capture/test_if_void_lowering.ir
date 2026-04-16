@@ -1,20 +1,21 @@
-import function
 import goto
 import index
 import memory
 
-%main : function.Function<[], Nil> = function.function<Nil>() body():
-    %cond : index.Index = 1
-    %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-    %if0 : Nil = goto.region([]) body<%self: goto.Label, %if_exit0: goto.Label>(%if_result0: Nil) captures(%cond, %alloc, %alloc):
-        %if_then0 : goto.Label = goto.label([]) body() captures(%self, %alloc):
-            %t : index.Index = 42
-            %_ : Nil = memory.store(%alloc, %t, %alloc)
-            %0 : Nil = goto.branch<%self>([%_])
-        %if_else0 : goto.Label = goto.label([]) body() captures(%self, %alloc):
-            %f : index.Index = 99
-            %1 : Nil = memory.store(%alloc, %f, %alloc)
-            %2 : Nil = goto.branch<%self>([%1])
-        %3 : Nil = goto.conditional_branch<%if_then0, %if_else0>(%cond, [], [])
-        %4 : Nil = chain(%if_result0, %3)
-    %result : index.Index = memory.load(%if0, %alloc)
+%cond : index.Index = 1
+%alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+%if0 : Nil = goto.region([]) body<%self: goto.Label, %if_exit0: goto.Label>(%if_result0: Nil) captures(%cond, %alloc, %alloc):
+    %if_then0 : goto.Label = goto.label([]) body() captures(%self, %alloc):
+        %t : index.Index = 42
+        %_ : Nil = memory.store(%alloc, %t, %alloc)
+        %0 : Nil = goto.branch<%self>([%_])
+
+    %if_else0 : goto.Label = goto.label([]) body() captures(%self, %alloc):
+        %f : index.Index = 99
+        %1 : Nil = memory.store(%alloc, %f, %alloc)
+        %2 : Nil = goto.branch<%self>([%1])
+
+    %3 : Nil = goto.conditional_branch<%if_then0, %if_else0>(%cond, [], [])
+    %4 : Nil = chain(%if_result0, %3)
+
+%result : index.Index = memory.load(%if0, %alloc)

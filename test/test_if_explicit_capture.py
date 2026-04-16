@@ -111,19 +111,17 @@ def test_if_void_lowering(ir_snapshot):
     """Void if (side-effect only) lowers to the same structure as value ifs."""
     ir = strip_prefix("""
         | import control_flow
-        | import function
         | import index
         | import memory
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-        |     %cond : index.Index = 1
-        |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
-        |         %t : index.Index = 42
-        |         %_ : Nil = memory.store(%alloc, %t, %alloc)
-        |     else_body() captures(%alloc):
-        |         %f : index.Index = 99
-        |         %_ : Nil = memory.store(%alloc, %f, %alloc)
-        |     %result : index.Index = memory.load(%if, %alloc)
+        | %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        | %cond : index.Index = 1
+        | %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
+        |     %t : index.Index = 42
+        |     %_ : Nil = memory.store(%alloc, %t, %alloc)
+        | else_body() captures(%alloc):
+        |     %f : index.Index = 99
+        |     %_ : Nil = memory.store(%alloc, %f, %alloc)
+        | %result : index.Index = memory.load(%if, %alloc)
     """)
     value = parse(ir)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)

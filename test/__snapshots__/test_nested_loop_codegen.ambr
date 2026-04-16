@@ -2,7 +2,7 @@
 # name: test_nested_loop_llvm_ir
   '''
   
-  define void @test() {
+  define label @main() {
   entry:
     br label %loop_header0
   loop_header0:
@@ -28,7 +28,7 @@
     %_19 = icmp slt i64 %i0, 2
     br i1 %_19, label %loop_body0, label %exit0
   exit0:
-    ret void
+    ret label %i0
   }
   '''
 # ---

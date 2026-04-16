@@ -10,39 +10,33 @@ from dgen.testing import strip_prefix
 
 
 IR = strip_prefix("""
-    | import function
     | import ndbuffer
     | import number
     | import toy
     | import index
     |
-    | %main : function.Function<[], Nil> = function.function<Nil>() body():
-    |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    |     %1 : Nil = toy.print(%0)
+    | %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    | %1 : Nil = toy.print(%0)
 """)
 
 IR_RENAMED = strip_prefix("""
-    | import function
     | import ndbuffer
     | import number
     | import toy
     | import index
     |
-    | %main : function.Function<[], Nil> = function.function<Nil>() body():
-    |     %tensor : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    |     %result : Nil = toy.print(%tensor)
+    | %tensor : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    | %result : Nil = toy.print(%tensor)
 """)
 
 IR_DIFFERENT = strip_prefix("""
-    | import function
     | import ndbuffer
     | import number
     | import toy
     | import index
     |
-    | %main : function.Function<[], Nil> = function.function<Nil>() body():
-    |     %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
-    |     %1 : Nil = toy.print(%0)
+    | %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [9.0, 9.0, 9.0, 9.0, 9.0, 9.0]
+    | %1 : Nil = toy.print(%0)
 """)
 
 
@@ -52,7 +46,7 @@ def test_serialize_produces_ir_text(ir_snapshot):
     value = parse(IR)
     result = ext.serialize(value)
     assert "toy.print" in result
-    assert "function" in result
+    assert "toy.Tensor" in result
 
 
 def test_matches_graph_equivalent(ir_snapshot):

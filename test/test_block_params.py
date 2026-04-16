@@ -77,14 +77,11 @@ def test_roundtrip_label_params_no_args():
 def test_verify_block_param_in_scope():
     """An op that references a block parameter must pass verify_closed_blocks."""
     ir = strip_prefix("""
-        | import function
         | import index
         | import goto
-        | import index
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
-        |         %zero : index.Index = 0
+        | %exit : goto.Label = goto.label([]) body<%self: goto.Label>():
+        |     %zero : index.Index = 0
     """)
     from dgen.ir.verification import verify_closed_blocks
 

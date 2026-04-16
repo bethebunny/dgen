@@ -14,12 +14,10 @@ from dgen.testing import strip_prefix
 def test_unhandled_op_raises():
     """Codegen raises ValueError for ops it cannot emit, not silent drop."""
     ir = strip_prefix("""
-        | import function
         | import index
         | import ndbuffer
         | import number
-        | %main : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %a : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(1)>([2]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<index.Index(1)>([2]))
+        | %a : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(1)>([2]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<index.Index(1)>([2]))
     """)
     value = parse(ir)
     # ndbuffer.alloc has no lowering in codegen (needs NDBufferToMemory first),
@@ -38,14 +36,12 @@ def test_empty_non_label_group_in_mixed_block():
     # triggers _make_synth with potentially empty groups.
     ir = strip_prefix("""
         | import algebra
-        | import function
         | import goto
         | import index
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %lbl : goto.Label = goto.label([]) body<%self: goto.Label, %exit: goto.Label>(%iv: index.Index):
-        |         %one : index.Index = 1
-        |         %next : index.Index = algebra.add(%iv, %one)
-        |         %br : Nil = goto.branch<%self>([%next])
+        | %lbl : goto.Label = goto.label([]) body<%self: goto.Label, %exit: goto.Label>(%iv: index.Index):
+        |     %one : index.Index = 1
+        |     %next : index.Index = algebra.add(%iv, %one)
+        |     %br : Nil = goto.branch<%self>([%next])
     """)
     value = parse(ir)
     exe = Compiler(

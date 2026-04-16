@@ -15,7 +15,7 @@ from .parser import ASMParser, parse, value_expression
 
 def format(value: Value) -> str:
     """Format a value as ASM text with dialect ``import`` lines."""
-    return "\n".join(asm_with_imports(value))
+    return "\n".join(asm_with_imports(value)).rstrip("\n") + "\n"
 
 
 def asm_with_imports(value: Value) -> Iterator[str]:
@@ -43,7 +43,6 @@ def asm_with_imports(value: Value) -> Iterator[str]:
     for v in transitive_dependencies(value):
         if isinstance(v, dgen.Op) and not _is_sugar_op(v):
             yield from op_asm(v, tracker, formatted=formatted)
-            yield ""
 
 
 def memory_from_asm(type: Type, text: str) -> Memory:

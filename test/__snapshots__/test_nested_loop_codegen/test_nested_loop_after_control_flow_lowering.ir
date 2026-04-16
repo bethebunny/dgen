@@ -1,25 +1,26 @@
 import algebra
-import function
 import goto
 import index
 import number
 
-%test : function.Function<[], Nil> = function.function<Nil>() body():
-    %0 : index.Index = 0
-    %loop_header0 : goto.Label = goto.region([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
-        %loop_body0 : goto.Label = goto.label([]) body(%i: index.Index) captures(%self):
-            %1 : index.Index = algebra.add(%i, index.Index(1))
-            %2 : index.Index = 0
-            %loop_header1 : goto.Label = goto.region([%2]) body<%3: goto.Label, %exit1: goto.Label>(%i1: index.Index):
-                %loop_body1 : goto.Label = goto.label([]) body(%j: index.Index) captures(%3):
-                    %4 : index.Index = algebra.add(%j, index.Index(1))
-                    %5 : index.Index = 0
-                    %6 : Nil = chain(%5, %5)
-                    %7 : index.Index = chain(%4, %6)
-                    %8 : Nil = goto.branch<%3>([%7])
-                %9 : number.Boolean = algebra.less_than(%i1, index.Index(2))
-                %10 : Nil = goto.conditional_branch<%loop_body1, %exit1>(%9, [%i1], [])
-            %11 : index.Index = chain(%1, %loop_header1)
-            %12 : Nil = goto.branch<%self>([%11])
-        %13 : number.Boolean = algebra.less_than(%i0, index.Index(2))
-        %14 : Nil = goto.conditional_branch<%loop_body0, %exit0>(%13, [%i0], [])
+%0 : index.Index = 0
+%loop_header0 : goto.Label = goto.region([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
+    %loop_body0 : goto.Label = goto.label([]) body(%i: index.Index) captures(%self):
+        %1 : index.Index = algebra.add(%i, index.Index(1))
+        %2 : index.Index = 0
+        %loop_header1 : goto.Label = goto.region([%2]) body<%3: goto.Label, %exit1: goto.Label>(%i1: index.Index):
+            %loop_body1 : goto.Label = goto.label([]) body(%j: index.Index) captures(%3):
+                %4 : index.Index = algebra.add(%j, index.Index(1))
+                %5 : index.Index = 0
+                %6 : Nil = chain(%5, %5)
+                %7 : index.Index = chain(%4, %6)
+                %8 : Nil = goto.branch<%3>([%7])
+
+            %9 : number.Boolean = algebra.less_than(%i1, index.Index(2))
+            %10 : Nil = goto.conditional_branch<%loop_body1, %exit1>(%9, [%i1], [])
+
+        %11 : index.Index = chain(%1, %loop_header1)
+        %12 : Nil = goto.branch<%self>([%11])
+
+    %13 : number.Boolean = algebra.less_than(%i0, index.Index(2))
+    %14 : Nil = goto.conditional_branch<%loop_body0, %exit0>(%13, [%i0], [])

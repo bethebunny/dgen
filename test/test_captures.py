@@ -74,15 +74,12 @@ def test_verify_captured_block_arg_in_scope():
 def test_verify_captured_block_parameter():
     """A nested block can capture a block parameter from an enclosing block."""
     ir = strip_prefix("""
-        | import function
         | import index
         | import goto
-        | import index
         |
-        | %f : function.Function<[], Nil> = function.function<Nil>() body():
-        |     %header : goto.Label = goto.label([]) body<%self: goto.Label>():
-        |         %body : goto.Label = goto.label([]) body() captures(%self):
-        |             %0 : Nil = goto.branch<%self>([])
+        | %header : goto.Label = goto.label([]) body<%self: goto.Label>():
+        |     %body : goto.Label = goto.label([]) body() captures(%self):
+        |         %0 : Nil = goto.branch<%self>([])
     """)
     verify_closed_blocks(parse(ir))
 
