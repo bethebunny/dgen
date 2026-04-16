@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Block, Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
+from dgen.dialects.builtin import Never, Nil
 from dgen.dialects.index import Index
 
 control_flow = Dialect("control_flow")
@@ -33,3 +33,11 @@ class IfOp(Op):
     then_body: Block
     else_body: Block
     type: Type
+
+@dataclass(eq=False)
+class BreakOp(Op):
+    type: Type = Never()
+
+@dataclass(eq=False)
+class ContinueOp(Op):
+    type: Type = Never()

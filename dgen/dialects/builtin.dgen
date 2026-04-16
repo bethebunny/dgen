@@ -3,6 +3,9 @@ from index import Index
 type Nil:
     layout Void
 
+type Never:
+    layout Void
+
 type String:
     layout String
 

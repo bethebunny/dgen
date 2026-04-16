@@ -505,6 +505,53 @@ class TestEndToEnd:
         )
 
 
+class TestBreakContinue:
+    """Brick 6.5: break and continue in loops."""
+
+    def test_break_exits_loop(self) -> None:
+        """while(1) { break; } completes immediately."""
+        assert (
+            run_c("int f() { int x = 0; while (1) { x = 42; break; } return x; }") == 42
+        )
+
+    def test_break_in_if(self) -> None:
+        """Sum until i==3, then break."""
+        assert (
+            run_c(
+                "int f() { int s = 0; int i = 0;"
+                " while (i < 10) { if (i == 3) { break; } s = s + i; i = i + 1; }"
+                " return s; }"
+            )
+            == 3  # 0+1+2
+        )
+
+    def test_nested_break(self) -> None:
+        """Inner break doesn't exit outer loop."""
+        assert (
+            run_c(
+                "int f() { int s = 0; int i = 0;"
+                " while (i < 3) {"
+                "   int j = 0;"
+                "   while (j < 10) { if (j == 2) { break; } j = j + 1; }"
+                "   s = s + j; i = i + 1;"
+                " } return s; }"
+            )
+            == 6  # 2+2+2
+        )
+
+    def test_continue_while(self) -> None:
+        """Continue skips the rest of the body."""
+        assert (
+            run_c(
+                "int f() { int s = 0; int i = 0;"
+                " while (i < 5) {"
+                "   i = i + 1; if (i == 3) { continue; } s = s + i;"
+                " } return s; }"
+            )
+            == 12  # 1+2+4+5
+        )
+
+
 class TestMemoryOrdering:
     """Structural tests for the use-def ordering of memory operations."""
 
