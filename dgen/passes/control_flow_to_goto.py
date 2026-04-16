@@ -82,36 +82,35 @@ def _resolve_jump_markers(
     block: dgen.Block,
     self_param: BlockParameter,
     exit_param: BlockParameter,
-) -> None:
+) -> set[BlockParameter]:
     """Replace BreakOp/ContinueOp with goto.BranchOp targeting exit/self.
 
     Recurses into child blocks but skips nested WhileOp/ForOp bodies —
     inner loops resolve their own markers when they are lowered.
-    Adds captures at each nesting level so the branch targets are accessible.
+    Returns the set of parameters that needed to be captured.
     """
-    replacements: list[tuple[dgen.Value, dgen.Value]] = []
-    child_needs_captures = False
-    for v in list(block.values):
+    needed: set[BlockParameter] = set()
+    for v in block.values:
         if isinstance(v, control_flow.BreakOp):
-            replacements.append(
-                (v, goto.BranchOp(target=exit_param, arguments=pack([])))
+            block.replace_uses_of(
+                v, goto.BranchOp(target=exit_param, arguments=pack([]))
             )
+            needed.add(exit_param)
         elif isinstance(v, control_flow.ContinueOp):
-            replacements.append(
-                (v, goto.BranchOp(target=self_param, arguments=pack([])))
+            block.replace_uses_of(
+                v, goto.BranchOp(target=self_param, arguments=pack([]))
             )
+            needed.add(self_param)
         elif not isinstance(v, (control_flow.WhileOp, control_flow.ForOp)):
             for _, child_block in v.blocks:
-                prev_len = len(child_block.captures)
-                _resolve_jump_markers(child_block, self_param, exit_param)
-                if len(child_block.captures) > prev_len:
-                    child_needs_captures = True
-    if replacements or child_needs_captures:
-        for param in (exit_param, self_param):
-            if param not in block.captures and param not in block.parameters:
-                block.captures.append(param)
-    for old, new in replacements:
-        block.replace_uses_of(old, new)
+                child_needed = _resolve_jump_markers(
+                    child_block, self_param, exit_param
+                )
+                for param in child_needed:
+                    if param not in child_block.captures:
+                        child_block.captures.append(param)
+                needed |= child_needed
+    return needed
 
 
 class ControlFlowToGoto(Pass):
