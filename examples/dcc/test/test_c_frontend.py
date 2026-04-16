@@ -715,6 +715,31 @@ class TestFunctionCalls:
         """pycparser accepts `...` in prototypes; lowering omits it."""
         run_c('int printf(const char *fmt, ...); int f(void) { return printf("hi"); }')
 
+    def test_discarded_call_is_reachable(self) -> None:
+        """A call whose return value is discarded must still be reachable
+        from block.result. Without effect threading, the first call here
+        would be dropped as dead code."""
+        ir = lower(
+            parse_c_string(
+                "int g(int x) { return x + 1; } int f(int x) { g(x); return g(x) + 2; }"
+            )
+        )
+        f_calls = [op for op in ir.body.values if isinstance(op, function.CallOp)]
+        assert len(f_calls) == 2
+        reachable = set(transitive_dependencies(ir.body.result))
+        for call in f_calls:
+            assert call in reachable, f"CallOp {call} not reachable"
+
+    def test_void_call_statement_preserved(self) -> None:
+        """A bare void call in statement position (non-final) must appear
+        in the lowered function body — it's the only observable evidence
+        that the callee ran."""
+        ir = lower(parse_c_string("void g(int x); int f(int x) { g(x); return x; }"))
+        f_calls = [op for op in ir.body.values if isinstance(op, function.CallOp)]
+        assert len(f_calls) == 1
+        reachable = set(transitive_dependencies(ir.body.result))
+        assert f_calls[0] in reachable
+
     @pytest.mark.xfail(
         reason="indirect calls through function pointers not implemented"
     )

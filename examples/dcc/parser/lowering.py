@@ -426,19 +426,39 @@ class Parser:
         Stops processing on _Return (propagated upward) or jump ops
         (BreakOp, ContinueOp — remaining statements are dead code).
         Preceding effects are chained into the jump so they execute first.
+
+        Side-effecting ops with no scope-tracked consumer (function calls
+        in statement position) would otherwise be unreachable from the
+        compound's result. They accumulate in ``pending`` and chain into
+        the block's final value as use-def dependencies.
         """
         last: dgen.Value | None = None
+        pending: list[dgen.Value] = []
         if node.block_items:
             for item in node.block_items:
                 result = self._statement(item, scope)
                 if isinstance(result, _Return):
-                    return result
+                    if last is not None and _is_orphan_effect(last):
+                        pending.append(last)
+                    value = result.value
+                    for effect in pending:
+                        value = ChainOp(lhs=value, rhs=effect, type=value.type)
+                    return _Return(value)
                 if isinstance(result.type, Never):
+                    # last (if present) is the primary value; the jump and
+                    # any pending effects become its use-def dependencies.
                     if last is not None:
-                        return ChainOp(lhs=last, rhs=result, type=result.type)
+                        result = ChainOp(lhs=last, rhs=result, type=result.type)
+                    for effect in pending:
+                        result = ChainOp(lhs=result, rhs=effect, type=result.type)
                     return result
+                if last is not None and _is_orphan_effect(last):
+                    pending.append(last)
                 last = result
-        return last if last is not None else Nil().constant(None)
+        final = last if last is not None else Nil().constant(None)
+        for effect in pending:
+            final = ChainOp(lhs=final, rhs=effect, type=final.type)
+        return final
 
     # --- Statements ---
 
@@ -851,6 +871,14 @@ class _Return:
 
     def __init__(self, value: dgen.Value) -> None:
         self.value = value
+
+
+def _is_orphan_effect(value: dgen.Value) -> bool:
+    """True for statement-position ops whose side effects aren't
+    preserved by any other thread (variable scope ordering, control
+    flow, etc.). Function calls are the canonical case — a bare
+    ``g(x);`` statement would otherwise be dead."""
+    return isinstance(value, function.CallOp)
 
 
 # ---------------------------------------------------------------------------
