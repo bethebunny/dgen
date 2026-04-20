@@ -1,0 +1,24 @@
+import algebra
+import control_flow
+import function
+import goto
+import index
+import number
+
+%f : function.Function<[number.Boolean], index.Index> = function.function<index.Index>() body(%cond: number.Boolean):
+    %try0 : index.Index = goto.region([]) body<%self: goto.Label, %try_exit0: goto.Label>(%try_result0: index.Index) captures(%cond):
+        %except0 : goto.Label = goto.label([]) body(%err: index.Index) captures(%self):
+            %one : index.Index = 1
+            %rec : index.Index = algebra.add(%err, %one)
+            %0 : Nil = goto.branch<%self>([%rec])
+
+        %out : index.Index = control_flow.if(%cond, [], []) then_body() captures(%except0):
+            %val : index.Index = 99
+            %1 : Nil = goto.branch<%except0>([%val])
+        else_body():
+            %five : index.Index = 5
+
+        %ten : index.Index = 10
+        %chained : index.Index = algebra.add(%out, %ten)
+        %2 : Nil = goto.branch<%self>([%chained])
+

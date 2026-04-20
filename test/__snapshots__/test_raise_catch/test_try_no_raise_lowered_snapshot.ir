@@ -1,0 +1,6 @@
+import algebra
+import index
+
+%one : index.Index = 1
+%two : index.Index = 2
+%sum : index.Index = algebra.add(%one, %two)

@@ -39,26 +39,47 @@ Every observable effect has:
 
 Primitive ops take `Some<Handler<E>>` as a parameter. Handler-introducing ops accept a body block where the handler is in scope.
 
-### Raise and catch
+### Try and raise
 
 ```
 type Raise<error_type: Type>:
-    data: Nil
+    layout Void
     has trait Effect
 
-op raise<handler: Some<Handler<Raise<error_type>>>>(error: error_type) -> Never
+type RaiseHandler<error_type: Type>:
+    layout Void
+    has trait Handler<Raise<error_type>>
 
-op catch<error_type: Type>:
-    body body<handler: Some<Handler<Raise<error_type>>>>()
-    body on_raise(error: error_type)
+op raise<error_type: Type>(handler: RaiseHandler, error: error_type) -> Never
+
+op try<error_type: Type>():
+    block body
+    block except
 ```
 
 Semantics:
 
-- `raise(error)` unconditionally transfers control to the handler.
-- `catch` runs the body block with a fresh handler in scope. If the body completes normally, its result is the catch's result. If the body (or any transitive op using the in-scope handler) invokes raise, control transfers to `on_raise` with the error; its result is the catch's result.
-- Both blocks must have compatible result types. `T` and `Never` are compatible; the catch's result type is `T`.
-- Handlers are values. They can be captured. If `on_raise` captures a handler from an outer catch, it may invoke raise through that handler; nested handling falls out of normal scoping.
+- `try` runs `body` with a fresh `RaiseHandler<error_type>` bound to the
+  body block's compile-time `handler` parameter. If the body completes
+  normally its result is the try's value; if any raise targeting this
+  handler fires, control transfers to `except` with `error` as the block
+  argument, and `except`'s result is the try's value.
+- Body and `except` must produce values of compatible types. `T` and
+  `Never` are compatible; the try's result type is `T`.
+- `raise<handler>(error)` unconditionally transfers control to the
+  `except` block of the `try` that produced `handler`. Its result type
+  is `Never` — no ops downstream of a raise execute on that path.
+- Handlers are values. They can be captured by nested blocks (inner
+  tries, `if`/loop bodies). Handler resolution is by object identity on
+  the block parameter; lowering replaces each raise with a direct
+  branch — no runtime dispatch, no evidence value at codegen.
+- A `raise` whose handler has no enclosing `try` (an undischarged effect)
+  is rejected at the lowering pass with a clear error, not silently
+  lowered to UB. See "Functions" below for v1's locality rule.
+
+We name the blocks `body`/`except` to mirror Python/Mojo. `except` is a
+Python keyword; the framework keeps the name in the IR's ASM surface and
+maps to the keyword-safe attribute `except_` for Python dot access.
 
 ### Composite "may-raise" ops
 
@@ -77,13 +98,24 @@ No "may-raise" annotation on the primitive IR. The raise is local and explicit.
 
 ### Lowering
 
-Raise/catch lowers to CPS via the goto dialect. Each `catch` becomes:
+Try/raise lowers to CPS via the goto dialect. Each `try` becomes:
 
-- A `goto.label` for the on_raise block.
-- A `goto.region` for the body, with the handler parameter bound to a value that captures the on_raise label.
-- Each `raise<handler>(error)` in the body becomes a `goto.branch` to the handler's associated label, passing error as the block argument.
+- A `goto.region` wrapping a merge point typed `T` (the try's result type).
+- A `goto.label` for the `except` block, whose body terminates with a
+  `goto.branch` to the region's merge (passing `except.result` as the
+  value).
+- The body is inlined in the region. If its result is non-`Never`, a
+  terminating `goto.branch` to the merge is appended. Every
+  `raise<handler>(error)` in the body (or in an inner try's `except` that
+  captured this handler) becomes a `goto.branch` targeting the `except`
+  label, passing `error` as the block argument.
 
-The handler value, as a compile-time parameter, is resolved to its originating catch during lowering; the `raise` op becomes a direct branch. No runtime dispatch. No evidence value survives codegen.
+Handler resolution is compile-time via object identity on the body's
+`handler` block parameter. A `raise` whose handler resolves outside the
+current try is left for the enclosing try to rewrite. Any `raise` still
+present after the pass (the handler has no enclosing try) is an
+undischarged effect — the pass raises `UndischargedEffectError` with the
+offending op, so codegen never sees an un-lowered raise.
 
 ## Functions
 
