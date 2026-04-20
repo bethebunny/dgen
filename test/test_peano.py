@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from dataclasses import dataclass
+from collections.abc import Iterator
 from typing import ClassVar
 
 import dgen
@@ -39,24 +40,35 @@ peano = Dialect("peano")
 
 
 @peano.trait("Natural")
+@dataclass(frozen=True, eq=False)
 class Natural(Trait):
     """A trait for Peano number types (Zero, Successor)."""
 
-    pass
+    __layout__ = layout.Void()
 
 
 @peano.type("Zero")
 @dataclass(frozen=True, eq=False)
-class Zero(Natural, Type):
+class Zero(Type):
     __layout__ = layout.Void()
+
+    @property
+    def traits(self) -> Iterator[Type]:
+        yield Natural()
+        yield from super().traits
 
 
 @peano.type("Successor")
 @dataclass(frozen=True, eq=False)
-class Successor(Natural, Type):
+class Successor(Type):
     pred: Value[TypeType]
     __params__: ClassVar[Fields] = (("pred", TypeType),)
     __layout__ = layout.Void()
+
+    @property
+    def traits(self) -> Iterator[Type]:
+        yield Natural()
+        yield from super().traits
 
 
 def count_nat(t: Type) -> int:
@@ -147,13 +159,13 @@ def test_natural_trait_is_registered():
 
 
 def test_zero_has_natural_trait():
-    """Zero implements Natural via MRO inheritance."""
-    assert Zero().has_trait(Natural)
+    """Zero declares the Natural trait."""
+    assert Zero().has_trait(Natural())
 
 
 def test_successor_has_natural_trait():
-    """Successor implements Natural via MRO inheritance."""
-    assert Successor(pred=Zero()).has_trait(Natural)
+    """Successor declares the Natural trait."""
+    assert Successor(pred=Zero()).has_trait(Natural())
 
 
 def test_zero_type_has_natural_trait_via_asm():
@@ -174,7 +186,7 @@ def test_zero_type_has_natural_trait_via_asm():
     assert isinstance(zero_op, ZeroOp)
     # ZeroOp produces a type value — the result type is TypeType.
     # The produced type (Zero) has trait Natural.
-    assert Zero().has_trait(Natural)
+    assert Zero().has_trait(Natural())
 
 
 def test_recursive_type_roundtrip():

@@ -84,17 +84,23 @@ class ExpressionConstraint(Constraint):
 
 @dataclass
 class HasTraitConstraint(Constraint):
-    """requires lhs has trait AddMagma"""
+    """requires lhs has trait AddMagma (or Handler<Raise<E>>)."""
 
     lhs: str
-    trait: str
+    trait: TypeRef
 
 
 @dataclass
 class TraitDecl:
-    """A trait declaration with optional static fields."""
+    """A trait declaration with optional params and static fields.
+
+    Parametric traits (``trait Handler<effect_type: Effect>``) look exactly
+    like parametric types at the grammar level; the ``trait`` keyword only
+    tags intent — the builder gives them ``layout Void`` by default.
+    """
 
     name: str
+    params: list[ParamDecl] = field(default_factory=list)
     statics: list[StaticField] = field(default_factory=list)
 
 
@@ -106,7 +112,7 @@ class TypeDecl:
     params: list[ParamDecl] = field(default_factory=list)
     data: list[DataField] = field(default_factory=list)
     layout: str | None = None
-    traits: list[str] = field(default_factory=list)
+    traits: list[TypeRef] = field(default_factory=list)
     statics: list[StaticField] = field(default_factory=list)
     constraints: list[Constraint] = field(default_factory=list)
 
@@ -120,7 +126,7 @@ class OpDecl:
     operands: list[OperandDecl] = field(default_factory=list)
     return_type: TypeRef | None = None
     blocks: list[str] = field(default_factory=list)
-    traits: list[str] = field(default_factory=list)
+    traits: list[TypeRef] = field(default_factory=list)
     constraints: list[Constraint] = field(default_factory=list)
 
 

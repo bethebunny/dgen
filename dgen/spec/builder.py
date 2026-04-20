@@ -14,9 +14,12 @@ from pathlib import Path
 
 import dgen
 from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
+from dgen.ir.constraints import TraitConstraint
 from dgen.trait import Trait
+from dgen.type import py_attr_name
 from dgen.spec.ast import (
     DgenFile,
+    HasTraitConstraint,
     OpDecl,
     TraitDecl,
     TypeDecl,
@@ -221,30 +224,108 @@ def _make_type_default(
         return None
 
 
-def _build_trait(td: TraitDecl, dialect: Dialect, ns: dict[str, object]) -> type:
-    trait_ns: dict[str, object] = {"__module__": ns.get("__name__", "")}
-    annotations = {sf.name: sf.type.name for sf in td.statics if sf.default is None}
-    trait_ns.update(
-        {
-            sf.name: _ast.literal_eval(sf.default)
-            for sf in td.statics
-            if sf.default is not None
-        }
+def _trait_fn(
+    ref: TypeRef,
+    ns: dict[str, object],
+    instance_params: set[str],
+) -> Callable[[object], object]:
+    """Return a ``(self) -> Type instance`` closure for a trait reference.
+
+    - ``Numeric``                → ``lambda self: Numeric()``
+    - ``Handler<Raise<E>>``      → ``lambda self: Handler(effect_type=Raise(error_type=self.E))``
+      (closure reads the declaring class's ``E`` attribute at call time)
+    - Bare instance-param name like ``error_type`` → ``lambda self: self.error_type``
+
+    No ``_DeferredTrait`` / ``_InstanceParam`` wrappers needed — the closure
+    itself handles deferral, and a purely-static closure just ignores self.
+    """
+    if ref.name in instance_params and not ref.args:
+        pname = ref.name
+        return lambda self, _n=pname: getattr(self, _n)
+    cls = _resolve_type(ref.name, ns)
+    if not ref.args:
+        return lambda self, _c=cls: _c()
+    param_names = [p_name for p_name, _ in getattr(cls, "__params__", ())]
+    if len(param_names) != len(ref.args):
+        raise TypeError(
+            f"{ref.name}<...> expects {len(param_names)} args, got {len(ref.args)}"
+        )
+    arg_fns = [_trait_fn(a, ns, instance_params) for a in ref.args]
+    return lambda self, _c=cls, _pn=param_names, _af=arg_fns: _c(
+        **{pn: fn(self) for pn, fn in zip(_pn, _af)}
     )
-    if annotations:
-        trait_ns["__annotations__"] = annotations
-    cls = type(td.name, (Trait,), trait_ns)
-    dialect.type(td.name)(cls)
-    return cls
 
 
-def _build_type(td: TypeDecl, dialect: Dialect, ns: dict[str, object]) -> type:
+def _install_traits_property(
+    cls: type,
+    trefs: list[TypeRef],
+    ns: dict[str, object],
+    instance_params: set[str],
+) -> None:
+    """Install a ``traits`` property on *cls* that yields this class's declared
+    traits and chains to ``super().traits``.
+
+    Has to run after the class object exists so the closure can bind it as
+    the explicit ``super()`` reference: a generated method has no class-body
+    scope for the implicit ``super()`` to read ``__class__`` from.
+    """
+    if not trefs:
+        return
+    fns = [_trait_fn(tref, ns, instance_params) for tref in trefs]
+
+    def traits(self: object) -> object:
+        for fn in fns:
+            yield fn(self)
+        yield from super(cls, self).traits
+
+    cls.traits = property(traits)  # type: ignore[attr-defined]
+
+
+def _compile_constraint(
+    constraint: object,
+    ns: dict[str, object],
+    instance_params: set[str],
+) -> object:
+    """Compile a spec-AST constraint into its IR-level form.
+
+    For now only ``HasTraitConstraint`` has an IR-level form (it's the only
+    constraint that ``verify_constraints`` actually checks today). Other
+    constraint kinds pass through unchanged.
+    """
+    if isinstance(constraint, HasTraitConstraint):
+        build_target = _trait_fn(constraint.trait, ns, instance_params)
+        return TraitConstraint(
+            subject=constraint.lhs,
+            build_target=build_target,  # type: ignore[arg-type]
+        )
+    return constraint
+
+
+def _build_type(
+    td: TypeDecl | TraitDecl,
+    dialect: Dialect,
+    ns: dict[str, object],
+    *,
+    base: type = Type,
+    default_layout: layout.Layout | None = None,
+) -> type:
+    """Build a Type or Trait class.
+
+    Traits are types: same params/statics machinery, same ``traits``
+    property installation. The differences are local — base class (``Type``
+    or ``Trait``) and layout default — passed in by the caller.
+    ``TraitDecl`` carries no ``data``/``layout``/``traits``/``constraints``;
+    those branches noop for traits via the AST attributes that aren't
+    populated.
+    """
     resolved_params = {p.name: _resolve_param_type(p.type, ns) for p in td.params}
 
     type_ns: dict[str, object] = {"__module__": ns.get("__name__", "")}
     annotations: dict[str, str] = {}
 
-    layout_val = _make_layout(td, ns)
+    layout_val = (
+        _make_layout(td, ns) if isinstance(td, TypeDecl) else None
+    ) or default_layout
     if layout_val is not None:
         type_ns["__layout__"] = layout_val
 
@@ -273,16 +354,30 @@ def _build_type(td: TypeDecl, dialect: Dialect, ns: dict[str, object]) -> type:
             if sf.default is not None
         }
     )
-    if td.constraints:
-        type_ns["__constraints__"] = tuple(td.constraints)
+    constraints = getattr(td, "constraints", ())
+    if constraints:
+        instance_params_for_constraints = {p.name for p in td.params}
+        type_ns["__constraints__"] = tuple(
+            _compile_constraint(c, ns, instance_params_for_constraints)
+            for c in constraints
+        )
 
     if annotations:
         type_ns["__annotations__"] = annotations
 
-    bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in td.traits) + (Type,)
-    cls = dataclasses.dataclass(eq=False)(type(td.name, bases, type_ns))
+    cls = dataclasses.dataclass(eq=False)(type(td.name, (base,), type_ns))
+    # Traits are NEVER base classes — ``has trait T<...>`` installs a
+    # ``traits`` property that yields T(...) and chains to ``super().traits``.
+    instance_params = {p.name for p in td.params}
+    type_traits = getattr(td, "traits", ())
+    _install_traits_property(cls, type_traits, ns, instance_params)
     dialect.type(td.name)(cls)
     return cls
+
+
+def _build_trait(td: TraitDecl, dialect: Dialect, ns: dict[str, object]) -> type:
+    """Trait declaration: a Type with ``layout Void`` by default."""
+    return _build_type(td, dialect, ns, base=Trait, default_layout=layout.Void())
 
 
 def _build_op(
@@ -311,7 +406,7 @@ def _build_op(
 
     # Blocks come before `type` so that any default value on `type` is a
     # trailing default — required now that we no longer emit kw_only=True.
-    annotations.update({block_name: "Block" for block_name in od.blocks})
+    annotations.update({py_attr_name(block_name): "Block" for block_name in od.blocks})
 
     annotations["type"] = "Type"
     ret = od.return_type
@@ -328,18 +423,36 @@ def _build_op(
             (p.name, resolved_params[p.name]) for p in od.params
         )
     if od.operands:
+        param_name_set = {p.name for p in od.params}
         op_ns["__operands__"] = tuple(
-            (op.name, _resolve_type(op.type.name, ns) if op.type is not None else Value)
+            (
+                op.name,
+                # Operand annotated with an op-parameter name (e.g. ``error:
+                # error_type``): the static expected type is the generic
+                # ``Type`` — the concrete type is refined per-instance from
+                # the op's actual parameter value.
+                Type
+                if op.type is not None and op.type.name in param_name_set
+                else _resolve_type(op.type.name, ns)
+                if op.type is not None
+                else Value,
+            )
             for op in od.operands
         )
     if od.blocks:
         op_ns["__blocks__"] = tuple(od.blocks)
     if od.constraints:
-        op_ns["__constraints__"] = tuple(od.constraints)
+        op_ns["__constraints__"] = tuple(
+            _compile_constraint(c, ns, {p.name for p in od.params})
+            for c in od.constraints
+        )
 
     op_ns["__annotations__"] = annotations
-    bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in od.traits) + (Op,)
-    cls = dataclasses.dataclass(eq=False)(type(_op_class_name(od.name), bases, op_ns))
+    cls = dataclasses.dataclass(eq=False)(type(_op_class_name(od.name), (Op,), op_ns))
+    # An op can declare a trait it "is" (``op add_nums: has trait Numeric``);
+    # ``has_trait`` on the op value finds it via the same property chain.
+    instance_params = {p.name for p in od.params}
+    _install_traits_property(cls, od.traits, ns, instance_params)
     dialect.op(od.name)(cls)
     return cls
 

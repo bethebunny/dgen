@@ -5,11 +5,10 @@ from __future__ import annotations
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialects.function import FunctionOp
-from dgen.spec.ast import HasTraitConstraint
+from dgen.ir.constraints import TraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
-from dgen.trait import Trait
-from dgen.type import constant
+from dgen.type import constant, format_value
 
 
 class VerificationError(Exception):
@@ -186,18 +185,6 @@ def verify_all_ready(root: dgen.Value) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_trait(trait_name: str, op: dgen.Op) -> type[Trait]:
-    """Look up a trait class by name from the dialect registry."""
-    for dialect in dgen.DIALECTS.values():
-        cls = dialect.types.get(trait_name)
-        if cls is not None and issubclass(cls, Trait):
-            return cls
-    raise ConstraintError(
-        f"unknown trait {trait_name!r} referenced in constraint on "
-        f"{type(op).__name__} %{op.name}"
-    )
-
-
 def _resolve_subject(subject: str, op: dgen.Op) -> dgen.Value:
     """Resolve a constraint subject name to the value of that operand/param."""
     for name, value in op.operands:
@@ -223,18 +210,26 @@ def _subject_type(subject: dgen.Value) -> dgen.Type:
     return constant(subject.type)
 
 
-def _verify_has_trait(
-    constraint: HasTraitConstraint, op: dgen.Op, root: dgen.Value
+def _verify_trait_constraint(
+    constraint: TraitConstraint, op: dgen.Op, root: dgen.Value
 ) -> None:
-    """Verify a single has-trait constraint on an op."""
-    subject = _resolve_subject(constraint.lhs, op)
-    trait_class = _resolve_trait(constraint.trait, op)
-    subject_type = _subject_type(subject)
-    if not isinstance(subject_type, trait_class):
+    """Verify a single trait constraint on an op.
+
+    The constraint carries a closure produced by the builder that, given
+    *op*, constructs the trait instance to test against (substituting the
+    op's own parameter values into the constraint's references). The
+    structural match is delegated to :meth:`Value.has_trait`.
+    """
+    subject = _resolve_subject(constraint.subject, op)
+    target = constraint.build_target(op)
+    assert isinstance(target, dgen.Type), (
+        f"trait constraint did not resolve to a Type instance: {target!r}"
+    )
+    if not _subject_type(subject).has_trait(target):
         raise ConstraintError(
             f"{type(op).__name__} %{op.name}: "
-            f"subject {constraint.lhs!r} ({type(subject_type).__name__}) "
-            f"does not implement trait {constraint.trait}\n\n"
+            f"subject {constraint.subject!r} ({type(_subject_type(subject)).__name__}) "
+            f"does not implement trait {format_value(target)}\n\n"
             + _annotated_asm(root, op)
         )
 
@@ -245,5 +240,5 @@ def verify_constraints(root: dgen.Value) -> None:
         if not isinstance(value, dgen.Op):
             continue
         for constraint in value.__constraints__:
-            if isinstance(constraint, HasTraitConstraint):
-                _verify_has_trait(constraint, value, root)
+            if isinstance(constraint, TraitConstraint):
+                _verify_trait_constraint(constraint, value, root)

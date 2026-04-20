@@ -257,7 +257,15 @@ def test_parse_multiple_data_fields():
 def test_parse_has_trait_on_type():
     src = "type Float64:\n    has trait FloatingPoint\n"
     result = parse(src)
-    assert result.types[0].traits == ["FloatingPoint"]
+    assert result.types[0].traits == [TypeRef("FloatingPoint")]
+
+
+def test_parse_has_parametric_trait_on_type():
+    src = "type Origin:\n    data: Nil\n    has trait Handler<NeedsDestructor>\n"
+    result = parse(src)
+    assert result.types[0].traits == [
+        TypeRef("Handler", args=[TypeRef("NeedsDestructor")])
+    ]
 
 
 def test_parse_bare_span_operand():
@@ -271,7 +279,7 @@ def test_parse_bare_span_operand():
 def test_parse_has_trait_on_op():
     src = "op for() -> Nil:\n    block body\n    has trait SomeTrait\n"
     result = parse(src)
-    assert result.ops[0].traits == ["SomeTrait"]
+    assert result.ops[0].traits == [TypeRef("SomeTrait")]
     assert result.ops[0].blocks == ["body"]
 
 
@@ -323,7 +331,7 @@ def test_parse_type_with_static_fields():
     )
     result = parse(src)
     t = result.types[0]
-    assert t.traits == ["FloatingPoint"]
+    assert t.traits == [TypeRef("FloatingPoint")]
     assert len(t.statics) == 1
     assert t.statics[0].name == "bitwidth"
     assert t.statics[0].default == "64"
@@ -366,7 +374,7 @@ def test_parse_requires_has_type():
 def test_parse_requires_has_trait():
     src = "op add(lhs, rhs) -> Type:\n    requires lhs has trait AddMagma\n"
     op = parse(src).ops[0]
-    assert op.constraints == [HasTraitConstraint(lhs="lhs", trait="AddMagma")]
+    assert op.constraints == [HasTraitConstraint(lhs="lhs", trait=TypeRef("AddMagma"))]
 
 
 def test_parse_requires_eq():
@@ -407,4 +415,4 @@ def test_parse_requires_with_block():
 def test_parse_type_requires():
     src = "type Number<dtype: Type>:\n    requires dtype has trait DType\n"
     td = parse(src).types[0]
-    assert td.constraints == [HasTraitConstraint(lhs="dtype", trait="DType")]
+    assert td.constraints == [HasTraitConstraint(lhs="dtype", trait=TypeRef("DType"))]
