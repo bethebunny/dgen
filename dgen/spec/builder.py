@@ -221,9 +221,98 @@ def _make_type_default(
         return None
 
 
+def _resolve_trait_ref(
+    ref: TypeRef,
+    ns: dict[str, object],
+    instance_params: set[str] = frozenset(),  # type: ignore[assignment]
+) -> object:
+    """Resolve a trait reference to a class, an instance, or a closure.
+
+    - ``Foo`` (no args, no param match) → the Foo class.
+    - ``Foo<Bar>`` (fully static) → ``Foo(...)`` with args resolved recursively.
+    - Anywhere a name in *instance_params* appears → a closure
+      ``(self) -> resolved`` that reads the matching attribute from *self* at
+      access time. The outer call must then wrap the tree in a property.
+
+    Used both at op-building time (no instance params; everything resolves to
+    classes or instances) and at type-building time where trait refs like
+    ``Handler<Raise<error_type>>`` mention a type's own parameter.
+    """
+    if ref.name in instance_params and not ref.args:
+        pname = ref.name
+        return _InstanceParam(pname)
+    cls = _resolve_type(ref.name, ns)
+    if not ref.args:
+        return cls
+    resolved_args = [_resolve_trait_ref(a, ns, instance_params) for a in ref.args]
+    param_names = [p_name for p_name, _ in getattr(cls, "__params__", ())]
+    if len(param_names) != len(resolved_args):
+        raise TypeError(
+            f"{ref.name}<...> expects {len(param_names)} args, got {len(resolved_args)}"
+        )
+    kwargs: dict[str, object] = {}
+    for pname, arg in zip(param_names, resolved_args):
+        if isinstance(arg, type):
+            kwargs[pname] = arg()
+        else:
+            kwargs[pname] = arg
+    # Defer to a closure when any subtree still references an instance param.
+    if any(isinstance(v, (_InstanceParam, _DeferredTrait)) for v in kwargs.values()):
+        return _DeferredTrait(cls, kwargs)
+    return cls(**kwargs)
+
+
+@dataclasses.dataclass(frozen=True)
+class _InstanceParam:
+    """Marker: this node of a declared-trait tree should read self.<name>."""
+
+    name: str
+
+    def resolve(self, instance: object) -> object:
+        return getattr(instance, self.name)
+
+
+@dataclasses.dataclass(frozen=True)
+class _DeferredTrait:
+    """A parametric trait whose params aren't fully static — resolved per instance."""
+
+    cls: type
+    kwargs: dict[str, object]
+
+    def resolve(self, instance: object) -> object:
+        resolved: dict[str, object] = {}
+        for k, v in self.kwargs.items():
+            if isinstance(v, (_InstanceParam, _DeferredTrait)):
+                resolved[k] = v.resolve(instance)
+            else:
+                resolved[k] = v
+        return self.cls(**resolved)
+
+
 def _build_trait(td: TraitDecl, dialect: Dialect, ns: dict[str, object]) -> type:
+    resolved_params = {p.name: _resolve_param_type(p.type, ns) for p in td.params}
+
     trait_ns: dict[str, object] = {"__module__": ns.get("__name__", "")}
-    annotations = {sf.name: sf.type.name for sf in td.statics if sf.default is None}
+    annotations: dict[str, str] = {}
+
+    annotations.update(
+        {p.name: _annotation_for_param(resolved_params[p.name]) for p in td.params}
+    )
+    trait_ns.update(
+        {
+            p.name: _resolve_type(p.default, ns)()
+            for p in td.params
+            if p.default is not None
+        }
+    )
+    if td.params:
+        trait_ns["__params__"] = tuple(
+            (p.name, resolved_params[p.name]) for p in td.params
+        )
+
+    annotations.update(
+        {sf.name: sf.type.name for sf in td.statics if sf.default is None}
+    )
     trait_ns.update(
         {
             sf.name: _ast.literal_eval(sf.default)
@@ -233,7 +322,13 @@ def _build_trait(td: TraitDecl, dialect: Dialect, ns: dict[str, object]) -> type
     )
     if annotations:
         trait_ns["__annotations__"] = annotations
+
     cls = type(td.name, (Trait,), trait_ns)
+    if td.params:
+        # Parametric traits are dataclasses, mirroring parametric types
+        # (eq=False; structural comparison happens in ``has_trait`` and
+        # ``verify_constraints`` via ``_trait_matches``).
+        cls = dataclasses.dataclass(eq=False)(cls)
     dialect.type(td.name)(cls)
     return cls
 
@@ -279,7 +374,34 @@ def _build_type(td: TypeDecl, dialect: Dialect, ns: dict[str, object]) -> type:
     if annotations:
         type_ns["__annotations__"] = annotations
 
-    bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in td.traits) + (Type,)
+    # Unparameterized trait references become base classes (inheritance-based
+    # ``isinstance`` check still works). Parameterized trait references become
+    # entries in ``__declared_traits__`` because a parametric trait carries
+    # per-instance data (its parameters) that can't be expressed as a base class.
+    inherited_traits: list[type] = []
+    declared_traits: list[object] = []
+    instance_params = {p.name for p in td.params}
+    for tref in td.traits:
+        if tref.args:
+            declared_traits.append(_resolve_trait_ref(tref, ns, instance_params))
+        else:
+            inherited_traits.append(_resolve_type(tref.name, ns))
+    if declared_traits:
+        if any(
+            isinstance(t, (_DeferredTrait, _InstanceParam)) for t in declared_traits
+        ):
+            type_ns["__declared_traits__"] = property(
+                lambda self, _ts=tuple(declared_traits): tuple(
+                    t.resolve(self)
+                    if isinstance(t, (_DeferredTrait, _InstanceParam))
+                    else t
+                    for t in _ts
+                )
+            )
+        else:
+            type_ns["__declared_traits__"] = tuple(declared_traits)
+
+    bases: tuple[type, ...] = tuple(inherited_traits) + (Type,)
     cls = dataclasses.dataclass(eq=False)(type(td.name, bases, type_ns))
     dialect.type(td.name)(cls)
     return cls
@@ -328,8 +450,19 @@ def _build_op(
             (p.name, resolved_params[p.name]) for p in od.params
         )
     if od.operands:
+        param_name_set = {p.name for p in od.params}
         op_ns["__operands__"] = tuple(
-            (op.name, _resolve_type(op.type.name, ns) if op.type is not None else Value)
+            (
+                op.name,
+                Type
+                # Operand annotated with an op-parameter name (e.g. ``error:
+                # error_type``): the static expected type is the generic Type,
+                # refined per-instance by the op's actual parameter value.
+                if op.type is not None and op.type.name in param_name_set
+                else _resolve_type(op.type.name, ns)
+                if op.type is not None
+                else Value,
+            )
             for op in od.operands
         )
     if od.blocks:
@@ -338,7 +471,16 @@ def _build_op(
         op_ns["__constraints__"] = tuple(od.constraints)
 
     op_ns["__annotations__"] = annotations
-    bases: tuple[type, ...] = tuple(_resolve_type(t, ns) for t in od.traits) + (Op,)
+    inherited_traits: list[type] = []
+    declared_traits: list[object] = []
+    for tref in od.traits:
+        if tref.args:
+            declared_traits.append(_resolve_trait_ref(tref, ns))
+        else:
+            inherited_traits.append(_resolve_type(tref.name, ns))
+    if declared_traits:
+        op_ns["__declared_traits__"] = tuple(declared_traits)
+    bases: tuple[type, ...] = tuple(inherited_traits) + (Op,)
     cls = dataclasses.dataclass(eq=False)(type(_op_class_name(od.name), bases, op_ns))
     dialect.op(od.name)(cls)
     return cls

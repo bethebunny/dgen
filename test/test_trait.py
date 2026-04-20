@@ -65,7 +65,7 @@ class RequiresNumericOp(Op):
     input: Value
     type: Type = MyInt()
     __operands__: ClassVar[Fields] = (("input", Type),)
-    __constraints__ = (HasTraitConstraint(lhs="input", trait="Numeric"),)
+    __constraints__ = (HasTraitConstraint(lhs="input", trait=TypeRef(name="Numeric")),)
 
 
 @_test.op("requires_ordered")
@@ -76,7 +76,7 @@ class RequiresOrderedOp(Op):
     input: Value
     type: Type = MyInt()
     __operands__: ClassVar[Fields] = (("input", Type),)
-    __constraints__ = (HasTraitConstraint(lhs="input", trait="Ordered"),)
+    __constraints__ = (HasTraitConstraint(lhs="input", trait=TypeRef(name="Ordered")),)
 
 
 @_test.op("requires_both")
@@ -88,8 +88,8 @@ class RequiresBothOp(Op):
     type: Type = MyInt()
     __operands__: ClassVar[Fields] = (("input", Type),)
     __constraints__ = (
-        HasTraitConstraint(lhs="input", trait="Numeric"),
-        HasTraitConstraint(lhs="input", trait="Ordered"),
+        HasTraitConstraint(lhs="input", trait=TypeRef(name="Numeric")),
+        HasTraitConstraint(lhs="input", trait=TypeRef(name="Ordered")),
     )
 
 
@@ -101,7 +101,7 @@ class RequiresParamTraitOp(Op):
     kind: Value[TypeType]
     type: Type = MyInt()
     __params__: ClassVar[Fields] = (("kind", TypeType),)
-    __constraints__ = (HasTraitConstraint(lhs="kind", trait="Numeric"),)
+    __constraints__ = (HasTraitConstraint(lhs="kind", trait=TypeRef(name="Numeric")),)
 
 
 @_test.op("no_constraints")
@@ -198,13 +198,17 @@ def test_dgen_built_trait_in_dialect_types() -> None:
 def test_parse_has_trait_constraint() -> None:
     src = "op foo(x) -> Type:\n    requires x has trait Numeric\n"
     op = parse(src).ops[0]
-    assert op.constraints == [HasTraitConstraint(lhs="x", trait="Numeric")]
+    assert op.constraints == [
+        HasTraitConstraint(lhs="x", trait=TypeRef(name="Numeric"))
+    ]
 
 
 def test_parse_type_body_requires() -> None:
     src = "type Foo<t: Type>:\n    requires t has trait Numeric\n"
     td = parse(src).types[0]
-    assert td.constraints == [HasTraitConstraint(lhs="t", trait="Numeric")]
+    assert td.constraints == [
+        HasTraitConstraint(lhs="t", trait=TypeRef(name="Numeric"))
+    ]
 
 
 # -- verify_constraints: satisfied constraints -------------------------------
@@ -309,7 +313,9 @@ def test_verify_unknown_subject_raises() -> None:
         input: Value
         type: Type = MyInt()
         __operands__: ClassVar[Fields] = (("input", Type),)
-        __constraints__ = (HasTraitConstraint(lhs="nonexistent", trait="Numeric"),)
+        __constraints__ = (
+            HasTraitConstraint(lhs="nonexistent", trait=TypeRef(name="Numeric")),
+        )
 
     _test.op("bad_subject")(BadSubjectOp)
 
@@ -328,7 +334,9 @@ def test_verify_unknown_trait_raises() -> None:
         input: Value
         type: Type = MyInt()
         __operands__: ClassVar[Fields] = (("input", Type),)
-        __constraints__ = (HasTraitConstraint(lhs="input", trait="NoSuchTrait"),)
+        __constraints__ = (
+            HasTraitConstraint(lhs="input", trait=TypeRef(name="NoSuchTrait")),
+        )
 
     _test.op("bad_trait")(BadTraitOp)
 

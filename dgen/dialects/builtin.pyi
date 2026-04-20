@@ -5,10 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
-from dgen import Dialect, Op, Type, Value
+from dgen import Dialect, Op, Trait, Type, Value
 from dgen.dialects.index import Index
 
 builtin = Dialect("builtin")
+
+class Effect(Trait): ...
+
+@dataclass(eq=False)
+class Handler(Trait):
+    effect_type: Value[dgen.TypeType]
 
 @dataclass(eq=False)
 class Nil(Type): ...

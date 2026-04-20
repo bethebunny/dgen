@@ -66,12 +66,19 @@ class _Parser:
         rest = line[6:]  # strip "trait "
         has_body = rest.rstrip().endswith(":")
         if has_body:
-            name = rest.rstrip()[:-1].strip()
-            statics = self._parse_trait_body()
+            rest = rest.rstrip()[:-1]
+
+        params: list[ParamDecl] = []
+        if "<" in rest:
+            lt = rest.index("<")
+            name = rest[:lt].strip()
+            gt = _find_matching(rest, lt, "<", ">")
+            params = _parse_params(rest[lt + 1 : gt])
         else:
             name = rest.strip()
-            statics = []
-        return TraitDecl(name=name, statics=statics)
+
+        statics = self._parse_trait_body() if has_body else []
+        return TraitDecl(name=name, params=params, statics=statics)
 
     def _parse_trait_body(self) -> list[StaticField]:
         """Parse indented trait body lines, return static fields."""
@@ -129,12 +136,16 @@ class _Parser:
     def _parse_type_body(
         self,
     ) -> tuple[
-        list[DataField], str | None, list[str], list[StaticField], list[Constraint]
+        list[DataField],
+        str | None,
+        list[TypeRef],
+        list[StaticField],
+        list[Constraint],
     ]:
         """Parse indented type body lines, return (data fields, layout name, traits, statics, constraints)."""
         data: list[DataField] = []
         layout = None
-        traits: list[str] = []
+        traits: list[TypeRef] = []
         statics: list[StaticField] = []
         constraints: list[Constraint] = []
         while self.pos + 1 < len(self.lines):
@@ -155,9 +166,9 @@ class _Parser:
             if stripped.startswith("layout "):
                 layout = stripped.split()[1]
                 continue
-            # Trait declaration: has trait Name
+            # Trait declaration: has trait Name  or  has trait Name<args>
             if stripped.startswith("has trait "):
-                traits.append(stripped.split()[2])
+                traits.append(_parse_type_ref(stripped[len("has trait ") :].strip()))
                 continue
             # Static field: static name: Type [= default]
             if stripped.startswith("static "):
@@ -240,10 +251,10 @@ class _Parser:
             constraints=constraints,
         )
 
-    def _parse_op_body(self) -> tuple[list[str], list[str], list[Constraint]]:
+    def _parse_op_body(self) -> tuple[list[str], list[TypeRef], list[Constraint]]:
         """Parse indented op body lines, return (block names, traits, constraints)."""
         blocks: list[str] = []
-        traits: list[str] = []
+        traits: list[TypeRef] = []
         constraints: list[Constraint] = []
         while self.pos + 1 < len(self.lines):
             next_line = self.lines[self.pos + 1]
@@ -256,7 +267,7 @@ class _Parser:
             if stripped.startswith("block "):
                 blocks.append(stripped.split()[1])
             elif stripped.startswith("has trait "):
-                traits.append(stripped.split()[2])
+                traits.append(_parse_type_ref(stripped[len("has trait ") :].strip()))
             elif stripped.startswith("requires "):
                 constraints.append(_parse_constraint(stripped))
         return blocks, traits, constraints
@@ -283,10 +294,10 @@ def _parse_static_field(line: str) -> StaticField:
 def _parse_constraint(line: str) -> Constraint:
     """Parse a 'requires ...' line into a Constraint."""
     rest = line[9:]  # strip "requires "
-    # has trait: requires X has trait TraitName
+    # has trait: requires X has trait TraitName[<args>]
     if " has trait " in rest:
         lhs, trait = rest.split(" has trait ", 1)
-        return HasTraitConstraint(lhs=lhs.strip(), trait=trait.strip())
+        return HasTraitConstraint(lhs=lhs.strip(), trait=_parse_type_ref(trait.strip()))
     # has type: requires X has type TypeName
     if " has type " in rest:
         lhs, type_str = rest.split(" has type ", 1)
