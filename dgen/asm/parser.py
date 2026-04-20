@@ -16,6 +16,7 @@ from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
 from dgen.builtins import ConstantOp, PackOp
+from dgen.type import py_attr_name
 
 
 class ParseError(RuntimeError):
@@ -327,7 +328,7 @@ def op_statement(parser: ASMParser) -> Op:
     for (field_name, field_type), value in zip(op_cls.__operands__, operands):
         kwargs[field_name] = _coerce(parser, value, field_type)
     for block_name, block in zip(op_cls.__blocks__, blocks):
-        kwargs[block_name] = block
+        kwargs[py_attr_name(block_name)] = block
     op = op_cls(**kwargs)
     parser.name_table[name] = op
     return op

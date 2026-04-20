@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import dgen
-from dgen import Dialect, Op, Type, Value
+from dgen import Dialect, Type
 
 index = Dialect("index")
 
