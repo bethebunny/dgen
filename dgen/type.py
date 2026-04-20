@@ -104,9 +104,29 @@ class Value(Generic[T]):
         """Format as ASM expression. Default: SSA reference ``%name``."""
         return f"%{slot(self)}"
 
-    def has_trait(self, trait: type) -> bool:
-        """Check whether this value implements a trait."""
-        return isinstance(self, trait)
+    def has_trait(self, trait: type | Value) -> bool:
+        """Check whether this value implements a trait.
+
+        Two forms are supported:
+        - *trait* is a trait **class** (unparameterized): isinstance check.
+          This is the original form and covers traits like ``Numeric`` that
+          participate in the normal Python class hierarchy.
+        - *trait* is a trait **instance** (parameterized, e.g.
+          ``Handler(effect_type=Raise(error_type=X))``): match against
+          ``type(self).__declared_traits__`` structurally. Each entry is a
+          concrete trait instance declared by the type via ``has trait ...``.
+        """
+        # Instance-level access resolves properties that substitute type
+        # parameters — e.g. ``RaiseHandler<T>.__declared_traits__`` reads
+        # ``self.error_type`` to produce ``Handler<Raise<T>>``.
+        declared = getattr(self, "__declared_traits__", ())
+        if isinstance(trait, type):
+            # Covers unparameterized traits (via MRO) and the "any parametric
+            # binding?" query for parametric traits (via __declared_traits__).
+            return isinstance(self, trait) or any(
+                isinstance(d, trait) for d in declared
+            )
+        return any(_trait_matches(d, trait) for d in declared)
 
     def replace_operand(self, old: Value, new: Value) -> None:
         """Replace all occurrences of old with new in operand fields."""
@@ -311,6 +331,30 @@ def _embedded_values(payload: object) -> Iterator[Value]:
 
 
 Fields = tuple[tuple[str, type[Type]], ...]
+
+
+def _trait_matches(declared: Value, target: Value) -> bool:
+    """True iff two parameterized trait instances are structurally equal.
+
+    Same class, and each parameter value compares equal by the same rule
+    recursively. Types use eq=False (identity equality), so we walk params
+    ourselves instead of relying on ``==``.
+    """
+    if type(declared) is not type(target):
+        return False
+    if isinstance(declared, Type):
+        for name, _ in type(declared).__params__:
+            if not _trait_matches(getattr(declared, name), getattr(target, name)):
+                return False
+        return True
+    # Constants: compare by canonical Python value (``constant()`` returns
+    # Type instances or scalars); fall through to identity for anything else.
+    if isinstance(declared, Constant) and isinstance(target, Constant):
+        a, b = constant(declared), constant(target)
+        if isinstance(a, Type) and isinstance(b, Type):
+            return _trait_matches(a, b)
+        return a == b
+    return declared is target
 
 
 class TypeType(Type):

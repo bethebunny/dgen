@@ -6,7 +6,7 @@ import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialect import Dialect
 from dgen.dialects.function import FunctionOp
-from dgen.spec.ast import HasTraitConstraint
+from dgen.spec.ast import HasTraitConstraint, TypeRef
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
 from dgen.trait import Trait
@@ -224,18 +224,79 @@ def _subject_type(subject: dgen.Value) -> dgen.Type:
     return constant(subject.type)
 
 
+def _format_trait_ref(ref: TypeRef) -> str:
+    if not ref.args:
+        return ref.name
+    return f"{ref.name}<{', '.join(_format_trait_ref(a) for a in ref.args)}>"
+
+
+def _resolve_trait_ref_for_op(ref: TypeRef, op: dgen.Op) -> object:
+    """Build a runtime trait class or instance from a constraint's TypeRef.
+
+    Unparameterized refs resolve to the trait class (enables isinstance
+    checks, same as the original ``_resolve_trait``). Parameterized refs
+    resolve to a trait instance whose parameter values come from the op's
+    own parameters (for refs like ``Handler<Raise<error_type>>`` where
+    ``error_type`` names one of the op's parameters).
+    """
+    trait_class = _resolve_trait(ref.name, op)
+    if not ref.args:
+        return trait_class
+    param_names = [pn for pn, _ in getattr(trait_class, "__params__", ())]
+    if len(param_names) != len(ref.args):
+        raise ConstraintError(
+            f"{type(op).__name__} %{op.name}: trait {ref.name!r} expects "
+            f"{len(param_names)} args, got {len(ref.args)}"
+        )
+    kwargs = {
+        pname: _resolve_trait_arg(arg, op) for pname, arg in zip(param_names, ref.args)
+    }
+    return trait_class(**kwargs)
+
+
+def _resolve_trait_arg(ref: TypeRef, op: dgen.Op) -> dgen.Value:
+    """Resolve a trait-argument TypeRef to a Value.
+
+    ``Raise<error_type>``: ``Raise`` is a type class, ``error_type`` names an
+    op parameter — substitute with that parameter's actual value. Bare names
+    that match a registered type class resolve to the zero-arg type instance.
+    """
+    # Match against op parameters first (user-declared binding).
+    for name, value in op.parameters:
+        if name == ref.name and not ref.args:
+            return value
+    # Otherwise treat as a type (nested generic or bare type name).
+    type_cls = None
+    for dialect in Dialect._registry.values():
+        if ref.name in dialect.types:
+            type_cls = dialect.types[ref.name]
+            break
+    if type_cls is None:
+        raise ConstraintError(
+            f"{type(op).__name__} %{op.name}: could not resolve {ref.name!r} "
+            f"in a trait constraint (not an op parameter or a known type)"
+        )
+    if not ref.args:
+        return type_cls()
+    param_names = [pn for pn, _ in getattr(type_cls, "__params__", ())]
+    kwargs = {
+        pname: _resolve_trait_arg(arg, op) for pname, arg in zip(param_names, ref.args)
+    }
+    return type_cls(**kwargs)
+
+
 def _verify_has_trait(
     constraint: HasTraitConstraint, op: dgen.Op, root: dgen.Value
 ) -> None:
     """Verify a single has-trait constraint on an op."""
     subject = _resolve_subject(constraint.lhs, op)
-    trait_class = _resolve_trait(constraint.trait, op)
+    trait_ref = _resolve_trait_ref_for_op(constraint.trait, op)
     subject_type = _subject_type(subject)
-    if not isinstance(subject_type, trait_class):
+    if not subject_type.has_trait(trait_ref):
         raise ConstraintError(
             f"{type(op).__name__} %{op.name}: "
             f"subject {constraint.lhs!r} ({type(subject_type).__name__}) "
-            f"does not implement trait {constraint.trait}\n\n"
+            f"does not implement trait {_format_trait_ref(constraint.trait)}\n\n"
             + _annotated_asm(root, op)
         )
 
