@@ -43,22 +43,37 @@ Primitive ops take `Some<Handler<E>>` as a parameter. Handler-introducing ops ac
 
 ```
 type Raise<error_type: Type>:
-    data: Nil
+    layout Void
     has trait Effect
 
-op raise<handler: Some<Handler<Raise<error_type>>>>(error: error_type) -> Never
+type RaiseHandler<error_type: Type>:
+    layout Void
+    has trait Handler<Raise<error_type>>
 
-op catch<error_type: Type>:
-    body body<handler: Some<Handler<Raise<error_type>>>>()
-    body on_raise(error: error_type)
+op raise<error_type: Type, handler: RaiseHandler>(error: error_type) -> Never
+
+op catch<error_type: Type>() -> RaiseHandler<error_type>:
+    block on_raise
 ```
 
 Semantics:
 
-- `raise(error)` unconditionally transfers control to the handler.
-- `catch` runs the body block with a fresh handler in scope. If the body completes normally, its result is the catch's result. If the body (or any transitive op using the in-scope handler) invokes raise, control transfers to `on_raise` with the error; its result is the catch's result.
-- Both blocks must have compatible result types. `T` and `Never` are compatible; the catch's result type is `T`.
-- Handlers are values. They can be captured. If `on_raise` captures a handler from an outer catch, it may invoke raise through that handler; nested handling falls out of normal scoping.
+- The `catch` op evaluates to a fresh `RaiseHandler<error_type>` value. The
+  handler flows through the enclosing dataflow like any other SSA value; its
+  live range is the region in which the catch is active.
+- `raise<handler>(error)` unconditionally transfers control to the `on_raise`
+  block of the `catch` that produced `handler`. The `on_raise` block receives
+  `error` as its block argument.
+- `on_raise`'s result type must be `Never` — the block must escape (re-raise
+  to an outer handler, diverge, or, once function-scope return exists,
+  terminate the function). v1 does not provide a built-in merge that spliced
+  `on_raise`'s result back into the body's dataflow; users who need recovery
+  arrange it explicitly via the enclosing control flow.
+- Handlers are values. They can be captured by nested blocks. If `on_raise`
+  captures a handler from an outer catch, it may invoke raise through that
+  handler; nested handling falls out of normal scoping.
+- A raise whose handler is not dominated by any live catch is undefined
+  behavior in v1 (see "Functions" below).
 
 ### Composite "may-raise" ops
 
@@ -77,13 +92,19 @@ No "may-raise" annotation on the primitive IR. The raise is local and explicit.
 
 ### Lowering
 
-Raise/catch lowers to CPS via the goto dialect. Each `catch` becomes:
+Raise/catch lowers to CPS via the goto dialect:
 
-- A `goto.label` for the on_raise block.
-- A `goto.region` for the body, with the handler parameter bound to a value that captures the on_raise label.
-- Each `raise<handler>(error)` in the body becomes a `goto.branch` to the handler's associated label, passing error as the block argument.
+- The `catch` op is erased. Its result (the `RaiseHandler` value) carries no
+  runtime representation — `RaiseHandler` has `layout Void`.
+- Its `on_raise` block becomes a `goto.label` placed in the enclosing scope.
+- Each `raise<handler>(error)` becomes a `goto.branch` targeting the
+  `goto.label` derived from the catch that produced `handler`, passing
+  `error` as the block argument.
 
-The handler value, as a compile-time parameter, is resolved to its originating catch during lowering; the `raise` op becomes a direct branch. No runtime dispatch. No evidence value survives codegen.
+Handler resolution is compile-time: `raise<handler>` walks `handler` back to
+its originating `catch` (by following the use-def graph through
+`ChainOp`/identity ops). The `raise` op becomes a direct branch. No runtime
+dispatch. No evidence value survives codegen.
 
 ## Functions
 

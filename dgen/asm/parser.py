@@ -16,9 +16,6 @@ from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
 from dgen.builtins import ConstantOp, PackOp
 
-# Trigger registration of hand-written ops for the error dialect (CatchOp).
-import dgen.error  # noqa: F401
-
 
 class ParseError(RuntimeError):
     """Recoverable parse failure — caught by try_read for backtracking."""

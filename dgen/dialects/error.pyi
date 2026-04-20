@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
-from dgen import Dialect, Op, Type, Value
+from dgen import Block, Dialect, Op, Type, Value
 from dgen.dialects.builtin import Effect, Never
 
 error = Dialect("error")
@@ -21,6 +21,12 @@ class RaiseHandler(Type):
 @dataclass(eq=False)
 class RaiseOp(Op):
     error_type: Value[dgen.TypeType]
-    handler: Value[RaiseHandler]
+    handler: Value
     error: Value
     type: Type = Never()
+
+@dataclass(eq=False)
+class CatchOp(Op):
+    error_type: Value[dgen.TypeType]
+    on_raise: Block
+    type: Type

@@ -8,4 +8,6 @@ type RaiseHandler<error_type: Type>:
     layout Void
     has trait Handler<Raise<error_type>>
 
-op raise<error_type: Type, handler: RaiseHandler>(error: error_type) -> Never
+op raise<error_type: Type>(handler: RaiseHandler, error: error_type) -> Never
+op catch<error_type: Type>() -> RaiseHandler:
+    block on_raise

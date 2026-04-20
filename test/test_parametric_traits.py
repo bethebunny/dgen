@@ -139,16 +139,22 @@ def test_unparameterized_trait_check_unchanged():
 
 
 def test_declared_traits_substitutes_per_instance():
-    """``__declared_traits__`` reads the instance's params each time."""
+    """``__declared_traits__`` reads the instance's params each time.
+
+    Test via the public ``has_trait`` API rather than the private
+    ``__declared_traits__`` attribute (the latter is a builder-populated
+    runtime attribute that doesn't appear in stubs).
+    """
     h1 = error.RaiseHandler(error_type=builtin.Nil())
     h2 = error.RaiseHandler(error_type=builtin.Byte())
-    # Each instance builds its own Handler<Raise<T>> with T substituted.
-    r1 = h1.__declared_traits__[0]
-    r2 = h2.__declared_traits__[0]
-    assert isinstance(r1, builtin.Handler) and isinstance(r2, builtin.Handler)
-    assert isinstance(r1.effect_type, error.Raise)
-    assert isinstance(r1.effect_type.error_type, builtin.Nil)
-    assert isinstance(r2.effect_type.error_type, builtin.Byte)
+    # Each instance matches the trait binding for ITS OWN error_type, not
+    # the other's — so substitution is per-instance, not class-level.
+    nil_handler = builtin.Handler(effect_type=error.Raise(error_type=builtin.Nil()))
+    byte_handler = builtin.Handler(effect_type=error.Raise(error_type=builtin.Byte()))
+    assert h1.has_trait(nil_handler)
+    assert not h1.has_trait(byte_handler)
+    assert h2.has_trait(byte_handler)
+    assert not h2.has_trait(nil_handler)
 
 
 # -- Verification ------------------------------------------------------------

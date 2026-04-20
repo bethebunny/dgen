@@ -480,13 +480,18 @@ def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
     """Label: jump target only, not reachable by fall-through.
 
     Terminates the current basic block with a skip branch, emits the
-    label body, then resumes with an exit label.
+    label body, then resumes with an exit label. If the label body does
+    not provide its own terminator (every LLVM block needs one), an
+    ``unreachable`` is inserted — this is the well-formed UB sink used
+    for e.g. an ``on_raise`` block that v1 requires to diverge.
     """
     exit_name = f"{op.name}_exit"
     yield f"  br label %{exit_name}"
     yield f"{op.name}:"
     yield from _emit_phi_nodes(op)
-    yield from emit_linearized(op.body)
+    terminated = yield from emit_linearized(op.body)
+    if not terminated:
+        yield "  unreachable"
     yield f"{exit_name}:"
 
 
