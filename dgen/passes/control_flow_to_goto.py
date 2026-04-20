@@ -155,9 +155,7 @@ class ControlFlowToGoto(Pass):
             result = body.result
             captures = list(body.captures)
         else:
-            result = goto.BranchOp(
-                target=merge_self, arguments=pack([body.result])
-            )
+            result = goto.BranchOp(target=merge_self, arguments=pack([body.result]))
             captures = [merge_self, *body.captures]
         return goto.LabelOp(
             name=name,

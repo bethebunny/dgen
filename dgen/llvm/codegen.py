@@ -557,6 +557,12 @@ def value_reference(v: dgen.Value) -> str:
         return f"load {ty}, ptr @{sym}"
     if isinstance(v, function.FunctionOp) and v.name:
         return f"@{v.name}"
+    # A merge-region's value IS the phi emitted inside its block. The region
+    # name is an LLVM label, not a value — reference the block arg (phi) that
+    # carries the merged result instead. Mirrors the function-return special
+    # case in ``emit_function_op``.
+    if isinstance(v, goto.RegionOp) and v.body.args:
+        return value_reference(v.body.args[0])
     # Self parameters resolve to their owning RegionOp/LabelOp name
     # (the label target for back-edges). Exit parameters keep their own
     # name — they are separate LLVM basic blocks.
