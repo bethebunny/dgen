@@ -56,11 +56,12 @@ class _Parser:
         return result
 
     def _parse_import(self, line: str) -> ImportDecl:
-        # from module import Name1, Name2
+        # from module import Name1, Name2  (absolute)
+        # from . import name1, name2       (relative — sibling .dgen files)
         parts = line.split()
         module = parts[1]
         names = [n.strip(",") for n in parts[3:]]
-        return ImportDecl(module=module, names=names)
+        return ImportDecl(module=module, names=names, relative=module == ".")
 
     def _parse_trait(self, line: str) -> TraitDecl:
         rest = line[6:]  # strip "trait "

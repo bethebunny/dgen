@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from dgen import Dialect
+import dgen
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.llvm.codegen import Executable, LLVMCodegen
@@ -20,7 +20,7 @@ from dcc.parser.lowering import lower
 from dcc.passes.c_lvalue_to_memory import CLvalueToMemory
 
 # Make dcc dialects discoverable for IR parsing round-trips.
-Dialect.paths.append(Path(__file__).parent / "dialects")
+dgen.PATH.append(Path(__file__).parent / "dialects")
 
 # Pass ordering: lvalue elimination must precede memory-to-LLVM.
 # See dcc/docs/plans/c-frontend-redesign.md for full rationale.

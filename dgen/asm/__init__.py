@@ -27,7 +27,7 @@ def asm_with_imports(value: Value) -> Iterator[str]:
     Dialects touched anywhere in the value's use-def graph (including nested
     block bodies) are emitted as leading ``import`` lines.
     """
-    builtin_dialect = dgen.Dialect.get("builtin")
+    builtin_dialect = dgen.imports.load("builtin")
     dialects: set[dgen.Dialect] = {
         d for v in all_values(value) for d in v.required_dialects()
     }

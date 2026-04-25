@@ -10,6 +10,7 @@ from collections.abc import Callable
 from functools import reduce
 from typing import Any, TypeVar
 
+import dgen
 from dgen import Block, Constant, Op, Type, Value
 from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
@@ -67,7 +68,7 @@ def parse(text: str) -> Value:
     value: Value | None = None
     while not parser.done:
         if (name := parser.try_read(_import_line)) is not None:
-            parser.scope.import_dialect(Dialect.get(name))
+            parser.scope.import_dialect(dgen.imports.load(name))
         else:
             value = parser.read(op_statement)
     if value is None:
@@ -80,7 +81,7 @@ class ASMParser:
         self.text = text
         self.pos: int = 0
         self.name_table: dict[str, Value] = {}
-        self.scope: Scope = Scope.from_dialect(Dialect.get("builtin"))
+        self.scope: Scope = Scope.from_dialect(dgen.imports.load("builtin"))
         self.block_indent: int = 0  # indent level of the current block's ops
 
     @property

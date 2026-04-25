@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Callable
-from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
@@ -16,47 +16,39 @@ _T = TypeVar("_T", bound="Type")
 
 
 class Dialect:
-    _registry: dict[str, Dialect] = {}
-    paths: list[Path] = []
-    """Search paths for ``.dgen`` files, analogous to ``sys.path``."""
-
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, module: ModuleType | None = None) -> None:
         self.name = name
         self.ops: dict[str, builtins.type[Op]] = {}
         self.types: dict[str, builtins.type[Type]] = {}
-        Dialect._registry[name] = self
+        # Backing Python module (set by the builder); used to look up
+        # cross-dialect re-exports such as ``from builtin import Index``,
+        # where ``Index`` lives in ``builtin``'s module namespace but not
+        # in its own ``types`` dict.
+        self.module = module
+        # Register in the global dialect table so subsequent imports
+        # (Python, .dgen, ASM) find the same instance.  Imported lazily to
+        # break the dgen.imports ↔ dgen.dialect cycle.
+        from dgen.imports import DIALECTS
+
+        DIALECTS[name] = self
+
+    def __getattr__(self, attr: str) -> object:
+        # Allow `import ndbuffer` in a .dgen file to bind the Dialect, then
+        # `ndbuffer.Shape` to resolve a contained type/op (or a re-exported
+        # name from ``ndbuffer``'s module namespace).
+        if attr in self.types:
+            return self.types[attr]
+        if attr in self.ops:
+            return self.ops[attr]
+        if self.module is not None and attr in self.module.__dict__:
+            return self.module.__dict__[attr]
+        raise AttributeError(f"dialect {self.name!r} has no member {attr!r}")
 
     def qualified_name(self, local_name: str) -> str:
         """Return dialect-qualified name, e.g. ``toy.Tensor``.  Builtin names are unqualified."""
         if self.name == "builtin":
             return local_name
         return f"{self.name}.{local_name}"
-
-    @classmethod
-    def get(cls, name: str) -> Dialect:
-        """Look up a dialect by name.
-
-        1. Return the dialect if already registered (like ``sys.modules``).
-        2. Search ``Dialect.paths`` for ``{name}.dgen`` and import it.
-        3. Raise ``KeyError`` if not found.
-        """
-        if name in cls._registry:
-            return cls._registry[name]
-        for directory in cls.paths:
-            candidate = directory / f"{name}.dgen"
-            if candidate.exists():
-                import importlib
-
-                # The DgenFinder hook handles .dgen → module compilation.
-                # We need to figure out the Python module name for this path.
-                from dgen.spec.importer import _path_to_module
-
-                py_mod = _path_to_module(candidate)
-                if py_mod is not None:
-                    importlib.import_module(py_mod)
-                    if name in cls._registry:
-                        return cls._registry[name]
-        raise KeyError(name)
 
     def op(self, asm_name: str) -> Callable[[builtins.type[_O]], builtins.type[_O]]:
         def decorator(cls: builtins.type[_O]) -> builtins.type[_O]:

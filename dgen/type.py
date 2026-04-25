@@ -216,7 +216,7 @@ class Type(Value["TypeType"]):
         tag = data["tag"]
         assert isinstance(tag, str)
         dialect_name, type_name = tag.split(".")
-        type_cls = Dialect.get(dialect_name).types[type_name]
+        type_cls = dgen.imports.load(dialect_name).types[type_name]
         return type_cls(
             **{
                 name: Type.from_json(tv["type"]).constant(tv["value"])

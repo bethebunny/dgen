@@ -11,6 +11,7 @@ from copy import deepcopy
 
 import pytest
 
+import dgen
 from dgen import Block, asm
 from dgen.type import format_value, constant
 from dgen.asm.parser import ASMParser, parse, value_expression
@@ -122,11 +123,9 @@ ALL_TYPES = BUILTIN_TYPES + LLVM_TYPES + TOY_TYPES + MEMORY_TYPES
 
 def _parse_type(text: str) -> object:
     """Parse a type from ASM text, with all dialects registered."""
-    from dgen.dialect import Dialect
-
     parser = ASMParser(text)
     for name in ["index", "llvm", "ndbuffer", "number", "toy"]:
-        parser.scope.import_dialect(Dialect.get(name))
+        parser.scope.import_dialect(dgen.imports.load(name))
     return value_expression(parser)
 
 
