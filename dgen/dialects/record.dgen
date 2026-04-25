@@ -1,4 +1,5 @@
-from builtin import Index, Nil, Span
+from builtin import Nil, Span
+from index import Index
 
 op pack(values: Span)
 op get<index: Index>(record)

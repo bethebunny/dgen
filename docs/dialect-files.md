@@ -24,6 +24,45 @@ in terms of syntax, scope, and expressiveness.
 - builtin types and ops are referenced without a prefix
 - other types and ops are imported by namespace, not directly
 
+### Imports
+
+A `.dgen` file may import other dialects with three forms:
+
+```dgen
+import foo                # bind dialect `foo`; access types as `foo.Bar`
+from foo import Bar, Baz  # bind names `Bar`, `Baz` directly
+from . import sibling     # load `<this-dir>/sibling.dgen`, bind as `sibling`
+```
+
+**Resolution.** Imports consult two pieces of state, analogous to `sys.modules`
+and `sys.path`:
+
+- `dgen.DIALECTS: dict[str, Dialect]` — the loaded-dialect registry, keyed by
+  dotted qualname (e.g. `"x86.intrinsics"`).
+- `dgen.PATH: list[Path]` — directories searched for `<qualname>.dgen` files
+  when a qualname is not yet in `DIALECTS`.
+
+For absolute forms (`import foo`, `from foo import Bar`), resolution checks
+`DIALECTS` first, then walks `PATH`. Once loaded, the dialect is registered in
+`DIALECTS` keyed by its qualname; subsequent imports return the cached
+instance. Like `sys.modules`, an existing entry is authoritative.
+
+The relative form (`from . import x`) is sibling-only: it looks for
+`<this-file's-dir>/x.dgen` and never consults `DIALECTS` or `PATH`.
+
+**No re-exports.** `from foo import Bar` requires `Bar` to be defined in
+`foo.dgen` (i.e. present as a type, op, or trait declared in that file). It
+does not see names that `foo.dgen` itself imported. To use a name from a
+different dialect, import it from where it is actually declared.
+
+**No `sys.path` walks, no implicit sibling search.** Absolute imports go
+through `DIALECTS` and `PATH` only; the `from .` form goes through the
+importing file's directory only. ASM `import` statements use the same
+absolute resolution.
+
+The same rules apply at runtime to `dgen.imports.load(qualname)`, which is the
+single entry point for all dialect resolution.
+
 ### Type semantics
 
 `Type` always means **type value** — a value that is itself a type.

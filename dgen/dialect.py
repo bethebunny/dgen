@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Callable
-from types import ModuleType
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
@@ -16,15 +15,10 @@ _T = TypeVar("_T", bound="Type")
 
 
 class Dialect:
-    def __init__(self, name: str, module: ModuleType | None = None) -> None:
+    def __init__(self, name: str) -> None:
         self.name = name
         self.ops: dict[str, builtins.type[Op]] = {}
         self.types: dict[str, builtins.type[Type]] = {}
-        # Backing Python module (set by the builder); used to look up
-        # cross-dialect re-exports such as ``from builtin import Index``,
-        # where ``Index`` lives in ``builtin``'s module namespace but not
-        # in its own ``types`` dict.
-        self.module = module
         # Register in the global dialect table so subsequent imports
         # (Python, .dgen, ASM) find the same instance.  Imported lazily to
         # break the dgen.imports ↔ dgen.dialect cycle.
@@ -34,14 +28,11 @@ class Dialect:
 
     def __getattr__(self, attr: str) -> object:
         # Allow `import ndbuffer` in a .dgen file to bind the Dialect, then
-        # `ndbuffer.Shape` to resolve a contained type/op (or a re-exported
-        # name from ``ndbuffer``'s module namespace).
+        # `ndbuffer.Shape` to resolve a contained type/op.
         if attr in self.types:
             return self.types[attr]
         if attr in self.ops:
             return self.ops[attr]
-        if self.module is not None and attr in self.module.__dict__:
-            return self.module.__dict__[attr]
         raise AttributeError(f"dialect {self.name!r} has no member {attr!r}")
 
     def qualified_name(self, local_name: str) -> str:

@@ -177,8 +177,7 @@ def diff(
         python -m dgen.ir.diff expected.ir actual.ir \\
             -I toy/dialects -I actor/dialects
     """
-    for d in include_dirs:
-        dgen.PATH.append(d)
+    dgen.PATH.extend(include_dirs)
 
     expected_value = parse(expected.read())
     actual_value = parse(actual.read())

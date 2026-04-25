@@ -61,16 +61,16 @@ def _param_annotation(param_type: type[Type], type_to_name: dict[type, str]) -> 
 
 def _build_type_to_name(
     ns: dict[str, object],
-    imported_mods: dict[str, ModuleType],
+    imported_dialects: dict[str, Dialect],
 ) -> dict[type, str]:
     """Build a reverse map from live type classes to their stub-qualified name."""
     result: dict[type, str] = {}
     for name, val in ns.items():
         if isinstance(val, type) and not name.startswith("_"):
             result[val] = name
-    for alias, mod in imported_mods.items():
-        for attr, val in vars(mod).items():
-            if isinstance(val, type) and val not in result:
+    for alias, d in imported_dialects.items():
+        for attr, val in (*d.types.items(), *d.ops.items()):
+            if val not in result:
                 result[val] = f"{alias}.{attr}"
     return result
 
@@ -127,24 +127,33 @@ def _stub_class(
 # ---------------------------------------------------------------------------
 
 
+def _dialect_module_path(d: Dialect) -> str | None:
+    """Pick a representative ``__module__`` from one of the dialect's classes,
+    to use as the canonical Python import path in generated stubs.
+    """
+    for cls in (*d.types.values(), *d.ops.values()):
+        path = getattr(cls, "__module__", "")
+        if path:
+            return path
+    return None
+
+
 def generate_pyi(module: ModuleType, dialect_name: str) -> str:
     """Generate a ``.pyi`` type stub by introspecting a live dialect module."""
     ns = vars(module)
     dialect: Dialect = ns[dialect_name]
     current_module = module.__name__
 
-    # Imported module aliases (e.g. affine → toy.dialects.affine)
-    imported_mods: dict[str, ModuleType] = {
+    # Imported dialects (e.g. `import ndbuffer` binds a Dialect to `ndbuffer`).
+    imported_dialects: dict[str, Dialect] = {
         name: val
         for name, val in ns.items()
-        if isinstance(val, ModuleType)
-        and not name.startswith("_")
-        and name not in ("dgen", "layout")
+        if isinstance(val, Dialect) and val is not dialect and not name.startswith("_")
     }
 
-    type_to_name = _build_type_to_name(ns, imported_mods)
+    type_to_name = _build_type_to_name(ns, imported_dialects)
 
-    # Specifically-imported names from other dialect modules
+    # Specifically-imported names from other dialects (`from foo import X`).
     imported_type_names: dict[str, list[str]] = {}
     for name, val in ns.items():
         if (
@@ -186,8 +195,10 @@ def generate_pyi(module: ModuleType, dialect_name: str) -> str:
         f"from dgen import {', '.join(dgen_imports)}",
     ]
 
-    for alias, mod in sorted(imported_mods.items()):
-        lines.append(f"import {mod.__name__} as {alias}")
+    for alias, d in sorted(imported_dialects.items()):
+        path = _dialect_module_path(d)
+        if path is not None:
+            lines.append(f"import {path} as {alias}")
     for src, names in sorted(imported_type_names.items()):
         lines.append(f"from {src} import {', '.join(sorted(names))}")
 

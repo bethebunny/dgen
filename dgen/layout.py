@@ -16,6 +16,8 @@ from itertools import accumulate
 from struct import Struct
 from typing import TYPE_CHECKING
 
+import dgen
+
 if TYPE_CHECKING:
     from .type import Type
 
@@ -371,8 +373,6 @@ class TypeValue(Layout):
         tag = tag_layout.to_json(_read_ptr(ptr, tag_layout.byte_size), 0)
         assert isinstance(tag, str)
         dialect_name, type_name = tag.split(".")
-        import dgen
-
         cls = dgen.imports.load(dialect_name).types[type_name]
         # Each param is a Some (pointer to {TypeValue, value_inline}).
         layout = _descriptor_layout_for_cls(cls)
