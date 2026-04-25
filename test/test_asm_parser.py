@@ -270,6 +270,54 @@ class TestComments:
         with pytest.raises(ParseError):
             parse("# just a comment\n# and another\n")
 
+    def test_comment_at_column_zero_inside_block(self) -> None:
+        """A comment-only line dedented to column 0 doesn't end the block."""
+        value = parse(
+            strip_prefix("""
+            | import function
+            | import index
+            | import algebra
+            |
+            | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+            |     %a : index.Index = algebra.add(%x, %x)
+            | # comment at column 0, less than block indent
+            |     %b : index.Index = algebra.add(%a, %a)
+        """)
+        )
+        assert isinstance(value, FunctionOp)
+
+    def test_comment_overindented_inside_block(self) -> None:
+        """A comment-only line indented past the block's ops is still skipped."""
+        value = parse(
+            strip_prefix("""
+            | import function
+            | import index
+            | import algebra
+            |
+            | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+            |     %a : index.Index = algebra.add(%x, %x)
+            |             # over-indented comment
+            |     %b : index.Index = algebra.add(%a, %a)
+        """)
+        )
+        assert isinstance(value, FunctionOp)
+
+    def test_comment_partially_indented_inside_block(self) -> None:
+        """A comment-only line at an arbitrary intermediate indent is skipped."""
+        value = parse(
+            strip_prefix("""
+            | import function
+            | import index
+            | import algebra
+            |
+            | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+            |     %a : index.Index = algebra.add(%x, %x)
+            |   # half-indented comment
+            |     %b : index.Index = algebra.add(%a, %a)
+        """)
+        )
+        assert isinstance(value, FunctionOp)
+
 
 class TestAsmWithImports:
     def test_collects_dialects_from_nested_blocks(self) -> None:
