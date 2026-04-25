@@ -218,6 +218,59 @@ class TestParseValue:
         assert first == second
 
 
+class TestComments:
+    """`#` introduces a python-style line comment."""
+
+    def test_top_level_comment(self) -> None:
+        value = parse(
+            strip_prefix("""
+            | # leading comment
+            | import index
+            | # comment between imports and statements
+            | import algebra
+            |
+            | # comment before a statement
+            | %a : index.Index = 3
+            | %b : index.Index = 4
+            | %c : index.Index = algebra.add(%a, %b)
+            | # trailing comment
+        """)
+        )
+        assert value.name == "c"
+
+    def test_trailing_comment_on_statement(self) -> None:
+        value = parse(
+            strip_prefix("""
+            | import index
+            | import algebra
+            |
+            | %a : index.Index = 3  # this is three
+            | %b : index.Index = 4  # this is four
+            | %c : index.Index = algebra.add(%a, %b)  # the sum
+        """)
+        )
+        assert value.name == "c"
+
+    def test_comment_inside_block_body(self) -> None:
+        value = parse(
+            strip_prefix("""
+            | import function
+            | import index
+            | import algebra
+            |
+            | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+            |     # comment at start of block
+            |     %y : index.Index = algebra.add(%x, %x)  # double it
+            |     # trailing block comment
+        """)
+        )
+        assert isinstance(value, FunctionOp)
+
+    def test_only_comments(self) -> None:
+        with pytest.raises(ParseError):
+            parse("# just a comment\n# and another\n")
+
+
 class TestAsmWithImports:
     def test_collects_dialects_from_nested_blocks(self) -> None:
         """asm_with_imports walks into block bodies to find every dialect used."""
