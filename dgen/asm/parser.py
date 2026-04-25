@@ -135,6 +135,7 @@ class ASMParser:
         return self.name_table[name]
 
     def _skip_ws(self) -> None:
+        """Skip spaces, tabs, and ``# ...`` line comments (up to but not past the newline)."""
         while self.pos < len(self.text):
             ch = self.text[self.pos]
             if ch in " \t":
@@ -146,15 +147,11 @@ class ASMParser:
                 break
 
     def _skip_all(self) -> None:
-        while self.pos < len(self.text):
-            ch = self.text[self.pos]
-            if ch in " \t\n\r":
-                self.pos += 1
-            elif ch == "#":
-                end = self.text.find("\n", self.pos)
-                self.pos = len(self.text) if end == -1 else end
-            else:
-                break
+        """``_skip_ws`` plus newlines."""
+        self._skip_ws()
+        while self.pos < len(self.text) and self.text[self.pos] in "\n\r":
+            self.pos += 1
+            self._skip_ws()
 
     def _expect(self, string: str) -> None:
         for ch in string:
@@ -206,11 +203,7 @@ def newline(parser: ASMParser) -> int:
         if parser.pos + indent >= len(parser.text):
             parser.pos += indent
             continue
-        ch = parser.text[parser.pos + indent]
-        if ch == "\n":
-            parser.pos += indent + 1
-            continue
-        if ch == "#":
+        if parser.text[parser.pos + indent] in "\n#":
             end = parser.text.find("\n", parser.pos + indent)
             parser.pos = len(parser.text) if end == -1 else end + 1
             continue
