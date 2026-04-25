@@ -1,6 +1,5 @@
 """Tests for IR graph equivalence checking."""
 
-
 from dgen.asm.parser import parse
 from dgen.block import BlockArgument
 from dgen.dialects import builtin, number

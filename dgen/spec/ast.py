@@ -7,10 +7,13 @@ from dataclasses import dataclass, field
 
 @dataclass
 class ImportDecl:
-    """An import: 'from module import Name1, Name2' or 'import module'."""
+    """An import: 'from module import Name1, Name2', 'import module', or
+    'from . import name1, name2' (relative).
+    """
 
     module: str
     names: list[str]
+    relative: bool = False
 
 
 @dataclass

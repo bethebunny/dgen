@@ -1,16 +1,17 @@
 """Runtime module builder for .dgen dialect specifications.
 
 Creates Python classes directly via metaprogramming instead of generating and
-exec()-ing source code.  Used by the DgenLoader import hook.
+exec()-ing source code.  Used by the dialect import hook and by direct calls
+to :func:`dgen.imports.load`.
 """
 
 from __future__ import annotations
 
 import ast as _ast
 import dataclasses
-import importlib
+import sys
 from collections.abc import Callable
-from types import ModuleType
+from pathlib import Path
 
 import dgen
 from dgen import Block, Dialect, Op, Type, TypeType, Value, layout
@@ -344,19 +345,21 @@ def _build_op(
     return cls
 
 
-ImportResolver = Callable[[str], str]
-"""Maps a dgen module name (e.g. ``"index"``) to a Python module path
-(e.g. ``"dgen.dialects.index"``)."""
-
-
 def build(
     ast: DgenFile,
-    dialect_name: str,
-    resolve_import: ImportResolver,
-    module: ModuleType,
-) -> None:
-    """Build all types, traits, and ops into ``module.__dict__``."""
-    ns = module.__dict__
+    qualname: str,
+    dgen_dir: Path,
+    ns: dict[str, object] | None = None,
+) -> Dialect:
+    """Build a Dialect from an AST.
+
+    ``ns`` is the namespace used to resolve names during construction
+    (imported types, locally-defined types, dgen builtins).  When called
+    from the Python import hook ``ns`` is the loading module's ``__dict__``;
+    otherwise pass ``None`` for an internal scratch dict.
+    """
+    if ns is None:
+        ns = {}
 
     ns.setdefault("dgen", dgen)
     ns.setdefault("layout", layout)
@@ -369,16 +372,25 @@ def build(
     ns.setdefault("Op", Op)
     ns.setdefault("Block", Block)
 
-    d = Dialect(dialect_name)
-    ns[dialect_name] = d
+    mod_name = ns.get("__name__")
+    module = sys.modules.get(mod_name) if isinstance(mod_name, str) else None
+    d = Dialect(qualname, module=module)
+    ns[qualname.split(".")[-1]] = d
 
     for imp in ast.imports:
-        py_mod = resolve_import(imp.module)
-        mod = importlib.import_module(py_mod)
-        if imp.names:
-            ns.update({name: getattr(mod, name) for name in imp.names})
+        if imp.relative:
+            for name in imp.names:
+                ns[name] = dgen.imports.load(name, _from=dgen_dir)
         else:
-            ns[imp.module] = mod
+            other = dgen.imports.load(imp.module)
+            if imp.names:
+                ns.update({n: _lookup(other, n) for n in imp.names})
+            else:
+                # Bind the backing Python module so attribute access (e.g.
+                # ``ndbuffer.Shape``) and tools that introspect ``ns`` for
+                # ``ModuleType`` values both work.  Falls back to the Dialect
+                # itself if no Python module exists.
+                ns[imp.module.split(".")[-1]] = other.module or other
 
     for td in ast.traits:
         ns[td.name] = _build_trait(td, d, ns)
@@ -390,3 +402,21 @@ def build(
 
     for od in ast.ops:
         ns[_op_class_name(od.name)] = _build_op(od, d, ns, type_map, known_names)
+
+    return d
+
+
+def _lookup(d: Dialect, name: str) -> object:
+    """Resolve a name imported from another dialect (`from X import Y`).
+
+    Looks first in the dialect's own types and ops, then in the loading
+    Python module's namespace to pick up names re-exported via the source
+    dialect's own ``from`` imports.
+    """
+    if name in d.types:
+        return d.types[name]
+    if name in d.ops:
+        return d.ops[name]
+    if d.module is not None and name in d.module.__dict__:
+        return d.module.__dict__[name]
+    raise ImportError(f"dialect {d.name!r} has no member {name!r}")

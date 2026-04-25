@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
-from dgen.dialect import Dialect
 from dgen.dialects.function import FunctionOp
 from dgen.spec.ast import HasTraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
@@ -189,7 +188,7 @@ def verify_all_ready(root: dgen.Value) -> None:
 
 def _resolve_trait(trait_name: str, op: dgen.Op) -> type[Trait]:
     """Look up a trait class by name from the dialect registry."""
-    for dialect in Dialect._registry.values():
+    for dialect in dgen.DIALECTS.values():
         cls = dialect.types.get(trait_name)
         if cls is not None and issubclass(cls, Trait):
             return cls

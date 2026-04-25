@@ -23,7 +23,6 @@ from pathlib import Path
 import click
 
 import dgen
-from dgen import Dialect
 from dgen.asm.formatting import SlotTracker, _is_sugar_op, op_asm
 from dgen.asm.parser import parse
 from dgen.ir.traversal import all_values
@@ -179,7 +178,7 @@ def diff(
             -I toy/dialects -I actor/dialects
     """
     for d in include_dirs:
-        Dialect.paths.append(d)
+        dgen.PATH.append(d)
 
     expected_value = parse(expected.read())
     actual_value = parse(actual.read())

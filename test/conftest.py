@@ -1,3 +1,3 @@
-# Dialect paths are configured in the root conftest.py — dialects are
-# discovered automatically via Dialect.get() when the parser encounters
-# import statements.
+# dgen.PATH is configured in the root conftest.py — dialects are discovered
+# automatically via dgen.imports.load() when the parser encounters import
+# statements.

@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from dgen import Dialect
+import dgen
 from dgen.passes.compiler import verify_passes
 from dgen.testing.syrupy import IRSnapshotExtension
 
-# Make toy and dcc dialects discoverable via Dialect.get().
-Dialect.paths.append(Path(__file__).parent / "examples" / "toy" / "dialects")
-Dialect.paths.append(Path(__file__).parent / "examples" / "dcc" / "dialects")
+# Make toy and dcc dialects discoverable via dgen.imports.load().
+dgen.PATH.append(Path(__file__).parent / "examples" / "toy" / "dialects")
+dgen.PATH.append(Path(__file__).parent / "examples" / "dcc" / "dialects")
 
 
 @pytest.fixture(autouse=True)

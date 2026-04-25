@@ -7,7 +7,7 @@ import ast
 
 import click
 
-from dgen import Dialect
+import dgen
 from dgen.llvm import lower_to_llvm
 from dgen.llvm.codegen import Executable
 from dgen.passes.compiler import Compiler
@@ -20,7 +20,7 @@ from toy.parser.toy_parser import parse_toy
 from toy.passes import lower_toy
 
 # Make toy dialects discoverable for IR parsing round-trips.
-Dialect.paths.append(Path(__file__).parent / "dialects")
+dgen.PATH.append(Path(__file__).parent / "dialects")
 
 toy_compiler: Compiler[Executable] = Compiler(
     passes=[lower_toy(), lower_builtin_dialects()],

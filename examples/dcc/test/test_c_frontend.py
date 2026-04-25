@@ -8,7 +8,6 @@ import pytest
 from pycparser import c_ast
 
 import dgen
-from dgen import Dialect
 from dgen.block import BlockArgument
 from dgen.dialects import function, index
 from dgen.dialects.builtin import Nil
@@ -29,7 +28,7 @@ from dcc.parser.type_resolver import TypeResolver, TypeResolverError
 TESTDATA_DIR = Path(__file__).parent / "testdata"
 
 # Make dcc dialect discoverable.
-Dialect.paths.append(Path(__file__).parent.parent / "dialects")
+dgen.PATH.append(Path(__file__).parent.parent / "dialects")
 
 
 def run_c(source: str, *args: int) -> int:
