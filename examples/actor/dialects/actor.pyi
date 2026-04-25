@@ -4,27 +4,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import dgen
 from dgen import Block, Dialect, Op, Type, Value
 from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
 
 actor = Dialect("actor")
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ActorOp(Op):
     consume_rate: Value[Index]
     produce_rate: Value[Index]
     input: Value
-    type: Type = Nil()
     body: Block
+    type: Type = Nil()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class ProduceOp(Op):
     value: Value
     type: Type = Nil()
 
-@dataclass(eq=False, kw_only=True)
+@dataclass(eq=False)
 class PipelineOp(Op):
     input: Value
-    type: Type
     body: Block
+    type: Type

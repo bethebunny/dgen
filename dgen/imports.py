@@ -19,20 +19,25 @@ Resolution rules:
   Useful for tests and notebook development.
 
 Whichever path runs, the resulting :class:`~dgen.Dialect` is stored in
-:data:`DIALECTS` keyed by ``qualname``.
+:data:`DIALECTS` keyed by ``qualname``.  Like ``sys.modules``, an existing
+entry is authoritative — repeat loads return the cached Dialect rather than
+rebuild.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 import importlib.abc
 import importlib.machinery
 import sys
-import types
 from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
+
+from dgen.spec.builder import build
+from dgen.spec.parser import parse
 
 if TYPE_CHECKING:
     from dgen.dialect import Dialect
@@ -72,10 +77,10 @@ def _load_file(qualname: str, path: Path) -> "Dialect":
     """Load a ``.dgen`` file.  Routes through Python's import system when the
     file sits under a ``sys.path`` entry — that way the ``.dgen`` import hook
     fires, ``sys.modules`` is populated under the natural dotted name, and
-    re-imports converge on the same module.  Falls back to a synthetic module
-    when the file isn't reachable via ``sys.path``.
+    re-imports converge on the same module.  Falls back to a build into a
+    plain dict when the file isn't reachable via ``sys.path``.
     """
-    py_mod = _path_to_python_module(path)
+    py_mod = path_to_python_module(path)
     if py_mod is not None:
         importlib.import_module(py_mod)
         if qualname in DIALECTS:
@@ -83,7 +88,7 @@ def _load_file(qualname: str, path: Path) -> "Dialect":
     return _build(qualname, path.read_text(), dgen_dir=path.parent)
 
 
-def _path_to_python_module(path: Path) -> str | None:
+def path_to_python_module(path: Path) -> str | None:
     """Return the dotted Python module name covering ``path`` via ``sys.path``,
     or ``None`` if no entry covers it.
     """
@@ -102,20 +107,8 @@ def _build(qualname: str, source: str, dgen_dir: Path) -> "Dialect":
 
     Cross-dialect imports inside ``source`` resolve relative to ``dgen_dir``
     for ``from .`` and via :func:`load` otherwise.
-
-    Synthesizes a Python module to host the generated classes so dataclass
-    annotation resolution works.  When the dialect is loaded via the Python
-    import hook the loading module is used directly instead of this synthetic
-    one.
     """
-    from dgen.spec.builder import build
-    from dgen.spec.parser import parse
-
-    mod_name = f"dgen._loaded.{qualname}"
-    mod = sys.modules.get(mod_name) or types.ModuleType(mod_name)
-    sys.modules[mod_name] = mod
-    ast = parse(source)
-    return build(ast, qualname=qualname, dgen_dir=dgen_dir, ns=mod.__dict__)
+    return build(parse(source), qualname=qualname, dgen_dir=dgen_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -123,40 +116,38 @@ def _build(qualname: str, source: str, dgen_dir: Path) -> "Dialect":
 # ---------------------------------------------------------------------------
 
 
+@dataclasses.dataclass
 class _DgenLoader(importlib.abc.Loader):
     """Loader that compiles a ``.dgen`` file into a live Python module."""
 
-    def __init__(self, path: Path, qualname: str) -> None:
-        self.path = path
-        self.qualname = qualname
+    path: Path
+    qualname: str
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> None:
         return None
 
     def exec_module(self, module: ModuleType) -> None:
-        from dgen.spec.builder import build
-        from dgen.spec.parser import parse
-
         # If the dialect is already loaded (e.g. via dgen.imports.load), don't
-        # rebuild it — Python may import the same .dgen file under a different
-        # dotted module path, but there must be only one Dialect / one set of
-        # type classes per qualname.  Re-export the existing module's contents
-        # so callers of ``from <this-module> import X`` keep working.
+        # rebuild it — DIALECTS is authoritative, like sys.modules.  Inject
+        # the existing types and ops by name so callers of
+        # ``from <this-module> import X`` keep working.
         existing = DIALECTS.get(self.qualname)
-        if existing is not None and existing.module is not None:
-            if existing.module is not module:
-                module.__dict__.update(existing.module.__dict__)
+        if existing is not None:
+            ns = module.__dict__
+            ns[self.qualname.split(".")[-1]] = existing
+            ns.update(existing.types)
+            ns.update(existing.ops)
             return
 
-        ast = parse(self.path.read_text())
         build(
-            ast,
+            parse(self.path.read_text()),
             qualname=self.qualname,
             dgen_dir=self.path.parent,
             ns=module.__dict__,
         )
 
 
+@dataclasses.dataclass
 class _DgenFinder(importlib.abc.MetaPathFinder):
     """Meta-path finder that locates ``.dgen`` files via Python's normal
     import resolution.  When a ``<name>.dgen`` file sits where Python would
@@ -184,7 +175,7 @@ class _DgenFinder(importlib.abc.MetaPathFinder):
             if dgen_file.exists():
                 return importlib.machinery.ModuleSpec(
                     fullname,
-                    _DgenLoader(dgen_file, qualname=dgen_file.stem),
+                    _DgenLoader(path=dgen_file, qualname=dgen_file.stem),
                     origin=str(dgen_file),
                 )
         return None

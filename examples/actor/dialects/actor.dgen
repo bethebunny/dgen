@@ -1,4 +1,5 @@
-from builtin import Index, Nil
+from builtin import Nil
+from index import Index
 
 op actor<consume_rate: Index, produce_rate: Index>(input) -> Nil:
     block body

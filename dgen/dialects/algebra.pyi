@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import dgen
 from dgen import Dialect, Op, Trait, Type, Value
+from dgen.dialects.builtin import Nil
 
 algebra = Dialect("algebra")
 

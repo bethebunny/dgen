@@ -112,3 +112,22 @@ def test_relative_does_not_consult_path(tmp_path):
             dgen.imports.load("on_path", _from=other)
     finally:
         dgen.PATH.remove(tmp_path)
+
+
+def test_imports_do_not_re_export(tmp_path):
+    """`from foo import X` requires X to be defined in foo, not just imported.
+
+    Names that ``foo`` itself imported are not visible to ``from foo import``
+    elsewhere — every dialect must import names from where they are declared.
+    """
+    (tmp_path / "leaf.dgen").write_text("type Leaf:\n    layout Void\n")
+    (tmp_path / "middle.dgen").write_text("from . import leaf\n")
+    (tmp_path / "user.dgen").write_text(
+        "from . import middle\n\ntype Holder:\n    inner: middle.Leaf\n"
+    )
+
+    for name in ("leaf", "middle", "user"):
+        dgen.DIALECTS.pop(name, None)
+
+    with pytest.raises(AttributeError, match="has no member 'Leaf'"):
+        dgen.imports.load("user", _from=tmp_path)
