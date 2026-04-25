@@ -135,12 +135,26 @@ class ASMParser:
         return self.name_table[name]
 
     def _skip_ws(self) -> None:
-        while self.pos < len(self.text) and self.text[self.pos] in " \t":
-            self.pos += 1
+        while self.pos < len(self.text):
+            ch = self.text[self.pos]
+            if ch in " \t":
+                self.pos += 1
+            elif ch == "#":
+                end = self.text.find("\n", self.pos)
+                self.pos = len(self.text) if end == -1 else end
+            else:
+                break
 
     def _skip_all(self) -> None:
-        while self.pos < len(self.text) and self.text[self.pos] in " \t\n\r":
-            self.pos += 1
+        while self.pos < len(self.text):
+            ch = self.text[self.pos]
+            if ch in " \t\n\r":
+                self.pos += 1
+            elif ch == "#":
+                end = self.text.find("\n", self.pos)
+                self.pos = len(self.text) if end == -1 else end
+            else:
+                break
 
     def _expect(self, string: str) -> None:
         for ch in string:
@@ -181,7 +195,7 @@ def newline(parser: ASMParser) -> int:
     ):
         end = parser.text.find("\n", parser.pos)
         parser.pos = len(parser.text) if end == -1 else end + 1
-    # Skip blank lines, return indent of first content line
+    # Skip blank and comment-only lines, return indent of first content line
     while parser.pos < len(parser.text):
         indent = 0
         while (
@@ -189,11 +203,16 @@ def newline(parser: ASMParser) -> int:
             and parser.text[parser.pos + indent] in " \t"
         ):
             indent += 1
-        if (
-            parser.pos + indent >= len(parser.text)
-            or parser.text[parser.pos + indent] == "\n"
-        ):
-            parser.pos += indent + (1 if parser.pos + indent < len(parser.text) else 0)
+        if parser.pos + indent >= len(parser.text):
+            parser.pos += indent
+            continue
+        ch = parser.text[parser.pos + indent]
+        if ch == "\n":
+            parser.pos += indent + 1
+            continue
+        if ch == "#":
+            end = parser.text.find("\n", parser.pos + indent)
+            parser.pos = len(parser.text) if end == -1 else end + 1
             continue
         return indent
     return 0
