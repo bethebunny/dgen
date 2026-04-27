@@ -24,7 +24,7 @@ region's body and visits each raise with its handler operand already a
 from __future__ import annotations
 
 import dgen
-from dgen.block import BlockArgument, BlockParameter
+from dgen.block import BlockParameter
 from dgen.builtins import pack
 from dgen.dialects import error, goto
 from dgen.dialects.builtin import Never
@@ -81,57 +81,55 @@ class RaiseCatchToGoto(Pass):
         cid = self._counter
         self._counter += 1
 
-        # No raises in the body? Then there's no merge to do; the body
-        # just produces a value. The handler is unused, the except block
-        # is dead, and we can dissolve the try entirely by replacing it
-        # with the body's result. Detected before any substitution so the
-        # comprehension sees the original op.
-        if not op.body.parameters:
-            raise AssertionError(
-                f"TryOp %{op.name}: body block missing handler parameter"
-            )
         handler = op.body.parameters[0]
-        body_has_raises = any(
-            isinstance(v, error.RaiseOp) and v.handler is handler
-            for v in all_values(op.body.result)
-        )
-        if not body_has_raises:
-            return op.body.result
 
+        # %self is unused for try-merge (no back-edge); %exit carries the
+        # merged value via its phi. Mirrors lower_if: the body terminates
+        # with branch<%exit>(body.result), the except label terminates
+        # with branch<%exit>(except.result), and codegen emits the phi at
+        # %exit from the two predecessors.
         merge_self = BlockParameter(name="self", type=goto.Label())
         merge_exit = BlockParameter(name=f"try_exit{cid}", type=goto.Label())
-        merge_result = BlockArgument(name=f"try_result{cid}", type=op.type)
 
-        # except block becomes a goto.label that branches to the merge.
+        # except block becomes a goto.label whose body branches to %exit
+        # with its recovery value. A Never-typed except (e.g. re-raise)
+        # already terminates on its own — don't add a merge branch.
         except_block = op.except_
+        if isinstance(except_block.result.type, Never):
+            except_result: dgen.Value = except_block.result
+            except_captures = list(except_block.captures)
+        else:
+            except_result = goto.BranchOp(
+                target=merge_exit, arguments=pack([except_block.result])
+            )
+            except_captures = [merge_exit, *except_block.captures]
         except_label = goto.LabelOp(
             name=f"except{cid}",
             initial_arguments=pack([]),
             body=dgen.Block(
                 args=list(except_block.args),
-                captures=[merge_self, *except_block.captures],
-                result=goto.BranchOp(
-                    target=merge_self, arguments=pack([except_block.result])
-                ),
+                captures=except_captures,
+                result=except_result,
             ),
         )
 
-        # Substitute handler (effect-layer evidence) with except label
+        # Substitute handler (effect-layer evidence) with except_label
         # (goto-layer evidence). The framework's replace_uses_of cascade
         # updates raise.handler operands and nested block capture lists
-        # transitively. ``lower_raise`` below converts each
+        # transitively. ``lower_raise`` then converts each
         # raise(label, err) into goto.branch(label, err) when the framework
         # visits it next in topological order.
         op.body.replace_uses_of(handler, except_label)
 
-        # Body terminator: if the body diverges (every path hits a raise,
-        # so body.result is itself a branch), it terminates on its own.
-        # Otherwise wrap body.result in a branch to the merge.
+        # Body terminator: branch<%exit>(body.result), or the body's own
+        # result if it diverges (every path raises). %merge_exit is a
+        # parameter of the region body, so the branch references it
+        # directly — no capture needed.
         if isinstance(op.body.result.type, Never):
             body_terminator: dgen.Value = op.body.result
         else:
             body_terminator = goto.BranchOp(
-                target=merge_self, arguments=pack([op.body.result])
+                target=merge_exit, arguments=pack([op.body.result])
             )
 
         return goto.RegionOp(
@@ -140,7 +138,6 @@ class RaiseCatchToGoto(Pass):
             type=op.type,
             body=dgen.Block(
                 parameters=[merge_self, merge_exit],
-                args=[merge_result],
                 captures=list(op.body.captures),
                 result=body_terminator,
             ),

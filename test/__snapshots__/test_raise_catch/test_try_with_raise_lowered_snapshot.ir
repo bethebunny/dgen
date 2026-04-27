@@ -2,11 +2,11 @@ import algebra
 import goto
 import index
 
-%try0 : index.Index = goto.region([]) body<%self: goto.Label, %try_exit0: goto.Label>(%try_result0: index.Index):
-    %except0 : goto.Label = goto.label([]) body(%err: index.Index) captures(%self):
+%try0 : index.Index = goto.region([]) body<%self: goto.Label, %try_exit0: goto.Label>():
+    %except0 : goto.Label = goto.label([]) body(%err: index.Index) captures(%try_exit0):
         %one : index.Index = 1
         %rec : index.Index = algebra.add(%err, %one)
-        %0 : Nil = goto.branch<%self>([%rec])
+        %0 : Nil = goto.branch<%try_exit0>([%rec])
 
     %val : index.Index = 7
     %1 : Nil = goto.branch<%except0>([%val])
