@@ -36,6 +36,38 @@ def test_load_inline_source_with_cross_dialect_import():
     assert "HasIndex" in d.types
 
 
+def test_load_inline_source_with_op():
+    """An inline source containing an op declaration — the generated op
+    dataclass has string annotations (``"Type"``, ``"Value"``) that
+    ``@dataclass`` resolves via ``sys.modules[__module__]``. Regression
+    guard: the type-only tests above don't exercise this path."""
+    source = "op my_op(x) -> Nil\n"
+    d = dgen.imports.load("inline_with_op", source=source)
+    assert "my_op" in d.ops
+    op_cls = d.ops["my_op"]
+    # Op is constructable with the declared operand kwargs.
+    from dgen.dialects.builtin import Nil
+
+    instance = op_cls(x=Nil().constant(None), type=Nil())
+    assert instance.x is not None
+
+
+def test_load_inline_source_with_block():
+    """An inline source with ``block`` declarations exercises the ``Block``
+    string annotation resolution path."""
+    source = "op my_op() -> Nil:\n    block body\n"
+    d = dgen.imports.load("inline_with_block", source=source)
+    assert "my_op" in d.ops
+    assert d.ops["my_op"].__blocks__ == ("body",)
+
+
+def test_load_inline_source_with_trait():
+    """Inline source can declare traits."""
+    source = "trait MyTrait\n"
+    d = dgen.imports.load("inline_with_trait", source=source)
+    assert "MyTrait" in d.types
+
+
 def test_load_relative_only_searches_sibling(tmp_path):
     """``_from`` ignores dgen.PATH and searches only the given directory."""
     (tmp_path / "sibling.dgen").write_text("type SiblingType:\n    layout Void\n")

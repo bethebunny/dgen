@@ -107,8 +107,17 @@ def _build(qualname: str, source: str, dgen_dir: Path) -> "Dialect":
 
     Cross-dialect imports inside ``source`` resolve relative to ``dgen_dir``
     for ``from .`` and via :func:`load` otherwise.
+
+    Registers a synthetic module under ``qualname`` in ``sys.modules`` and
+    builds into its namespace so that ``@dataclass`` can resolve string
+    annotations on generated classes (it looks up ``cls.__module__`` in
+    ``sys.modules``). Without this, any source containing an ``op`` —
+    whose generated dataclass has annotations like ``"Block"`` /
+    ``"Type"`` / ``"Value"`` — fails to instantiate at build time.
     """
-    return build(parse(source), qualname=qualname, dgen_dir=dgen_dir)
+    mod = ModuleType(qualname)
+    sys.modules[qualname] = mod
+    return build(parse(source), qualname=qualname, dgen_dir=dgen_dir, ns=mod.__dict__)
 
 
 # ---------------------------------------------------------------------------
