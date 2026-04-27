@@ -165,11 +165,11 @@ def test_multiple_stores_independent() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_lowering_alloc_store_load_1d(ir_snapshot) -> None:
+def test_lowering_alloc_store_load_1d(lowering_snapshot) -> None:
     """Lowered IR for 1-D alloc + store + load."""
-    assert (
-        _lower(
-            strip_prefix("""
+    lowering_snapshot(
+        [NDBufferToMemory()],
+        """
         | import function
         | import index
         | import ndbuffer
@@ -179,17 +179,15 @@ def test_lowering_alloc_store_load_1d(ir_snapshot) -> None:
         |     %buf : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(1)>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<index.Index(1)>([3]))
         |     %st : Nil = ndbuffer.store(%buf, %x, %buf, [index.Index(0)])
         |     %val : number.Float64 = ndbuffer.load(%st, %buf, [index.Index(0)])
-    """)
-        )
-        == ir_snapshot
+        """,
     )
 
 
-def test_lowering_alloc_store_load_2d(ir_snapshot) -> None:
+def test_lowering_alloc_store_load_2d(lowering_snapshot) -> None:
     """Lowered IR for 2-D alloc + store + load with linearization."""
-    assert (
-        _lower(
-            strip_prefix("""
+    lowering_snapshot(
+        [NDBufferToMemory()],
+        """
         | import function
         | import index
         | import ndbuffer
@@ -199,17 +197,15 @@ def test_lowering_alloc_store_load_2d(ir_snapshot) -> None:
         |     %buf : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<index.Index(2)>([2, 3]))
         |     %st : Nil = ndbuffer.store(%buf, %x, %buf, [index.Index(1), index.Index(2)])
         |     %val : number.Float64 = ndbuffer.load(%st, %buf, [index.Index(1), index.Index(2)])
-    """)
-        )
-        == ir_snapshot
+        """,
     )
 
 
-def test_lowering_multiple_stores(ir_snapshot) -> None:
+def test_lowering_multiple_stores(lowering_snapshot) -> None:
     """Lowered IR for multiple stores at different indices."""
-    assert (
-        _lower(
-            strip_prefix("""
+    lowering_snapshot(
+        [NDBufferToMemory()],
+        """
         | import algebra
         | import function
         | import index
@@ -223,9 +219,7 @@ def test_lowering_multiple_stores(ir_snapshot) -> None:
         |     %a : number.Float64 = ndbuffer.load(%st2, %buf, [index.Index(0)])
         |     %b : number.Float64 = ndbuffer.load(%st2, %buf, [index.Index(1)])
         |     %result : number.Float64 = algebra.add(%a, %b)
-    """)
-        )
-        == ir_snapshot
+        """,
     )
 
 

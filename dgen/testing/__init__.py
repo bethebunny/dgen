@@ -10,6 +10,14 @@ from dgen.ir.equivalence import graph_equivalent
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.testing.syrupy import LoweringSnapshot
+
+__all__ = [
+    "LoweringSnapshot",
+    "assert_ir_equivalent",
+    "llvm_compile",
+    "strip_prefix",
+]
 
 
 def llvm_compile(value: dgen.Value) -> Executable:

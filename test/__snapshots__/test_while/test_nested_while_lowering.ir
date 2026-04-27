@@ -1,3 +1,29 @@
+# Lowered through: ControlFlowToGoto
+#
+# Input IR:
+#
+#   import algebra
+#   import control_flow
+#   import index
+#   import number
+#
+#   %zero : index.Index = 0
+#   %outer : Nil = control_flow.while([%zero]) condition(%i: index.Index):
+#       %two : index.Index = 2
+#       %cmp : number.Boolean = algebra.less_than(%i, %two)
+#   body(%oi: index.Index):
+#       %one : index.Index = 1
+#       %next : index.Index = algebra.add(%oi, %one)
+#       %izero : index.Index = 0
+#       %inner : Nil = control_flow.while([%izero]) condition(%j: index.Index):
+#           %jtwo : index.Index = 2
+#           %jcmp : number.Boolean = algebra.less_than(%j, %jtwo)
+#       body(%j2: index.Index):
+#           %nop : index.Index = 0
+#           %nop2 : Nil = chain(%nop, %nop)
+#
+#       %next2 : index.Index = chain(%next, %inner)
+
 import algebra
 import goto
 import index
@@ -5,12 +31,12 @@ import number
 
 %zero : index.Index = 0
 %while_header0 : goto.Label = goto.region([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
-    %while_body0 : goto.Label = goto.label([]) body(%wb0_oi: index.Index) captures(%self):
+    %while_body0 : goto.Label = goto.label([]) body(%wb0_oi: index.Index) captures(%self, %exit0):
         %one : index.Index = 1
         %next : index.Index = algebra.add(%wb0_oi, %one)
         %izero : index.Index = 0
         %while_header1 : goto.Label = goto.region([%izero]) body<%0: goto.Label, %exit1: goto.Label>(%wh1_j: index.Index):
-            %while_body1 : goto.Label = goto.label([]) body(%wb1_j2: index.Index) captures(%0):
+            %while_body1 : goto.Label = goto.label([]) body(%wb1_j2: index.Index) captures(%0, %exit1):
                 %nop : index.Index = 0
                 %nop2 : Nil = chain(%nop, %nop)
                 %1 : Nil = goto.branch<%0>([%nop2])

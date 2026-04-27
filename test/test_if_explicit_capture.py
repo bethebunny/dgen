@@ -87,9 +87,11 @@ def test_if_python_api_no_capture():
 # -- Lowering to goto --
 
 
-def test_if_value_lowering(ir_snapshot):
+def test_if_value_lowering(lowering_snapshot):
     """Value-producing if lowers to a region with %self merge and result phi."""
-    ir = strip_prefix("""
+    lowering_snapshot(
+        [ControlFlowToGoto()],
+        """
         | import algebra
         | import number
         | import control_flow
@@ -101,15 +103,15 @@ def test_if_value_lowering(ir_snapshot):
         |         %ten : index.Index = 10
         |     else_body():
         |         %twenty : index.Index = 20
-    """)
-    value = parse(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)
-    assert lowered == ir_snapshot
+        """,
+    )
 
 
-def test_if_void_lowering(ir_snapshot):
+def test_if_void_lowering(lowering_snapshot):
     """Void if (side-effect only) lowers to the same structure as value ifs."""
-    ir = strip_prefix("""
+    lowering_snapshot(
+        [ControlFlowToGoto()],
+        """
         | import control_flow
         | import index
         | import memory
@@ -122,15 +124,15 @@ def test_if_void_lowering(ir_snapshot):
         |     %f : index.Index = 99
         |     %_ : Nil = memory.store(%alloc, %f, %alloc)
         | %result : index.Index = memory.load(%if, %alloc)
-    """)
-    value = parse(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)
-    assert lowered == ir_snapshot
+        """,
+    )
 
 
-def test_if_with_body_captures_lowering(ir_snapshot):
+def test_if_with_body_captures_lowering(lowering_snapshot):
     """If where branches capture outer-scope values."""
-    ir = strip_prefix("""
+    lowering_snapshot(
+        [ControlFlowToGoto()],
+        """
         | import algebra
         | import control_flow
         | import index
@@ -143,10 +145,8 @@ def test_if_with_body_captures_lowering(ir_snapshot):
         |     else_body() captures(%x):
         |         %two : number.Float64 = 2.0
         |         %b : number.Float64 = algebra.add(%x, %two)
-    """)
-    value = parse(ir)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)
-    assert lowered == ir_snapshot
+        """,
+    )
 
 
 def test_if_type_mismatch_then():

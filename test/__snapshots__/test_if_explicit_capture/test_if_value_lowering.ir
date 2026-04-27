@@ -1,3 +1,20 @@
+# Lowered through: ControlFlowToGoto
+#
+# Input IR:
+#
+#   import algebra
+#   import control_flow
+#   import function
+#   import index
+#   import number
+#
+#   %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
+#       %cond : number.Boolean = algebra.equal(%n, index.Index(0))
+#       %result : index.Index = control_flow.if(%cond, [], []) then_body():
+#           %ten : index.Index = 10
+#       else_body():
+#           %twenty : index.Index = 20
+
 import algebra
 import function
 import goto
@@ -10,8 +27,11 @@ import number
         %if_then0 : goto.Label = goto.label([]) body() captures(%self):
             %ten : index.Index = 10
             %0 : Nil = goto.branch<%self>([%ten])
+
         %if_else0 : goto.Label = goto.label([]) body() captures(%self):
             %twenty : index.Index = 20
             %1 : Nil = goto.branch<%self>([%twenty])
+
         %2 : Nil = goto.conditional_branch<%if_then0, %if_else0>(%cond, [], [])
         %3 : index.Index = chain(%if_result0, %2)
+

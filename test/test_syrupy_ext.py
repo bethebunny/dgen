@@ -4,9 +4,11 @@ import pytest
 
 from dgen import asm
 from dgen.asm.parser import parse
+from dgen.dialects import control_flow
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.testing import LoweringSnapshot, strip_prefix
 from dgen.testing.syrupy import IRSnapshotExtension
 from toy.dialects import toy  # noqa: F401 — registers toy dialect
-from dgen.testing import strip_prefix
 
 
 IR = strip_prefix("""
@@ -94,3 +96,81 @@ def test_ir_snapshot_fixture_end_to_end(ir_snapshot):
     """Snapshot round-trip: generate then verify against same value."""
     value = parse(IR)
     assert value == ir_snapshot
+
+
+# -- LoweringSnapshot serialization --
+
+
+def test_lowering_snapshot_serialize_emits_header():
+    """``LoweringSnapshot`` serializes with a leading ``#``-prefixed header."""
+    ext = IRSnapshotExtension()
+    value = parse(IR)
+    snapshot = LoweringSnapshot(
+        result=value,
+        pass_names=("FakePass",),
+        input_asm="import toy\n%x : index.Index = 1",
+    )
+    serialized = ext.serialize(snapshot)
+    assert isinstance(serialized, str)
+    head, _, body = serialized.partition("\n\n")
+    # Header is comment-only and names the pass.
+    assert all(line == "" or line.startswith("#") for line in head.splitlines())
+    assert "FakePass" in head
+    assert "import toy" in head
+    # Body is parseable IR (no comment prefix).
+    assert "toy.print" in body
+    assert "#" not in body.splitlines()[0]
+
+
+def test_lowering_snapshot_serialize_multiple_passes():
+    """Multi-pass header lists each pass on its own bullet line."""
+    ext = IRSnapshotExtension()
+    snapshot = LoweringSnapshot(
+        result=parse(IR),
+        pass_names=("First", "Second", "Third"),
+        input_asm="import toy",
+    )
+    serialized = ext.serialize(snapshot)
+    header = serialized.split("\n\n", 1)[0]
+    assert "Lowered through 3 passes:" in header
+    for name in ("First", "Second", "Third"):
+        assert f"#   - {name}" in header
+
+
+def test_lowering_snapshot_header_is_round_trippable():
+    """The ``#`` comment header is ignored by the parser, so the snapshot file
+    round-trips through ``parse``."""
+    ext = IRSnapshotExtension()
+    snapshot = LoweringSnapshot(
+        result=parse(IR),
+        pass_names=("FakePass",),
+        input_asm="import toy\n%x : index.Index = 1",
+    )
+    serialized = ext.serialize(snapshot)
+    reparsed = parse(serialized)
+    assert ext.matches(
+        serialized_data=serialized,
+        snapshot_data="\n".join(asm.asm_with_imports(reparsed)),
+    )
+
+
+def test_lowering_snapshot_fixture_runs_passes(lowering_snapshot):
+    """The ``lowering_snapshot`` fixture parses input, runs passes, and returns
+    the lowered ``Value`` so the test can do additional assertions."""
+    result = lowering_snapshot(
+        [ControlFlowToGoto()],
+        """
+        | import algebra
+        | import control_flow
+        | import index
+        | import number
+        | %zero : index.Index = 0
+        | %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
+        |     %ten : index.Index = 10
+        |     %cmp : number.Boolean = algebra.less_than(%i, %ten)
+        | body(%i: index.Index):
+        |     %brk : Never = control_flow.break()
+        """,
+    )
+    # Returned value is the lowered IR; can drive further assertions.
+    assert not isinstance(result, control_flow.WhileOp)

@@ -1,3 +1,20 @@
+# Lowered through: ControlFlowToGoto
+#
+# Input IR:
+#
+#   import algebra
+#   import control_flow
+#   import index
+#   import number
+#
+#   %zero : index.Index = 0
+#   %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
+#       %ten : index.Index = 10
+#       %cmp : number.Boolean = algebra.less_than(%i, %ten)
+#   body(%0: index.Index):
+#       %one : index.Index = 1
+#       %next : index.Index = algebra.add(%0, %one)
+
 import algebra
 import goto
 import index
@@ -5,7 +22,7 @@ import number
 
 %zero : index.Index = 0
 %while_header0 : goto.Label = goto.region([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
-    %while_body0 : goto.Label = goto.label([]) body(%wb0_i: index.Index) captures(%self):
+    %while_body0 : goto.Label = goto.label([]) body(%wb0_i: index.Index) captures(%self, %exit0):
         %one : index.Index = 1
         %next : index.Index = algebra.add(%wb0_i, %one)
         %0 : Nil = goto.branch<%self>([%next])

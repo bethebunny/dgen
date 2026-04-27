@@ -10,7 +10,7 @@ WhileOp semantics:
 from dgen import asm
 from dgen.asm.parser import parse
 from dgen.llvm.codegen import LLVMCodegen
-from dgen.passes.compiler import Compiler, IdentityPass
+from dgen.passes.compiler import Compiler
 from dgen.dialects import control_flow
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
@@ -104,11 +104,9 @@ SIMPLE_WHILE = strip_prefix("""
 """)
 
 
-def test_while_lowering_to_goto(ir_snapshot):
+def test_while_lowering_to_goto(lowering_snapshot):
     """WhileOp lowered to goto labels produces expected IR."""
-    m = parse(SIMPLE_WHILE)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
-    assert lowered == ir_snapshot
+    lowering_snapshot([ControlFlowToGoto()], SIMPLE_WHILE)
 
 
 def test_while_llvm_ir(snapshot):
@@ -143,11 +141,9 @@ NESTED_WHILE = strip_prefix("""
 """)
 
 
-def test_nested_while_lowering(ir_snapshot):
+def test_nested_while_lowering(lowering_snapshot):
     """Nested WhileOps lowered to goto labels."""
-    m = parse(NESTED_WHILE)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
-    assert lowered == ir_snapshot
+    lowering_snapshot([ControlFlowToGoto()], NESTED_WHILE)
 
 
 def test_nested_while_llvm_ir(snapshot):

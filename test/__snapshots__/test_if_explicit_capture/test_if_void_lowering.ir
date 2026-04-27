@@ -1,3 +1,22 @@
+# Lowered through: ControlFlowToGoto
+#
+# Input IR:
+#
+#   import control_flow
+#   import index
+#   import memory
+#
+#   %cond : index.Index = 1
+#   %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+#   %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
+#       %t : index.Index = 42
+#       %_ : Nil = memory.store(%alloc, %t, %alloc)
+#   else_body() captures(%alloc):
+#       %f : index.Index = 99
+#       %0 : Nil = memory.store(%alloc, %f, %alloc)
+#
+#   %result : index.Index = memory.load(%if, %alloc)
+
 import goto
 import index
 import memory

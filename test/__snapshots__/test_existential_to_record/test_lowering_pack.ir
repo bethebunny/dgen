@@ -1,15 +1,20 @@
+# Lowered through: ExistentialToRecord
+#
+# Input IR:
+#
+#   import existential
+#   import index
+#
+#   %x : index.Index = 42
+#   %packed : existential.Some<index.Index> = existential.pack(%x)
+
 import index
 import memory
 import record
 
 %0 : memory.Reference<Tuple<[Type, index.Index]>> = memory.heap_allocate<Tuple<[Type, index.Index]>>(index.Index(2))
-
 %x : index.Index = 42
-
 %1 : Type = type(%x)
-
 %2 : Tuple<[Type, index.Index]> = record.pack([%1, %x])
-
 %3 : Nil = memory.store(%0, %2, %0)
-
 %4 : memory.Reference<Tuple<[Type, index.Index]>> = chain(%0, %3)

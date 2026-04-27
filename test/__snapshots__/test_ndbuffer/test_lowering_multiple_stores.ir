@@ -1,3 +1,21 @@
+# Lowered through: NDBufferToMemory
+#
+# Input IR:
+#
+#   import algebra
+#   import function
+#   import index
+#   import ndbuffer
+#   import number
+#
+#   %main : function.Function<[number.Float64, number.Float64], number.Float64> = function.function<number.Float64>() body(%x: number.Float64, %y: number.Float64):
+#       %buf : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(1)>([4]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<index.Index(1)>([4]))
+#       %st1 : Nil = ndbuffer.store(%buf, %x, %buf, [index.Index(0)])
+#       %st2 : Nil = ndbuffer.store(%st1, %y, %buf, [index.Index(1)])
+#       %a : number.Float64 = ndbuffer.load(%st2, %buf, [index.Index(0)])
+#       %b : number.Float64 = ndbuffer.load(%st2, %buf, [index.Index(1)])
+#       %result : number.Float64 = algebra.add(%a, %b)
+
 import algebra
 import function
 import index
