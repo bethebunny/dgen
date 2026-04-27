@@ -1,7 +1,8 @@
-# Diagnosis: `%self` and `%exit` conventions in `goto.region`
+# Plan: Align `goto` codegen with the `%self` / `%exit` design
 
-Read-only analysis — no code changes proposed yet. Written off `main` so
-the user can sign off on direction before any refactor.
+Diagnosis of the current state, then an implementation plan to fix it
+(Option A2 below). Off `main`, isolated from the parked effects PR
+(#170) so the convention fix lands first.
 
 ## What the design doc says
 
@@ -147,103 +148,210 @@ Looking at the timeline:
 The effects PR copied `lower_if`'s pattern, so it inherited the same
 issue.
 
-## Two ways forward
+## Direction: Option A2 — `%exit` carries the merge phi
 
-### Option A — Codegen and consumers align with the doc
+`%exit` already means "a fall-through label after the region" per the
+doc. For a region without block args, that's just the fall-through. For
+a region *with* block args, `%exit` is the natural place for the merge
+phi: you're leaving the region carrying a value. One parameter does the
+right job in both cases. `%self` stays for back-edges only.
 
-- `goto.region` no longer has the if-merge mode. `%self` is always
-  back-edge (or the body block in plain regions).
-- Introduce a clean way to express "exit with value via phi at merge."
-  Two sub-options:
-  - A1: a new `%merge: Label` parameter alongside `%self` and `%exit`,
-    so `branch<%merge>([value])` is the exit-with-value primitive.
-    Codegen emits the phi at the `%merge` label.
-  - A2: keep two parameters; the `%exit` parameter carries the phi
-    when the region has merge args. `branch<%exit>([value])` is
-    exit-with-value. Code matches the doc's "exit fall-through" bullet
-    more naturally — `%exit` is where you go to leave with a value.
-- Update `lower_if` (and the effects PR's `lower_try`) to branch to
-  the new label.
-
-Diff size: medium. Touches `codegen.py` (region/label emission),
-`control_flow_to_goto.py`, snapshot files. The IR text shape changes
-(`<%self, %exit>` stays, but the branch targets change).
-
-### Option B — Codegen keeps the current mode; doc/IR clarify it
-
-- Keep the `has_merge_args` mode in `emit_region_op`.
-- Rename the parameter when merge args are present so the IR text
-  reflects what it actually is. e.g.
-  `body<%self: Label, %merge: Label, %exit: Label>(%result: type)`.
-  `%self` stays for back-edges. `%merge` is the phi block (the new
-  name for what's currently `%self`-as-merge). `%exit` is the
-  fall-through.
-- Update the doc to spell out the merge mode.
-- Update `lower_if` and `lower_try` to use the new name.
-
-Diff size: smaller for codegen; same touch surface in consumers.
-Renames everywhere. Cements an unintuitive split (regions have
-different parameter layouts based on whether they merge).
-
-### Recommendation
-
-**Option A2** — make `%exit` carry the merge phi when block args are
-present. The doc already calls `%exit` "a fall-through label after the
-header block"; for a region without merge args, that's just the
-fall-through. For a region *with* merge args, `%exit` is the natural
-place for the phi (you're leaving the region carrying a value). One
-parameter does the right job in both cases. `%self` stays for
-back-edges only.
-
-Concretely the artefact above becomes:
+After the change, the trivial try-with-raise emits as:
 
 ```
 entry:
   br label %try0
 try0:                               ← body block (was %try0_entry)
-  br label %except0                ← direct branch (no redirect)
+  br label %except0                 ← direct branch (no _exit redirect)
 except0:
   %err = phi i64 [ 42, %try0 ]
   %_2 = add i64 %err, 1
-  br label %try_exit0              ← branch<%exit> with value
+  br label %try_exit0               ← branch<%exit> with value
 try_exit0:
   %try_result0 = phi i64 [ %_2, %except0 ]
   ret i64 %try_result0
 ```
 
-Five blocks instead of seven; phi at the natural exit point; `%self`
-unused (and would've been a back-edge if the region had a loop body).
+Five blocks instead of seven. Phi at the natural exit point. `%self`
+unused (the region has no loop body, so there's no back-edge target).
 
-While we're here, kill the `X_exit → X` redirect in `emit_label_op` —
-when a label has at least one explicit branch targeting it, the
-redirect adds nothing. Keep it only if the label is positioned where
-fall-through could otherwise reach it (rare in practice; would need
-audit).
+The label-redirect cleanup (`X_exit:` chains in `emit_label_op`) is
+included in this plan as a separate, smaller change — without it,
+`%try0 → %except0_exit → %except0` would still appear even after the
+A2 region rewrite.
 
-## Out of scope for this branch
+## Implementation plan
 
-This branch only contains the diagnosis. Any code changes are gated on
-the user picking a direction.
+Five sequential changes. Each leaves the suite green so the work can
+land incrementally.
 
-## Files involved (when implementation begins)
+### Step 1 — codegen: `_resolve_target` and `prepare_function`
 
-- `dgen/llvm/codegen.py::emit_region_op`, `emit_label_op`,
-  `_emit_phi_nodes`, `_emit_exit_phi_nodes`, `value_reference`
-- `dgen/passes/control_flow_to_goto.py::lower_if`,
-  `_make_branch_label`
-- `dgen/passes/raise_catch_to_goto.py::lower_try` (after the effects
-  PR resumes)
-- `docs/control-flow.md`, `docs/codegen.md`
-- snapshot files under `test/__snapshots__/test_if_explicit_capture/`,
-  `test/__snapshots__/test_break_continue/`,
-  `test/__snapshots__/test_raise_catch/` (regenerate)
+Currently every `BlockParameter` of a region/label maps to its owner
+in `param_to_owner`, so `_resolve_target` returns the owner for both
+`self` and `exit`. That's why a `branch<%exit>` records its
+predecessor on the *region* instead of on `exit_param`, and the
+phi-at-exit machinery in `_emit_exit_phi_nodes` never fires for
+explicit `branch<%exit>` (it's only reachable via fall-through today).
 
-## Verification at end of fix
+Change so `self_param → owner` (back-edge resolves to the region's
+body block) but `exit_param` is left out of `param_to_owner`. Then:
 
-1. Loop snapshots unchanged (loops weren't affected).
-2. If/try snapshots: shorter, no `_entry`/`_exit` redirect chains,
-   `%self` no longer used in if/try lowerings.
-3. Hand-inspect emitted LLVM for one if and one while; confirm fewer
-   blocks and no spurious branches.
-4. Effects PR rebases cleanly on the upstream change; resumed PR's
-   tests pass without modification.
+- `branch<%self>` resolves to the owning region — predecessors recorded
+  on the region. Loops emit phi at the region's name as today.
+- `branch<%exit>` resolves to `exit_param` itself — predecessors
+  recorded on `exit_param`. Phi-at-exit emits the merge phi.
+
+Files: `dgen/llvm/codegen.py::prepare_function` (the
+`for param in op.body.parameters` loop) and `_resolve_target` (no
+change to `_resolve_target` itself — drop exit_param from the mapping
+upstream).
+
+### Step 2 — codegen: `emit_region_op` block layout
+
+Collapse the three modes to two, with `%exit` carrying the phi when
+present:
+
+| Region shape                      | Emits as                               |
+|-----------------------------------|----------------------------------------|
+| `has_initial_args`  (loops)       | `{name}:` body w/ phi at entry. `{exit_param.name}:` fall-through after. (Unchanged.) |
+| Otherwise (if/try-merge or plain) | `{name}:` body. `{exit_param.name}:` w/ phi for body.args. |
+
+Concretely, in the non-loop branch of `emit_region_op`:
+
+```python
+yield f"  br label %{op.name}"
+yield f"{op.name}:"
+yield from emit_linearized(op.body)
+# body emits its own terminators (cond_br, branch<%exit>, etc.)
+yield f"{exit_param.name}:"
+yield from _emit_exit_phi_nodes(exit_param)  # was _emit_phi_nodes(op) at {op.name}:
+```
+
+`_emit_exit_phi_nodes` reads `ctx.predecessors[exit_param]`, which step
+1 just made non-empty for explicit `branch<%exit>(args)`. The phi name
+matches body.args[0].name (`merge_result.name = "if_result0"` etc.) so
+`value_reference(region) → body.args[0]` keeps working unchanged.
+
+Drop the `{name}_entry:` block — it's no longer needed; the body lives
+at `{name}:`. Update `prepare_function` to record the body's LLVM block
+name as `op.name` (not `{op.name}_entry`) for the non-loop merge case.
+
+`_emit_exit_phi_nodes` already exists; it generates phi names as
+`{param.name}_phi{idx}`, which doesn't match what the consumer expects.
+Replace its body to emit phis named per `body.args` (mirrors
+`_emit_phi_nodes`), reading from `ctx.predecessors[exit_param]` instead
+of `ctx.predecessors[region]`.
+
+After this step, **regions still work correctly** but `lower_if` is
+still branching to `%self`. Branches to `%self` would now record on the
+region but we no longer emit a phi there. So this step deliberately
+doesn't ship in isolation — combine with step 3 in one commit, or land
+both together.
+
+### Step 3 — `lower_if`: branch to `%exit`, not `%self`
+
+In `dgen/passes/control_flow_to_goto.py::_make_branch_label` and
+`lower_if`:
+
+```python
+# Before:
+result = goto.BranchOp(target=merge_self, arguments=pack([body.result]))
+captures = [merge_self, *body.captures]
+
+# After:
+result = goto.BranchOp(target=merge_exit, arguments=pack([body.result]))
+captures = [merge_exit, *body.captures]
+```
+
+`merge_self` is no longer captured by then/else labels (it would only
+matter for back-edges). The region's body still has `[merge_self,
+merge_exit]` parameters since the IR shape is unchanged.
+
+Loops are untouched: `lower_for` and `lower_while` already use
+`header_self` for the back-edge correctly.
+
+### Step 4 — `emit_label_op` redirect cleanup
+
+Today every label use emits a skip-redirect even when nothing falls
+through to it:
+
+```
+br label %{name}_exit
+{name}:
+  ...body...
+{name}_exit:
+```
+
+Replace with: only emit the skip-redirect when the previous emission
+*didn't* terminate. Track a `terminated` flag through `emit_linearized`
+(it already does — the `terminated = yield from emit_linearized(...)`
+return value). When `emit_label_op` runs at a position where the
+previous op already terminated, drop the leading `br label %{name}_exit`
+and just emit `{name}:` directly. The trailing `{name}_exit:` stays —
+it's where post-label ops continue. (If we want to cleanup that too,
+audit later; not required for the immediate goal.)
+
+Most labels in real lowerings *are* preceded by a terminator (the prior
+op is a branch or another label whose exit-edge runs out at the
+position). Keeping the redirect logic but firing it only when actually
+needed eliminates the redundant branches without breaking the cases
+that genuinely needed them.
+
+### Step 5 — docs and IR-shape refresh
+
+- `docs/control-flow.md`: clarify that `%exit` carries the merge phi
+  when the region has block args. Add a small example beside the loop
+  example showing the if-merge shape:
+  ```
+  %if = goto.region([]) body<%self: Label, %exit: Label>(%result: T):
+      %then_lbl = goto.label([]) body() captures(%exit):
+          ...
+          goto.branch<%exit>([then_value])
+      ...
+  ```
+- `dgen/passes/control_flow_to_goto.py` docstring (the long block
+  comment near the top): update the `IfOp` lowering schematic to use
+  `%exit` instead of `%self`.
+- `docs/codegen.md`: refresh `emit_region_op` description.
+
+## Files
+
+| File                                             | Change          |
+|--------------------------------------------------|-----------------|
+| `dgen/llvm/codegen.py`                           | steps 1, 2, 4   |
+| `dgen/passes/control_flow_to_goto.py`            | step 3          |
+| `docs/control-flow.md`                           | step 5          |
+| `docs/codegen.md`                                | step 5          |
+| `test/__snapshots__/test_if_explicit_capture/*`  | regenerate      |
+| `test/__snapshots__/test_break_continue/*`       | regenerate (label cleanup may simplify these) |
+
+`dgen/passes/raise_catch_to_goto.py` (effects PR) follows the same
+pattern as `lower_if` and only needs the same one-line change. That
+happens after the effects PR is rebased onto this work — not in this
+branch.
+
+## Verification
+
+After step 3 (the smallest landable unit):
+1. `pytest . -q --ignore=examples/dcc` clean.
+2. Snapshot diffs for `test_if_explicit_capture/*` show the phi moves
+   from `%if0` to `%if_exit0`. Block count drops by one (no
+   `%if0_entry` block).
+3. `test_break_continue/*` snapshots either unchanged or strictly
+   simpler.
+4. Hand-inspect emitted LLVM for `test_if_value_lowering`; confirm
+   `branch<%self>` doesn't appear and the phi sits at the exit block.
+
+After step 4 (label redirect cleanup):
+1. `pytest . -q` still clean.
+2. Snapshot diffs show fewer `%X_exit:` redirect chains.
+3. Hand-inspect emitted LLVM for one loop and one if; confirm no
+   spurious `br label %X_exit; X_exit: br label %X` patterns.
+
+After all five steps:
+1. The example artefact in this doc (5 LLVM blocks for try-with-raise)
+   matches what's actually emitted when the effects PR is rebased.
+2. Effects PR diff stays small under rebase (its `lower_try` swaps
+   `merge_self` → `merge_exit` in two places; everything else carries
+   over unchanged).
