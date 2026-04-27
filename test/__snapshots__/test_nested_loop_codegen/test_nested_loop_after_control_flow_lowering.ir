@@ -4,12 +4,12 @@ import index
 import number
 
 %0 : index.Index = 0
-%loop_header0 : goto.Label = goto.region([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
-    %loop_body0 : goto.Label = goto.label([]) body(%i: index.Index) captures(%self):
+%loop_header0 : Nil = goto.region([%0]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index):
+    %loop_body0 : goto.Label = goto.label([]) body(%i: index.Index) captures(%self, %exit0):
         %1 : index.Index = algebra.add(%i, index.Index(1))
         %2 : index.Index = 0
-        %loop_header1 : goto.Label = goto.region([%2]) body<%3: goto.Label, %exit1: goto.Label>(%i1: index.Index):
-            %loop_body1 : goto.Label = goto.label([]) body(%j: index.Index) captures(%3):
+        %loop_header1 : Nil = goto.region([%2]) body<%3: goto.Label, %exit1: goto.Label>(%i1: index.Index):
+            %loop_body1 : goto.Label = goto.label([]) body(%j: index.Index) captures(%3, %exit1):
                 %4 : index.Index = algebra.add(%j, index.Index(1))
                 %5 : index.Index = 0
                 %6 : Nil = chain(%5, %5)

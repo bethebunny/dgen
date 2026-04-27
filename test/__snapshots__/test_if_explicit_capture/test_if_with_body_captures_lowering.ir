@@ -5,14 +5,16 @@ import index
 import number
 
 %main : function.Function<[index.Index, number.Float64], number.Float64> = function.function<number.Float64>() body(%cond: index.Index, %x: number.Float64):
-    %if0 : number.Float64 = goto.region([]) body<%self: goto.Label, %if_exit0: goto.Label>(%if_result0: number.Float64) captures(%cond, %x, %x):
-        %if_then0 : goto.Label = goto.label([]) body() captures(%self, %x):
+    %if0 : number.Float64 = goto.region([]) body<%self: goto.Label, %if_exit0: goto.Label>() captures(%cond, %x, %x):
+        %if_then0 : goto.Label = goto.label([]) body() captures(%if_exit0, %x):
             %one : number.Float64 = 1.0
             %a : number.Float64 = algebra.add(%x, %one)
-            %0 : Nil = goto.branch<%self>([%a])
-        %if_else0 : goto.Label = goto.label([]) body() captures(%self, %x):
+            %0 : Nil = goto.branch<%if_exit0>([%a])
+
+        %if_else0 : goto.Label = goto.label([]) body() captures(%if_exit0, %x):
             %two : number.Float64 = 2.0
             %b : number.Float64 = algebra.add(%x, %two)
-            %1 : Nil = goto.branch<%self>([%b])
+            %1 : Nil = goto.branch<%if_exit0>([%b])
+
         %2 : Nil = goto.conditional_branch<%if_then0, %if_else0>(%cond, [], [])
-        %3 : number.Float64 = chain(%if_result0, %2)
+

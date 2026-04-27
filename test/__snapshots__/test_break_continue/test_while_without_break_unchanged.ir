@@ -4,7 +4,7 @@ import index
 import number
 
 %zero : index.Index = 0
-%while_header0 : goto.Label = goto.region([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
+%while_header0 : Nil = goto.region([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
     %while_body0 : goto.Label = goto.label([]) body(%wb0_i: index.Index) captures(%self, %exit0):
         %one : index.Index = 1
         %next : index.Index = algebra.add(%wb0_i, %one)

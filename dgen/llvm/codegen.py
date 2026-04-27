@@ -267,7 +267,14 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                     ctx.tracker.track_name(arg)
                 for param in op.body.parameters:
                     ctx.tracker.track_name(param)
-                    ctx.param_to_owner[param] = op
+                # Region/label bodies that follow the [self, exit] convention:
+                # only %self maps to the owner (so branch<%self> is a
+                # back-edge to the body block). %exit stays out of
+                # param_to_owner so branch<%exit> records its predecessors
+                # against exit_param itself — that's where the merge phi
+                # lives.
+                if len(op.body.parameters) >= 1:
+                    ctx.param_to_owner[op.body.parameters[0]] = op
 
                 # Determine the LLVM block name for this op's body.
                 if isinstance(op, goto.LabelOp):
@@ -276,10 +283,7 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                     has_initial = bool(unpack(op.initial_arguments))
                     has_merge = bool(op.body.args) and not has_initial
                     body_block = f"{op.name}_entry" if has_merge else op.name
-
-                    # Region bodies have exactly (self, exit).
-                    self_param, exit_param = op.body.parameters
-                    ctx.self_params.add(self_param)
+                    ctx.self_params.add(op.body.parameters[0])
 
                 # Record fall-through entry as a predecessor.
                 init_args = unpack(op.initial_arguments)
@@ -295,7 +299,7 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                 if isinstance(op, goto.LabelOp):
                     current_block = f"{op.name}_exit"
                 else:
-                    current_block = exit_param.name
+                    current_block = op.body.parameters[1].name
 
     _walk(func.body, "entry")
 
@@ -411,68 +415,79 @@ def _emit_phi_nodes(
             yield f"  %{name} = phi {ty} {', '.join(phi_parts)}"
 
 
+def _exit_phi_name(op: goto.RegionOp) -> str:
+    """The LLVM SSA name for the exit phi of *op* — what
+    ``value_reference(op)`` resolves to. Stable, deterministic; lets
+    consumers reference the region's value without inspecting block args.
+    """
+    return f"{op.name}_result"
+
+
 @emitter_for(goto.RegionOp)
 def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
-    """Region: executes inline in use-def order (fall-through entry).
+    """Region: executes inline in use-def order. One uniform shape.
 
-    For regions with block args AND initial_arguments (loops): single block
-    with phi nodes at entry.
+    The body lives at ``%{op.name}:``. Its entry has a phi if and only
+    if the body has block args (and predecessors carrying values for
+    them). After the body, ``%{exit_param.name}:`` opens; that block
+    has a phi if branches to %exit carried values, named after
+    :func:`_exit_phi_name`. Codegen has no notion of "is this a loop" —
+    each label gets the phi nodes its predecessors call for.
 
-    For regions with block args but NO initial_arguments (if-merge): the
-    initial entry dispatches (no phi), and back-edges (from then/else) target
-    the region name which has the phi. This emits as two blocks:
-      {name}_entry: <body ops> (fall-through entry, dispatches)
-      {name}: phi ... (merge point, entered only by branches)
-
-    Every region body has exactly two parameters: (self, exit).  The exit
-    parameter becomes a separate LLVM basic block after the region body.
+    The "is region.type Nil" question lives entirely here: emit the
+    exit phi only when there's a non-Nil result type to phi for. LLVM
+    has no void phi.
     """
-    _self_param, exit_param = op.body.parameters
-    has_initial_args = bool(unpack(op.initial_arguments))
-    has_merge_args = bool(op.body.args) and not has_initial_args
-
-    if has_merge_args:
-        entry_name = f"{op.name}_entry"
-        yield f"  br label %{entry_name}"
-        yield f"{entry_name}:"
-        yield from emit_linearized(op.body)
-        yield f"{op.name}:"
-        yield from _emit_phi_nodes(op)
-        # Merge block always falls through to exit.
+    self_param, exit_param = op.body.parameters
+    yield f"  br label %{op.name}"
+    yield f"{op.name}:"
+    yield from _emit_body_entry_phi(op)
+    terminated = yield from emit_linearized(op.body)
+    if not terminated:
         yield f"  br label %{exit_param.name}"
-    else:
-        yield f"  br label %{op.name}"
-        yield f"{op.name}:"
-        yield from _emit_phi_nodes(op)
-        terminated = yield from emit_linearized(op.body)
-        if not terminated:
-            yield f"  br label %{exit_param.name}"
-
     yield f"{exit_param.name}:"
-    yield from _emit_exit_phi_nodes(exit_param)
+    yield from _emit_exit_phi(op)
 
 
-def _emit_exit_phi_nodes(
-    param: dgen.Value,
-) -> Iterator[str]:
-    """Emit phi nodes for an exit parameter (branches target the param directly)."""
+def _emit_body_entry_phi(op: goto.RegionOp) -> Iterator[str]:
+    """Phi at the body's entry — fed by initial_arguments (fall-through)
+    and back-edges (branches to %self). Emits one phi per body.arg."""
     ctx = _ctx()
-    preds = ctx.predecessors.get(param, [])
+    preds = ctx.predecessors.get(op, [])
     if not preds:
         return
-    # Exit parameters carry values — emit phi for each arg position.
-    # The first predecessor determines how many values to expect.
-    n_args = len(preds[0].args) if preds else 0
-    for arg_idx in range(n_args):
-        # Create a synthetic name for the phi result.
-        phi_name = f"{param.name}_phi{arg_idx}"
-        ty = llvm_type(preds[0].args[arg_idx].type)
+    for arg_idx, arg in enumerate(op.body.args):
+        ty = llvm_type(arg.type)
+        if ty == "void":
+            continue
+        name = ctx.tracker.track_name(arg)
         phi_parts = [
             f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred)} ]"
             for pred in preds
+            if arg_idx < len(pred.args)
         ]
         if phi_parts:
-            yield f"  %{phi_name} = phi {ty} {', '.join(phi_parts)}"
+            yield f"  %{name} = phi {ty} {', '.join(phi_parts)}"
+
+
+def _emit_exit_phi(op: goto.RegionOp) -> Iterator[str]:
+    """Phi at the exit — fed by branches to %exit carrying values.
+    Named per :func:`_exit_phi_name`. Skipped for Nil-typed regions."""
+    ctx = _ctx()
+    if isinstance(constant(op.type), builtin.Nil):
+        return
+    _self_param, exit_param = op.body.parameters
+    preds = ctx.predecessors.get(exit_param, [])
+    if not preds:
+        return
+    ty = llvm_type(op.type)
+    phi_parts = [
+        f"[ {value_reference(pred.args[0])}, %{_pred_block_name(pred)} ]"
+        for pred in preds
+        if pred.args
+    ]
+    if phi_parts:
+        yield f"  %{_exit_phi_name(op)} = phi {ty} {', '.join(phi_parts)}"
 
 
 @emitter_for(goto.LabelOp)
@@ -508,10 +523,6 @@ def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
             # If the result is a ChainOp, unwrap to get the actual value.
             if isinstance(result, builtin.ChainOp):
                 result = result.lhs
-            # If the result is a RegionOp with block args (e.g. if/else merge),
-            # the value is the first block arg (the phi result), not the region.
-            if isinstance(result, goto.RegionOp) and result.body.args:
-                result = result.body.args[0]
             yield f"  ret {ret_type} {value_reference(result)}"
     yield "}"
 
@@ -557,6 +568,15 @@ def value_reference(v: dgen.Value) -> str:
         return f"load {ty}, ptr @{sym}"
     if isinstance(v, function.FunctionOp) and v.name:
         return f"@{v.name}"
+    # A region's value is the exit phi (named by ``_exit_phi_name``) when
+    # its type is non-Nil. Nil-typed regions don't produce a value at the
+    # LLVM level — referencing one is a usage error.
+    if isinstance(v, goto.RegionOp):
+        assert not isinstance(constant(v.type), builtin.Nil), (
+            f"value_reference: region {v.name!r} has Nil type and produces "
+            f"no LLVM value"
+        )
+        return f"%{_exit_phi_name(v)}"
     # Self parameters resolve to their owning RegionOp/LabelOp name
     # (the label target for back-edges). Exit parameters keep their own
     # name — they are separate LLVM basic blocks.
