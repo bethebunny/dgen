@@ -94,14 +94,20 @@ needed. The label's `initial_arguments` provide first-iteration values for its b
 
 #### Block parameter conventions
 
-Every region/label body has parameters `[%self, %exit]`:
+Every region body declares parameters `[%self, %exit]`:
 
 - `%self` is a back-edge target — `branch<%self>` re-enters the body block.
-  Loops use this to iterate. If/try-merge regions don't use it.
+  Loops use this to iterate. If/try-merge regions don't use it (the slot is
+  vestigial there).
 - `%exit` is the post-region label. `branch<%exit>(value)` leaves the region with a
   value. The region's value (the type declared on `goto.region`) is the phi
   populated at `%exit` from the args carried by every `branch<%exit>`. Regions
   whose type is `Nil` produce no LLVM-level value and the exit phi is skipped.
+
+Labels do not declare their own `[%self, %exit]`. When a label needs to refer
+to the enclosing region's `%self` (back-edge) or `%exit` (exit-with-value), it
+lists them in its `captures` — the parameters belong to the region, the label
+just borrows them.
 
 #### Loop example
 
