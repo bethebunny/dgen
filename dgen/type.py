@@ -4,11 +4,14 @@ import keyword
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
-from typing import ClassVar, Generic, Iterator, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Generic, Iterator, TypeVar
 
 from typing_extensions import Self
 
 import dgen
+
+if TYPE_CHECKING:
+    from .builtins import Totality
 
 from .dialect import Dialect
 from .ir.traversal import transitive_dependencies
@@ -144,6 +147,39 @@ class Value(Generic[T]):
         looks at the value's own declarations, not its type's.
         """
         return any(types_equivalent(trait, declared) for declared in self.traits)
+
+    @property
+    def totality(self) -> Totality:
+        """Classify this value's relationship to the ``Diverge`` effect.
+
+        ``TOTAL`` if no operand and no owned-block capture has a
+        ``Handler<Diverge>`` type; ``DIVERGENT`` if such a handler is in
+        scope *and* the result type is ``Never``; ``PARTIAL`` otherwise.
+        See ``docs/divergence.md``.
+
+        The trait/enum/type imports are deferred to function scope because
+        they live in ``dgen.dialects.builtin`` / ``dgen.builtins``, both
+        downstream of this module.
+        """
+        # Imports deferred to break the dgen.type ↔ dgen.builtins ↔
+        # dgen.dialects.builtin cycle; both downstream modules need
+        # ``Value`` at their own import time.
+        from dgen.builtins import Totality
+        from dgen.dialects.builtin import Diverge, Handler, Never
+
+        handler_diverge = Handler(effect_type=Diverge())
+        is_partial = any(
+            operand.type.has_trait(handler_diverge) for _, operand in self.operands
+        ) or any(
+            capture.type.has_trait(handler_diverge)
+            for _, block in self.blocks
+            for capture in block.captures
+        )
+        if not is_partial:
+            return Totality.TOTAL
+        if isinstance(self.type, Never):
+            return Totality.DIVERGENT
+        return Totality.PARTIAL
 
     def replace_operand(self, old: Value, new: Value) -> None:
         """Replace all occurrences of old with new in operand fields."""

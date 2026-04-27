@@ -3,6 +3,15 @@ from index import Index
 trait Effect
 trait Handler<effect_type: Type>
 
+# Diverge is the umbrella effect for non-returning control transfer:
+# any effect whose handler invocation may not return falls under it.
+# Other diverging effects (Raise, branch-via-Label, ...) declare
+# themselves as Diverge so a single `Handler<Diverge>` query suffices to
+# detect potentially-divergent ops. See docs/divergence.md.
+type Diverge:
+    layout Void
+    has trait Effect
+
 type Nil:
     layout Void
 

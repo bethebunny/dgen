@@ -6,6 +6,7 @@ file to keep it purely generated.
 
 from __future__ import annotations
 
+import enum
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import ClassVar
@@ -18,6 +19,33 @@ from dgen.dialects.builtin import (
 )
 from dgen.memory import Memory
 from dgen.type import Fields, SlotFn, _default_slot, format_value, constant
+
+
+# ===----------------------------------------------------------------------=== #
+# Totality: divergence classification for Values
+# ===----------------------------------------------------------------------=== #
+
+
+class Totality(enum.Enum):
+    """How a value behaves with respect to the ``Diverge`` effect.
+
+    A value is classified by inspecting its operands and the captures of any
+    blocks it owns; see ``docs/divergence.md`` for the full specification.
+
+    - ``TOTAL``     — no operand or block capture is a ``Handler<Diverge>``;
+      control always returns. A total value's result type must not be
+      ``Never``.
+    - ``PARTIAL``   — at least one ``Handler<Diverge>`` is in scope, so the
+      value *may* trigger divergence, but its result type is not ``Never``,
+      so a normal return is still possible.
+    - ``DIVERGENT`` — partial *and* the result type is ``Never``: divergence
+      is unconditional on this value's evaluation.
+    """
+
+    TOTAL = "total"
+    PARTIAL = "partial"
+    DIVERGENT = "divergent"
+
 
 # ===----------------------------------------------------------------------=== #
 # ConstantOp (custom __init__, multiple inheritance)
