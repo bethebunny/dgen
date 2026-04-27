@@ -236,8 +236,6 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
     - Populates self_params for self-parameter identification
     - Tracks the current LLVM basic block name through label/region nesting
     - Records branch predecessors with their source block names
-
-    Region bodies always have exactly two parameters: (self, exit).
     """
     for arg in func.body.args:
         ctx.tracker.track_name(arg)
@@ -265,25 +263,6 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
             if isinstance(op, (goto.RegionOp, goto.LabelOp)):
                 for arg in op.body.args:
                     ctx.tracker.track_name(arg)
-                for param in op.body.parameters:
-                    ctx.tracker.track_name(param)
-                # Region/label bodies that follow the [self, exit] convention:
-                # only %self maps to the owner (so branch<%self> is a
-                # back-edge to the body block). %exit stays out of
-                # param_to_owner so branch<%exit> records its predecessors
-                # against exit_param itself — that's where the merge phi
-                # lives.
-                if len(op.body.parameters) >= 1:
-                    ctx.param_to_owner[op.body.parameters[0]] = op
-
-                # Determine the LLVM block name for this op's body.
-                if isinstance(op, goto.LabelOp):
-                    body_block = op.name
-                else:
-                    has_initial = bool(unpack(op.initial_arguments))
-                    has_merge = bool(op.body.args) and not has_initial
-                    body_block = f"{op.name}_entry" if has_merge else op.name
-                    ctx.self_params.add(op.body.parameters[0])
 
                 # Record fall-through entry as a predecessor.
                 init_args = unpack(op.initial_arguments)
@@ -292,14 +271,24 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                         Predecessor(source_name=current_block, args=init_args)
                     )
 
-                _walk(op.body, body_block)
-
-                # After a LabelOp, remaining ops are in the skip-exit block.
-                # After a RegionOp, remaining ops are in the exit block.
-                if isinstance(op, goto.LabelOp):
-                    current_block = f"{op.name}_exit"
+                if isinstance(op, goto.RegionOp):
+                    # Regions always declare [%self, %exit]. %self maps to
+                    # the owner (back-edges resolve to the body block);
+                    # %exit stays out of param_to_owner so branch<%exit>
+                    # records its predecessors against exit_param itself —
+                    # that's where the merge phi lives.
+                    self_param, exit_param = op.body.parameters
+                    ctx.tracker.track_name(self_param)
+                    ctx.tracker.track_name(exit_param)
+                    ctx.param_to_owner[self_param] = op
+                    ctx.self_params.add(self_param)
+                    _walk(op.body, op.name)
+                    current_block = exit_param.name
                 else:
-                    current_block = op.body.parameters[1].name
+                    # Labels declare no parameters; they capture the
+                    # enclosing region's %self/%exit when needed.
+                    _walk(op.body, op.name)
+                    current_block = f"{op.name}_exit"
 
     _walk(func.body, "entry")
 
