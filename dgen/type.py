@@ -23,19 +23,18 @@ class Totality(enum.Enum):
     See ``docs/control-flow.md`` (Generic Divergence Detection) for the
     full classification rule.
 
-    - ``TOTAL``     — no operand, parameter, or owned-block capture is a
-      ``Handler<Diverge>``; control always returns. A total value's
-      result type must not be ``Never``.
-    - ``PARTIAL``   — at least one ``Handler<Diverge>`` is in scope, so
-      the value *may* trigger divergence, but its result type is not
-      ``Never``, so a normal return is still possible.
-    - ``DIVERGENT`` — partial *and* the result type is ``Never``:
-      divergence is unconditional on this value's evaluation.
+    - ``TOTAL``    — no operand, parameter, or owned-block capture is a
+      ``Handler<Diverge>``; control always returns.
+    - ``PARTIAL``  — at least one ``Handler<Diverge>`` is in scope, so
+      the value *may* trigger divergence. Whether divergence is
+      unconditional on a particular evaluation is observable directly
+      from the value's result type (``isinstance(v.type, Never)``); the
+      classification stays binary, mirroring Idris's ``Total`` /
+      ``Partial`` and F\\*'s ``Tot`` / ``Div``.
     """
 
     TOTAL = "total"
     PARTIAL = "partial"
-    DIVERGENT = "divergent"
 
 
 T = TypeVar("T", bound="Type")
@@ -172,19 +171,17 @@ class Value(Generic[T]):
     def totality(self) -> Totality:
         """Classify this value's relationship to the ``Diverge`` effect.
 
-        ``TOTAL`` if no operand, parameter, or owned-block capture has a
-        ``Handler<Diverge>`` type; ``DIVERGENT`` if such a handler is in
-        scope *and* the result type is ``Never``; ``PARTIAL`` otherwise.
-        See the "Generic Divergence Detection" section of
-        ``docs/control-flow.md``.
+        ``PARTIAL`` if any operand, parameter, or owned-block capture has
+        a ``Handler<Diverge>`` type; ``TOTAL`` otherwise. See the
+        "Generic Divergence Detection" section of ``docs/control-flow.md``.
 
         The trait/type imports are deferred to function scope because
         they live in ``dgen.dialects.builtin``, downstream of this module.
         """
-        # ``Diverge``/``Handler``/``Never`` come from the builtin dialect,
-        # which is built on top of this module — defer the import to break
-        # the cycle (the property only runs after both modules load).
-        from dgen.dialects.builtin import Diverge, Handler, Never
+        # ``Diverge``/``Handler`` come from the builtin dialect, which is
+        # built on top of this module — defer the import to break the
+        # cycle (the property only runs after both modules load).
+        from dgen.dialects.builtin import Diverge, Handler
 
         handler_diverge = Handler(effect_type=Diverge())
         is_partial = (
@@ -198,11 +195,7 @@ class Value(Generic[T]):
                 for capture in block.captures
             )
         )
-        if not is_partial:
-            return Totality.TOTAL
-        if isinstance(self.type, Never):
-            return Totality.DIVERGENT
-        return Totality.PARTIAL
+        return Totality.PARTIAL if is_partial else Totality.TOTAL
 
     def replace_operand(self, old: Value, new: Value) -> None:
         """Replace all occurrences of old with new in operand fields."""
