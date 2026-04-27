@@ -177,10 +177,15 @@ within-block optimization freedom.
 
 ## Generic Divergence Detection
 
-`Value.totality` classifies any value as **TOTAL**, **PARTIAL**, or **DIVERGENT**
-with respect to non-local control transfer ("divergence"). The check is purely
-type-evidence-based: it inspects the value's existing operands, parameters, owned-block
-captures, and result type without any IR rewrites.
+`Value.totality` is a binary classification — **TOTAL** or **PARTIAL** — that
+records whether a value carries any evidence of the `Diverge` effect. The check
+is purely type-evidence-based: it inspects the value's existing operands,
+parameters, and owned-block captures without any IR rewrites. It deliberately
+does *not* fold the result type into the classification; whether divergence is
+unconditional on a particular evaluation is observable directly via
+`isinstance(v.type, Never)` at the (one) callsite that cares.
+
+The two-state form mirrors Idris's `Total` / `Partial` and F\*'s `Tot` / `Div`.
 
 ### The `Diverge` effect
 
@@ -215,22 +220,14 @@ declares both traits explicitly. Tracked under "Type system / effects" in `TODO.
 For a value `v`:
 
 ```
-partial(v)  ≡  ∃ operand   of v.            type(operand)  has trait Handler<Diverge>
+partial(v)  ≡  ∃ operand   of v.            type(operand)   has trait Handler<Diverge>
             ∨  ∃ parameter of v.            type(parameter) has trait Handler<Diverge>
             ∨  ∃ block ∈ v's owned blocks.
-               ∃ capture  of block.         type(capture)  has trait Handler<Diverge>
+               ∃ capture  of block.         type(capture)   has trait Handler<Diverge>
 
-totality(v) =  TOTAL      if not partial(v)
-            =  DIVERGENT  if  partial(v) ∧ v.type = Never
-            =  PARTIAL    otherwise
+totality(v) =  PARTIAL  if partial(v)
+            =  TOTAL    otherwise
 ```
-
-Equivalent invariants:
-
-- A **TOTAL** op never produces `Never`.
-- A **DIVERGENT** op always produces `Never`.
-- A **PARTIAL** op produces a normal result on the non-divergent paths and `Never`
-  on the divergent ones, but its result type `T` reflects the former.
 
 ### Why parameters count too
 
@@ -248,31 +245,32 @@ from dgen.type import Totality
 class Totality(enum.Enum):
     TOTAL = "total"
     PARTIAL = "partial"
-    DIVERGENT = "divergent"
 
 # On any Value:
 v.totality  # -> Totality
 ```
 
 The property is defined on `Value` (in `dgen/type.py`). The trait/type imports
-inside the body are deferred to function scope because `Handler`, `Diverge`, and
-`Never` live in `dgen.dialects.builtin`, which sits downstream of `dgen.type` —
-the cycle is broken by lazy lookup at call time.
+inside the body are deferred to function scope because `Handler` and `Diverge`
+live in `dgen.dialects.builtin`, which sits downstream of `dgen.type` — the
+cycle is broken by lazy lookup at call time.
 
 ### Worked examples
 
 ```
 %c : Index = 7                                  # constant       → TOTAL
 %t : Index = error.try<Index>() body<%h: ...>:  # try            → TOTAL
-    %r : Never = error.raise<Index>(%h, %c)     # raise          → DIVERGENT
+    %r : Never = error.raise<Index>(%h, %c)     # raise          → PARTIAL  (type=Never)
 except(%e: Index):
     %z : Index = 0
 ```
 
 The `try` is TOTAL: the handler `%h` is bound as a body *parameter* of the body block,
-not consumed by the try op itself, and the try's own result type is `Index`. The `raise`
-is DIVERGENT: `%h` is an operand whose type is `RaiseHandler<Index>` (carrying
-`Handler<Diverge>`) and the result type is `Never`.
+not consumed by the try op itself. The `raise` is PARTIAL: `%h` is an operand whose
+type is `RaiseHandler<Index>` (carrying `Handler<Diverge>`). It also has result type
+`Never` — the standard combination "a divergence handler is in scope and divergence is
+unconditional", but the totality property doesn't compress these two facts into a
+single label.
 
 ```
 %outer : Index = error.try<Index>() body<%ho: ...>:
@@ -285,24 +283,25 @@ except(%err: Index):
 ```
 
 The inner try is PARTIAL: its except block captures `%ho`, whose type is
-`RaiseHandler<Index>`. Its own result type is still `Index`, so it is not Divergent —
-control reaches a normal result via the inner body's success path.
+`RaiseHandler<Index>`. Its own result type is still `Index`, so a normal return is
+possible — but the divergence handler is in scope.
 
 ```
-goto.branch<%exit>([%val])      # branch          → PARTIAL (today)
-                                #                   DIVERGENT once branch returns Never
+goto.branch<%exit>([%val])      # branch          → PARTIAL
 ```
 
-`branch` carries its target as a parameter, so it's at least Partial. Its declared
-result type is `Nil` today (a placeholder for "this is a terminator"); changing it
-to `Never` would let the rule classify it as DIVERGENT — see `TODO.md`.
+`branch` carries its target as a parameter, so it's PARTIAL. Its declared result type
+is `Nil` today (a placeholder for "this is a terminator"); a future cleanup might
+change it to `Never` to better reflect that no value flows past it, but that's
+orthogonal to the totality classification.
 
 ### Implementation notes
 
 - The rule examines only the value itself — no transitive walk. A `ChainOp` whose
-  `rhs` is a `raise` is **not** itself Divergent; divergence is a property of the
-  divergent op, not of every op downstream of it. Consumers that want a
-  "may-this-block-diverge" predicate should walk the block's ops with this property.
+  `rhs` is a `raise` is **not** itself PARTIAL; divergence-evidence is a property of
+  the value that holds the handler, not of every op downstream of it. Consumers that
+  want a "may-this-block-diverge" predicate should walk the block's ops with this
+  property.
 - `has_trait` does structural equality on type ASM, so the
   `Handler(effect_type=Diverge())` literal in the property body is a cheap lookup
   key, not an object-identity comparison.

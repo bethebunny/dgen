@@ -51,11 +51,10 @@
 ## Codegen
 - `SignedInteger`/`UnsignedInteger` layout vs bit-width mismatch: the `.dgen` definition uses `data: Index` (always 64-bit) regardless of `bits`. `llvm_type` currently works around this by using `max(declared_bits, layout_bits)`, but the proper fix is parameterizing the layout on `bits` so a 32-bit integer actually has a 32-bit layout.
 - `Executable.run()` lifetime bug: when raw Python values are passed as args, `run()` creates temporary `Memory` objects that can be GC'd before the result is read. For non-register-passable types (e.g. `TypeType`), the JIT returns a pointer into the input Memory's buffer — if that Memory is collected, the result reads garbage. Fix: `run()` should attach input memories to the result's `host_refs`. Workaround in `staging._jit_evaluate` creates memories outside the call.
-- Replace `ControlFlowToGoto._make_branch_label`'s `isinstance(body.result.type, Never)` proxy with `Value.totality` now that generic divergence detection exists. The proxy currently catches `RaiseOp`-derived terminators; `totality is DIVERGENT` (or even `is not TOTAL`) covers the same case structurally, and `NormalizeRegionTerminators` can do the same.
+- Replace `ControlFlowToGoto._make_branch_label`'s `isinstance(body.result.type, Never)` proxy with the proper "is this op a terminator" check. `Value.totality is PARTIAL` plus a `Never` result-type test covers the cases the proxy catches today (`RaiseOp`-derived terminators); `NormalizeRegionTerminators` can use the same.
 
 ## Type system / effects
 - Add type subtyping. ``Raise<E>`` should be a sub-effect of ``Diverge`` and ``RaiseHandler<E>`` should automatically satisfy ``Handler<Diverge>`` via that subtyping. Until then, ``RaiseHandler`` redundantly declares both ``Handler<Raise<E>>`` and ``Handler<Diverge>`` (see `dgen/dialects/error.dgen`) so the generic divergence-detection query (`Value.totality`, see `docs/control-flow.md`) finds it without a custom trait-resolution rule.
-- ``goto.branch`` and ``goto.conditional_branch`` return ``Nil`` today, but they're terminators — control never returns. Their result type should be ``Never`` so generic divergence detection classifies them as ``DIVERGENT`` rather than ``PARTIAL``. Touches codegen (chain wrapping, region terminator normalization).
 
 ## Misc
 - test_peano's `test_call_jit` _should not_ call the jit, let's verify that it doesn't and put it somewhere more sensible

@@ -1,12 +1,15 @@
 """Tests for generic divergence detection (``Value.totality``).
 
-The classification rules — defined in the "Generic Divergence Detection"
-section of ``docs/control-flow.md`` — are:
+The classification — defined in the "Generic Divergence Detection"
+section of ``docs/control-flow.md`` — is binary:
 
 - An op is *Partial* iff one of its operands, parameters, or owned-block
   captures has a type that declares the ``Handler<Diverge>`` trait.
-- An op is *Divergent* iff it is Partial *and* its result type is ``Never``.
 - An op is *Total* otherwise.
+
+Whether divergence is unconditional on a particular evaluation is read
+directly from the result type (``isinstance(v.type, Never)``); it is not
+folded into the totality classification.
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ from dgen.asm.parser import parse
 from dgen.block import BlockParameter
 from dgen.builtins import pack
 from dgen.dialects import builtin, error, goto
-from dgen.dialects.builtin import Diverge, Handler
+from dgen.dialects.builtin import Diverge, Handler, Never
 from dgen.dialects.index import Index
 from dgen.ir.traversal import all_values
 from dgen.testing import strip_prefix
@@ -61,16 +64,20 @@ def test_type_value_is_total() -> None:
 # -- Totality on the raise/try family ---------------------------------------
 
 
-def test_raise_op_is_divergent() -> None:
+def test_raise_op_is_partial() -> None:
     """``raise`` takes a ``RaiseHandler`` operand (Handler<Diverge> evidence)
-    and has result type ``Never`` — the canonical Divergent op."""
+    so it is PARTIAL. The fact that its result is ``Never`` (i.e. that
+    divergence is unconditional on this op) is observable directly via
+    ``isinstance(raise_op.type, Never)`` and is intentionally not folded
+    into the totality classification."""
     handler = BlockParameter(name="h", type=error.RaiseHandler(error_type=Index()))
     raise_op = error.RaiseOp(
         error_type=Index(),
         handler=handler,
         error=Index().constant(0),
     )
-    assert raise_op.totality is Totality.DIVERGENT
+    assert raise_op.totality is Totality.PARTIAL
+    assert isinstance(raise_op.type, Never)
 
 
 def test_try_op_is_total() -> None:
@@ -122,9 +129,7 @@ def test_inner_try_capturing_outer_handler_is_partial() -> None:
 def test_branch_with_label_parameter_is_partial() -> None:
     """``goto.branch<target: Label>`` carries its target as a *parameter*.
     With the parameter check the branch op is detected as having a
-    ``Handler<Diverge>`` in scope, so it's at least Partial. It would be
-    DIVERGENT if the branch's result type were ``Never`` — see TODO.md
-    (Type system / effects) for the planned change."""
+    ``Handler<Diverge>`` in scope, so it is PARTIAL."""
     label = BlockParameter(name="L", type=goto.Label())
     op = goto.BranchOp(target=label, arguments=pack())
     assert op.totality is Totality.PARTIAL
@@ -148,9 +153,9 @@ def test_conditional_branch_is_partial() -> None:
 # -- Round-trip from parsed IR ----------------------------------------------
 
 
-def test_raise_op_in_parsed_ir_is_divergent() -> None:
+def test_raise_op_in_parsed_ir_is_partial() -> None:
     """The classification works on values pulled out of parsed IR: walk
-    a try's body, find the raise, and confirm it lights up as Divergent."""
+    a try's body, find the raise, and confirm it lights up as Partial."""
     value = parse(
         strip_prefix("""
         | import error
@@ -163,4 +168,4 @@ def test_raise_op_in_parsed_ir_is_divergent() -> None:
     """)
     )
     raise_op = next(v for v in all_values(value) if isinstance(v, error.RaiseOp))
-    assert raise_op.totality is Totality.DIVERGENT
+    assert raise_op.totality is Totality.PARTIAL
