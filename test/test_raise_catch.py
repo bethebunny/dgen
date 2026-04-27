@@ -374,6 +374,38 @@ def test_e2e_conditional_raise_exercises_both_paths():
     assert exe.run(True).to_json() == 100
 
 
+def test_e2e_nested_trys_disambiguate_block_names():
+    """Two trys in the same function — inner nested in outer's body —
+    must produce distinct LLVM block names. Without per-try ``cid``,
+    both would emit ``try0``/``try_exit0``/``except0`` and LLVM would
+    reject the duplicate labels.
+
+    Inner raises and its except recovers; outer's except stays dead.
+    """
+    value = parse(
+        strip_prefix("""
+        | import algebra
+        | import error
+        | import index
+        | %outer : index.Index = error.try<index.Index>() body<%ho: error.RaiseHandler<index.Index>>():
+        |     %inner : index.Index = error.try<index.Index>() body<%hi: error.RaiseHandler<index.Index>>():
+        |         %v : index.Index = 5
+        |         %raised : Never = error.raise<index.Index>(%hi, %v)
+        |     except(%err: index.Index):
+        |         %one : index.Index = 1
+        |         %rec : index.Index = algebra.add(%err, %one)
+        |     %ten : index.Index = 10
+        |     %sum : index.Index = algebra.add(%inner, %ten)
+        | except(%err: index.Index):
+        |     %z : index.Index = 0
+        |     %dead : index.Index = algebra.add(%err, %z)
+    """)
+    )
+    exe = _jit(value)
+    # Inner raises 5 → inner-except returns 5+1=6 → outer body adds 10 → 16
+    assert exe.run().to_json() == 16
+
+
 # -- Convenience helper (catch() constructor) --------------------------------
 
 
