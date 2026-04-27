@@ -21,12 +21,12 @@ import toy
     %9 : index.Index = 0
     %10 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0]
     %11 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 2]), number.Float64> = [5.0, 6.0, 7.0, 8.0]
-    %loop_header4 : goto.Label = goto.region([%9]) body<%self: goto.Label, %exit4: goto.Label>(%i4: index.Index) captures(%8, %10, %11):
-        %loop_body4 : goto.Label = goto.label([]) body(%12: index.Index) captures(%self, %8, %10, %11):
+    %loop_header4 : Nil = goto.region([%9]) body<%self: goto.Label, %exit4: goto.Label>(%i4: index.Index) captures(%8, %10, %11):
+        %loop_body4 : goto.Label = goto.label([]) body(%12: index.Index) captures(%self, %exit4, %8, %10, %11):
             %13 : index.Index = algebra.add(%12, index.Index(1))
             %14 : index.Index = 0
-            %loop_header5 : goto.Label = goto.region([%14]) body<%15: goto.Label, %exit5: goto.Label>(%i5: index.Index) captures(%8, %10, %11, %12):
-                %loop_body5 : goto.Label = goto.label([]) body(%16: index.Index) captures(%15, %8, %10, %11, %12):
+            %loop_header5 : Nil = goto.region([%14]) body<%15: goto.Label, %exit5: goto.Label>(%i5: index.Index) captures(%8, %10, %11, %12):
+                %loop_body5 : goto.Label = goto.label([]) body(%16: index.Index) captures(%15, %exit5, %8, %10, %11, %12):
                     %17 : index.Index = algebra.add(%16, index.Index(1))
                     %18 : memory.Reference<number.Float64> = llvm.extract_value<index.Index(0)>(%10)
                     %19 : index.Index = algebra.multiply(%12, index.Index(2))
@@ -46,12 +46,16 @@ import toy
                     %33 : Nil = memory.store(%28, %28, %32)
                     %34 : index.Index = chain(%17, %33)
                     %35 : Nil = goto.branch<%15>([%34])
+
                 %36 : number.Boolean = algebra.less_than(%i5, index.Index(2))
                 %37 : Nil = goto.conditional_branch<%loop_body5, %exit5>(%36, [%i5], [])
+
             %38 : index.Index = chain(%13, %loop_header5)
             %39 : Nil = goto.branch<%self>([%38])
+
         %40 : number.Boolean = algebra.less_than(%i4, index.Index(2))
         %41 : Nil = goto.conditional_branch<%loop_body4, %exit4>(%40, [%i4], [])
+
     %42 : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(2)>([2, 2]), number.Float64> = chain(%8, %loop_header4)
     %43 : memory.Reference<number.Float64> = llvm.extract_value<index.Index(0)>(%42)
     %44 : Nil = function.call<%0>([%43, index.Index(4)])

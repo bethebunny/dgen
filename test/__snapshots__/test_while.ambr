@@ -2,7 +2,7 @@
 # name: test_nested_while_llvm_ir
   '''
   
-  define label @main() {
+  define void @main() {
   entry:
     br label %while_header0
   while_header0:
@@ -27,14 +27,14 @@
     %_14 = icmp slt i64 %wh0_i, 2
     br i1 %_14, label %while_body0, label %exit0
   exit0:
-    ret label %wh0_i
+    ret void
   }
   '''
 # ---
 # name: test_while_llvm_ir
   '''
   
-  define label @main() {
+  define void @main() {
   entry:
     br label %while_header0
   while_header0:
@@ -48,7 +48,7 @@
     %_5 = icmp slt i64 %wh0_i, 10
     br i1 %_5, label %while_body0, label %exit0
   exit0:
-    ret label %wh0_i
+    ret void
   }
   '''
 # ---

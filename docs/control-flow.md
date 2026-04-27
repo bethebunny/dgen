@@ -85,34 +85,74 @@ past them into their own dependency subgraphs (they're in the stop set).
 
 ### `goto` dialect — Unstructured control flow
 
-Used for loops (which need back-edges). Labels, branches, conditional branches.
+Labels, branches, conditional branches. Used for loops (back-edges) and for if/try
+merges (forward-converging branches).
 
 **Label-as-expression model**: A `goto.label` is not a jump target — it's an expression
 block that runs when control reaches it in use-def order. No explicit entry branch is
 needed. The label's `initial_arguments` provide first-iteration values for its block args.
 
+#### Block parameter conventions
+
+Every region/label body has parameters `[%self, %exit]`:
+
+- `%self` is a back-edge target — `branch<%self>` re-enters the body block.
+  Loops use this to iterate. If/try-merge regions don't use it.
+- `%exit` is the post-region label. `branch<%exit>(value)` leaves the region with a
+  value. The region's value (the type declared on `goto.region`) is the phi
+  populated at `%exit` from the args carried by every `branch<%exit>`. Regions
+  whose type is `Nil` produce no LLVM-level value and the exit phi is skipped.
+
+#### Loop example
+
 ```
-%header = goto.label([0]) body<%self: Label, %exit: Label>(%iv: Index):
+%header : Nil = goto.region([0]) body<%self: Label, %exit: Label>(%iv: Index):
     %cmp = algebra.less_than(%iv, %limit)
     %body = goto.label([]) body(%jv: Index) captures(%self):
         %next = algebra.add(%jv, 1)
-        goto.branch<%self>([%next])
+        goto.branch<%self>([%next])      # back-edge: re-enter body with new IV
     goto.conditional_branch<%body, %exit>(%cmp, [%iv], [])
 ```
 
-Key conventions:
-- `%self` parameter enables back-edges (breaks use-def cycles)
-- `%exit` parameter: codegen emits a fall-through label after the header block
+Body's `%iv` is loop-carried — phi'd at body entry from `initial_arguments` (first
+iteration) and the back-edge to `%self` (subsequent iterations). The region produces
+no value (type `Nil`); the exit is reached when the conditional branches there.
+
+#### If-merge example
+
+```
+%if : Index = goto.region([]) body<%self: Label, %exit: Label>():
+    %then = goto.label([]) body() captures(%exit):
+        %ten = 10
+        goto.branch<%exit>([%ten])       # exit-with-value
+    %else = goto.label([]) body() captures(%exit):
+        %twenty = 20
+        goto.branch<%exit>([%twenty])
+    goto.conditional_branch<%then, %else>(%cond, [], [])
+```
+
+No body args (no loop carrier). Region's type is `Index`; the value is the phi at
+`%exit` populated from each branch's args. `%self` is unused.
+
+#### Codegen rule
+
+Codegen has no "is this a loop?" heuristic. For each label (either the body block or
+`%exit`), codegen emits a phi when the predecessors recorded against that label
+provide phi-eligible values. Loops fill predecessors at the body block (initial
+args + back-edges to `%self`); if-merge regions fill predecessors at `%exit`
+(branches carrying values). The same emission rule serves both.
 
 ### `control_flow` dialect — Structured control flow
 
-Higher-level ops that lower to `goto` (loops) or are emitted directly by codegen (if/else).
+Higher-level ops that all lower to `goto` via `ControlFlowToGoto`.
 
-- **`control_flow.for`** and **`control_flow.while`** — lowered to `goto.label` by
-  `ControlFlowToGoto` pass. See `toy/passes/control_flow_to_goto.py` docstring.
-- **`control_flow.if`** — NOT lowered to goto. Codegen expands it inline during
-  linearization into `cond_br → then → else → merge(phi)`. This avoids the fundamental
-  difficulty of representing merge labels and phi values in a label-as-expression model.
+- **`control_flow.for`** / **`control_flow.while`** — lower to a `goto.region` whose
+  body has loop-carried args (phi at body entry) and back-edges to `%self`. Region
+  type is `Nil`.
+- **`control_flow.if`** — lowers to a `goto.region` with a conditional branch
+  dispatching to then/else `goto.label`s; each label terminates with
+  `branch<%exit>(value)`. Region type is the if's result type; the merge phi
+  emerges at `%exit`.
 
 ---
 

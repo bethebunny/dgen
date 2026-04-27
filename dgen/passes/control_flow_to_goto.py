@@ -49,27 +49,28 @@ transitively.
 
 becomes:
 
-    goto.region([]) if<%self>(%result: type):
-        goto.label([then_args]) if_then(body_args):
+    %if : type = goto.region([]) body<%self: Label, %exit: Label>():
+        goto.label([]) if_then() captures(%exit):
             <then body>
-            goto.branch<%self>([then_result])
-        goto.label([else_args]) if_else(body_args):
+            goto.branch<%exit>([then_result])
+        goto.label([]) if_else() captures(%exit):
             <else body>
-            goto.branch<%self>([else_result])
-        goto.conditional_branch<%if_then, %if_else>(%cond, [then_args], [else_args])
-        chain(%result, cond_br)
+            goto.branch<%exit>([else_result])
+        goto.conditional_branch<%if_then, %if_else>(%cond, [], [])
 
-Same structure as loops: ``%self`` is the merge target. The initial entry
-dispatches via cond_br; re-entries from then/else hit the phi for ``%result``.
-Codegen's ``emit_region_op`` splits this into an entry block (dispatch) and
-a merge block (phi) when block args exist without initial_arguments.
+The region's value (``type``) is the phi at ``%exit``, populated from the
+two branches' arguments. ``%self`` is unused — there are no back-edges.
+The body has no block args; the merge sits at the exit, not at body
+entry. Codegen's ``emit_region_op`` emits the body at ``%{name}:`` and
+the exit phi at ``%{exit_param.name}:``; the same machinery emits loop
+phis at the body block.
 """
 
 from __future__ import annotations
 
 import dgen
 from dgen.block import BlockArgument, BlockParameter
-from dgen.dialects import algebra, control_flow, goto
+from dgen.dialects import algebra, builtin, control_flow, goto
 from dgen.dialects.builtin import ChainOp, Never
 from dgen.ir.traversal import all_values
 from dgen.dialects.index import Index
@@ -143,20 +144,21 @@ class ControlFlowToGoto(Pass):
     def _make_branch_label(
         name: str,
         body: dgen.Block,
-        merge_self: BlockParameter,
+        merge_exit: BlockParameter,
     ) -> goto.LabelOp:
         """Build a label for one branch of an IfOp.
 
         If the body diverges (result type is Never), the body already
         terminates elsewhere — don't add a merge branch. Otherwise,
-        append a branch to the merge point.
+        the label terminates with ``branch<%exit>([body.result])``,
+        which feeds the region's exit phi.
         """
         if isinstance(body.result.type, Never):
             result = body.result
             captures = list(body.captures)
         else:
-            result = goto.BranchOp(target=merge_self, arguments=pack([body.result]))
-            captures = [merge_self, *body.captures]
+            result = goto.BranchOp(target=merge_exit, arguments=pack([body.result]))
+            captures = [merge_exit, *body.captures]
         return goto.LabelOp(
             name=name,
             initial_arguments=pack([]),
@@ -168,12 +170,14 @@ class ControlFlowToGoto(Pass):
         lid = self._loop_counter
         self._loop_counter += 1
 
+        # %self is unused for if-merge (no back-edge); %exit carries the
+        # merged value via its phi. Region body has no block args — the
+        # value lives at the exit, not at body entry.
         merge_self = BlockParameter(name="self", type=goto.Label())
         merge_exit = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
-        merge_result = BlockArgument(name=f"if_result{lid}", type=op.type)
 
-        then_label = self._make_branch_label(f"if_then{lid}", op.then_body, merge_self)
-        else_label = self._make_branch_label(f"if_else{lid}", op.else_body, merge_self)
+        then_label = self._make_branch_label(f"if_then{lid}", op.then_body, merge_exit)
+        else_label = self._make_branch_label(f"if_else{lid}", op.else_body, merge_exit)
 
         cond_br = goto.ConditionalBranchOp(
             condition=op.condition,
@@ -188,9 +192,8 @@ class ControlFlowToGoto(Pass):
             initial_arguments=pack([]),
             type=op.type,
             body=dgen.Block(
-                result=ChainOp(lhs=merge_result, rhs=cond_br, type=op.type),
+                result=cond_br,
                 parameters=[merge_self, merge_exit],
-                args=[merge_result],
                 captures=[op.condition, *op.then_body.captures, *op.else_body.captures],
             ),
         )
@@ -241,6 +244,7 @@ class ControlFlowToGoto(Pass):
         return goto.RegionOp(
             name=f"loop_header{lid}",
             initial_arguments=pack([lo]),
+            type=builtin.Nil(),
             body=dgen.Block(
                 result=cond_br,
                 parameters=[header_self, header_exit],
@@ -308,6 +312,7 @@ class ControlFlowToGoto(Pass):
         header_label = goto.RegionOp(
             name=f"while_header{lid}",
             initial_arguments=op.initial_arguments,
+            type=builtin.Nil(),
             body=dgen.Block(
                 result=cond_br,
                 parameters=[header_self, header_exit],

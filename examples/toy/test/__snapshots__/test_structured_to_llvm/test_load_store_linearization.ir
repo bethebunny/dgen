@@ -19,12 +19,12 @@ import toy
 %8 : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(2)>([3, 2]), number.Float64> = memory.load(%7, %1)
 %9 : index.Index = 0
 %10 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-%loop_header0 : goto.Label = goto.region([%9]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index) captures(%8, %10):
-    %loop_body0 : goto.Label = goto.label([]) body(%11: index.Index) captures(%self, %8, %10):
+%loop_header0 : Nil = goto.region([%9]) body<%self: goto.Label, %exit0: goto.Label>(%i0: index.Index) captures(%8, %10):
+    %loop_body0 : goto.Label = goto.label([]) body(%11: index.Index) captures(%self, %exit0, %8, %10):
         %12 : index.Index = algebra.add(%11, index.Index(1))
         %13 : index.Index = 0
-        %loop_header1 : goto.Label = goto.region([%13]) body<%14: goto.Label, %exit1: goto.Label>(%i1: index.Index) captures(%8, %10, %11):
-            %loop_body1 : goto.Label = goto.label([]) body(%15: index.Index) captures(%14, %8, %10, %11):
+        %loop_header1 : Nil = goto.region([%13]) body<%14: goto.Label, %exit1: goto.Label>(%i1: index.Index) captures(%8, %10, %11):
+            %loop_body1 : goto.Label = goto.label([]) body(%15: index.Index) captures(%14, %exit1, %8, %10, %11):
                 %16 : index.Index = algebra.add(%15, index.Index(1))
                 %17 : memory.Reference<number.Float64> = llvm.extract_value<index.Index(0)>(%10)
                 %18 : index.Index = algebra.multiply(%11, index.Index(3))

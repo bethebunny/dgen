@@ -34,12 +34,21 @@ of `LinearBlock(name, ops, label)`:
 
 - Real labels recurse into their body blocks
 - Synthetic labels carry their ops directly
-- `%exit` parameters generate empty blocks (fall-through after loop headers)
+- `%exit` parameters generate the post-region block. For non-`Nil`-typed
+  regions, this block is also where the region's value phi lives — populated
+  from `branch<%exit>([value])` predecessors. See `docs/control-flow.md` for
+  the full rule (codegen has no "loop or not" heuristic; phis emerge at any
+  label whose predecessors carry phi-eligible values).
 
 ### IfOp expansion
 
-`control_flow.IfOp` is structured control flow — it doesn't need goto labels.
-`_linearize_ops` expands it inline during linearization:
+`control_flow.IfOp` is lowered to a `goto.region` by `ControlFlowToGoto`, and
+codegen emits the region uniformly with loops — see
+`docs/control-flow.md`. The historical "expand inline during linearization"
+path is gone.
+
+The original sketch below is preserved for now as it documents the
+linear-block intuition codegen still uses internally:
 
 ```
 [ops_before, IfOp, ops_after]

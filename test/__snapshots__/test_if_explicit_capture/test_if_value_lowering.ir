@@ -6,12 +6,14 @@ import number
 
 %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
     %cond : number.Boolean = algebra.equal(%n, index.Index(0))
-    %if0 : index.Index = goto.region([]) body<%self: goto.Label, %if_exit0: goto.Label>(%if_result0: index.Index) captures(%cond):
-        %if_then0 : goto.Label = goto.label([]) body() captures(%self):
+    %if0 : index.Index = goto.region([]) body<%self: goto.Label, %if_exit0: goto.Label>() captures(%cond):
+        %if_then0 : goto.Label = goto.label([]) body() captures(%if_exit0):
             %ten : index.Index = 10
-            %0 : Nil = goto.branch<%self>([%ten])
-        %if_else0 : goto.Label = goto.label([]) body() captures(%self):
+            %0 : Nil = goto.branch<%if_exit0>([%ten])
+
+        %if_else0 : goto.Label = goto.label([]) body() captures(%if_exit0):
             %twenty : index.Index = 20
-            %1 : Nil = goto.branch<%self>([%twenty])
+            %1 : Nil = goto.branch<%if_exit0>([%twenty])
+
         %2 : Nil = goto.conditional_branch<%if_then0, %if_else0>(%cond, [], [])
-        %3 : index.Index = chain(%if_result0, %2)
+
