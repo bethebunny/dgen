@@ -114,6 +114,24 @@ def _resolve_jump_markers(
     return needed
 
 
+def redirect_to_exit(block: dgen.Block, exit_param: BlockParameter) -> None:
+    """Wrap *block*'s result in ``branch<%exit>([result])`` in place.
+
+    Skipped when the block already terminates (Never-typed result, e.g.
+    a raise that diverges). ``%exit`` is added to the block's captures
+    unless it's already a parameter of the block.
+
+    Mutates the block: callers are expected to be discarding the
+    enclosing op anyway (lowering replaces it).
+    """
+    if isinstance(block.result.type, Never):
+        return
+    branch = goto.BranchOp(target=exit_param, arguments=pack([block.result]))
+    block.replace_uses_of(block.result, branch)
+    if exit_param not in block.parameters and exit_param not in block.captures:
+        block.captures.append(exit_param)
+
+
 class ControlFlowToGoto(Pass):
     allow_unregistered_ops = True
 
@@ -146,24 +164,11 @@ class ControlFlowToGoto(Pass):
         body: dgen.Block,
         merge_exit: BlockParameter,
     ) -> goto.LabelOp:
-        """Build a label for one branch of an IfOp.
-
-        If the body diverges (result type is Never), the body already
-        terminates elsewhere — don't add a merge branch. Otherwise,
-        the label terminates with ``branch<%exit>([body.result])``,
-        which feeds the region's exit phi.
-        """
-        if isinstance(body.result.type, Never):
-            result = body.result
-            captures = list(body.captures)
-        else:
-            result = goto.BranchOp(target=merge_exit, arguments=pack([body.result]))
-            captures = [merge_exit, *body.captures]
-        return goto.LabelOp(
-            name=name,
-            initial_arguments=pack([]),
-            body=dgen.Block(result=result, captures=captures),
-        )
+        """Build a label for one branch of an IfOp. The label terminates
+        with ``branch<%exit>([body.result])`` to feed the region's exit
+        phi, except when the body already diverges."""
+        redirect_to_exit(body, merge_exit)
+        return goto.LabelOp(name=name, initial_arguments=pack([]), body=body)
 
     @lowering_for(control_flow.IfOp)
     def lower_if(self, op: control_flow.IfOp) -> dgen.Value | None:
@@ -176,6 +181,12 @@ class ControlFlowToGoto(Pass):
         merge_self = BlockParameter(name="self", type=goto.Label())
         merge_exit = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
 
+        # Snapshot the branch bodies' captures before _make_branch_label
+        # mutates them — merge_exit gets appended to each branch's
+        # captures, but the region body owns it as a parameter so we
+        # mustn't propagate it up here.
+        then_captures = list(op.then_body.captures)
+        else_captures = list(op.else_body.captures)
         then_label = self._make_branch_label(f"if_then{lid}", op.then_body, merge_exit)
         else_label = self._make_branch_label(f"if_else{lid}", op.else_body, merge_exit)
 
@@ -194,7 +205,7 @@ class ControlFlowToGoto(Pass):
             body=dgen.Block(
                 result=cond_br,
                 parameters=[merge_self, merge_exit],
-                captures=[op.condition, *op.then_body.captures, *op.else_body.captures],
+                captures=[op.condition, *then_captures, *else_captures],
             ),
         )
 

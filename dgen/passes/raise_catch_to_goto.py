@@ -29,6 +29,7 @@ from dgen.builtins import pack
 from dgen.dialects import error, goto
 from dgen.dialects.builtin import Never
 from dgen.ir.traversal import all_values
+from dgen.passes.control_flow_to_goto import redirect_to_exit
 from dgen.passes.pass_ import Pass, lowering_for
 
 
@@ -84,94 +85,63 @@ class RaiseCatchToGoto(Pass):
         handler = op.body.parameters[0]
 
         # %self is unused for try-merge (no back-edge); %exit carries the
-        # merged value via its phi. Mirrors lower_if: the body terminates
-        # with branch<%exit>(body.result), the except label terminates
-        # with branch<%exit>(except.result), and codegen emits the phi at
-        # %exit from the two predecessors.
+        # merged value via its phi. Mirrors lower_if: body and except
+        # both terminate with branch<%exit>(result), and codegen emits
+        # the phi at %exit from the two predecessors.
         merge_self = BlockParameter(name="self", type=goto.Label())
         merge_exit = BlockParameter(name=f"try_exit{cid}", type=goto.Label())
 
-        # except block becomes a goto.label whose body branches to %exit
-        # with its recovery value. A Never-typed except (e.g. re-raise)
-        # already terminates on its own — don't add a merge branch.
-        except_block = op.except_
-        if isinstance(except_block.result.type, Never):
-            except_result: dgen.Value = except_block.result
-            except_captures = list(except_block.captures)
-        else:
-            except_result = goto.BranchOp(
-                target=merge_exit, arguments=pack([except_block.result])
-            )
-            except_captures = [merge_exit, *except_block.captures]
+        # except block becomes a goto.label that branches to %exit with
+        # its recovery value (or stays as-is if it already diverges).
+        redirect_to_exit(op.except_, merge_exit)
         except_label = goto.LabelOp(
-            name=f"except{cid}",
-            initial_arguments=pack([]),
-            body=dgen.Block(
-                args=list(except_block.args),
-                captures=except_captures,
-                result=except_result,
-            ),
+            name=f"except{cid}", initial_arguments=pack([]), body=op.except_
         )
 
         # Substitute handler (effect-layer evidence) with except_label
-        # (goto-layer evidence). The framework's replace_uses_of cascade
-        # updates raise.handler operands and nested block capture lists
-        # transitively. ``lower_raise`` then converts each
-        # raise(label, err) into goto.branch(label, err) when the framework
-        # visits it next in topological order.
+        # (goto-layer evidence) in the body. The framework's
+        # replace_uses_of cascade updates raise.handler operands and
+        # nested block capture lists transitively. ``lower_raise`` then
+        # converts each raise(label, err) into goto.branch(label, err)
+        # when the framework visits it next in topological order.
         op.body.replace_uses_of(handler, except_label)
-
-        # Body terminator: branch<%exit>(body.result), or the body's own
-        # result if it diverges (every path raises). %merge_exit is a
-        # parameter of the region body, so the branch references it
-        # directly — no capture needed.
-        if isinstance(op.body.result.type, Never):
-            body_terminator: dgen.Value = op.body.result
-        else:
-            body_terminator = goto.BranchOp(
-                target=merge_exit, arguments=pack([op.body.result])
-            )
+        op.body.parameters[:] = [merge_self, merge_exit]
+        redirect_to_exit(op.body, merge_exit)
 
         return goto.RegionOp(
             name=f"try{cid}",
             initial_arguments=pack([]),
             type=op.type,
-            body=dgen.Block(
-                parameters=[merge_self, merge_exit],
-                captures=list(op.body.captures),
-                result=body_terminator,
-            ),
+            body=op.body,
         )
 
     @lowering_for(error.RaiseOp)
-    def lower_raise(self, op: error.RaiseOp) -> dgen.Value | None:
+    def lower_raise(self, op: error.RaiseOp) -> dgen.Value:
         """Convert ``raise(label, err)`` to ``goto.branch(label, err)``.
 
         The enclosing try (visited first by the framework) replaced the
         handler with its except label, so ``op.handler`` is already a
         ``goto.LabelOp`` by the time we get here. A raise whose handler
-        is *not* a label means no enclosing try produced it — that's an
-        undischarged effect, caught by ``verify_postconditions``.
+        is *not* a label means no enclosing try produced it — the
+        effect was never discharged.
         """
         if not isinstance(op.handler, goto.LabelOp):
-            return None
+            raise UndischargedEffectError(
+                f"RaiseOp %{op.name}: handler {op.handler!r} does not "
+                f"resolve to any enclosing try — the Raise<{op.error_type}> "
+                f"effect is not discharged. Every raise must be enclosed "
+                f"by a try that binds its handler (v1 design)."
+            )
         return goto.BranchOp(target=op.handler, arguments=pack([op.error]))
 
     def verify_postconditions(self, value: dgen.Value) -> None:
-        """No TryOp or RaiseOp may survive the pass.
+        """No TryOp may survive the pass — every try is lowered to a region.
 
-        A surviving ``RaiseOp`` means its handler didn't resolve to any
-        enclosing try — the effect was never discharged. Reporting this
-        here keeps codegen from silently emitting undefined behavior.
+        Surviving raises are caught earlier (during lowering) by
+        ``lower_raise``, which raises ``UndischargedEffectError`` if the
+        handler hasn't resolved to a label.
         """
         super().verify_postconditions(value)
         for v in all_values(value):
             if isinstance(v, error.TryOp):
                 raise AssertionError(f"TryOp %{v.name} survived RaiseCatchToGoto")
-            if isinstance(v, error.RaiseOp):
-                raise UndischargedEffectError(
-                    f"RaiseOp %{v.name}: handler {v.handler!r} does not "
-                    f"resolve to any enclosing try — the Raise<{v.error_type}> "
-                    f"effect is not discharged. Every raise must be enclosed "
-                    f"by a try that binds its handler (v1 design)."
-                )
