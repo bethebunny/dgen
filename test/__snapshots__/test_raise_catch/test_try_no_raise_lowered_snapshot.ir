@@ -1,6 +1,9 @@
 import algebra
+import goto
 import index
 
-%one : index.Index = 1
-%two : index.Index = 2
-%sum : index.Index = algebra.add(%one, %two)
+%try0 : index.Index = goto.region([]) body<%self: goto.Label, %try_exit0: goto.Label>():
+    %one : index.Index = 1
+    %two : index.Index = 2
+    %sum : index.Index = algebra.add(%one, %two)
+    %0 : Nil = goto.branch<%try_exit0>([%sum])
