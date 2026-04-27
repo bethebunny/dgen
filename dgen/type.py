@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import itertools
 import keyword
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -184,17 +185,12 @@ class Value(Generic[T]):
         from dgen.dialects.builtin import Diverge, Handler
 
         handler_diverge = Handler(effect_type=Diverge())
-        is_partial = (
-            any(operand.type.has_trait(handler_diverge) for _, operand in self.operands)
-            or any(
-                param.type.has_trait(handler_diverge) for _, param in self.parameters
-            )
-            or any(
-                capture.type.has_trait(handler_diverge)
-                for _, block in self.blocks
-                for capture in block.captures
-            )
+        candidates = itertools.chain(
+            (operand for _, operand in self.operands),
+            (param for _, param in self.parameters),
+            (capture for _, block in self.blocks for capture in block.captures),
         )
+        is_partial = any(v.type.has_trait(handler_diverge) for v in candidates)
         return Totality.PARTIAL if is_partial else Totality.TOTAL
 
     def replace_operand(self, old: Value, new: Value) -> None:
