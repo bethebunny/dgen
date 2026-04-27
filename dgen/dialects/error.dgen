@@ -1,12 +1,20 @@
-from builtin import Never, Effect, Handler
+from builtin import Never, Effect, Handler, Diverge
 
 type Raise<error_type: Type>:
     layout Void
     has trait Effect
 
+# TODO: dgen does not yet support type subtyping. Conceptually
+# ``Raise<E>`` is a sub-effect of ``Diverge`` and ``RaiseHandler<E>``
+# should be a sub-handler of ``Handler<Diverge>`` by extension. Until
+# subtyping lands, ``RaiseHandler<E>`` redundantly declares both
+# ``Handler<Raise<E>>`` and ``Handler<Diverge>`` so divergence-detection
+# queries via ``Handler<Diverge>`` find the trait without a custom
+# trait-resolution rule.
 type RaiseHandler<error_type: Type>:
     layout Void
     has trait Handler<Raise<error_type>>
+    has trait Handler<Diverge>
 
 op raise<error_type: Type>(handler: RaiseHandler, error: error_type) -> Never
 op try<error_type: Type>():

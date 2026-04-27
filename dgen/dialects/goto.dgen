@@ -1,7 +1,12 @@
-from builtin import Nil, Span
+from builtin import Nil, Span, Diverge, Handler
 
+# A Label is the evidence for a non-local control transfer: branching
+# to it abandons the current dataflow. Declaring Handler<Diverge> here
+# lets generic divergence detection (see docs/divergence.md) recognize
+# any op that consumes a Label as potentially divergent.
 type Label:
     data: Nil
+    has trait Handler<Diverge>
 
 op region(initial_arguments: Span) -> Label:
     block body
