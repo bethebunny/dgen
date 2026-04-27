@@ -393,26 +393,29 @@ def _pred_block_name(pred: Predecessor) -> str:
     return pred.source_name
 
 
-def _emit_phi_nodes(
-    op: goto.RegionOp | goto.LabelOp,
-) -> Iterator[str]:
-    """Emit phi nodes for block args based on predecessor branches."""
-    ctx = _ctx()
-    preds = ctx.predecessors.get(op, [])
-    if not preds:
+def _emit_phi(target: dgen.Value, name: str, ty: str, arg_idx: int) -> Iterator[str]:
+    """Emit a single phi at *target*, sourcing ``pred.args[arg_idx]`` from
+    each predecessor recorded against *target*. The void check exists
+    because ``Nil``-typed phi inputs have no LLVM representation."""
+    if ty == "void":
         return
+    preds = _ctx().predecessors.get(target, [])
+    phi_parts = [
+        f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred)} ]"
+        for pred in preds
+        if arg_idx < len(pred.args)
+    ]
+    if phi_parts:
+        yield f"  %{name} = phi {ty} {', '.join(phi_parts)}"
+
+
+def _emit_block_arg_phis(op: goto.RegionOp | goto.LabelOp) -> Iterator[str]:
+    """Emit one phi per ``op.body.args`` entry — fed by initial_arguments
+    (fall-through) and back-edges (branches to %self for regions, or
+    branches to the label op directly)."""
+    tracker = _ctx().tracker
     for arg_idx, arg in enumerate(op.body.args):
-        ty = llvm_type(arg.type)
-        if ty == "void":
-            continue
-        name = ctx.tracker.track_name(arg)
-        phi_parts = [
-            f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred)} ]"
-            for pred in preds
-            if arg_idx < len(pred.args)
-        ]
-        if phi_parts:
-            yield f"  %{name} = phi {ty} {', '.join(phi_parts)}"
+        yield from _emit_phi(op, tracker.track_name(arg), llvm_type(arg.type), arg_idx)
 
 
 def _exit_phi_name(op: goto.RegionOp) -> str:
@@ -438,56 +441,16 @@ def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
     exit phi only when there's a non-Nil result type to phi for. LLVM
     has no void phi.
     """
-    self_param, exit_param = op.body.parameters
+    _self_param, exit_param = op.body.parameters
     yield f"  br label %{op.name}"
     yield f"{op.name}:"
-    yield from _emit_body_entry_phi(op)
+    yield from _emit_block_arg_phis(op)
     terminated = yield from emit_linearized(op.body)
     if not terminated:
         yield f"  br label %{exit_param.name}"
     yield f"{exit_param.name}:"
-    yield from _emit_exit_phi(op)
-
-
-def _emit_body_entry_phi(op: goto.RegionOp) -> Iterator[str]:
-    """Phi at the body's entry — fed by initial_arguments (fall-through)
-    and back-edges (branches to %self). Emits one phi per body.arg."""
-    ctx = _ctx()
-    preds = ctx.predecessors.get(op, [])
-    if not preds:
-        return
-    for arg_idx, arg in enumerate(op.body.args):
-        ty = llvm_type(arg.type)
-        if ty == "void":
-            continue
-        name = ctx.tracker.track_name(arg)
-        phi_parts = [
-            f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred)} ]"
-            for pred in preds
-            if arg_idx < len(pred.args)
-        ]
-        if phi_parts:
-            yield f"  %{name} = phi {ty} {', '.join(phi_parts)}"
-
-
-def _emit_exit_phi(op: goto.RegionOp) -> Iterator[str]:
-    """Phi at the exit — fed by branches to %exit carrying values.
-    Named per :func:`_exit_phi_name`. Skipped for Nil-typed regions."""
-    ctx = _ctx()
-    if isinstance(constant(op.type), builtin.Nil):
-        return
-    _self_param, exit_param = op.body.parameters
-    preds = ctx.predecessors.get(exit_param, [])
-    if not preds:
-        return
-    ty = llvm_type(op.type)
-    phi_parts = [
-        f"[ {value_reference(pred.args[0])}, %{_pred_block_name(pred)} ]"
-        for pred in preds
-        if pred.args
-    ]
-    if phi_parts:
-        yield f"  %{_exit_phi_name(op)} = phi {ty} {', '.join(phi_parts)}"
+    if not isinstance(constant(op.type), builtin.Nil):
+        yield from _emit_phi(exit_param, _exit_phi_name(op), llvm_type(op.type), 0)
 
 
 @emitter_for(goto.LabelOp)
@@ -500,7 +463,7 @@ def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
     exit_name = f"{op.name}_exit"
     yield f"  br label %{exit_name}"
     yield f"{op.name}:"
-    yield from _emit_phi_nodes(op)
+    yield from _emit_block_arg_phis(op)
     yield from emit_linearized(op.body)
     yield f"{exit_name}:"
 
