@@ -1,58 +1,25 @@
 """Tests for generic divergence detection (``Value.totality``).
 
-The classification rules — defined in ``docs/divergence.md`` — are:
+The classification rules — defined in the "Generic Divergence Detection"
+section of ``docs/control-flow.md`` — are:
 
-- An op is *Partial* iff one of its operands or block captures has a type
-  that declares the ``Handler<Diverge>`` trait.
+- An op is *Partial* iff one of its operands, parameters, or owned-block
+  captures has a type that declares the ``Handler<Diverge>`` trait.
 - An op is *Divergent* iff it is Partial *and* its result type is ``Never``.
 - An op is *Total* otherwise.
-
-The tests below exercise the trait declarations on the existing handler
-families (``RaiseHandler``, ``goto.Label``) and the per-value classification
-property.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import ClassVar
-
-from dgen import Block, Op, Type, Value
 from dgen.asm.parser import parse
 from dgen.block import BlockParameter
-from dgen.builtins import Totality
+from dgen.builtins import pack
 from dgen.dialects import builtin, error, goto
-from dgen.dialects.builtin import ChainOp, Diverge, Handler, Never
+from dgen.dialects.builtin import Diverge, Handler
 from dgen.dialects.index import Index
 from dgen.ir.traversal import all_values
 from dgen.testing import strip_prefix
-from dgen.type import Fields
-
-
-# A non-registered op used by the synthetic divergence-shape tests below.
-# Registering would require side-effects in a dialect; for unit purposes
-# we set ``dialect``/``asm_name`` directly so any ASM print path that
-# happens to fire still has the bookkeeping it needs.
-@dataclass(eq=False, kw_only=True)
-class _BranchLikeOp(Op):
-    target: Value
-    type: Type = Never()
-    __operands__: ClassVar[Fields] = (("target", Type),)
-
-
-_BranchLikeOp.dialect = goto.goto
-_BranchLikeOp.asm_name = "_branch_like"
-
-
-@dataclass(eq=False, kw_only=True)
-class _WrapBlockOp(Op):
-    body: Block
-    type: Type = Index()
-    __blocks__: ClassVar[tuple[str, ...]] = ("body",)
-
-
-_WrapBlockOp.dialect = goto.goto
-_WrapBlockOp.asm_name = "_wrap_block"
+from dgen.type import Totality
 
 
 # -- Trait declarations on the handler families ------------------------------
@@ -81,7 +48,7 @@ def test_label_declares_handler_diverge() -> None:
 
 
 def test_constant_is_total() -> None:
-    """A bare constant has no operands or blocks — always TOTAL."""
+    """A bare constant has no operands, parameters, or blocks — always TOTAL."""
     assert Index().constant(7).totality is Totality.TOTAL
 
 
@@ -152,24 +119,30 @@ def test_inner_try_capturing_outer_handler_is_partial() -> None:
 # -- Totality on the goto family --------------------------------------------
 
 
-def test_branch_with_label_operand_is_divergent() -> None:
-    """An op that takes a ``Label`` (Handler<Diverge>) as an *operand* and
-    whose result is ``Never`` is Divergent. Today's ``goto.branch`` carries
-    the label as a *parameter* (compile-time), so for the operand-shaped
-    case the test uses ``_BranchLikeOp`` defined at module scope."""
+def test_branch_with_label_parameter_is_partial() -> None:
+    """``goto.branch<target: Label>`` carries its target as a *parameter*.
+    With the parameter check the branch op is detected as having a
+    ``Handler<Diverge>`` in scope, so it's at least Partial. It would be
+    DIVERGENT if the branch's result type were ``Never`` — see TODO.md
+    (Type system / effects) for the planned change."""
     label = BlockParameter(name="L", type=goto.Label())
-    assert _BranchLikeOp(target=label).totality is Totality.DIVERGENT
+    op = goto.BranchOp(target=label, arguments=pack())
+    assert op.totality is Totality.PARTIAL
 
 
-def test_op_with_label_capture_but_normal_result_is_partial() -> None:
-    """An op that owns a block capturing a ``Label`` but whose own result
-    type is *not* ``Never`` is Partial — divergence is possible inside the
-    block, but the op itself can still produce a value."""
-    label = BlockParameter(name="L", type=goto.Label())
-    seven = Index().constant(7)
-    inner = ChainOp(lhs=seven, rhs=label, type=Index())
-    body = Block(result=inner, captures=[label])
-    assert _WrapBlockOp(body=body).totality is Totality.PARTIAL
+def test_conditional_branch_is_partial() -> None:
+    """``goto.conditional_branch`` carries *two* Label parameters; either
+    one is enough to flag it Partial."""
+    t = BlockParameter(name="T", type=goto.Label())
+    f = BlockParameter(name="F", type=goto.Label())
+    op = goto.ConditionalBranchOp(
+        true_target=t,
+        false_target=f,
+        condition=Index().constant(0),
+        true_arguments=pack(),
+        false_arguments=pack(),
+    )
+    assert op.totality is Totality.PARTIAL
 
 
 # -- Round-trip from parsed IR ----------------------------------------------

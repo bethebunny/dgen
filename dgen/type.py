@@ -1,22 +1,42 @@
 from __future__ import annotations
 
+import enum
 import keyword
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, ClassVar, Generic, Iterator, TypeVar
+from typing import ClassVar, Generic, Iterator, TypeVar
 
 from typing_extensions import Self
 
 import dgen
 
-if TYPE_CHECKING:
-    from .builtins import Totality
-
 from .dialect import Dialect
 from .ir.traversal import transitive_dependencies
 from .layout import Layout, TypeValue
 from .memory import Memory
+
+
+class Totality(enum.Enum):
+    """How a value behaves with respect to the ``Diverge`` effect.
+
+    See ``docs/control-flow.md`` (Generic Divergence Detection) for the
+    full classification rule.
+
+    - ``TOTAL``     — no operand, parameter, or owned-block capture is a
+      ``Handler<Diverge>``; control always returns. A total value's
+      result type must not be ``Never``.
+    - ``PARTIAL``   — at least one ``Handler<Diverge>`` is in scope, so
+      the value *may* trigger divergence, but its result type is not
+      ``Never``, so a normal return is still possible.
+    - ``DIVERGENT`` — partial *and* the result type is ``Never``:
+      divergence is unconditional on this value's evaluation.
+    """
+
+    TOTAL = "total"
+    PARTIAL = "partial"
+    DIVERGENT = "divergent"
+
 
 T = TypeVar("T", bound="Type")
 
@@ -152,28 +172,31 @@ class Value(Generic[T]):
     def totality(self) -> Totality:
         """Classify this value's relationship to the ``Diverge`` effect.
 
-        ``TOTAL`` if no operand and no owned-block capture has a
+        ``TOTAL`` if no operand, parameter, or owned-block capture has a
         ``Handler<Diverge>`` type; ``DIVERGENT`` if such a handler is in
         scope *and* the result type is ``Never``; ``PARTIAL`` otherwise.
-        See ``docs/divergence.md``.
+        See the "Generic Divergence Detection" section of
+        ``docs/control-flow.md``.
 
-        The trait/enum/type imports are deferred to function scope because
-        they live in ``dgen.dialects.builtin`` / ``dgen.builtins``, both
-        downstream of this module.
+        The trait/type imports are deferred to function scope because
+        they live in ``dgen.dialects.builtin``, downstream of this module.
         """
-        # Imports deferred to break the dgen.type ↔ dgen.builtins ↔
-        # dgen.dialects.builtin cycle; both downstream modules need
-        # ``Value`` at their own import time.
-        from dgen.builtins import Totality
+        # ``Diverge``/``Handler``/``Never`` come from the builtin dialect,
+        # which is built on top of this module — defer the import to break
+        # the cycle (the property only runs after both modules load).
         from dgen.dialects.builtin import Diverge, Handler, Never
 
         handler_diverge = Handler(effect_type=Diverge())
-        is_partial = any(
-            operand.type.has_trait(handler_diverge) for _, operand in self.operands
-        ) or any(
-            capture.type.has_trait(handler_diverge)
-            for _, block in self.blocks
-            for capture in block.captures
+        is_partial = (
+            any(operand.type.has_trait(handler_diverge) for _, operand in self.operands)
+            or any(
+                param.type.has_trait(handler_diverge) for _, param in self.parameters
+            )
+            or any(
+                capture.type.has_trait(handler_diverge)
+                for _, block in self.blocks
+                for capture in block.captures
+            )
         )
         if not is_partial:
             return Totality.TOTAL
