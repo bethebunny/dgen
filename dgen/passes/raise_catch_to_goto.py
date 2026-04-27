@@ -109,10 +109,7 @@ class RaiseCatchToGoto(Pass):
         redirect_to_exit(op.body, merge_exit)
 
         return goto.RegionOp(
-            name=f"try{cid}",
-            initial_arguments=pack([]),
-            type=op.type,
-            body=op.body,
+            name=f"try{cid}", initial_arguments=pack([]), type=op.type, body=op.body
         )
 
     @lowering_for(error.RaiseOp)
