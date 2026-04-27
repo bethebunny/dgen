@@ -6,4 +6,3 @@ import index
     %one : index.Index = 1
     %two : index.Index = 2
     %sum : index.Index = algebra.add(%one, %two)
-    %0 : Nil = goto.branch<%try_exit0>([%sum])
