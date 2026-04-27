@@ -17,13 +17,13 @@ class Handler(Trait):
     effect_type: Value[dgen.TypeType]
 
 @dataclass(eq=False)
-class Diverge(Type): ...
-
-@dataclass(eq=False)
 class Nil(Type): ...
 
 @dataclass(eq=False)
 class Never(Type): ...
+
+@dataclass(eq=False)
+class Diverge(Type): ...
 
 @dataclass(eq=False)
 class String(Type): ...
