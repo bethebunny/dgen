@@ -104,9 +104,13 @@ class RaiseCatchToGoto(Pass):
         # nested block capture lists transitively. ``lower_raise`` then
         # converts each raise(label, err) into goto.branch(label, err)
         # when the framework visits it next in topological order.
+        #
+        # The body's terminator (branch<%exit>([body.result])) is
+        # synthesized later by ``NormalizeRegionTerminators`` — by then
+        # every raise is a branch, so a structural "is this a
+        # terminator?" check decides whether to wrap.
         op.body.replace_uses_of(handler, except_label)
         op.body.parameters[:] = [merge_self, merge_exit]
-        redirect_to_exit(op.body, merge_exit)
 
         return goto.RegionOp(
             name=f"try{cid}", initial_arguments=pack([]), type=op.type, body=op.body

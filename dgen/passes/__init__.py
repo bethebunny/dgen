@@ -7,6 +7,7 @@ from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.existential_to_record import ExistentialToRecord
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
+from dgen.passes.normalize_region_terminators import NormalizeRegionTerminators
 from dgen.passes.raise_catch_to_goto import RaiseCatchToGoto
 from dgen.passes.record_to_memory import RecordToMemory
 
@@ -17,6 +18,7 @@ def lower_builtin_dialects() -> Compiler[dgen.Value]:
         passes=[
             ControlFlowToGoto(),
             RaiseCatchToGoto(),
+            NormalizeRegionTerminators(),
             NDBufferToMemory(),
             ExistentialToRecord(),
             RecordToMemory(),

@@ -20,5 +20,4 @@ import number
 
         %ten : index.Index = 10
         %chained : index.Index = algebra.add(%out, %ten)
-        %2 : Nil = goto.branch<%try_exit0>([%chained])
 
