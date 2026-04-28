@@ -55,6 +55,8 @@
 
 ## Type system / effects
 - Add type subtyping. ``Raise<E>`` should be a sub-effect of ``Diverge`` and ``RaiseHandler<E>`` should automatically satisfy ``Handler<Diverge>`` via that subtyping. Until then, ``RaiseHandler`` redundantly declares both ``Handler<Raise<E>>`` and ``Handler<Diverge>`` (see `dgen/dialects/error.dgen`) so the generic divergence-detection query (`Value.totality`, see `docs/control-flow.md`) finds it without a custom trait-resolution rule.
+- Reentrant linearity for ``goto.Label``. Labels are divergence handlers but are not marked ``Affine`` because they're reentrant continuations: a region's ``%self`` is branched to once per loop iteration; many branch sites can target the same ``%exit``. The simple "consumed at most once" rule (see `docs/linear_types.md`) flags every realistic goto-form lowering as a `DoubleConsumeError`. A control-flow-sensitive ``Affine`` (or a separate ``JoinPoint`` trait that means "evaluated at most once per execution path") is the path forward.
+- Mark ``Origin`` (see `docs/effects.md`) as ``has trait Linear`` when origins land. The verifier (``verify_linearity`` in `dgen/ir/verification.py`) is already wired into every pass's pre/post hooks; it'll pick up the trait on the type and start enforcing single-consume + drain-before-divergence with no further plumbing.
 
 ## Misc
 - test_peano's `test_call_jit` _should not_ call the jit, let's verify that it doesn't and put it somewhere more sensible

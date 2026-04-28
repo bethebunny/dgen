@@ -3,6 +3,12 @@ from index import Index
 trait Effect
 trait Handler<effect_type: Type>
 
+# Linear / Affine: marker traits for resource discipline. A value is
+# Linear iff it must be consumed exactly once, Affine iff it may be
+# consumed at most once. See docs/linear_types.md.
+trait Linear
+trait Affine
+
 type Nil:
     layout Void
 
