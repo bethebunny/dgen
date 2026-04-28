@@ -1,4 +1,4 @@
-from builtin import Never, Effect, Handler, Diverge
+from builtin import Never, Effect, Handler, Diverge, Affine
 
 type Raise<error_type: Type>:
     layout Void
@@ -8,6 +8,7 @@ type RaiseHandler<error_type: Type>:
     layout Void
     has trait Handler<Raise<error_type>>
     has trait Handler<Diverge>
+    has trait Affine
 
 op raise<error_type: Type>(handler: RaiseHandler, error: error_type) -> Never
 op try<error_type: Type>():

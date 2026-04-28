@@ -12,6 +12,7 @@ from dgen.ir.verification import (
     verify_closed_blocks,
     verify_constraints,
     verify_dag,
+    verify_linearity,
 )
 
 if TYPE_CHECKING:
@@ -120,8 +121,10 @@ class Pass(metaclass=_PassMeta):
         verify_dag(value)
         verify_closed_blocks(value)
         verify_constraints(value)
+        verify_linearity(value)
 
     def verify_postconditions(self, value: dgen.Value) -> None:
         """Check IR invariants that must hold after this pass runs."""
         verify_dag(value)
         verify_closed_blocks(value)
+        verify_linearity(value)

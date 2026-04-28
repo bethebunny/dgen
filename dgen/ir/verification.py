@@ -8,7 +8,7 @@ from dgen.dialects.function import FunctionOp
 from dgen.ir.constraints import TraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
-from dgen.type import constant, format_value
+from dgen.type import Totality, Type, constant, format_value
 
 
 class VerificationError(Exception):
@@ -25,6 +25,24 @@ class ClosedBlockError(VerificationError):
 
 class CycleError(VerificationError):
     """The use-def graph contains a cycle."""
+
+
+class LinearityError(VerificationError):
+    """An op or block violates the linear/affine resource discipline."""
+
+
+class DoubleConsumeError(LinearityError):
+    """A linear or affine value is consumed by more than one op."""
+
+
+class LinearLeakError(LinearityError):
+    """A linear value is introduced in a block but never consumed and is
+    not the block's result — its single-consume obligation is unmet."""
+
+
+class LinearLeakAtPartialError(LinearityError):
+    """A PARTIAL op is reached while linear values remain live in scope.
+    Divergence would leak those obligations on the divergent path."""
 
 
 def _annotated_asm(root: dgen.Value, target: dgen.Value) -> str:
@@ -242,3 +260,108 @@ def verify_constraints(root: dgen.Value) -> None:
         for constraint in value.__constraints__:
             if isinstance(constraint, TraitConstraint):
                 _verify_trait_constraint(constraint, value, root)
+
+
+# ---------------------------------------------------------------------------
+# verify_linearity
+# ---------------------------------------------------------------------------
+
+
+def _consumes(value: dgen.Value) -> list[dgen.Value]:
+    """One-hop affine-or-linear dependencies of *value* — the values it
+    directly consumes. Type instances are filtered out: a Value's
+    ``dependencies`` yields ``self.type`` and types-as-values are
+    universe-1 metadata, not resources subject to linearity.
+    """
+    return [
+        d
+        for d in value.dependencies
+        if not isinstance(d, Type) and d.is_affine_or_linear
+    ]
+
+
+def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
+    """Verify the linearity invariants on a single block, then recurse.
+
+    The walk is a single pass over ``block.values`` (which is already in
+    post-order topological order from ``transitive_dependencies``):
+
+    1. Each direct consume of an affine-or-linear value bumps a per-value
+       refcount; refcount > 1 → ``DoubleConsumeError``.
+    2. At any ``PARTIAL`` op, the running ``live_linear`` set (linear
+       values introduced earlier and not yet consumed) must already be
+       empty *after* accounting for this op's own consumes — otherwise
+       divergence would leak those obligations.
+    3. At block exit, any ``LINEAR`` value introduced in the block whose
+       refcount is still 0 and that isn't ``block.result`` is a leak.
+
+    Captures are treated as ``introduced`` for the inner block: they are
+    leaves in ``block.values`` (in the ``stop`` set) but the inner block
+    is on the hook for not double-using them. The outer op already
+    accounted for the single capture-use via its own ``dependencies``.
+    """
+    refcount: dict[dgen.Value, int] = {}
+    consumers: dict[dgen.Value, list[dgen.Value]] = {}
+    introduced: set[dgen.Value] = set()
+    live_linear: set[dgen.Value] = set()
+
+    for capture in block.captures:
+        if capture.is_affine_or_linear:
+            introduced.add(capture)
+            refcount[capture] = 0
+            if capture.is_linear:
+                live_linear.add(capture)
+
+    for v in block.values:
+        # 1. Account for what v consumes.
+        for d in _consumes(v):
+            refcount[d] = refcount.get(d, 0) + 1
+            consumers.setdefault(d, []).append(v)
+            if refcount[d] > 1:
+                raise DoubleConsumeError(
+                    f"{type(d).__name__} %{d.name} ({d.linearity.value}) "
+                    f"consumed {refcount[d]} times by "
+                    f"{', '.join(f'%{c.name}' for c in consumers[d])}\n\n"
+                    + _annotated_asm(root, d)
+                )
+            live_linear.discard(d)
+
+        # 2. PARTIAL drain check (linear only — affine may stay live).
+        if isinstance(v, dgen.Op) and v.totality is Totality.PARTIAL and live_linear:
+            leaked = ", ".join(f"%{lv.name}" for lv in live_linear)
+            raise LinearLeakAtPartialError(
+                f"{type(v).__name__} %{v.name} is PARTIAL but linear "
+                f"value(s) {leaked} are still live; divergence would "
+                f"leak them\n\n" + _annotated_asm(root, v)
+            )
+
+        # 3. v itself may introduce a new affine-or-linear resource.
+        if v.is_affine_or_linear:
+            introduced.add(v)
+            refcount.setdefault(v, 0)
+            if v.is_linear:
+                live_linear.add(v)
+
+    # 4. Leak check at block exit (linear only; affine may stay 0).
+    for v in introduced:
+        if v.is_linear and refcount[v] == 0 and v is not block.result:
+            raise LinearLeakError(
+                f"linear {type(v).__name__} %{v.name} is never consumed "
+                f"and is not the block result\n\n" + _annotated_asm(root, v)
+            )
+
+    # 5. Recurse into owned blocks of every op as independent walks.
+    for op in block.ops:
+        for _, child in op.blocks:
+            _verify_linearity_block(child, root)
+
+
+def verify_linearity(root: dgen.Value) -> None:
+    """Verify the linear / affine resource discipline on all blocks
+    reachable from *root*.
+
+    See ``docs/linear_types.md`` for the formal rules. Top-level walk
+    wraps *root* in a synthetic ``Block`` mirroring ``Pass.run`` so the
+    same algorithm covers both block bodies and bare values.
+    """
+    _verify_linearity_block(Block(result=root), root)
