@@ -1,193 +1,162 @@
-# Linear Types
+# Linearity Verification
 
-## Status
+## Purpose
 
-Implemented (v1). Type-level traits + a verifier; no IR rewrites.
+Verify that values of linear and affine types are used correctly across an IR
+where ops own their semantics and may not all declare a full dataflow contract.
 
-## Goal
+The verifier handles unknown ops by conservatively consuming any linear
+operands; this may reject programs that would be sound under a more precise
+contract, but never accepts programs that leak. Filling in an op's contract
+makes the verifier more precise.
 
-A generic resource-discipline check that's symmetric with
-`Value.totality`. Two marker traits (`Linear`, `Affine`) classify a
-type, and a single verifier — invoked from every pass's
-`verify_preconditions` and `verify_postconditions` — enforces:
+## Substructural types
 
-- **Linear**: every value of a linear type is consumed *exactly once*.
-- **Affine**: every value of an affine type is consumed *at most once*.
-- A potentially-divergent op (`Totality.PARTIAL`) must drain every
-  in-scope linear value before it runs, otherwise the divergent path
-  would leak the unmet obligation.
+Each value carries a multiplicity:
 
-The mechanism is a structural over-approximation: we count direct uses
-in the use-def graph. It's tight enough for the resources we have today
-(`RaiseHandler`, future `Origin`), and explicitly leaves out
-control-flow-sensitive cases (see "Reentrant continuations" below).
+- `Linear`: must be consumed exactly once.
+- `Affine`: must be consumed at most once.
+- `Unrestricted`: not tracked.
 
-## Non-goals
+## Block totality
 
-- Quantitative linearity (drop / copy / exact-N multiplicities).
-- Control-flow-sensitive linearity. The verifier counts every static use
-  site as a consume, regardless of whether the op is on a `then` vs
-  `else` branch or inside a loop.
-- Cross-function linear plumbing. Effect ops are local to a function
-  body in v1 (per `docs/effects.md`).
+Determined entirely by the block's signature (parameters, captures, operands,
+result type):
 
-## Traits
+- If the block has a `Handler<Diverges>` capability in its inputs and result
+  type `Never`: `divergent`.
+- If the block has a `Handler<Diverges>` capability in its inputs and result
+  type non-`Never`: `partial`.
+- If the block has no `Handler<Diverges>` capability: `total`. Result type
+  must be non-`Never` (a `total` block claiming `Never` is ill-formed).
 
-```dgen
-trait Linear
-trait Affine
-```
+A block's totality determines what its body is permitted to do. The body's
+correctness is verified separately by the per-block algorithm.
 
-Both are zero-parameter marker traits — declared in
-`dgen/dialects/builtin.dgen` next to `Effect` / `Handler`. A type
-declares membership with `has trait Linear` or `has trait Affine`.
+## Context
 
-### What's marked today
+`Γ : Var → State` where State ∈ {Available, Consumed}.
 
-| Type                     | Trait    | Why                                      |
-| ------------------------ | -------- | ---------------------------------------- |
-| `error.RaiseHandler<E>`  | `Affine` | A raise handler may be invoked zero or one times along any one execution path; `raise<handler>(err)` consumes it. |
-| `goto.Label`             | (none)   | Reentrant — see below.                   |
-| `Origin` (future)        | `Linear` | Per `docs/effects.md`, an origin is consumed exactly once by a memory op, `destroy`, or function return. |
+Lookup failure means "not in scope."
 
-### Reentrant continuations
+## Per-block verification
 
-`goto.Label` is *not* marked Affine even though it is a divergence
-handler. A label is a reentrant continuation: a region's `%self` is
-branched to once per loop iteration; many branch sites can target the
-same `%exit`. The simple "consumed at most once" Affine rule would
-flag every realistic goto-form lowering as a `DoubleConsumeError`.
-Tracked in `TODO.md` under "Type system / effects".
+Input: Γ_in.
 
-## API
+For an entry block, Γ_in contains the function's substructural parameters and
+captures, all `Available`.
 
-```python
-from dgen.type import Linearity
+For a child block, Γ_in contains the block's substructural parameters and
+captures, all `Available`.
 
-class Linearity(enum.Enum):
-    UNRESTRICTED = "unrestricted"
-    AFFINE = "affine"
-    LINEAR = "linear"
+Algorithm:
 
-# On any Value:
-v.linearity              # -> Linearity
-v.is_linear              # -> bool
-v.is_affine_or_linear    # -> bool   # the verifier's main predicate
-```
+1. Walk the body in dataflow order (topological order of the DAG rooted at
+   the block's result).
 
-Read off the value's *type* (not the value's own declared traits): a
-value of type `T` is `LINEAR` iff `T has trait Linear`. `Type`
-instances themselves always return `UNRESTRICTED` — types-as-values
-are universe-1 metadata, not resources subject to linearity.
+2. For each op:
+   - For each substructural operand consumed by the op: require Γ shows it
+     `Available`; transition to `Consumed`. Reject on double-consume.
+   - For each substructural result produced by the op: bind as `Available`.
+   - If the op holds child blocks: verify each child block independently
+     (recursively), receiving pass/fail. The parent's Γ is updated using
+     only the op's own signature, not the children's internal state.
 
-`Value.linearity` defers `Linear`/`Affine` imports to function scope to
-break the `dgen.type` ↔ `dgen.dialects.builtin` cycle (same trick
-`totality` uses for `Diverge` / `Handler`).
+3. At the root op, apply the exit check:
+   - For each `Linear` value in Γ as `Available`: reject (leak).
+   - For each `Affine` value in Γ as `Available`: ok.
+   - For each value in Γ as `Consumed`: ok.
 
-## Verifier semantics
+4. Pass.
 
-Three core relations:
+## Block-holding ops
 
-- **`consumed_by(v)`** — affine-or-linear values `v` directly references
-  one hop out: `{d for d in v.dependencies if d.is_affine_or_linear}`.
-  Type instances are filtered.
-- **`introduced_in(block)`** — affine-or-linear values whose definition
-  lives in this block, plus any captures (which the inner block is on
-  the hook for).
-- **`live_at(op_index, block)`** — running set during the topo walk of
-  `block.values`: linear values introduced earlier and not yet consumed
-  by an earlier op.
+The op's signature declares how its operands and captures flow into its child
+blocks and how its results are produced.
 
-The verifier walks each block once in `block.values` order (already
-post-order topological from `transitive_dependencies`):
+For each child block:
+- Captures from the parent's Γ are consumed at op invocation (transition to
+  `Consumed` in parent).
+- The child block is verified independently with Γ_in containing its
+  parameters and captures as `Available`.
 
-### Rule 1 — at most one direct consumer (Affine *and* Linear)
+The op's effect on the parent's Γ is determined by the op's signature:
+- Operands: transition to `Consumed`.
+- Results: bound as `Available`.
 
-Bump a per-value refcount on each direct consume. `refcount[v] > 1`
-raises **`DoubleConsumeError`**.
+The verifier does not consult the children's internal Γ. Each child block is
+locally responsible for its own correctness, including consuming its captured
+linear values by its root.
 
-### Rule 2 — no leak of linear values at block exit
+## Unknown ops
 
-After the walk, every introduced `Linear` value must satisfy
-`refcount[v] >= 1` *or* `v is block.result`. Otherwise raise
-**`LinearLeakError`**. Affine values are exempt — un-consumed is fine.
+An op without a declared contract is handled conservatively:
 
-### Rule 3 — PARTIAL ops drain linear values
+- Captures into its children are still known (captures are syntactic). Each
+  captured-by-value linear value transitions to `Consumed` in the parent.
+- Each child block is verified normally with its captures as `Available`. The
+  child's local correctness is checked.
+- For each substructural operand of the op: in the absence of a declaration,
+  treat as consumed (transition to `Consumed` in parent).
+- For each substructural result the op produces: bind as `Available` in
+  parent.
+- The op's totality, if undeclared, defaults to `partial`.
 
-When the walk reaches an op whose `totality is PARTIAL`, the
-`live_linear` set (after accounting for this op's own consumes) must be
-empty. If anything remains, the divergent path would leak it — raise
-**`LinearLeakAtPartialError`**. Affine exempt: an affine value being in
-scope at a divergence point is the normal case (e.g. the divergence
-handler itself).
+This is sound (never accepts a leaking program) but may reject programs that
+would be accepted under a more precise contract. The remedy is to declare the
+op's contract, not to make the verifier guess.
 
-## Block boundaries
+## Branch composition (at-most-once-alternative ops)
 
-Captures count once at the parent op. `Value.dependencies` walks
-`block.dependencies` for owned blocks, which yields the block's
-captures — so capturing an affine-or-linear value into an inner block
-shows up as a single direct consume by the parent op.
+For an op like `if` whose alternatives are mutually exclusive:
 
-Each owned block then runs its own independent verification walk. For
-that walk, captures are treated as `introduced` for the inner block —
-this lets the inner block's double-use and PARTIAL-drain checks fire
-on the captured value as if it were a fresh resource leaf for the
-inner block's lifetime.
+- Captures into multiple alternative children consume the source value once
+  from the parent's Γ at op invocation, not once per alternative.
+- Each alternative child is verified independently with the captured value
+  as `Available` in its Γ_in.
+- Each alternative child is independently responsible for consuming its
+  captured linear values by its root. If one alternative consumes and another
+  doesn't, the non-consuming alternative fails its own verification (linear
+  leak at root). The parent does not need to reconcile.
 
-The top-level entry wraps the input value in a synthetic
-`Block(result=value)` so the same algorithm covers both block bodies
-and bare values, mirroring `Pass.run`.
+This means "branch disagreement" is detected through each alternative's local
+verification, not through a parent-side join.
 
-## Edge cases
+## Loops (zero-or-more-with-carry)
 
-- **`Type` values.** Filtered out of `consumed_by`; `Value.linearity`
-  short-circuits to `UNRESTRICTED` for `Type` instances.
-- **`Constant` and `BlockArgument`.** Subject to the same rules as
-  ops — if their type is linear/affine, they're tracked.
-- **State across passes.** The verifier holds no module-level cache;
-  state lives in plain locals per call. Ops mutate via
-  `replace_uses_of` between passes, so any persistent cache would have
-  to be invalidated; the per-call sweep is cheap enough that no
-  memoization is needed.
+The body's substructural parameters include the loop carries, all `Available`
+in the body's Γ_in.
+
+The body's root must produce fresh values for each carry (matching types),
+which become the carry inputs for the next iteration or the op's results
+after the final iteration.
+
+Each carry must be `Consumed` at body exit; it is "consumed" by being
+re-yielded as a fresh carry value (the yield is the consumption). Non-carry
+linear values introduced inside the body must be `Consumed` at body exit
+(they cannot escape iterations).
+
+The op's result rebinds the carry values as `Available` in the parent's Γ.
+
+## Function-level
+
+The function's signature declares its parameters, captures, and totality. The
+body is a single block whose totality must match the function's declared
+totality.
 
 ## Failure modes
 
-- **`DoubleConsumeError`** — an affine-or-linear value is consumed by
-  more than one op.
-- **`LinearLeakError`** — a linear value is introduced and never
-  consumed and is not the block result.
-- **`LinearLeakAtPartialError`** — a `PARTIAL` op is reached while
-  linear values remain live in scope.
+- Double consume.
+- Linear leak (Linear value `Available` at block root).
+- Loop carry violation (non-carry value escapes body, or carry doesn't
+  roundtrip with fresh values at body root).
 
-All three subclass `LinearityError`, which subclasses
-`VerificationError`.
+## Locality
 
-## Pipeline integration
+Each block's verification consults only:
+- The block's own ops and their signatures.
+- The block's Γ_in.
 
-`verify_linearity` is called from both `Pass.verify_preconditions` and
-`Pass.verify_postconditions` (`dgen/passes/pass_.py`). The opt-in
-context var `verify_passes` (`dgen/passes/compiler.py`) gates whether
-the hooks fire — same shape as the existing structural verifiers.
-
-## Relationship to effects
-
-Divergence (`docs/control-flow.md`) and linearity meet at
-`Totality.PARTIAL`. A PARTIAL op signals "control may not return". The
-linearity rule says: before it runs, every linear obligation in scope
-must be discharged. This makes resource-leaks on the divergent path a
-verifier-time error rather than a runtime bug.
-
-`Origin` (per `docs/effects.md`) is the canonical linear value; once
-the origin work lands it just appends `has trait Linear` to its type
-definition and the verifier picks it up.
-
-## Open questions
-
-- **Reentrant / control-flow-sensitive Affine for `Label`.** A second
-  trait — say `JoinPoint` — could carry "branched to many times,
-  evaluated at most once per execution path" semantics. Not in v1.
-- **Quantitative / parametric linearity.** Drop, copy, exact-N
-  multiplicities are a separate design.
-- **Cross-function linearity.** Once functions stop being effect-local
-  (post-v1), the verifier needs a way to talk about linear values
-  flowing across call boundaries.
+Child block verification is recursive but each level is local — the parent
+updates its Γ from its op's signature alone, and the child verifies
+independently. No information flows back from child to parent except pass/fail.
