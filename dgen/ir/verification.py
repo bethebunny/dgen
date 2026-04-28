@@ -8,7 +8,7 @@ from dgen.dialects.function import FunctionOp
 from dgen.ir.constraints import TraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
-from dgen.type import Totality, Type, constant, format_value
+from dgen.type import constant, format_value
 
 
 class VerificationError(Exception):
@@ -32,17 +32,12 @@ class LinearityError(VerificationError):
 
 
 class DoubleConsumeError(LinearityError):
-    """A linear or affine value is consumed by more than one op."""
+    """An affine or linear value is consumed by more than one op."""
 
 
 class LinearLeakError(LinearityError):
-    """A linear value is introduced in a block but never consumed and is
-    not the block's result — its single-consume obligation is unmet."""
-
-
-class LinearLeakAtPartialError(LinearityError):
-    """A PARTIAL op is reached while linear values remain live in scope.
-    Divergence would leak those obligations on the divergent path."""
+    """A linear value remains ``Available`` at a block's exit and is not
+    the block's result — its single-consume obligation is unmet."""
 
 
 def _annotated_asm(root: dgen.Value, target: dgen.Value) -> str:
@@ -265,95 +260,95 @@ def verify_constraints(root: dgen.Value) -> None:
 # ---------------------------------------------------------------------------
 # verify_linearity
 # ---------------------------------------------------------------------------
+#
+# Implements the per-block typing-context algorithm in docs/linear_types.md.
+# Γ : Value → {AVAILABLE, CONSUMED} for the substructural values in scope
+# at each point during a topological walk of the block. Each block is
+# verified independently — child blocks recurse with their own Γ_in and
+# the parent's Γ proceeds without consulting the children's internal state.
 
 
-def _consumes(value: dgen.Value) -> list[dgen.Value]:
-    """One-hop affine-or-linear dependencies of *value* — the values it
-    directly consumes. Type instances are filtered out: a Value's
-    ``dependencies`` yields ``self.type`` and types-as-values are
-    universe-1 metadata, not resources subject to linearity.
+_AVAILABLE = "available"
+_CONSUMED = "consumed"
+
+
+def _consume_at(
+    gamma: dict[dgen.Value, str],
+    value: dgen.Value,
+    *,
+    by: dgen.Value,
+    root: dgen.Value,
+) -> None:
+    """Transition a substructural value to ``CONSUMED`` in ``gamma``.
+
+    Lookup failure means "not in scope", per the doc — out-of-scope use
+    is the closed-block verifier's responsibility, not ours. Re-consume
+    raises ``DoubleConsumeError``.
     """
-    return [
-        d
-        for d in value.dependencies
-        if not isinstance(d, Type) and d.is_affine_or_linear
-    ]
+    if value not in gamma:
+        return
+    if gamma[value] is _CONSUMED:
+        raise DoubleConsumeError(
+            f"{type(value).__name__} %{value.name} ({value.linearity.value}) "
+            f"consumed twice; second consume by {type(by).__name__} "
+            f"%{by.name}\n\n" + _annotated_asm(root, value)
+        )
+    gamma[value] = _CONSUMED
 
 
 def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
-    """Verify the linearity invariants on a single block, then recurse.
+    """Verify the typing-context invariants on a single block.
 
-    The walk is a single pass over ``block.values`` (which is already in
-    post-order topological order from ``transitive_dependencies``):
-
-    1. Each direct consume of an affine-or-linear value bumps a per-value
-       refcount; refcount > 1 → ``DoubleConsumeError``.
-    2. At any ``PARTIAL`` op, the running ``live_linear`` set (linear
-       values introduced earlier and not yet consumed) must already be
-       empty *after* accounting for this op's own consumes — otherwise
-       divergence would leak those obligations.
-    3. At block exit, any ``LINEAR`` value introduced in the block whose
-       refcount is still 0 and that isn't ``block.result`` is a leak.
-
-    Captures are treated as ``introduced`` for the inner block: they are
-    leaves in ``block.values`` (in the ``stop`` set) but the inner block
-    is on the hook for not double-using them. The outer op already
-    accounted for the single capture-use via its own ``dependencies``.
+    Initial Γ_in: block parameters, captures, and runtime args, all
+    ``AVAILABLE`` (filtered to substructural). Walk ``block.values`` in
+    topological order, transitioning each substructural operand /
+    parameter / capture-into-child the op references to ``CONSUMED``.
+    Each child block recurses independently. At block exit, any
+    ``LINEAR`` value still ``AVAILABLE`` and not ``block.result`` is a
+    leak.
     """
-    refcount: dict[dgen.Value, int] = {}
-    consumers: dict[dgen.Value, list[dgen.Value]] = {}
-    introduced: set[dgen.Value] = set()
-    live_linear: set[dgen.Value] = set()
-
-    for capture in block.captures:
-        if capture.is_affine_or_linear:
-            introduced.add(capture)
-            refcount[capture] = 0
-            if capture.is_linear:
-                live_linear.add(capture)
+    gamma: dict[dgen.Value, str] = {}
+    for source in (block.args, block.parameters, block.captures):
+        for v in source:
+            if v.is_affine_or_linear:
+                gamma[v] = _AVAILABLE
 
     for v in block.values:
-        # 1. Account for what v consumes.
-        for d in _consumes(v):
-            refcount[d] = refcount.get(d, 0) + 1
-            consumers.setdefault(d, []).append(v)
-            if refcount[d] > 1:
-                raise DoubleConsumeError(
-                    f"{type(d).__name__} %{d.name} ({d.linearity.value}) "
-                    f"consumed {refcount[d]} times by "
-                    f"{', '.join(f'%{c.name}' for c in consumers[d])}\n\n"
-                    + _annotated_asm(root, d)
-                )
-            live_linear.discard(d)
-
-        # 2. PARTIAL drain check (linear only — affine may stay live).
-        if isinstance(v, dgen.Op) and v.totality is Totality.PARTIAL and live_linear:
-            leaked = ", ".join(f"%{lv.name}" for lv in live_linear)
-            raise LinearLeakAtPartialError(
-                f"{type(v).__name__} %{v.name} is PARTIAL but linear "
-                f"value(s) {leaked} are still live; divergence would "
-                f"leak them\n\n" + _annotated_asm(root, v)
-            )
-
-        # 3. v itself may introduce a new affine-or-linear resource.
-        if v.is_affine_or_linear:
-            introduced.add(v)
-            refcount.setdefault(v, 0)
-            if v.is_linear:
-                live_linear.add(v)
-
-    # 4. Leak check at block exit (linear only; affine may stay 0).
-    for v in introduced:
-        if v.is_linear and refcount[v] == 0 and v is not block.result:
-            raise LinearLeakError(
-                f"linear {type(v).__name__} %{v.name} is never consumed "
-                f"and is not the block result\n\n" + _annotated_asm(root, v)
-            )
-
-    # 5. Recurse into owned blocks of every op as independent walks.
-    for op in block.ops:
-        for _, child in op.blocks:
+        if not isinstance(v, dgen.Op):
+            continue  # leaves: BlockArg / BlockParam / Constant / type
+        # Op consumes its substructural operands and parameters.
+        for source in (v.operands, v.parameters):
+            for _, dep in source:
+                if dep.is_affine_or_linear:
+                    _consume_at(gamma, dep, by=v, root=root)
+        # Captures into child blocks consume once at the parent op,
+        # deduplicated across alternative children (branch-composition
+        # rule).
+        for cap in {
+            c for _, child in v.blocks for c in child.captures if c.is_affine_or_linear
+        }:
+            _consume_at(gamma, cap, by=v, root=root)
+        # Each child block verified independently with its own Γ_in.
+        for _, child in v.blocks:
             _verify_linearity_block(child, root)
+        # Op result, if substructural, becomes Available.
+        if v.is_affine_or_linear:
+            gamma[v] = _AVAILABLE
+
+    # Exit check: block.result is "yielded" to the surrounding scope —
+    # being the block's output IS the consumption. Any other Linear
+    # still Available is a leak; Affine may stay Available.
+    for value, state in gamma.items():
+        if state is _CONSUMED:
+            continue
+        if value is block.result:
+            continue
+        if value.is_linear:
+            raise LinearLeakError(
+                f"linear {type(value).__name__} %{value.name} is "
+                f"AVAILABLE at block exit and is not the block result\n\n"
+                + _annotated_asm(root, value)
+            )
 
 
 def verify_linearity(root: dgen.Value) -> None:
