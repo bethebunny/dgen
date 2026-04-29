@@ -657,9 +657,16 @@ def _aggregate_constant_literal(c: Constant) -> str:
 def value_reference(v: dgen.Value) -> str:
     if isinstance(v, Constant):
         mem = v.__constant__
-        if not mem.layout.register_passable:
-            ctx = _ctx()
+        ctx = _ctx()
+        # Track the Memory whenever it owns heap-allocated descriptor
+        # bytearrays (``mem.origins``) — even register-passable layouts
+        # like TypeValue (``"P"``) bake a raw pointer into the LLVM IR
+        # whose target is a Python-managed ``bytearray`` referenced only
+        # via ``mem.origins``. Without keeping ``mem`` alive past IR-text
+        # generation, that bytearray is GC'd and the pointer dangles.
+        if not mem.layout.register_passable or mem.origins:
             ctx.host_buffers.append(mem)
+        if not mem.layout.register_passable:
             return f"inttoptr (i64 {mem.address} to ptr)"
         # Aggregate Constants build their LLVM literal element-by-element
         # so the form matches ``_tuple_llvm_type`` (uniform ``{ T1, ... }``
