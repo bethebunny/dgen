@@ -38,25 +38,6 @@ class Totality(enum.Enum):
     PARTIAL = "partial"
 
 
-class Linearity(enum.Enum):
-    """How a value behaves with respect to resource discipline.
-
-    Read off the value's *type*: a value of type ``T`` is ``LINEAR`` if
-    ``T has trait Linear``, ``AFFINE`` if ``T has trait Affine``, and
-    ``UNRESTRICTED`` otherwise. See ``docs/linear_types.md``.
-
-    - ``UNRESTRICTED`` — no resource discipline; arbitrary use.
-    - ``AFFINE``       — at most one consume across the use-def graph.
-    - ``LINEAR``       — exactly one consume; must be discharged before
-      block exit (or be the block result) and before any divergence
-      handler in scope is invoked.
-    """
-
-    UNRESTRICTED = "unrestricted"
-    AFFINE = "affine"
-    LINEAR = "linear"
-
-
 T = TypeVar("T", bound="Type")
 
 # Slot function: maps a Value to its SSA name string (without the % prefix).
@@ -211,28 +192,6 @@ class Value(Generic[T]):
         )
         is_partial = any(v.type.has_trait(handler_diverge) for v in candidates)
         return Totality.PARTIAL if is_partial else Totality.TOTAL
-
-    @property
-    def linearity(self) -> Linearity:
-        """Classify this value by the linearity discipline of its type.
-
-        ``LINEAR`` if ``self.type has trait Linear``, ``AFFINE`` if
-        ``self.type has trait Affine``, ``UNRESTRICTED`` otherwise. Type
-        instances themselves are always ``UNRESTRICTED`` — types-as-values
-        are universe-1 metadata, not resources. See ``docs/linear_types.md``.
-
-        Trait imports are deferred for the same dgen.type ↔
-        dgen.dialects.builtin cycle that ``totality`` works around.
-        """
-        if isinstance(self, Type):
-            return Linearity.UNRESTRICTED
-        from dgen.dialects.builtin import Affine, Linear
-
-        if self.type.has_trait(Linear()):
-            return Linearity.LINEAR
-        if self.type.has_trait(Affine()):
-            return Linearity.AFFINE
-        return Linearity.UNRESTRICTED
 
     def replace_operand(self, old: Value, new: Value) -> None:
         """Replace all occurrences of old with new in operand fields."""

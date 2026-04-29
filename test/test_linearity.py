@@ -25,14 +25,15 @@ from dgen.dialects import builtin, error, goto
 from dgen.dialects.index import Index
 from dgen.ir.verification import (
     DoubleConsumeError,
+    Linearity,
     LinearityError,
     LinearLeakError,
     is_affine_or_linear,
     is_linear,
+    linearity,
     verify_linearity,
 )
 from dgen.testing import strip_prefix
-from dgen.type import Linearity
 
 
 # A test-only dialect that introduces and consumes a linear-typed value.
@@ -74,18 +75,18 @@ def test_index_is_unrestricted() -> None:
     assert not Index().has_trait(builtin.Linear())
 
 
-# -- Value.linearity / is_linear / is_affine_or_linear ---------------------
+# -- linearity / is_linear / is_affine_or_linear ---------------------------
 
 
 def test_constant_is_unrestricted() -> None:
     c = Index().constant(7)
-    assert c.linearity is Linearity.UNRESTRICTED
+    assert linearity(c) is Linearity.UNRESTRICTED
     assert not is_affine_or_linear(c)
 
 
 def test_type_value_is_unrestricted() -> None:
     """Type instances are universe-1 metadata, not resources."""
-    assert Index().linearity is Linearity.UNRESTRICTED
+    assert linearity(Index()) is Linearity.UNRESTRICTED
 
 
 def test_raise_handler_value_is_affine() -> None:
@@ -101,7 +102,7 @@ def test_raise_handler_value_is_affine() -> None:
     """)
     )
     handler = value.body.parameters[0]
-    assert handler.linearity is Linearity.AFFINE
+    assert linearity(handler) is Linearity.AFFINE
     assert is_affine_or_linear(handler)
     assert not is_linear(handler)
 
@@ -113,7 +114,7 @@ def test_linear_marker_value_is_linear() -> None:
         | %x : _linear_test.LinearMarker = _linear_test.introduce_linear()
     """)
     )
-    assert value.linearity is Linearity.LINEAR
+    assert linearity(value) is Linearity.LINEAR
     assert is_linear(value)
 
 
