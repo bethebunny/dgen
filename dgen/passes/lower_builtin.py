@@ -9,28 +9,26 @@ block while preserving dgen's single-result-per-op invariant:
     %r : T = unpack(%t) body(%a: T0, %b: T1, ...):
         <body using %a, %b, ...>
 
-It lowers to a ``goto.region`` whose body captures the tuple directly and
-extracts each named field with ``record.get<i>``:
+It lowers to a ``goto.region`` that passes the tuple straight through as
+``initial_arguments``:
 
-    %r : T = goto.region([]) body<%_, %r_exit>() captures(%t):
-        %a : T0 = record.get<0>(%t)
-        %b : T1 = record.get<1>(%t)
+    %r : T = goto.region(%t) body<%_, %r_exit>(%a: T0, %b: T1, ...):
         <body>
 
-The synthesized ``%self`` / ``%exit`` parameters satisfy the goto.region
-shape; ``%self`` is named ``%_`` because back-edges never fire (unpack
-has no loops). ``%exit`` carries the body's value via its phi (after
-``NormalizeRegionTerminators``) and gets a unique name for codegen's
-basic-block label scheme.
+The codegen aggregate-bundle phi already extracts each body arg from
+the predecessor tuple via ``extractvalue``, so no per-field op is
+needed at the dgen level. The synthesized ``%self`` / ``%exit``
+parameters satisfy the goto.region shape; ``%self`` is named ``%_``
+because back-edges never fire (unpack has no loops). ``%exit`` carries
+the body's value via its phi (after ``NormalizeRegionTerminators``)
+and gets a unique name for codegen's basic-block label scheme.
 """
 
 from __future__ import annotations
 
 import dgen
 from dgen.block import BlockParameter
-from dgen.builtins import pack
-from dgen.dialects import builtin, goto, record
-from dgen.dialects.index import Index
+from dgen.dialects import builtin, goto
 from dgen.passes.pass_ import Pass, lowering_for
 
 
@@ -40,18 +38,6 @@ class LowerBuiltin(Pass):
     @lowering_for(builtin.UnpackOp)
     def lower_unpack(self, op: builtin.UnpackOp) -> dgen.Value | None:
         body = op.body
-        for i, arg in enumerate(list(body.args)):
-            assert isinstance(arg.type, dgen.Type)
-            getter = record.GetOp(
-                name=arg.name,
-                index=Index().constant(i),
-                record=op.tuple,
-                type=arg.type,
-            )
-            body.replace_uses_of(arg, getter)
-        body.args = []
-        if op.tuple not in body.captures:
-            body.captures.append(op.tuple)
         exit_name = f"{op.name}_exit" if op.name else "unpack_exit"
         body.parameters = [
             BlockParameter(name="_", type=goto.Label()),
@@ -60,7 +46,7 @@ class LowerBuiltin(Pass):
         ]
         return goto.RegionOp(
             name=op.name,
-            initial_arguments=pack([]),
+            initial_arguments=op.tuple,
             type=op.type,
             body=body,
         )

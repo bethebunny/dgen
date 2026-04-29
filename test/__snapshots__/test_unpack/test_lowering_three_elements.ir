@@ -3,13 +3,7 @@ import goto
 import index
 import record
 
-%a : index.Index = 1
-%b : index.Index = 2
-%c : index.Index = 3
-%t : Tuple<[index.Index, index.Index, index.Index]> = record.pack([%a, %b, %c])
-%r : index.Index = goto.region([]) body<%_: goto.Label, %r_exit: goto.Label>() captures(%t):
-    %x : index.Index = record.get<index.Index(0)>(%t)
-    %y : index.Index = record.get<index.Index(1)>(%t)
+%t : Tuple<[index.Index, index.Index, index.Index]> = record.pack([index.Index(1), index.Index(2), index.Index(3)])
+%r : index.Index = goto.region(%t) body<%_: goto.Label, %r_exit: goto.Label>(%x: index.Index, %y: index.Index, %z: index.Index):
     %xy : index.Index = algebra.add(%x, %y)
-    %z : index.Index = record.get<index.Index(2)>(%t)
     %sum : index.Index = algebra.add(%xy, %z)
