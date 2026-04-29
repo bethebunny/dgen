@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+import weakref
 
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
@@ -12,6 +13,19 @@ from dgen.ir.constraints import TraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
 from dgen.type import Type, constant, format_value
+
+# Singleton trait instances — `linearity()` is on the hot path, and naive
+# `Linear()` / `Affine()` constructions on every call dominated profiles.
+_LINEAR_TRAIT = Linear()
+_AFFINE_TRAIT = Affine()
+
+# Cache `linearity` keyed on the value's type. `has_trait` does a structural
+# `to_json()` comparison per declared trait; profiling showed this accounted
+# for ~40% of test time. Linear/Affine declarations are class-level facts
+# in this codebase, so a per-type-instance cache is safe.
+_LINEARITY_CACHE: weakref.WeakKeyDictionary["dgen.Value", "Linearity"] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 class VerificationError(Exception):
@@ -309,11 +323,18 @@ def linearity(value: dgen.Value) -> Linearity:
     """
     if isinstance(value, Type):
         return Linearity.UNRESTRICTED
-    if value.type.has_trait(Linear()):
-        return Linearity.LINEAR
-    if value.type.has_trait(Affine()):
-        return Linearity.AFFINE
-    return Linearity.UNRESTRICTED
+    t = value.type
+    cached = _LINEARITY_CACHE.get(t)
+    if cached is not None:
+        return cached
+    if t.has_trait(_LINEAR_TRAIT):
+        result = Linearity.LINEAR
+    elif t.has_trait(_AFFINE_TRAIT):
+        result = Linearity.AFFINE
+    else:
+        result = Linearity.UNRESTRICTED
+    _LINEARITY_CACHE[t] = result
+    return result
 
 
 def is_linear(value: dgen.Value) -> bool:
