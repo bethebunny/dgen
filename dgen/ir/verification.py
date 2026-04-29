@@ -8,7 +8,7 @@ from dgen.dialects.function import FunctionOp
 from dgen.ir.constraints import TraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
-from dgen.type import constant, format_value
+from dgen.type import Linearity, constant, format_value
 
 
 class VerificationError(Exception):
@@ -285,6 +285,17 @@ _MAYBE_AVAILABLE = "maybe_available"
 _CONSUMED = "consumed"
 
 
+def is_linear(value: dgen.Value) -> bool:
+    """Whether *value* is of a ``Linear``-trait type."""
+    return value.linearity is Linearity.LINEAR
+
+
+def is_affine_or_linear(value: dgen.Value) -> bool:
+    """The verifier's main predicate — True for any value subject to
+    resource discipline (consume-at-most-once or consume-exactly-once)."""
+    return value.linearity is not Linearity.UNRESTRICTED
+
+
 def _has_known_block_semantics(op: dgen.Op) -> bool:
     """Whether the verifier knows how *op* uses its captured-into-child
     substructural values.
@@ -372,7 +383,7 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
     gamma: dict[dgen.Value, str] = {}
     for source in (block.args, block.parameters, block.captures):
         for v in source:
-            if v.is_affine_or_linear:
+            if is_affine_or_linear(v):
                 gamma[v] = _AVAILABLE
 
     for v in block.values:
@@ -381,7 +392,7 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
         # Op consumes its substructural operands and parameters.
         for source in (v.operands, v.parameters):
             for _, dep in source:
-                if dep.is_affine_or_linear:
+                if is_affine_or_linear(dep):
                     _consume_at(gamma, dep, by=v, root=root)
         # Captures into child blocks. Today every block-holding op is
         # treated as unknown-semantics — the captured value transitions
@@ -392,14 +403,14 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
                 c
                 for _, child in v.blocks
                 for c in child.captures
-                if c.is_affine_or_linear
+                if is_affine_or_linear(c)
             }:
                 _capture_into_unknown(gamma, cap, by=v, root=root)
         # Each child block verified independently with its own Γ_in.
         for _, child in v.blocks:
             _verify_linearity_block(child, root)
         # Op result, if substructural, becomes Available.
-        if v.is_affine_or_linear:
+        if is_affine_or_linear(v):
             gamma[v] = _AVAILABLE
 
     # Exit check: block.result is "yielded" to the surrounding scope —
@@ -412,7 +423,7 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
             continue
         if value is block.result:
             continue
-        if value.is_linear:
+        if is_linear(value):
             raise LinearLeakError(
                 f"linear {type(value).__name__} %{value.name} is "
                 f"AVAILABLE at block exit and is not the block result\n\n"
