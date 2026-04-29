@@ -234,16 +234,6 @@ class Value(Generic[T]):
             return Linearity.AFFINE
         return Linearity.UNRESTRICTED
 
-    @property
-    def is_linear(self) -> bool:
-        return self.linearity is Linearity.LINEAR
-
-    @property
-    def is_affine_or_linear(self) -> bool:
-        """The verifier's main predicate — True for any value subject to
-        resource discipline (consume-at-most-once or consume-exactly-once)."""
-        return self.linearity is not Linearity.UNRESTRICTED
-
     def replace_operand(self, old: Value, new: Value) -> None:
         """Replace all occurrences of old with new in operand fields."""
         for name, _ in self.__operands__:

@@ -27,6 +27,8 @@ from dgen.ir.verification import (
     DoubleConsumeError,
     LinearityError,
     LinearLeakError,
+    is_affine_or_linear,
+    is_linear,
     verify_linearity,
 )
 from dgen.testing import strip_prefix
@@ -78,7 +80,7 @@ def test_index_is_unrestricted() -> None:
 def test_constant_is_unrestricted() -> None:
     c = Index().constant(7)
     assert c.linearity is Linearity.UNRESTRICTED
-    assert not c.is_affine_or_linear
+    assert not is_affine_or_linear(c)
 
 
 def test_type_value_is_unrestricted() -> None:
@@ -100,8 +102,8 @@ def test_raise_handler_value_is_affine() -> None:
     )
     handler = value.body.parameters[0]
     assert handler.linearity is Linearity.AFFINE
-    assert handler.is_affine_or_linear
-    assert not handler.is_linear
+    assert is_affine_or_linear(handler)
+    assert not is_linear(handler)
 
 
 def test_linear_marker_value_is_linear() -> None:
@@ -112,7 +114,7 @@ def test_linear_marker_value_is_linear() -> None:
     """)
     )
     assert value.linearity is Linearity.LINEAR
-    assert value.is_linear
+    assert is_linear(value)
 
 
 # -- Verifier: pass cases --------------------------------------------------
