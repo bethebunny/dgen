@@ -180,9 +180,8 @@ class CodegenSlotTracker:
     """Like SlotTracker but uses _N names for unnamed values.
 
     LLVM IR requires unnamed numeric values (%0, %1, ...) to appear in
-    sequential textual order. Since the new emitter pre-registers all names
-    before emitting, the registration order may differ from emission order.
-    Using %_0, %_1, ... sidesteps this requirement.
+    sequential textual order. Using %_0, %_1, ... sidesteps that, so names
+    can be allocated lazily during emission rather than pre-registered.
     """
 
     def __init__(self) -> None:
@@ -190,20 +189,26 @@ class CodegenSlotTracker:
         self._used: set[str] = set()
         self._counter = 0
 
-    def track_name(self, value: dgen.Value) -> str:
+    def name(self, value: dgen.Value) -> str:
+        """Stable LLVM SSA name for *value*. Idempotent: same value → same name."""
         if value in self._slots:
             return self._slots[value]
         if value.name is not None and value.name not in self._used:
             name = value.name
         else:
-            name = f"_{self._counter}"
-            self._counter += 1
+            name = self.fresh()
         self._slots[value] = name
         self._used.add(name)
         return name
 
-    def __getitem__(self, value: dgen.Value) -> str:
-        return self._slots[value]
+    def fresh(self, prefix: str = "_") -> str:
+        """A unique SSA name not bound to any Value. Each call returns a new name."""
+        while True:
+            name = f"{prefix}{self._counter}"
+            self._counter += 1
+            if name not in self._used:
+                self._used.add(name)
+                return name
 
 
 @dataclass
@@ -284,17 +289,17 @@ def _resolve_target(target: dgen.Value, ctx: EmitContext) -> dgen.Value:
 
 
 def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
-    """Pre-register SSA names and record branch predecessors for a function.
+    """Record branch predecessors and target ownership for a function.
 
     Single walk over the block tree that:
-    - Registers SSA names so phi nodes can forward-reference values
     - Records param_to_owner for branch target resolution
     - Populates self_params for self-parameter identification
     - Tracks the current LLVM basic block name through label/region nesting
     - Records branch predecessors with their source block names
+
+    SSA names are not pre-registered: ``tracker.name`` is idempotent and
+    allocated lazily during emission.
     """
-    for arg in func.body.args:
-        ctx.tracker.track_name(arg)
 
     def _record_branch(target: dgen.Value, t: dgen.Value, current_block: str) -> None:
         resolved = _resolve_target(target, ctx)
@@ -304,8 +309,6 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
 
     def _walk(block: dgen.Block, current_block: str) -> None:
         for op in block.ops:
-            ctx.tracker.track_name(op)
-
             if isinstance(op, goto.BranchOp):
                 _record_branch(op.target, op.arguments, current_block)
             elif isinstance(op, goto.ConditionalBranchOp):
@@ -313,9 +316,6 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                 _record_branch(op.false_target, op.false_arguments, current_block)
 
             if isinstance(op, (goto.RegionOp, goto.LabelOp)):
-                for arg in op.body.args:
-                    ctx.tracker.track_name(arg)
-
                 # Fall-through entry as a predecessor — but only for
                 # RegionOps. Regions execute inline (their body is
                 # entered by falling through from the surrounding
@@ -339,8 +339,6 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                     # records its predecessors against exit_param itself —
                     # that's where the merge phi lives.
                     self_param, exit_param = op.body.parameters
-                    ctx.tracker.track_name(self_param)
-                    ctx.tracker.track_name(exit_param)
                     ctx.param_to_owner[self_param] = op
                     ctx.self_params.add(self_param)
                     _walk(op.body, op.name)
@@ -429,7 +427,7 @@ def emit(value: dgen.Value) -> Iterator[str]:
     else:
         # Prepend %name = for value-producing ops.
         ctx = _ctx()
-        name = ctx.tracker.track_name(value)
+        name = ctx.tracker.name(value)
         first_line = next(lines, None)
         if first_line is None:
             return
@@ -483,13 +481,11 @@ def _emit_block_arg_phis(op: goto.RegionOp | goto.LabelOp) -> Iterator[str]:
         return
     tracker = _ctx().tracker
     tuple_ty = _tuple_llvm_type([arg.type for arg in args])
-    tuple_name = f"_{tracker._counter}"
-    tracker._counter += 1
-    tracker._used.add(tuple_name)
+    tuple_name = tracker.fresh()
     yield from _emit_tuple_phi(op, tuple_name, tuple_ty)
     for orig_i, llvm_i, _ in fields:
         yield (
-            f"  %{tracker.track_name(args[orig_i])} = extractvalue "
+            f"  %{tracker.name(args[orig_i])} = extractvalue "
             f"{tuple_ty} %{tuple_name}, {llvm_i}"
         )
 
@@ -509,9 +505,7 @@ def _emit_exit_phi(op: goto.RegionOp, name: str, ty: str) -> Iterator[str]:
     exit_param = op.body.parameters[1]
     tuple_ty = _tuple_llvm_type([op.type])
     tracker = _ctx().tracker
-    tuple_name = f"_{tracker._counter}"
-    tracker._counter += 1
-    tracker._used.add(tuple_name)
+    tuple_name = tracker.fresh()
     yield from _emit_tuple_phi(exit_param, tuple_name, tuple_ty)
     yield f"  %{name} = extractvalue {tuple_ty} %{tuple_name}, 0"
 
@@ -571,7 +565,7 @@ def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
     ctx = _ctx()
     ret_type = llvm_type(op.result_type)
     arguments = ", ".join(
-        f"{llvm_type(arg.type)} %{ctx.tracker.track_name(arg)}" for arg in op.body.args
+        f"{llvm_type(arg.type)} %{ctx.tracker.name(arg)}" for arg in op.body.args
     )
     yield f"define {ret_type} @{op.name}({arguments}) {{"
     yield "entry:"
@@ -610,16 +604,11 @@ def emit_pack_op(op: PackOp) -> Iterator[str]:
     ctx = _ctx()
     tracker = ctx.tracker
     tuple_ty = _tuple_llvm_type([v.type for v in op.values])
-    op_name = tracker.track_name(op)
+    op_name = tracker.name(op)
     cur = "undef"
     last = len(fields) - 1
     for k, (orig_i, llvm_i, _) in enumerate(fields):
-        if k == last:
-            target = op_name
-        else:
-            target = f"_{tracker._counter}"
-            tracker._counter += 1
-            tracker._used.add(target)
+        target = op_name if k == last else tracker.fresh()
         yield (
             f"  %{target} = insertvalue {tuple_ty} {cur}, "
             f"{typed_reference(op.values[orig_i])}, {llvm_i}"
@@ -709,8 +698,8 @@ def value_reference(v: dgen.Value) -> str:
     ctx = _ctx()
     if v in ctx.self_params:
         owner = ctx.param_to_owner[v]
-        return f"%{ctx.tracker.track_name(owner)}"
-    name = ctx.tracker.track_name(v)
+        return f"%{ctx.tracker.name(owner)}"
+    name = ctx.tracker.name(v)
     return f"%{name}"
 
 
@@ -867,9 +856,7 @@ def _extract_call_args(tup: dgen.Value, arg_types: list) -> tuple[list[str], str
     prologue: list[str] = []
     typed_args: list[str] = []
     for _, llvm_i, ty in fields:
-        name = f"_{tracker._counter}"
-        tracker._counter += 1
-        tracker._used.add(name)
+        name = tracker.fresh()
         prologue.append(f"  %{name} = extractvalue {tuple_ty} {tuple_ref}, {llvm_i}")
         typed_args.append(f"{ty} %{name}")
     return prologue, ", ".join(typed_args)
@@ -895,7 +882,7 @@ def emit_function_call(op: function.CallOp) -> Iterator[str]:
     if ret == "void":
         yield f"  call void {callee_ref}({args})"
     else:
-        name = _ctx().tracker.track_name(op)
+        name = _ctx().tracker.name(op)
         yield f"  %{name} = call {ret} {callee_ref}({args})"
 
 
@@ -912,7 +899,7 @@ def emit_llvm_call(op: llvm.CallOp) -> Iterator[str]:
     if ret == "void":
         yield f"  call void @{callee}({args})"
     else:
-        name = _ctx().tracker.track_name(op)
+        name = _ctx().tracker.name(op)
         yield f"  %{name} = call {ret} @{callee}({args})"
 
 
