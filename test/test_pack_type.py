@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dgen import asm
 from dgen.asm.parser import parse
-from dgen.builtins import PackOp, pack
+from dgen.builtins import PackOp, pack, unpack
 from dgen.dialects.builtin import Array, Nil, String, Tuple
 from dgen.dialects.function import FunctionOp
 from dgen.dialects.index import Index
@@ -54,29 +54,34 @@ def test_pack_homogeneous_with_shared_type_instance_is_array():
 def test_pack_heterogeneous_is_tuple():
     p = pack([Index().constant(1), String().constant("hi")])
     assert isinstance(p.type, Tuple)
-    assert isinstance(p.type.types, PackOp)
-    types = list(p.type.types)
+    types = list(unpack(p.type.types))
     assert len(types) == 2
-    assert isinstance(types[0], Index)
-    assert isinstance(types[1], String)
+    # Each type-list element is a Constant of TypeType wrapping the field type.
+    assert isinstance(constant(types[0]), Index)
+    assert isinstance(constant(types[1]), String)
 
 
 def test_pack_heterogeneous_three_kinds():
     p = pack([Index().constant(1), String().constant("x"), Float64().constant(2.5)])
     assert isinstance(p.type, Tuple)
-    assert isinstance(p.type.types, PackOp)
-    types = list(p.type.types)
-    assert isinstance(types[0], Index)
-    assert isinstance(types[1], String)
-    assert isinstance(types[2], Float64)
+    types = list(unpack(p.type.types))
+    assert isinstance(constant(types[0]), Index)
+    assert isinstance(constant(types[1]), String)
+    assert isinstance(constant(types[2]), Float64)
 
 
-def test_pack_inner_types_pack_is_array_of_typetype():
-    """The Tuple<types>'s ``types`` field is itself a homogeneous Array<TypeType, n>."""
+def test_pack_inner_types_list_is_compile_time_constant():
+    """Tuple<types>'s ``types`` field is a compile-time ``Constant``
+    (not a runtime PackOp) — the type list is fully known at IR
+    construction time so smart ``pack()`` folds it. This is what keeps
+    the ``Tuple`` type's ``types`` parameter out of runtime LLVM
+    emission."""
     p = pack([Index().constant(1), String().constant("x")])
     assert isinstance(p.type, Tuple)
     inner = p.type.types
-    assert isinstance(inner, PackOp)
+    from dgen.type import Constant
+
+    assert isinstance(inner, Constant)
     assert isinstance(inner.type, Array)
     assert isinstance(inner.type.element_type, TypeType)
     assert _array_n(inner.type) == 2
@@ -141,10 +146,9 @@ def test_parser_heterogeneous_pack_type_is_tuple():
     pack_op = record_pack.values
     assert isinstance(pack_op, PackOp)
     assert isinstance(pack_op.type, Tuple)
-    assert isinstance(pack_op.type.types, PackOp)
-    types = list(pack_op.type.types)
-    assert isinstance(types[0], Index)
-    assert isinstance(types[1], String)
+    types = list(unpack(pack_op.type.types))
+    assert isinstance(constant(types[0]), Index)
+    assert isinstance(constant(types[1]), String)
 
 
 # -- Round-trip preserved (formatter inlines [...] sugar) ----------------

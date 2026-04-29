@@ -15,14 +15,14 @@ from __future__ import annotations
 from math import prod
 
 import dgen
-from dgen.builtins import PackOp, pack
+from dgen.builtins import pack, unpack
 from dgen.dialects import algebra, function, llvm, memory, ndbuffer
 from dgen.dialects.builtin import ExternOp, Nil, String
 from dgen.dialects.record import GetOp as RecordGetOp, PackOp as RecordPackOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.passes.pass_ import Pass, lowering_for
-from dgen.type import constant
+from dgen.type import TypeType, constant
 
 
 def _linearize(shape: list[int], indices: list[dgen.Value]) -> dgen.Value:
@@ -96,18 +96,16 @@ class NDBufferToMemory(Pass):
     @lowering_for(ndbuffer.LoadOp)
     def lower_load(self, op: ndbuffer.LoadOp) -> dgen.Value | None:
         ptr = _deref(op.buffer)
-        assert isinstance(op.indices, PackOp)
         shape = self._resolve_shape(op.buffer)
-        offset = _linearize(shape, list(op.indices))
+        offset = _linearize(shape, unpack(op.indices))
         offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ptr.type)
         return memory.LoadOp(mem=op.mem, ptr=offset_ptr, type=op.type)
 
     @lowering_for(ndbuffer.StoreOp)
     def lower_store(self, op: ndbuffer.StoreOp) -> dgen.Value | None:
         ptr = _deref(op.buffer)
-        assert isinstance(op.indices, PackOp)
         shape = self._resolve_shape(op.buffer)
-        offset = _linearize(shape, list(op.indices))
+        offset = _linearize(shape, unpack(op.indices))
         offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ptr.type)
         return memory.StoreOp(mem=op.mem, value=op.value, ptr=offset_ptr)
 
@@ -116,11 +114,12 @@ class NDBufferToMemory(Pass):
         ptr = _deref(op.buffer)
         shape = self._resolve_shape(op.buffer)
         size = prod(shape)
+        print_memref_arg_types = pack(
+            [TypeType().constant(llvm.Ptr()), TypeType().constant(Index())]
+        )
         print_memref = ExternOp(
             symbol=String().constant("print_memref"),
-            type=function.Function(
-                arguments=pack([llvm.Ptr(), Index()]), result_type=Nil()
-            ),
+            type=function.Function(arguments=print_memref_arg_types, result_type=Nil()),
         )
         args = pack([ptr, Index().constant(size)])
         return function.CallOp(callee=print_memref, arguments=args, type=Nil())

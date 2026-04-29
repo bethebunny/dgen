@@ -16,7 +16,7 @@ from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
 from dgen.builtins import ConstantOp, PackOp, pack
-from dgen.type import py_attr_name
+from dgen.type import TypeType, py_attr_name
 
 
 class ParseError(RuntimeError):
@@ -412,7 +412,26 @@ def _pack_list(
             values.append(elem)
         else:
             values.append(element_type.constant(elem))
+    # Type-list literals (e.g. ``[index.Index, String]`` inside
+    # ``Tuple<...>``) are compile-time bundles of types. Wrapping each
+    # ``Type`` as ``TypeType().constant(...)`` lets ``pack()`` fold the
+    # whole list to a single ``Constant<Array<TypeType, n>>``, so the
+    # surrounding type's parameter holds a Constant rather than a
+    # runtime ``PackOp`` at codegen.
+    if values and all(isinstance(v, Type) for v in values):
+        values = [_typetype_constant_for(v) for v in values]
     return pack(values)
+
+
+def _typetype_constant_for(t: Type) -> Value:
+    """Wrap a fully-resolved Type instance as a ``Constant<TypeType>``.
+
+    Falls back to returning the Type unchanged if it can't be serialised
+    — e.g. dependent types whose parameters reference runtime values."""
+    try:
+        return TypeType().constant(t)
+    except (TypeError, AssertionError):
+        return t
 
 
 # -- Block parsing ----------------------------------------------------------

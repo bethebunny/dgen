@@ -71,11 +71,11 @@ from __future__ import annotations
 import dgen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import algebra, builtin, control_flow, goto
-from dgen.dialects.builtin import ChainOp, Never
+from dgen.dialects.builtin import Array, ChainOp, Never, Tuple
 from dgen.ir.traversal import all_values
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean
-from dgen.builtins import ConstantOp, PackOp, pack
+from dgen.builtins import ConstantOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 
 
@@ -307,9 +307,14 @@ class ControlFlowToGoto(Pass):
         if isinstance(body_result.type, Never):
             body_block_result: dgen.Value = body_result
         else:
-            branch_args = (
-                body_result if isinstance(body_result, PackOp) else pack([body_result])
-            )
+            # If the body's result is already a tuple-shaped value
+            # (PackOp from inline ``[...]``, an aggregate Constant from
+            # smart ``pack()``, or any runtime aggregate), pass it
+            # through directly. Scalars get wrapped.
+            if isinstance(body_result.type, (Array, Tuple)):
+                branch_args: dgen.Value = body_result
+            else:
+                branch_args = pack([body_result])
             body_block_result = goto.BranchOp(target=header_self, arguments=branch_args)
 
         body_block = dgen.Block(

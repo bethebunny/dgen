@@ -256,16 +256,25 @@ def _llvm_fields(arg_types: list) -> list[tuple[int, int, str]]:
 
 
 def _tuple_llvm_type(arg_types: list) -> str:
-    """LLVM struct type ``{ T0, T1, ... }`` for a tuple of N values.
+    """LLVM type for the aggregate that a tuple of N values produces.
 
-    ``Nil``-typed elements are dropped (LLVM has no void aggregate
-    field). ``{}`` for empty / all-void tuples; ``{ T }`` for a single
-    non-void element; ``{ T0, T1, ... }`` otherwise. LLVM's
-    ``mem2reg``/``sroa`` collapses single-element structs back to scalars
-    in the optimised IR.
+    Always a struct for multi-element tuples — unlike ``ffi.llvm_type``,
+    which would collapse a non-register-passable aggregate to ``ptr``
+    (the pointer-by-reference ABI). At the LLVM IR level the aggregate
+    needs its actual struct type so ``insertvalue`` / ``phi`` /
+    ``extractvalue`` are well-formed; LLVM's lowering passes handle
+    large-struct ABI separately.
+
+    Single-element non-void tuples collapse to that element's scalar
+    type — matching what ``ffi.llvm_constant`` produces for a
+    ``Constant`` of an ``Array<T, 1>``.
     """
-    fields = [ty for _, _, ty in _llvm_fields(arg_types)]
-    return "{ " + ", ".join(fields) + " }" if fields else "{}"
+    fields = [llvm_type(t) for t in arg_types if llvm_type(t) != "void"]
+    if not fields:
+        return "{}"
+    if len(fields) == 1:
+        return fields[0]
+    return "{ " + ", ".join(fields) + " }"
 
 
 def _resolve_target(target: dgen.Value, ctx: EmitContext) -> dgen.Value:
@@ -382,28 +391,11 @@ _NO_ASSIGN_OPS: tuple[type[dgen.Op], ...] = (
 
 
 def emit_linearized(block: dgen.Block) -> Iterator[str]:
-    """Emit LLVM IR for the runtime ops of a block, in dependency order.
-
-    Iterates ``block.ops`` (all transitive dependencies including those
-    reached via type / parameter edges, so labels nested as branch
-    targets are visited). PackOps reachable only via type-edge chains
-    (e.g. the ``types`` parameter of a ``Tuple<types>``) are skipped at
-    emit time: ``runtime_dependencies`` is the source of truth for
-    "operand-reachable", and a PackOp not in that set has no runtime LLVM
-    representation.
-    """
-    runtime = set(runtime_dependencies(block.result, stop=block.captures))
-    runtime.add(block.result)
+    """Emit LLVM IR for the runtime ops of a block, in dependency order."""
     for op in block.ops:
         # FunctionOps and ExternOps reachable as operands (e.g. a call's
         # callee) are top-level declarations, not block instructions.
         if isinstance(op, (function.FunctionOp, builtin.ExternOp)):
-            continue
-        # PackOps that exist only as type-parameter metadata (e.g. inside
-        # a ``Tuple<types>``) aren't operand-reachable; they have no
-        # runtime LLVM representation and emitting them would generate
-        # garbage referencing TypeType-typed values.
-        if isinstance(op, PackOp) and op not in runtime:
             continue
         yield from emit(op)
         if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
@@ -495,6 +487,11 @@ def _emit_block_arg_phis(op: goto.RegionOp | goto.LabelOp) -> Iterator[str]:
         return
     tracker = _ctx().tracker
     tuple_ty = _tuple_llvm_type([arg.type for arg in args])
+    if len(fields) == 1:
+        # Scalar tuple LLVM type: phi directly binds the body arg name.
+        (orig_i, _, _) = fields[0]
+        yield from _emit_tuple_phi(op, tracker.track_name(args[orig_i]), tuple_ty)
+        return
     tuple_name = f"_{tracker._counter}"
     tracker._counter += 1
     tracker._used.add(tuple_name)
@@ -508,19 +505,14 @@ def _emit_block_arg_phis(op: goto.RegionOp | goto.LabelOp) -> Iterator[str]:
 
 def _emit_exit_phi(op: goto.RegionOp, name: str, ty: str) -> Iterator[str]:
     """Exit phi: merge predecessor tuples (each a 1-element pack of the
-    region's result) into the region's named result via aggregate phi
-    + ``extractvalue`` 0. Skipped when the result type is ``Nil`` —
-    callers gate this on ``op.type``."""
+    region's result) into the region's named result. The tuple's LLVM
+    type is the result type itself (a 1-element scalar at the LLVM
+    level, since ``_tuple_llvm_type([T]) == llvm_type(T)``), so the phi
+    binds ``name`` directly — no ``extractvalue`` needed."""
     if ty == "void":
         return
     exit_param = op.body.parameters[1]
-    tracker = _ctx().tracker
-    tuple_ty = _tuple_llvm_type([op.type])
-    tuple_name = f"_{tracker._counter}"
-    tracker._counter += 1
-    tracker._used.add(tuple_name)
-    yield from _emit_tuple_phi(exit_param, tuple_name, tuple_ty)
-    yield f"  %{name} = extractvalue {tuple_ty} %{tuple_name}, 0"
+    yield from _emit_tuple_phi(exit_param, name, ty)
 
 
 def _exit_phi_name(op: goto.RegionOp) -> str:
@@ -606,17 +598,14 @@ def noop(op: dgen.Op) -> Iterator[str]:
 def emit_pack_op(op: PackOp) -> Iterator[str]:
     """Build the tuple's LLVM aggregate via an ``insertvalue`` chain.
 
-    Skips ``Nil``-typed elements (LLVM has no void aggregate field), so
-    a pack containing memory tokens or other Nil values produces an
-    aggregate of only the LLVM-visible fields. The chain's final
-    ``insertvalue`` binds the PackOp's tracker name so consumers can
-    reference the aggregate.
-
-    Empty packs (no LLVM-visible fields) emit nothing — they should
-    never be referenced because consumers with 0 args don't read them.
+    Skips ``Nil``-typed elements (LLVM has no ``void`` aggregate field).
+    For 0 or 1 LLVM-visible fields nothing is emitted — there's no
+    aggregate at the LLVM level (``ffi.llvm_type`` collapses
+    single-element register-passable layouts to scalar). Consumers that
+    need the value short-circuit through ``value_reference``.
     """
     fields = _llvm_fields([v.type for v in op.values])
-    if not fields:
+    if len(fields) < 2:
         return
     ctx = _ctx()
     tracker = ctx.tracker
@@ -642,7 +631,9 @@ def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
     sym = constant(extern.symbol)
     if isinstance(extern.type, function.Function):
         result_type = llvm_type(extern.type.result_type)
-        arg_types = ", ".join(llvm_type(arg) for arg in extern.type.arguments)
+        arg_type_list = constant(extern.type.arguments)
+        assert isinstance(arg_type_list, list)
+        arg_types = ", ".join(llvm_type(t) for t in arg_type_list)
         yield f"declare {result_type} @{sym}({arg_types})"
     else:
         # Global variable: `@name = external global <type>`. LLVM treats
@@ -671,6 +662,18 @@ def value_reference(v: dgen.Value) -> str:
         return f"load {ty}, ptr @{sym}"
     if isinstance(v, function.FunctionOp) and v.name:
         return f"@{v.name}"
+    # PackOp passes through to its single element — ``_tuple_llvm_type``
+    # collapses a 1-element pack's LLVM type to that element's scalar
+    # type, so callers expect a scalar reference. Multi-element packs
+    # have been emitted as an ``insertvalue`` chain whose final SSA name
+    # is the PackOp's tracker name; fall through to the named-value path.
+    if isinstance(v, PackOp):
+        if len(v.values) == 1:
+            return value_reference(v.values[0])
+        if not v.values:
+            raise ValueError(
+                "value_reference: empty PackOp has no LLVM value to reference"
+            )
     # A region's value is the exit phi (named by ``_exit_phi_name``) when
     # its type is non-Nil. Nil-typed regions don't produce a value at the
     # LLVM level — referencing one is a usage error.
@@ -841,6 +844,11 @@ def _extract_call_args(tup: dgen.Value, arg_types: list) -> tuple[list[str], str
     tracker = _ctx().tracker
     tuple_ty = _tuple_llvm_type(arg_types)
     tuple_ref = value_reference(tup)
+    if len(fields) == 1:
+        # Tuple LLVM type is scalar (single non-void field): pass through
+        # directly, no ``extractvalue`` needed.
+        (_, _, ty) = fields[0]
+        return [], f"{ty} {tuple_ref}"
     prologue: list[str] = []
     typed_args: list[str] = []
     for _, llvm_i, ty in fields:
@@ -991,7 +999,9 @@ def _jit_engine(exe: Executable) -> Any:  # noqa: ANN401
 
 def _function_arg_types(func_type: function.Function) -> list[Type]:
     """Extract the runtime Type instances for each argument of a Function type."""
-    return [constant(v) for v in func_type.arguments.values]
+    args = constant(func_type.arguments)
+    assert isinstance(args, list)
+    return args
 
 
 def jit_function(
@@ -1129,7 +1139,10 @@ def build_callback_thunk(
     callback_extern = builtin.ExternOp(
         symbol=String().constant(callback_name),
         type=Function(
-            arguments=pack(arg.type for arg in thunk_args), result_type=result_type
+            arguments=pack(
+                TypeType().constant(constant(arg.type)) for arg in thunk_args
+            ),
+            result_type=result_type,
         ),
     )
     call_op = function.CallOp(
@@ -1142,7 +1155,10 @@ def build_callback_thunk(
         body=dgen.Block(result=call_op, args=thunk_args),
         result_type=result_type,
         type=Function(
-            arguments=pack(arg.type for arg in thunk_args), result_type=result_type
+            arguments=pack(
+                TypeType().constant(constant(arg.type)) for arg in thunk_args
+            ),
+            result_type=result_type,
         ),
     )
     ir, host_buffers = emit_llvm_ir(thunk_func)
