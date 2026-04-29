@@ -10,6 +10,7 @@ from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 from dgen.passes.normalize_region_terminators import NormalizeRegionTerminators
 from dgen.passes.raise_catch_to_goto import RaiseCatchToGoto
 from dgen.passes.record_to_memory import RecordToMemory
+from dgen.passes.unpack_to_goto import UnpackToGoto
 
 
 def lower_builtin_dialects() -> Compiler[dgen.Value]:
@@ -18,6 +19,7 @@ def lower_builtin_dialects() -> Compiler[dgen.Value]:
         passes=[
             ControlFlowToGoto(),
             RaiseCatchToGoto(),
+            UnpackToGoto(),
             NormalizeRegionTerminators(),
             NDBufferToMemory(),
             ExistentialToRecord(),
