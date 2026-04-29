@@ -311,14 +311,16 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                 for arg in op.body.args:
                     ctx.tracker.track_name(arg)
 
-                # Record fall-through entry as a predecessor when the body
-                # consumes a tuple and the tuple isn't an empty inline pack.
-                # (Labels with ``pack([])`` reach their body args via
-                # explicit branches; there's no fall-through tuple to phi.)
-                if op.body.args and not (
-                    isinstance(op.initial_arguments, PackOp)
-                    and not op.initial_arguments.values
-                ):
+                # Fall-through entry as a predecessor — but only for
+                # RegionOps. Regions execute inline (their body is
+                # entered by falling through from the surrounding
+                # block); ``initial_arguments`` is the tuple of values
+                # that feed into the body's args via phi at body entry.
+                # LabelOps are jump-only (the surrounding code emits a
+                # ``br label %{exit}`` to skip them), so there's no
+                # fall-through tuple — every value reaching a label's
+                # body args comes from an explicit branch.
+                if isinstance(op, goto.RegionOp) and op.body.args:
                     ctx.predecessors.setdefault(op, []).append(
                         Predecessor(
                             source_name=current_block, tuple=op.initial_arguments
