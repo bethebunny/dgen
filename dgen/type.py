@@ -235,12 +235,33 @@ def constant(value: Value) -> object:
         return value
     # ``ConstantOp.value`` is ``Memory | object``; the object case is the
     # parser stash (raw user input that can't yet be materialised because
-    # the op's type is an SSA ref). Pass it through unchanged.
+    # the op's type is an SSA ref). Pass it through unchanged. Excluding
+    # ``Value`` here keeps op operand fields (e.g. ``TypeOp.value``,
+    # which is itself an SSA ``Value``) from being mistaken for stashed
+    # constant data.
     _UNSET = object()
     raw = getattr(value, "value", _UNSET)
-    if raw is not _UNSET and not isinstance(raw, Memory):
+    if raw is not _UNSET and not isinstance(raw, (Memory, Value)):
         return raw
     return value.__constant__.to_native_value()
+
+
+def is_constant(value: Value) -> bool:
+    """True if ``constant(value)`` resolves successfully — the value
+    materialises to a Python rich form with no runtime SSA dependencies.
+
+    This is what dgen broadly means by "constant": Type instances pass
+    (their own constant is themselves), ``Constant``/``ConstantOp``s
+    pass, and a ``PackOp`` whose elements are all constants passes
+    (because ``PackOp.__constant__`` builds the aggregate Memory from
+    its values). A ``BlockArgument`` or runtime-op result fails because
+    its ``__constant__`` raises.
+    """
+    try:
+        constant(value)
+    except (TypeError, ValueError, NotImplementedError):
+        return False
+    return True
 
 
 def types_equivalent(a: Type, b: Type) -> bool:

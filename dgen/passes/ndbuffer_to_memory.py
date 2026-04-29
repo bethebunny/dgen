@@ -22,7 +22,7 @@ from dgen.dialects.record import GetOp as RecordGetOp, PackOp as RecordPackOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.passes.pass_ import Pass, lowering_for
-from dgen.type import TypeType, constant
+from dgen.type import constant
 
 
 def _linearize(shape: list[int], indices: list[dgen.Value]) -> dgen.Value:
@@ -114,12 +114,11 @@ class NDBufferToMemory(Pass):
         ptr = _deref(op.buffer)
         shape = self._resolve_shape(op.buffer)
         size = prod(shape)
-        print_memref_arg_types = pack(
-            [TypeType().constant(llvm.Ptr()), TypeType().constant(Index())]
-        )
         print_memref = ExternOp(
             symbol=String().constant("print_memref"),
-            type=function.Function(arguments=print_memref_arg_types, result_type=Nil()),
+            type=function.Function(
+                arguments=pack([llvm.Ptr(), Index()]), result_type=Nil()
+            ),
         )
         args = pack([ptr, Index().constant(size)])
         return function.CallOp(callee=print_memref, arguments=args, type=Nil())

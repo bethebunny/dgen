@@ -1139,9 +1139,7 @@ def build_callback_thunk(
     callback_extern = builtin.ExternOp(
         symbol=String().constant(callback_name),
         type=Function(
-            arguments=pack(
-                TypeType().constant(constant(arg.type)) for arg in thunk_args
-            ),
+            arguments=pack(arg.type for arg in thunk_args),
             result_type=result_type,
         ),
     )
@@ -1155,9 +1153,7 @@ def build_callback_thunk(
         body=dgen.Block(result=call_op, args=thunk_args),
         result_type=result_type,
         type=Function(
-            arguments=pack(
-                TypeType().constant(constant(arg.type)) for arg in thunk_args
-            ),
+            arguments=pack(arg.type for arg in thunk_args),
             result_type=result_type,
         ),
     )

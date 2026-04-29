@@ -14,7 +14,9 @@ from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.dialects import control_flow
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
+from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+from dgen.passes.record_to_memory import RecordToMemory
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
 
@@ -94,6 +96,7 @@ SIMPLE_WHILE = strip_prefix("""
     | import control_flow
     | import index
     | import number
+    | import record
     | %zero : index.Index = 0
     | %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
     |     %ten : index.Index = 10
@@ -101,6 +104,7 @@ SIMPLE_WHILE = strip_prefix("""
     | body(%i: index.Index):
     |     %one : index.Index = 1
     |     %next : index.Index = algebra.add(%i, %one)
+    |     %carry : Tuple<[index.Index]> = record.pack([%next])
 """)
 
 
@@ -115,7 +119,14 @@ def test_while_llvm_ir(snapshot):
     """WhileOp all the way to LLVM IR."""
     m = parse(SIMPLE_WHILE)
     exe = Compiler(
-        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
+        [
+            ControlFlowToGoto(),
+            RecordToMemory(),
+            MemoryToLLVM(),
+            BuiltinToLLVM(),
+            AlgebraToLLVM(),
+        ],
+        LLVMCodegen(),
     ).compile(m)
     assert exe.ir == snapshot
 
@@ -125,6 +136,7 @@ NESTED_WHILE = strip_prefix("""
     | import control_flow
     | import index
     | import number
+    | import record
     | %zero : index.Index = 0
     | %outer : Nil = control_flow.while([%zero]) condition(%i: index.Index):
     |     %two : index.Index = 2
@@ -137,9 +149,11 @@ NESTED_WHILE = strip_prefix("""
     |     body(%j2: index.Index):
     |         %nop : index.Index = 0
     |         %nop2 : Nil = chain(%nop, %nop)
+    |         %icarry : Tuple<[index.Index]> = record.pack([%nop])
     |     %one : index.Index = 1
     |     %next : index.Index = algebra.add(%oi, %one)
     |     %next2 : index.Index = chain(%next, %inner)
+    |     %ocarry : Tuple<[index.Index]> = record.pack([%next2])
 """)
 
 
@@ -154,6 +168,13 @@ def test_nested_while_llvm_ir(snapshot):
     """Nested while loops all the way to LLVM IR."""
     m = parse(NESTED_WHILE)
     exe = Compiler(
-        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
+        [
+            ControlFlowToGoto(),
+            RecordToMemory(),
+            MemoryToLLVM(),
+            BuiltinToLLVM(),
+            AlgebraToLLVM(),
+        ],
+        LLVMCodegen(),
     ).compile(m)
     assert exe.ir == snapshot
