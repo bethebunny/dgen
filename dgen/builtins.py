@@ -104,15 +104,17 @@ class PackOp(Op):
 def pack(values: Iterable[Value] = ()) -> PackOp:
     """Create a PackOp with a type that honestly describes its contents.
 
-    - Empty: ``Array<Nil, 0>``.
-    - Homogeneous (all elements share a type): ``Array<T, n>``.
-    - Heterogeneous: ``Tuple<types>`` where ``types`` is itself a homogeneous
-      ``Array<Type, n>`` PackOp listing each element's type.
+    - Empty / homogeneous (all elements share a type): ``Array<T, n>`` —
+      fixed-N inline bundle, exact byte layout = n × sizeof(T).
+    - Heterogeneous: ``Tuple<types>`` (Record layout). The inner ``types``
+      PackOp is itself genuinely homogeneous (TypeType values), so it
+      bottoms out at ``Array<TypeType, n>`` and the recursion terminates.
 
-    PackOp builds a fixed-N inline bundle of values; ``Array<T, n>`` is the
-    honest type for that. (``Span<T>`` would imply a heap-allocated runtime
-    sequence, which PackOp is not.) For mixed types ``Tuple<types>`` is the
-    Record-layout aggregate.
+    The Array shortcut isn't only an optimisation: ``Tuple<types>``'s layout
+    property iterates ``self.types``, which becomes a non-iterable
+    ``Constant`` after ``Type.from_json`` round-trips. ``Array.__layout__``
+    has no such dependency, so keeping Array as the leaf (and the
+    homogeneous outer type) avoids the round-trip break.
     """
     vals = list(values)
     return PackOp(values=vals, type=_pack_type([v.type for v in vals]))
@@ -134,12 +136,7 @@ def _pack_type(element_types: list[Value[TypeType]]) -> Type:
 
 
 def _same_type(a: Value[TypeType], b: Value[TypeType]) -> bool:
-    """Identity-or-structural equality on a pair of element type values.
-
-    ``a is b`` is the cheap path (most BlockArguments share a Type instance).
-    For separately-constructed types we fall back to structural equivalence so
-    e.g. two ``Index()`` instances still count as homogeneous.
-    """
+    """Identity-or-structural equality on a pair of element type values."""
     if a is b:
         return True
     if isinstance(a, Type) and isinstance(b, Type):
