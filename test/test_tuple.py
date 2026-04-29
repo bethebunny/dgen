@@ -65,8 +65,8 @@ def test_tuple_type_constant_serialization():
     data = t.__constant__.to_json()
     assert data["tag"] == "builtin.Tuple"
     types_param = data["params"]["types"]
-    # types is a Span<Type> — each element is a typed value
-    assert types_param["type"]["tag"] == "builtin.Span"
+    # types is an Array<Type, n> — each element is a typed value
+    assert types_param["type"]["tag"] == "builtin.Array"
     assert isinstance(types_param["value"], list)
 
 

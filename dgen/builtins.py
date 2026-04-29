@@ -12,11 +12,12 @@ from typing import ClassVar
 
 from dgen import Constant, Op, Type, TypeType, Value
 from dgen.dialects.builtin import (
+    Array,
     Nil,
-    Span,
     Tuple,
     builtin,
 )
+from dgen.dialects.index import Index
 from dgen.memory import Memory
 from dgen.type import (
     Fields,
@@ -103,29 +104,32 @@ class PackOp(Op):
 def pack(values: Iterable[Value] = ()) -> PackOp:
     """Create a PackOp with a type that honestly describes its contents.
 
-    - Empty: ``Span<Nil>`` (no elements to consult).
-    - Homogeneous (all elements share a type): ``Span<T>``.
+    - Empty: ``Array<Nil, 0>``.
+    - Homogeneous (all elements share a type): ``Array<T, n>``.
     - Heterogeneous: ``Tuple<types>`` where ``types`` is itself a homogeneous
-      ``Span<TypeType>`` PackOp listing each element's type.
+      ``Array<Type, n>`` PackOp listing each element's type.
 
-    The previous heuristic always produced ``Span<first.type>``, which silently
-    lied about heterogeneous mixes (a String following an Index would be tagged
-    ``Span<Index>``). That lie crashes ``__constant__`` and would mis-serialize
-    if anyone read ``pack_op.type``. The Tuple/Record layout is the honest
-    runtime representation for a fixed-N positional bundle of mixed types.
+    PackOp builds a fixed-N inline bundle of values; ``Array<T, n>`` is the
+    honest type for that. (``Span<T>`` would imply a heap-allocated runtime
+    sequence, which PackOp is not.) For mixed types ``Tuple<types>`` is the
+    Record-layout aggregate.
     """
     vals = list(values)
     return PackOp(values=vals, type=_pack_type([v.type for v in vals]))
 
 
 def _pack_type(element_types: list[Value[TypeType]]) -> Type:
-    """Pick the honest Span/Tuple type for a PackOp from its element types."""
+    """Pick the honest Array/Tuple type for a PackOp from its element types."""
+    n = Index().constant(len(element_types))
     if not element_types:
-        return Span(pointee=Nil())
+        return Array(element_type=Nil(), n=n)
     first = element_types[0]
     if all(_same_type(t, first) for t in element_types[1:]):
-        return Span(pointee=first)
-    types_pack = PackOp(values=list(element_types), type=Span(pointee=TypeType()))
+        return Array(element_type=first, n=n)
+    types_pack = PackOp(
+        values=list(element_types),
+        type=Array(element_type=TypeType(), n=n),
+    )
     return Tuple(types=types_pack)
 
 

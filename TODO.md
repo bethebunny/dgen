@@ -35,6 +35,7 @@
 ## Cleanup
 - Remove spurious utf8 decoding stuff from Memory/Value
 - Move `type_asm` to `Type.asm`, `op_asm` to `Op.asm`
+- Reconcile unparameterized `Span` operand declarations across `.dgen` files. Sites like `record.PackOp.values: Span`, `goto.{Region,Label,Branch,ConditionalBranch}Op.{initial_,true_,false_,}arguments: Span`, `function.CallOp.arguments: Span`, `llvm.CallOp.args: Span`, `control_flow.{For,While,If}Op.*_arguments: Span` are not actually `Span`s (heap-allocated runtime sequences) — they're fixed-N positional value bundles. `pack()` now produces `Array<T, n>` (homogeneous) or `Tuple<types>` (heterogeneous) for these slots; the field annotations are stale. The parser's `_pack_list` currently keys off `field_type is Span` to coerce bare-list literals (e.g. `[42, 43]`) using a homogeneity heuristic on the first element. To fix: introduce a wildcard "value bundle" type (or extend the parser to handle the wildcard via a different signal) and update every operand declaration listed above. Also fix the parameterized `Span<Type>` declarations on `Tuple<types>` and `Function<arguments>`: they're compile-time fixed-N homogeneous lists of Type values, so honestly `Array<Type, n>` — but switching them adds an `n: Index` parameter to both type signatures and breaks every callsite. Doing both fixes is one larger refactor that lands together with a "value-bundle wildcard" decision.
 
 ## Block / value infrastructure
 - Have values track their uses for forward iteration and fast `replace_uses`
