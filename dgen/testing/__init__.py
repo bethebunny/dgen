@@ -11,22 +11,19 @@ from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.normalize_region_terminators import NormalizeRegionTerminators
-from dgen.passes.unpack_to_goto import UnpackToGoto
 
 
 def llvm_compile(value: dgen.Value) -> Executable:
     """Lower a Value through the standard LLVM pipeline and bundle as an Executable.
 
-    Shortcut for ``Compiler([ControlFlowToGoto, UnpackToGoto,
-    NormalizeRegionTerminators, BuiltinToLLVM, AlgebraToLLVM],
-    LLVMCodegen()).run(value)`` — the pass set that
-    ``dgen.llvm.codegen.compile`` used to hardcode before it moved out of
-    codegen.
+    Shortcut for ``Compiler([ControlFlowToGoto, NormalizeRegionTerminators,
+    BuiltinToLLVM, AlgebraToLLVM], LLVMCodegen()).run(value)`` — the pass
+    set that ``dgen.llvm.codegen.compile`` used to hardcode before it
+    moved out of codegen.
     """
     return Compiler(
         [
             ControlFlowToGoto(),
-            UnpackToGoto(),
             NormalizeRegionTerminators(),
             BuiltinToLLVM(),
             AlgebraToLLVM(),
