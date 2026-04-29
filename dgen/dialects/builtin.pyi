@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import dgen
-from dgen import Dialect, Op, Trait, Type, Value
+from dgen import Block, Dialect, Op, Trait, Type, Value
 from dgen.dialects.index import Index
 
 builtin = Dialect("builtin")
@@ -68,4 +68,10 @@ class TypeOp(Op):
 @dataclass(eq=False)
 class ExternOp(Op):
     symbol: Value[String]
+    type: Type
+
+@dataclass(eq=False)
+class UnpackOp(Op):
+    tuple: Value
+    body: Block
     type: Type
