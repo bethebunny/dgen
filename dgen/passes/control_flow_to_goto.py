@@ -220,14 +220,24 @@ class ControlFlowToGoto(Pass):
 
         # Body label: reuse op.body's IV, chain(increment, body_result) as
         # the back-edge arg so the increment happens after the body runs.
+        # If the body already terminates (Never-typed result, e.g. ends in
+        # ``continue`` / ``break``), the chain + back-edge are both dead;
+        # use the body's result directly.
         iv = op.body.args[0]
-        next_iv = ChainOp(
-            lhs=algebra.AddOp(left=iv, right=Index().constant(1), type=Index()),
-            rhs=op.body.result,
-            type=Index(),
-        )
+        body_result = op.body.result
+        if isinstance(body_result.type, Never):
+            body_block_result: dgen.Value = body_result
+        else:
+            next_iv = ChainOp(
+                lhs=algebra.AddOp(left=iv, right=Index().constant(1), type=Index()),
+                rhs=body_result,
+                type=Index(),
+            )
+            body_block_result = goto.BranchOp(
+                target=header_self, arguments=pack([next_iv])
+            )
         body_block = dgen.Block(
-            result=goto.BranchOp(target=header_self, arguments=pack([next_iv])),
+            result=body_block_result,
             args=[iv],
             captures=[header_self, header_exit, *op.body.captures],
         )
@@ -288,14 +298,22 @@ class ControlFlowToGoto(Pass):
         # Body result is the next-iteration values. Wrap in a pack for the
         # back-edge branch arguments. The branch already depends on body_result
         # transitively via the arguments operand.
+        #
+        # If the body already terminates (its result is Never-typed — e.g.
+        # the body ends in ``continue`` or ``break``), skip the back-edge:
+        # control has already transferred and the back-edge would be dead
+        # code, plus a duplicate consume of ``%self``/``%exit``.
         body_result = op.body.result
-        branch_args = (
-            body_result if isinstance(body_result, PackOp) else pack([body_result])
-        )
-        back_br = goto.BranchOp(target=header_self, arguments=branch_args)
+        if isinstance(body_result.type, Never):
+            body_block_result: dgen.Value = body_result
+        else:
+            branch_args = (
+                body_result if isinstance(body_result, PackOp) else pack([body_result])
+            )
+            body_block_result = goto.BranchOp(target=header_self, arguments=branch_args)
 
         body_block = dgen.Block(
-            result=back_br,
+            result=body_block_result,
             args=body_args,
             captures=[header_self, header_exit, *op.body.captures],
         )

@@ -59,10 +59,12 @@ def test_raise_handler_is_affine() -> None:
     assert h.has_trait(builtin.Affine())
 
 
-def test_label_is_not_affine() -> None:
-    """Labels are reentrant continuations; the simple Affine rule does
-    not fit. See docs/linear_types.md and TODO.md."""
-    assert not goto.Label().has_trait(builtin.Affine())
+def test_label_is_affine() -> None:
+    """Labels are divergence handlers — branched to once per execution
+    path. The verifier's MaybeAvailable state lets multiple goto.label
+    ops in a region all capture the same %exit without tripping
+    DoubleConsume."""
+    assert goto.Label().has_trait(builtin.Affine())
 
 
 def test_index_is_unrestricted() -> None:
@@ -197,10 +199,12 @@ def test_partial_op_consuming_the_linear_itself_ok() -> None:
     )
 
 
-def test_capture_into_alternative_children_dedups_at_parent() -> None:
-    """The branch-composition rule: when an op's body and except blocks
-    both capture the same affine handler, the parent op consumes the
-    handler ONCE at invocation, not once per alternative."""
+def test_capture_into_one_ops_two_children_is_ok() -> None:
+    """Both children of a single try op capture the outer handler. With
+    the unknown-block-op rule, the parent op transitions the captured
+    value to ``MaybeAvailable`` once (dedup'd across children, since
+    the captures are surfaced through one op's ``Value.dependencies``
+    walk only once via the set-comprehension)."""
     verify_linearity(
         parse(
             strip_prefix("""
@@ -217,6 +221,67 @@ def test_capture_into_alternative_children_dedups_at_parent() -> None:
     """)
         )
     )
+
+
+def test_two_sibling_block_ops_capturing_same_affine_is_ok() -> None:
+    """Two *sibling* block-holding ops both capture the same outer
+    handler. The MaybeAvailable rule is what makes this work:
+    ``Available → MaybeAvailable → MaybeAvailable``. Without it,
+    the second sibling's capture would trip ``DoubleConsumeError``.
+
+    This is the same shape as the post-lowering goto if/else (two
+    ``goto.label`` ops both capturing ``%exit``) — the test exercises
+    the rule via ``error.try`` because writing valid raw goto IR by
+    hand is fiddlier."""
+    verify_linearity(
+        parse(
+            strip_prefix("""
+        | import builtin
+        | import error
+        | import index
+        | %outer : index.Index = error.try<index.Index>() body<%ho: error.RaiseHandler<index.Index>>():
+        |     %a : index.Index = error.try<index.Index>() body<%h1: error.RaiseHandler<index.Index>>() captures(%ho):
+        |         %v1 : index.Index = 1
+        |         %r1 : Never = error.raise<index.Index>(%ho, %v1)
+        |     except(%err1: index.Index):
+        |         %z1 : index.Index = 0
+        |     %b : index.Index = error.try<index.Index>() body<%h2: error.RaiseHandler<index.Index>>() captures(%ho):
+        |         %v2 : index.Index = 2
+        |         %r2 : Never = error.raise<index.Index>(%ho, %v2)
+        |     except(%err2: index.Index):
+        |         %z2 : index.Index = 0
+        |     %sum : index.Index = builtin.chain(%a, %b)
+        | except(%err: index.Index):
+        |     %z : index.Index = 0
+    """)
+        )
+    )
+
+
+def test_goto_if_else_through_lowering_is_ok() -> None:
+    """End-to-end: a high-level ``control_flow.if`` lowers to a goto
+    region with two label ops each capturing ``%exit``. Marking
+    ``goto.Label`` Affine + the MaybeAvailable rule together let
+    ``ControlFlowToGoto.verify_postconditions`` accept this IR."""
+    from dgen.passes.compiler import Compiler, IdentityPass
+    from dgen.passes.control_flow_to_goto import ControlFlowToGoto
+
+    value = parse(
+        strip_prefix("""
+        | import algebra
+        | import control_flow
+        | import index
+        | import number
+        | %five : index.Index = 5
+        | %ten : index.Index = 10
+        | %cond : number.Boolean = algebra.less_than(%five, %ten)
+        | %r : index.Index = control_flow.if(%cond, [], []) then_body():
+        |     %ta : index.Index = 1
+        | else_body():
+        |     %tb : index.Index = 2
+    """)
+    )
+    Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)
 
 
 # -- Verifier: fail cases --------------------------------------------------
