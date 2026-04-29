@@ -9,8 +9,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from dgen.block import Block, BlockArgument, BlockParameter
-from dgen.builtins import ConstantOp, PackOp
-from dgen.type import constant, format_value
+from dgen.builtins import ConstantOp, PackOp, _aggregate_elements
+from dgen.dialects.builtin import Array, Tuple
+from dgen.type import Constant, SlotFn, _default_slot, constant, format_value
 
 from ..op import Op
 from ..type import Value
@@ -85,6 +86,38 @@ def _format_expr(value: object, tracker: SlotTracker) -> str:
     str, list, dict) are formatted as JSON.
     """
     return format_value(value, tracker.track_name)
+
+
+# ===----------------------------------------------------------------------=== #
+# Aggregate-Constant formatting
+# ===----------------------------------------------------------------------=== #
+
+
+def _format_aggregate_constant(c: Constant, slot: SlotFn) -> str:
+    """Inline format ``[elem0, elem1, ...]`` for aggregate ``Constant``s.
+
+    Each element is reconstructed as a ``Value`` of its field type
+    (``_aggregate_elements``) and formatted by its own ``format_asm`` —
+    a Type instance prints as its name, a scalar Constant prints as
+    ``Type(value)``, and a nested aggregate recurses through this same
+    path. Without this, ``Constant.format_asm``'s default ``Type(value)``
+    shape would emit verbose ``Tuple<...>(dict)`` for compile-time
+    aggregates produced by ``pack()``.
+    """
+    return "[" + ", ".join(format_value(e, slot) for e in _aggregate_elements(c)) + "]"
+
+
+def _constant_format_asm(self: Constant, slot: SlotFn = _default_slot) -> str:
+    if isinstance(self.type, (Array, Tuple)):
+        return _format_aggregate_constant(self, slot)
+    body = format_value(constant(self), slot)
+    return f"{self.type.format_asm(slot)}({body})"
+
+
+# Override ``Constant.format_asm`` here (rather than at class definition)
+# so the asm-specific aggregate-shape rendering lives next to the rest
+# of the formatter, not inside the type-system core.
+Constant.format_asm = _constant_format_asm
 
 
 # ===----------------------------------------------------------------------=== #

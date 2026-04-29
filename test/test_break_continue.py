@@ -66,6 +66,7 @@ def test_while_without_break_unchanged(ir_snapshot):
         | import control_flow
         | import index
         | import number
+        | import record
         | %zero : index.Index = 0
         | %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
         |     %ten : index.Index = 10
@@ -73,6 +74,7 @@ def test_while_without_break_unchanged(ir_snapshot):
         | body(%i: index.Index):
         |     %one : index.Index = 1
         |     %next : index.Index = algebra.add(%i, %one)
+        |     %carry : Tuple<[index.Index]> = record.pack([%next])
     """)
     assert result == ir_snapshot
     for v in all_values(result):

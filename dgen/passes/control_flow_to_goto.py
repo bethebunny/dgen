@@ -295,9 +295,11 @@ class ControlFlowToGoto(Pass):
         for orig, new in zip(op.body.args, body_args):
             op.body.replace_uses_of(orig, new)
 
-        # Body result is the next-iteration values. Wrap in a pack for the
-        # back-edge branch arguments. The branch already depends on body_result
-        # transitively via the arguments operand.
+        # Body result is the next-iteration tuple of carried values, fed
+        # back to the header via the back-edge branch. ``body_result.type``
+        # MUST be a tuple shape (``Array`` or ``Tuple``) so its fields
+        # line up with the header's block args; the IR is malformed
+        # otherwise.
         #
         # If the body already terminates (its result is Never-typed — e.g.
         # the body ends in ``continue`` or ``break``), skip the back-edge:
@@ -307,15 +309,11 @@ class ControlFlowToGoto(Pass):
         if isinstance(body_result.type, Never):
             body_block_result: dgen.Value = body_result
         else:
-            # If the body's result is already a tuple-shaped value
-            # (PackOp from inline ``[...]``, an aggregate Constant from
-            # smart ``pack()``, or any runtime aggregate), pass it
-            # through directly. Scalars get wrapped.
-            if isinstance(body_result.type, (Array, Tuple)):
-                branch_args: dgen.Value = body_result
-            else:
-                branch_args = pack([body_result])
-            body_block_result = goto.BranchOp(target=header_self, arguments=branch_args)
+            assert isinstance(body_result.type, (Array, Tuple)), (
+                f"control_flow.while body result must be a tuple of carried "
+                f"values; got {body_result.type!r}"
+            )
+            body_block_result = goto.BranchOp(target=header_self, arguments=body_result)
 
         body_block = dgen.Block(
             result=body_block_result,

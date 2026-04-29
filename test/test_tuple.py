@@ -8,7 +8,7 @@ from dgen.asm.parser import parse
 from dgen.testing import assert_ir_equivalent
 from dgen.dialects.builtin import Index, String, Tuple
 from dgen.dialects.number import Float64
-from dgen.builtins import pack
+from dgen.builtins import pack, unpack
 from dgen.type import Type
 from dgen.testing import strip_prefix
 
@@ -16,7 +16,7 @@ from dgen.testing import strip_prefix
 def test_tuple_construction():
     """Tuple<[index.Index, String]> constructs with a list of types."""
     t = Tuple(types=pack([Index(), String()]))
-    assert len(list(t.types)) == 2
+    assert len(unpack(t.types)) == 2
 
 
 def test_tuple_layout():
