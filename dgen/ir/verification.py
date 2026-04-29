@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import enum
+
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
+from dgen.dialects.builtin import Affine, Linear
 from dgen.dialects.function import FunctionOp
 from dgen.ir.constraints import TraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
 from dgen.asm import asm_with_imports
-from dgen.type import Linearity, constant, format_value
+from dgen.type import Type, constant, format_value
 
 
 class VerificationError(Exception):
@@ -280,20 +283,56 @@ def verify_constraints(root: dgen.Value) -> None:
 # captured values.
 
 
-_AVAILABLE = "available"
-_MAYBE_AVAILABLE = "maybe_available"
-_CONSUMED = "consumed"
+class Linearity(enum.Enum):
+    """How a value behaves with respect to resource discipline.
+
+    Read off the value's *type*: a value of type ``T`` is ``LINEAR`` if
+    ``T has trait Linear``, ``AFFINE`` if ``T has trait Affine``, and
+    ``UNRESTRICTED`` otherwise. See ``docs/linear_types.md``.
+
+    - ``UNRESTRICTED`` — no resource discipline; arbitrary use.
+    - ``AFFINE``       — at most one consume.
+    - ``LINEAR``       — exactly one consume; must be discharged before
+      block exit (or be the block result).
+    """
+
+    UNRESTRICTED = "unrestricted"
+    AFFINE = "affine"
+    LINEAR = "linear"
+
+
+def linearity(value: dgen.Value) -> Linearity:
+    """Classify *value* by the linearity discipline of its type.
+
+    ``Type`` instances always read ``UNRESTRICTED`` — types-as-values
+    are universe-1 metadata, not resources.
+    """
+    if isinstance(value, Type):
+        return Linearity.UNRESTRICTED
+    if value.type.has_trait(Linear()):
+        return Linearity.LINEAR
+    if value.type.has_trait(Affine()):
+        return Linearity.AFFINE
+    return Linearity.UNRESTRICTED
 
 
 def is_linear(value: dgen.Value) -> bool:
     """Whether *value* is of a ``Linear``-trait type."""
-    return value.linearity is Linearity.LINEAR
+    return linearity(value) is Linearity.LINEAR
 
 
 def is_affine_or_linear(value: dgen.Value) -> bool:
     """The verifier's main predicate — True for any value subject to
     resource discipline (consume-at-most-once or consume-exactly-once)."""
-    return value.linearity is not Linearity.UNRESTRICTED
+    return linearity(value) is not Linearity.UNRESTRICTED
+
+
+class _State(enum.Enum):
+    """Per-value state in the verifier's typing context Γ."""
+
+    AVAILABLE = "available"
+    MAYBE_AVAILABLE = "maybe_available"
+    CONSUMED = "consumed"
 
 
 def _has_known_block_semantics(op: dgen.Op) -> bool:
@@ -313,7 +352,7 @@ def _has_known_block_semantics(op: dgen.Op) -> bool:
 
 
 def _consume_at(
-    gamma: dict[dgen.Value, str],
+    gamma: dict[dgen.Value, _State],
     value: dgen.Value,
     *,
     by: dgen.Value,
@@ -330,17 +369,17 @@ def _consume_at(
     """
     if value not in gamma:
         return
-    if gamma[value] is _CONSUMED:
+    if gamma[value] is _State.CONSUMED:
         raise DoubleConsumeError(
-            f"{type(value).__name__} %{value.name} ({value.linearity.value}) "
+            f"{type(value).__name__} %{value.name} ({linearity(value).value}) "
             f"consumed twice; second consume by {type(by).__name__} "
             f"%{by.name}\n\n" + _annotated_asm(root, value)
         )
-    gamma[value] = _CONSUMED
+    gamma[value] = _State.CONSUMED
 
 
 def _capture_into_unknown(
-    gamma: dict[dgen.Value, str],
+    gamma: dict[dgen.Value, _State],
     value: dgen.Value,
     *,
     by: dgen.Value,
@@ -358,14 +397,14 @@ def _capture_into_unknown(
     """
     if value not in gamma:
         return
-    if gamma[value] is _CONSUMED:
+    if gamma[value] is _State.CONSUMED:
         raise DoubleConsumeError(
-            f"{type(value).__name__} %{value.name} ({value.linearity.value}) "
+            f"{type(value).__name__} %{value.name} ({linearity(value).value}) "
             f"captured into {type(by).__name__} %{by.name} after being "
             f"consumed\n\n" + _annotated_asm(root, value)
         )
-    if gamma[value] is _AVAILABLE:
-        gamma[value] = _MAYBE_AVAILABLE
+    if gamma[value] is _State.AVAILABLE:
+        gamma[value] = _State.MAYBE_AVAILABLE
 
 
 def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
@@ -380,11 +419,11 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
     Γ_in. At block exit, any ``LINEAR`` value still ``AVAILABLE`` (and
     not ``block.result``) is a leak; ``MAYBE_AVAILABLE`` is permissive.
     """
-    gamma: dict[dgen.Value, str] = {}
+    gamma: dict[dgen.Value, _State] = {}
     for source in (block.args, block.parameters, block.captures):
         for v in source:
             if is_affine_or_linear(v):
-                gamma[v] = _AVAILABLE
+                gamma[v] = _State.AVAILABLE
 
     for v in block.values:
         if not isinstance(v, dgen.Op):
@@ -411,7 +450,7 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
             _verify_linearity_block(child, root)
         # Op result, if substructural, becomes Available.
         if is_affine_or_linear(v):
-            gamma[v] = _AVAILABLE
+            gamma[v] = _State.AVAILABLE
 
     # Exit check: block.result is "yielded" to the surrounding scope —
     # being the block's output IS the consumption. ``MAYBE_AVAILABLE``
@@ -419,7 +458,7 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
     # consumed it). Anything still ``AVAILABLE`` and ``LINEAR`` (and
     # not the block result) is a leak.
     for value, state in gamma.items():
-        if state is not _AVAILABLE:
+        if state is not _State.AVAILABLE:
             continue
         if value is block.result:
             continue
