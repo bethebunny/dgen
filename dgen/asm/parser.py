@@ -15,7 +15,7 @@ from dgen import Block, Constant, Op, Type, Value
 from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
-from dgen.builtins import ConstantOp, PackOp
+from dgen.builtins import ConstantOp, PackOp, _pack_type
 from dgen.type import py_attr_name
 
 
@@ -412,7 +412,7 @@ def _pack_list(
             values.append(elem)
         else:
             values.append(element_type.constant(elem))
-    return PackOp(values=values, type=builtin.Span(pointee=element_type))
+    return PackOp(values=values, type=_pack_type([v.type for v in values]))
 
 
 # -- Block parsing ----------------------------------------------------------
