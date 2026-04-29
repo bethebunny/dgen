@@ -6,26 +6,34 @@
   entry:
     br label %loop_header0
   loop_header0:
-    %i0 = phi i64 [ 0, %entry ], [ %_0, %exit1 ]
+    %_15 = phi { i64 } [ { i64 0 }, %entry ], [ %_10, %exit1 ]
+    %i0 = extractvalue { i64 } %_15, 0
     br label %loop_body0_exit
   loop_body0:
-    %i = phi i64 [ %i0, %loop_body0_exit ]
+    %_16 = phi { i64 } [ %_13, %loop_body0_exit ]
+    %i = extractvalue { i64 } %_16, 0
     %_0 = add i64 %i, 1
     br label %loop_header1
   loop_header1:
-    %i1 = phi i64 [ 0, %loop_body0 ], [ %_2, %loop_body1 ]
+    %_17 = phi { i64 } [ { i64 0 }, %loop_body0 ], [ %_4, %loop_body1 ]
+    %i1 = extractvalue { i64 } %_17, 0
     br label %loop_body1_exit
   loop_body1:
-    %j = phi i64 [ %i1, %loop_body1_exit ]
+    %_18 = phi { i64 } [ %_7, %loop_body1_exit ]
+    %j = extractvalue { i64 } %_18, 0
     %_2 = add i64 %j, 1
+    %_4 = insertvalue { i64 } undef, i64 %_2, 0
     br label %loop_header1
   loop_body1_exit:
     %_6 = icmp slt i64 %i1, 2
+    %_7 = insertvalue { i64 } undef, i64 %i1, 0
     br i1 %_6, label %loop_body1, label %exit1
   exit1:
+    %_10 = insertvalue { i64 } undef, i64 %_0, 0
     br label %loop_header0
   loop_body0_exit:
     %_12 = icmp slt i64 %i0, 2
+    %_13 = insertvalue { i64 } undef, i64 %i0, 0
     br i1 %_12, label %loop_body0, label %exit0
   exit0:
     ret void

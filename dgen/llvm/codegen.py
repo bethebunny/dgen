@@ -25,7 +25,7 @@ from dgen.dialects import (
 )
 from dgen.ir.traversal import all_values
 from dgen.layout import Layout
-from dgen.builtins import ConstantOp, PackOp, pack
+from dgen.builtins import ConstantOp, PackOp, _aggregate_elements, pack
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function
 from dgen.memory import Memory
@@ -256,24 +256,20 @@ def _llvm_fields(arg_types: list) -> list[tuple[int, int, str]]:
 
 
 def _tuple_llvm_type(arg_types: list) -> str:
-    """LLVM type for the aggregate that a tuple of N values produces.
+    """Internal aggregate LLVM type ``{ T1, ..., Tn }`` for any n ≥ 1
+    LLVM-visible fields, ``{}`` when every field is ``void``.
 
-    Always a struct for multi-element tuples — unlike ``ffi.llvm_type``,
-    which would collapse a non-register-passable aggregate to ``ptr``
-    (the pointer-by-reference ABI). At the LLVM IR level the aggregate
-    needs its actual struct type so ``insertvalue`` / ``phi`` /
-    ``extractvalue`` are well-formed; LLVM's lowering passes handle
-    large-struct ABI separately.
-
-    Single-element non-void tuples collapse to that element's scalar
-    type — matching what ``ffi.llvm_constant`` produces for a
-    ``Constant`` of an ``Array<T, 1>``.
+    Codegen treats *every* tuple-shaped value (PackOp, runtime aggregate,
+    aggregate Constant) uniformly through this helper, so insertvalue /
+    extractvalue / phi all see the same ``{ ... }`` shape regardless of
+    arity. The FFI/ABI collapse for single-field layouts (``ffi.llvm_type``,
+    ``ffi.llvm_constant``) lives only at function boundaries and is
+    bridged by the few callers that emit ``define`` / ``declare`` /
+    ``call`` / ``ret``.
     """
     fields = [llvm_type(t) for t in arg_types if llvm_type(t) != "void"]
     if not fields:
         return "{}"
-    if len(fields) == 1:
-        return fields[0]
     return "{ " + ", ".join(fields) + " }"
 
 
@@ -487,11 +483,6 @@ def _emit_block_arg_phis(op: goto.RegionOp | goto.LabelOp) -> Iterator[str]:
         return
     tracker = _ctx().tracker
     tuple_ty = _tuple_llvm_type([arg.type for arg in args])
-    if len(fields) == 1:
-        # Scalar tuple LLVM type: phi directly binds the body arg name.
-        (orig_i, _, _) = fields[0]
-        yield from _emit_tuple_phi(op, tracker.track_name(args[orig_i]), tuple_ty)
-        return
     tuple_name = f"_{tracker._counter}"
     tracker._counter += 1
     tracker._used.add(tuple_name)
@@ -505,14 +496,24 @@ def _emit_block_arg_phis(op: goto.RegionOp | goto.LabelOp) -> Iterator[str]:
 
 def _emit_exit_phi(op: goto.RegionOp, name: str, ty: str) -> Iterator[str]:
     """Exit phi: merge predecessor tuples (each a 1-element pack of the
-    region's result) into the region's named result. The tuple's LLVM
-    type is the result type itself (a 1-element scalar at the LLVM
-    level, since ``_tuple_llvm_type([T]) == llvm_type(T)``), so the phi
-    binds ``name`` directly — no ``extractvalue`` needed."""
+    region's result) into the region's named result.
+
+    The predecessor tuples have aggregate LLVM type ``{ T }`` (per
+    ``_tuple_llvm_type``), so we phi an aggregate then ``extractvalue``
+    field 0 to bind the named scalar/inner value that consumers see via
+    ``value_reference(op)``. The FFI/ABI scalar-collapse for single-field
+    layouts is bridged here.
+    """
     if ty == "void":
         return
     exit_param = op.body.parameters[1]
-    yield from _emit_tuple_phi(exit_param, name, ty)
+    tuple_ty = _tuple_llvm_type([op.type])
+    tracker = _ctx().tracker
+    tuple_name = f"_{tracker._counter}"
+    tracker._counter += 1
+    tracker._used.add(tuple_name)
+    yield from _emit_tuple_phi(exit_param, tuple_name, tuple_ty)
+    yield f"  %{name} = extractvalue {tuple_ty} %{tuple_name}, 0"
 
 
 def _exit_phi_name(op: goto.RegionOp) -> str:
@@ -599,13 +600,12 @@ def emit_pack_op(op: PackOp) -> Iterator[str]:
     """Build the tuple's LLVM aggregate via an ``insertvalue`` chain.
 
     Skips ``Nil``-typed elements (LLVM has no ``void`` aggregate field).
-    For 0 or 1 LLVM-visible fields nothing is emitted — there's no
-    aggregate at the LLVM level (``ffi.llvm_type`` collapses
-    single-element register-passable layouts to scalar). Consumers that
-    need the value short-circuit through ``value_reference``.
+    A pack with no LLVM-visible fields is a no-op (no aggregate value
+    to produce). All other arities — including n=1 — emit a uniform
+    ``insertvalue`` chain producing a ``{ T1, ..., Tn }`` aggregate.
     """
     fields = _llvm_fields([v.type for v in op.values])
-    if len(fields) < 2:
+    if not fields:
         return
     ctx = _ctx()
     tracker = ctx.tracker
@@ -642,6 +642,26 @@ def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
         yield f"@{sym} = external global {ty}"
 
 
+def _aggregate_constant_literal(c: Constant) -> str:
+    """LLVM literal ``{ T1 v1, T2 v2, ... }`` for an aggregate Constant.
+
+    Walks each element via ``_aggregate_elements`` (each yielded element
+    is itself a ``Value`` of its field type — Constants for scalars,
+    nested aggregate Constants for nested tuples/arrays) and recursively
+    builds the typed reference. ``Nil``-typed fields drop out (LLVM has
+    no ``void`` aggregate field), matching ``_llvm_fields``. An aggregate
+    with no LLVM-visible fields formats as ``{}``.
+    """
+    parts = [
+        typed_reference(e)
+        for e in _aggregate_elements(c)
+        if llvm_type(e.type) != "void"
+    ]
+    if not parts:
+        return "{}"
+    return "{ " + ", ".join(parts) + " }"
+
+
 def value_reference(v: dgen.Value) -> str:
     if isinstance(v, Constant):
         mem = v.__constant__
@@ -649,6 +669,13 @@ def value_reference(v: dgen.Value) -> str:
             ctx = _ctx()
             ctx.host_buffers.append(mem)
             return f"inttoptr (i64 {mem.address} to ptr)"
+        # Aggregate Constants build their LLVM literal element-by-element
+        # so the form matches ``_tuple_llvm_type`` (uniform ``{ T1, ... }``
+        # shape — no scalar collapse). ``ffi.llvm_constant`` would emit
+        # the FFI/ABI-collapsed scalar form for single-field layouts,
+        # which mismatches the internal aggregate type used elsewhere.
+        if isinstance(v.type, (builtin.Array, builtin.Tuple)):
+            return _aggregate_constant_literal(v)
         return ffi.llvm_constant(bytes(mem.buffer), mem.layout)
     if isinstance(v, builtin.ChainOp):
         return value_reference(v.lhs)
@@ -662,18 +689,11 @@ def value_reference(v: dgen.Value) -> str:
         return f"load {ty}, ptr @{sym}"
     if isinstance(v, function.FunctionOp) and v.name:
         return f"@{v.name}"
-    # PackOp passes through to its single element — ``_tuple_llvm_type``
-    # collapses a 1-element pack's LLVM type to that element's scalar
-    # type, so callers expect a scalar reference. Multi-element packs
-    # have been emitted as an ``insertvalue`` chain whose final SSA name
-    # is the PackOp's tracker name; fall through to the named-value path.
-    if isinstance(v, PackOp):
-        if len(v.values) == 1:
-            return value_reference(v.values[0])
-        if not v.values:
-            raise ValueError(
-                "value_reference: empty PackOp has no LLVM value to reference"
-            )
+    # PackOp emits as an ``insertvalue`` chain whose final SSA name is
+    # the PackOp's tracker name (regardless of arity). An empty pack has
+    # no LLVM value at all — referencing one is a usage error.
+    if isinstance(v, PackOp) and not v.values:
+        raise ValueError("value_reference: empty PackOp has no LLVM value to reference")
     # A region's value is the exit phi (named by ``_exit_phi_name``) when
     # its type is non-Nil. Nil-typed regions don't produce a value at the
     # LLVM level — referencing one is a usage error.
@@ -844,11 +864,6 @@ def _extract_call_args(tup: dgen.Value, arg_types: list) -> tuple[list[str], str
     tracker = _ctx().tracker
     tuple_ty = _tuple_llvm_type(arg_types)
     tuple_ref = value_reference(tup)
-    if len(fields) == 1:
-        # Tuple LLVM type is scalar (single non-void field): pass through
-        # directly, no ``extractvalue`` needed.
-        (_, _, ty) = fields[0]
-        return [], f"{ty} {tuple_ref}"
     prologue: list[str] = []
     typed_args: list[str] = []
     for _, llvm_i, ty in fields:
