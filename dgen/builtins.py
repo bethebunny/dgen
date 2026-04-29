@@ -14,10 +14,18 @@ from dgen import Constant, Op, Type, TypeType, Value
 from dgen.dialects.builtin import (
     Nil,
     Span,
+    Tuple,
     builtin,
 )
 from dgen.memory import Memory
-from dgen.type import Fields, SlotFn, _default_slot, format_value, constant
+from dgen.type import (
+    Fields,
+    SlotFn,
+    _default_slot,
+    format_value,
+    constant,
+    types_equivalent,
+)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -93,9 +101,46 @@ class PackOp(Op):
 
 
 def pack(values: Iterable[Value] = ()) -> PackOp:
-    """Create a PackOp, inferring the element type from the values."""
+    """Create a PackOp with a type that honestly describes its contents.
+
+    - Empty: ``Span<Nil>`` (no elements to consult).
+    - Homogeneous (all elements share a type): ``Span<T>``.
+    - Heterogeneous: ``Tuple<types>`` where ``types`` is itself a homogeneous
+      ``Span<TypeType>`` PackOp listing each element's type.
+
+    The previous heuristic always produced ``Span<first.type>``, which silently
+    lied about heterogeneous mixes (a String following an Index would be tagged
+    ``Span<Index>``). That lie crashes ``__constant__`` and would mis-serialize
+    if anyone read ``pack_op.type``. The Tuple/Record layout is the honest
+    runtime representation for a fixed-N positional bundle of mixed types.
+    """
     vals = list(values)
-    return PackOp(values=vals, type=Span(pointee=vals[0].type if vals else Nil()))
+    return PackOp(values=vals, type=_pack_type([v.type for v in vals]))
+
+
+def _pack_type(element_types: list[Value[TypeType]]) -> Type:
+    """Pick the honest Span/Tuple type for a PackOp from its element types."""
+    if not element_types:
+        return Span(pointee=Nil())
+    first = element_types[0]
+    if all(_same_type(t, first) for t in element_types[1:]):
+        return Span(pointee=first)
+    types_pack = PackOp(values=list(element_types), type=Span(pointee=TypeType()))
+    return Tuple(types=types_pack)
+
+
+def _same_type(a: Value[TypeType], b: Value[TypeType]) -> bool:
+    """Identity-or-structural equality on a pair of element type values.
+
+    ``a is b`` is the cheap path (most BlockArguments share a Type instance).
+    For separately-constructed types we fall back to structural equivalence so
+    e.g. two ``Index()`` instances still count as homogeneous.
+    """
+    if a is b:
+        return True
+    if isinstance(a, Type) and isinstance(b, Type):
+        return types_equivalent(a, b)
+    return False
 
 
 def unpack(val: Value) -> list[Value]:
