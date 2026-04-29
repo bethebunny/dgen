@@ -1,5 +1,16 @@
-from builtin import Never, Nil, Span
+from builtin import Never, Nil, Span, Diverge, Handler, Affine
 from index import Index
+
+# Loop is the evidence that an enclosing for/while body provides a
+# divergence target — break/continue consume it to abandon the current
+# iteration. Declaring Handler<Diverge> makes generic divergence
+# detection recognize ops that take a Loop as potentially divergent.
+# Affine: many break/continue sites may reference the same %div, but
+# only one fires on any given execution path.
+type Loop:
+    data: Nil
+    has trait Handler<Diverge>
+    has trait Affine
 
 op for<lower_bound: Index, upper_bound: Index>(initial_arguments: Span) -> Nil:
     block body
@@ -9,5 +20,5 @@ op while(initial_arguments: Span) -> Nil:
 op if(condition: Index, then_arguments: Span, else_arguments: Span):
     block then_body
     block else_body
-op break() -> Never
-op continue() -> Never
+op break<loop_handler: Loop>(arguments: Span) -> Never
+op continue<loop_handler: Loop>(arguments: Span) -> Never

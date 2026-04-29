@@ -11,6 +11,10 @@ from dgen.dialects.index import Index
 control_flow = Dialect("control_flow")
 
 @dataclass(eq=False)
+class Loop(Type):
+    ...
+
+@dataclass(eq=False)
 class ForOp(Op):
     lower_bound: Value[Index]
     upper_bound: Value[Index]
@@ -36,8 +40,13 @@ class IfOp(Op):
 
 @dataclass(eq=False)
 class BreakOp(Op):
+    loop_handler: Value[Loop]
+    arguments: Value
     type: Type = Never()
 
 @dataclass(eq=False)
 class ContinueOp(Op):
+    loop_handler: Value[Loop]
+    arguments: Value
     type: Type = Never()
+

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pycparser import c_ast
 
 import dgen
-from dgen.block import BlockArgument
+from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import algebra, control_flow, function
 from dgen.dialects.builtin import ChainOp, ExternOp, Never, Nil, String
 from dgen.dialects.function import Function as FunctionType
@@ -65,6 +65,22 @@ class Scope:
         self.local_writes: set[str] = set()
         self._parent = parent
         self.captures: list[dgen.Value] = []
+        # %div BlockParameter for the enclosing loop, set on the loop
+        # body's scope. ``resolve_div`` cascades captures across
+        # intermediate scopes (e.g. break inside an if inside a loop).
+        self._div: BlockParameter | None = None
+
+    def set_div(self, div: BlockParameter) -> None:
+        self._div = div
+
+    def resolve_div(self) -> BlockParameter:
+        if self._div is not None:
+            return self._div
+        if self._parent is None:
+            raise LoweringError("'break' or 'continue' outside of loop")
+        div = self._parent.resolve_div()
+        self.capture(div)
+        return div
 
     def bind(self, name: str, value: dgen.Value) -> None:
         """Bind an immutable name (e.g. an extern function)."""
@@ -425,11 +441,15 @@ class Parser:
 
     @_stmt(c_ast.Break)
     def _break_statement(self, node: c_ast.Break, scope: Scope) -> dgen.Value:
-        return control_flow.BreakOp()
+        return control_flow.BreakOp(
+            loop_handler=scope.resolve_div(), arguments=pack([])
+        )
 
     @_stmt(c_ast.Continue)
     def _continue_statement(self, node: c_ast.Continue, scope: Scope) -> dgen.Value:
-        return control_flow.ContinueOp()
+        return control_flow.ContinueOp(
+            loop_handler=scope.resolve_div(), arguments=pack([])
+        )
 
     @_stmt(c_ast.Compound)
     def _compound_statement(
@@ -597,8 +617,11 @@ class Parser:
             result=self._to_bool(cond_val), captures=cond_scope.captures
         )
 
+        div = BlockParameter(name="div", type=control_flow.Loop())
         body_scope = scope.child()
+        body_scope.set_div(div)
         body_block = self._block_from(node.stmt, body_scope)
+        body_block.parameters.append(div)
 
         empty = pack([])
         while_op = control_flow.WhileOp(
@@ -631,7 +654,9 @@ class Parser:
             cond_block = dgen.Block(result=c_int(32).constant(1))
 
         # Body block: body statements + update appended.
+        div = BlockParameter(name="div", type=control_flow.Loop())
         body_scope = scope.child()
+        body_scope.set_div(div)
         body = self._body_result(node.stmt, body_scope)
         if node.next is not None:
             update = self._statement(node.next, body_scope)
@@ -642,6 +667,7 @@ class Parser:
         body_block = dgen.Block(
             result=ChainOp(lhs=nil, rhs=body, type=Nil()),
             captures=body_scope.captures,
+            parameters=[div],
         )
 
         empty = pack([])

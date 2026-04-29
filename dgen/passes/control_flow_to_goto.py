@@ -64,6 +64,24 @@ The body has no block args; the merge sits at the exit, not at body
 entry. Codegen's ``emit_region_op`` emits the body at ``%{name}:`` and
 the exit phi at ``%{exit_param.name}:``; the same machinery emits loop
 phis at the body block.
+
+## break / continue
+
+A ``for`` or ``while`` body may declare a ``%div: control_flow.Loop``
+BlockParameter. Because ``Loop`` declares ``Handler<Diverge>`` and
+``Affine``, the framework's generic divergence detection and linearity
+verifier classify ``break<%div>(args)`` and ``continue<%div>(args)``
+without bespoke wiring.
+
+Lowering is the trivial substitution that the framework's
+``replace_uses_of`` cascade was designed for: each ``BreakOp`` whose
+``loop_handler`` operand is the body's ``%div`` becomes
+``goto.branch<%exit>(arguments)``; each matching ``ContinueOp`` becomes
+``goto.branch<%self>(arguments)``. ``%div`` is dropped from the body
+parameters — its sole purpose was to be a discriminator. Marks whose
+``loop_handler`` is some *outer* loop's ``%div`` are left for that loop
+to resolve, so labeled-style break/continue across nested loops works
+out of the box.
 """
 
 from __future__ import annotations
@@ -81,37 +99,54 @@ from dgen.passes.pass_ import Pass, lowering_for
 
 def _resolve_jump_markers(
     block: dgen.Block,
+    div_param: BlockParameter | None,
     self_param: BlockParameter,
     exit_param: BlockParameter,
 ) -> set[BlockParameter]:
-    """Replace BreakOp/ContinueOp with goto.BranchOp targeting exit/self.
+    """Replace BreakOp/ContinueOp keyed on *div_param* with goto.BranchOp.
 
-    Recurses into child blocks but skips nested WhileOp/ForOp bodies —
-    inner loops resolve their own markers when they are lowered.
+    A break/continue is resolved by *this* loop only when its
+    ``loop_handler`` operand is the body's own ``%div`` BlockParameter
+    (``div_param``). Marks targeting an outer loop's ``%div`` are left
+    alone; the outer loop's lowering walk will pick them up.
+
+    Recurses into ALL child block bodies (including nested loop bodies)
+    so labeled breaks reaching past intermediate loops are still resolved.
+
     Returns the set of parameters that needed to be captured.
     """
     needed: set[BlockParameter] = set()
+    if div_param is None:
+        return needed
     for v in block.values:
-        if isinstance(v, control_flow.BreakOp):
+        if isinstance(v, control_flow.BreakOp) and v.loop_handler is div_param:
             block.replace_uses_of(
-                v, goto.BranchOp(target=exit_param, arguments=pack([]))
+                v, goto.BranchOp(target=exit_param, arguments=v.arguments)
             )
             needed.add(exit_param)
-        elif isinstance(v, control_flow.ContinueOp):
+        elif isinstance(v, control_flow.ContinueOp) and v.loop_handler is div_param:
             block.replace_uses_of(
-                v, goto.BranchOp(target=self_param, arguments=pack([]))
+                v, goto.BranchOp(target=self_param, arguments=v.arguments)
             )
             needed.add(self_param)
-        elif not isinstance(v, (control_flow.WhileOp, control_flow.ForOp)):
+        else:
             for _, child_block in v.blocks:
                 child_needed = _resolve_jump_markers(
-                    child_block, self_param, exit_param
+                    child_block, div_param, self_param, exit_param
                 )
                 for param in child_needed:
                     if param not in child_block.captures:
                         child_block.captures.append(param)
                 needed |= child_needed
     return needed
+
+
+def _extract_div_param(body: dgen.Block) -> BlockParameter | None:
+    """Pop the body's ``%div: Loop`` parameter, if any. Returns None if absent."""
+    for i, p in enumerate(body.parameters):
+        if isinstance(p.type, control_flow.Loop):
+            return body.parameters.pop(i)
+    return None
 
 
 def redirect_to_exit(block: dgen.Block, exit_param: BlockParameter) -> None:
@@ -236,6 +271,7 @@ class ControlFlowToGoto(Pass):
             body_block_result = goto.BranchOp(
                 target=header_self, arguments=pack([next_iv])
             )
+        div_param = _extract_div_param(op.body)
         body_block = dgen.Block(
             result=body_block_result,
             args=[iv],
@@ -247,7 +283,7 @@ class ControlFlowToGoto(Pass):
             body=body_block,
         )
 
-        _resolve_jump_markers(body_block, header_self, header_exit)
+        _resolve_jump_markers(body_block, div_param, header_self, header_exit)
 
         # Header: compare, branch to body or %exit.
         hi = Index().constant(op.upper_bound.__constant__.to_json())
@@ -315,6 +351,7 @@ class ControlFlowToGoto(Pass):
             )
             body_block_result = goto.BranchOp(target=header_self, arguments=body_result)
 
+        div_param = _extract_div_param(op.body)
         body_block = dgen.Block(
             result=body_block_result,
             args=body_args,
@@ -326,7 +363,7 @@ class ControlFlowToGoto(Pass):
             body=body_block,
         )
 
-        _resolve_jump_markers(body_block, header_self, header_exit)
+        _resolve_jump_markers(body_block, div_param, header_self, header_exit)
 
         # --- Header: remap condition block args, append conditional branch ---
         for orig, new in zip(op.condition.args, header_args):
