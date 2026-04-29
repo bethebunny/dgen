@@ -262,14 +262,43 @@ def verify_constraints(root: dgen.Value) -> None:
 # ---------------------------------------------------------------------------
 #
 # Implements the per-block typing-context algorithm in docs/linear_types.md.
-# Γ : Value → {AVAILABLE, CONSUMED} for the substructural values in scope
-# at each point during a topological walk of the block. Each block is
-# verified independently — child blocks recurse with their own Γ_in and
-# the parent's Γ proceeds without consulting the children's internal state.
+# Γ : Value → {AVAILABLE, MAYBE_AVAILABLE, CONSUMED} for the substructural
+# values in scope at each point during a topological walk of the block.
+# Each block is verified independently — child blocks recurse with their
+# own Γ_in and the parent's Γ proceeds without consulting the children's
+# internal state.
+#
+# Block-holding ops are conservative: any op with owned blocks is treated
+# as having unknown semantics today (see ``_has_known_block_semantics``).
+# A capture into such an op transitions the source value to
+# ``MAYBE_AVAILABLE`` in the parent's Γ rather than ``CONSUMED`` — the
+# inner block may or may not have actually used the value, so neither
+# "definitely consumed" nor "definitely still available" is right. At
+# the parent's exit check ``MAYBE_AVAILABLE`` is treated permissively
+# (no leak). Once an op declares its block-execution contract precisely
+# the verifier can transition to ``CONSUMED`` for ops known to consume
+# captured values.
 
 
 _AVAILABLE = "available"
+_MAYBE_AVAILABLE = "maybe_available"
 _CONSUMED = "consumed"
+
+
+def _has_known_block_semantics(op: dgen.Op) -> bool:
+    """Whether the verifier knows how *op* uses its captured-into-child
+    substructural values.
+
+    Today: always ``False`` for any op with owned blocks. This is the
+    conservative shim that keeps the verifier sound while we don't have
+    per-op linearity contracts. Ops without blocks (``raise``, ``branch``,
+    chains, etc.) don't reach this codepath at all.
+
+    See `TODO.md` (Type system / effects) for the path forward — likely a
+    trait or method on ``Op`` that ops opt into when they want precise
+    treatment.
+    """
+    return False
 
 
 def _consume_at(
@@ -283,7 +312,10 @@ def _consume_at(
 
     Lookup failure means "not in scope", per the doc — out-of-scope use
     is the closed-block verifier's responsibility, not ours. Re-consume
-    raises ``DoubleConsumeError``.
+    of a ``CONSUMED`` value raises ``DoubleConsumeError``.
+    ``MAYBE_AVAILABLE → CONSUMED`` is permitted: the verifier doesn't
+    know whether the inner block already consumed the value, and the
+    conservative reading is "trust the explicit consume here."
     """
     if value not in gamma:
         return
@@ -296,16 +328,46 @@ def _consume_at(
     gamma[value] = _CONSUMED
 
 
+def _capture_into_unknown(
+    gamma: dict[dgen.Value, str],
+    value: dgen.Value,
+    *,
+    by: dgen.Value,
+    root: dgen.Value,
+) -> None:
+    """Transition a substructural value into ``MAYBE_AVAILABLE`` because
+    it was captured into the body of an op with unknown block semantics.
+
+    ``AVAILABLE → MAYBE_AVAILABLE``, ``MAYBE_AVAILABLE → MAYBE_AVAILABLE``,
+    ``CONSUMED → reject`` (you can't capture an already-consumed value).
+    Multiple sibling unknown ops capturing the same value all stay
+    ``MAYBE_AVAILABLE``: this is what makes ``goto.label`` /
+    ``goto.conditional_branch`` patterns work — both branches of an if
+    capture ``%exit``, and the verifier doesn't double-charge.
+    """
+    if value not in gamma:
+        return
+    if gamma[value] is _CONSUMED:
+        raise DoubleConsumeError(
+            f"{type(value).__name__} %{value.name} ({value.linearity.value}) "
+            f"captured into {type(by).__name__} %{by.name} after being "
+            f"consumed\n\n" + _annotated_asm(root, value)
+        )
+    if gamma[value] is _AVAILABLE:
+        gamma[value] = _MAYBE_AVAILABLE
+
+
 def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
     """Verify the typing-context invariants on a single block.
 
     Initial Γ_in: block parameters, captures, and runtime args, all
     ``AVAILABLE`` (filtered to substructural). Walk ``block.values`` in
-    topological order, transitioning each substructural operand /
-    parameter / capture-into-child the op references to ``CONSUMED``.
-    Each child block recurses independently. At block exit, any
-    ``LINEAR`` value still ``AVAILABLE`` and not ``block.result`` is a
-    leak.
+    topological order; for each op, transition its substructural
+    operand/parameter consumes through ``_consume_at``, and any captures
+    into owned-but-unknown-semantics children through
+    ``_capture_into_unknown``. Each child block recurses with its own
+    Γ_in. At block exit, any ``LINEAR`` value still ``AVAILABLE`` (and
+    not ``block.result``) is a leak; ``MAYBE_AVAILABLE`` is permissive.
     """
     gamma: dict[dgen.Value, str] = {}
     for source in (block.args, block.parameters, block.captures):
@@ -321,13 +383,18 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
             for _, dep in source:
                 if dep.is_affine_or_linear:
                     _consume_at(gamma, dep, by=v, root=root)
-        # Captures into child blocks consume once at the parent op,
-        # deduplicated across alternative children (branch-composition
-        # rule).
-        for cap in {
-            c for _, child in v.blocks for c in child.captures if c.is_affine_or_linear
-        }:
-            _consume_at(gamma, cap, by=v, root=root)
+        # Captures into child blocks. Today every block-holding op is
+        # treated as unknown-semantics — the captured value transitions
+        # to ``MAYBE_AVAILABLE`` rather than ``CONSUMED``. Captures dedup
+        # across alternative children of one op (branch-composition).
+        if v.blocks and not _has_known_block_semantics(v):
+            for cap in {
+                c
+                for _, child in v.blocks
+                for c in child.captures
+                if c.is_affine_or_linear
+            }:
+                _capture_into_unknown(gamma, cap, by=v, root=root)
         # Each child block verified independently with its own Γ_in.
         for _, child in v.blocks:
             _verify_linearity_block(child, root)
@@ -336,10 +403,12 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
             gamma[v] = _AVAILABLE
 
     # Exit check: block.result is "yielded" to the surrounding scope —
-    # being the block's output IS the consumption. Any other Linear
-    # still Available is a leak; Affine may stay Available.
+    # being the block's output IS the consumption. ``MAYBE_AVAILABLE``
+    # is treated permissively (the inner block may already have
+    # consumed it). Anything still ``AVAILABLE`` and ``LINEAR`` (and
+    # not the block result) is a leak.
     for value, state in gamma.items():
-        if state is _CONSUMED:
+        if state is not _AVAILABLE:
             continue
         if value is block.result:
             continue

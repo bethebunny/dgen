@@ -1,19 +1,21 @@
-from builtin import Nil, Span, Diverge, Handler
+from builtin import Nil, Span, Diverge, Handler, Affine
 
 # A Label is the evidence for a non-local control transfer: branching
 # to it abandons the current dataflow. Declaring Handler<Diverge> here
 # lets generic divergence detection (see docs/control-flow.md) recognize
 # any op that consumes a Label as potentially divergent.
 #
-# Labels are NOT marked Affine even though they are divergence handlers.
-# A label is a reentrant continuation: a region's `%self` is branched to
-# once per loop iteration, and many branch sites can target the same
-# `%exit`. The simple "consumed at most once" Affine rule does not fit;
-# a control-flow-sensitive linearity discipline is left as future work
-# (see TODO.md, "Type system / effects").
+# Affine: a label may be branched to many times in the IR (a region's
+# %self is targeted by every back-edge; many sites can target the same
+# %exit), but only one branch fires per execution path. The linearity
+# verifier handles this via the unknown-block-op MaybeAvailable state —
+# label-creating ops capture their parent labels into unknown-semantics
+# bodies, so multi-site captures don't trip double-consume. See
+# `docs/linear_types.md`.
 type Label:
     data: Nil
     has trait Handler<Diverge>
+    has trait Affine
 
 op region(initial_arguments: Span) -> Label:
     block body

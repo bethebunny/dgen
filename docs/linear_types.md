@@ -35,9 +35,12 @@ correctness is verified separately by the per-block algorithm.
 
 ## Context
 
-`Γ : Var → State` where State ∈ {Available, Consumed}.
+`Γ : Var → State` where State ∈ {Available, MaybeAvailable, Consumed}.
 
 Lookup failure means "not in scope."
+
+The third state is for ops the verifier doesn't yet have a precise contract
+for; see "Block-holding ops" below.
 
 ## Per-block verification
 
@@ -56,7 +59,8 @@ Algorithm:
 
 2. For each op:
    - For each substructural operand consumed by the op: require Γ shows it
-     `Available`; transition to `Consumed`. Reject on double-consume.
+     `Available` or `MaybeAvailable`; transition to `Consumed`. Reject on
+     double-consume.
    - For each substructural result produced by the op: bind as `Available`.
    - If the op holds child blocks: verify each child block independently
      (recursively), receiving pass/fail. The parent's Γ is updated using
@@ -64,7 +68,8 @@ Algorithm:
 
 3. At the root op, apply the exit check:
    - For each `Linear` value in Γ as `Available`: reject (leak).
-   - For each `Affine` value in Γ as `Available`: ok.
+   - For each `Linear` value in Γ as `MaybeAvailable`: permissive — ok.
+   - For each `Affine` value in Γ: ok in any state.
    - For each value in Γ as `Consumed`: ok.
 
 4. Pass.
@@ -75,8 +80,8 @@ The op's signature declares how its operands and captures flow into its child
 blocks and how its results are produced.
 
 For each child block:
-- Captures from the parent's Γ are consumed at op invocation (transition to
-  `Consumed` in parent).
+- Captures from the parent's Γ are accounted at op invocation according to
+  the op's signature (see below).
 - The child block is verified independently with Γ_in containing its
   parameters and captures as `Available`.
 
@@ -88,30 +93,42 @@ The verifier does not consult the children's internal Γ. Each child block is
 locally responsible for its own correctness, including consuming its captured
 linear values by its root.
 
-## Unknown ops
+### Unknown block-holding ops
 
-An op without a declared contract is handled conservatively:
+An op with owned blocks whose block-execution contract isn't known to the
+verifier is handled conservatively. Today every op with blocks falls in this
+category — there is no per-op contract framework yet, so the predicate
+`_has_known_block_semantics(op)` returns `False` unconditionally (see
+`dgen/ir/verification.py`). When that lands, a future fix.
 
-- Captures into its children are still known (captures are syntactic). Each
-  captured-by-value linear value transitions to `Consumed` in the parent.
-- Each child block is verified normally with its captures as `Available`. The
-  child's local correctness is checked.
-- For each substructural operand of the op: in the absence of a declaration,
-  treat as consumed (transition to `Consumed` in parent).
-- For each substructural result the op produces: bind as `Available` in
-  parent.
-- The op's totality, if undeclared, defaults to `partial`.
+For each capture into an unknown op's child block:
 
-This is sound (never accepts a leaking program) but may reject programs that
-would be accepted under a more precise contract. The remedy is to declare the
-op's contract, not to make the verifier guess.
+- `Available → MaybeAvailable`
+- `MaybeAvailable → MaybeAvailable`
+- `Consumed → reject` (cannot capture an already-consumed value)
+
+`MaybeAvailable` says "the inner block might or might not have actually
+consumed this." Multiple sibling unknown ops capturing the same value all
+park at `MaybeAvailable` rather than each charging a `Consumed` transition.
+This is what lets the goto-style if/else lower without tripping double-consume:
+`%then` and `%else` are sibling `goto.label` ops both capturing `%exit`, and
+neither op individually can be said to "definitely consume" `%exit` — only
+the runtime path picks one.
+
+Direct operand consumes still transition `MaybeAvailable → Consumed`: if a
+known-semantics op afterwards uses the value as a plain operand, the verifier
+trusts that explicit consume. The model is permissive on the unknown side
+and precise on the known side; tightening happens by giving more ops their
+contracts.
 
 ## Branch composition (at-most-once-alternative ops)
 
 For an op like `if` whose alternatives are mutually exclusive:
 
-- Captures into multiple alternative children consume the source value once
-  from the parent's Γ at op invocation, not once per alternative.
+- Captures into multiple alternative children of the same op are deduplicated
+  at the parent — they contribute one transition (`Available → MaybeAvailable`
+  while the op is unknown, or `Available → Consumed` when its contract is
+  known and says so), not one per alternative.
 - Each alternative child is verified independently with the captured value
   as `Available` in its Γ_in.
 - Each alternative child is independently responsible for consuming its
@@ -146,10 +163,15 @@ totality.
 
 ## Failure modes
 
-- Double consume.
-- Linear leak (Linear value `Available` at block root).
+- Double consume (consume of `Consumed`, or capture-into-unknown of
+  `Consumed`).
+- Linear leak (Linear value `Available` at block root and not the
+  block result).
 - Loop carry violation (non-carry value escapes body, or carry doesn't
   roundtrip with fresh values at body root).
+
+`MaybeAvailable` at block exit is never a failure on its own — it's
+permissive by design.
 
 ## Locality
 

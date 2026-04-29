@@ -7,8 +7,7 @@ import number
 %while_header0 : Nil = goto.region([%zero]) body<%self: goto.Label, %exit0: goto.Label>(%wh0_i: index.Index):
     %while_body0 : goto.Label = goto.label([]) body(%wb0_i: index.Index) captures(%self, %exit0):
         %0 : Nil = goto.branch<%self>([])
-        %1 : Nil = goto.branch<%self>([%0])
 
     %ten : index.Index = 10
     %cmp : number.Boolean = algebra.less_than(%wh0_i, %ten)
-    %2 : Nil = goto.conditional_branch<%while_body0, %exit0>(%cmp, [%wh0_i], [])
+    %1 : Nil = goto.conditional_branch<%while_body0, %exit0>(%cmp, [%wh0_i], [])
