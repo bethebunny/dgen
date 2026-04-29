@@ -345,7 +345,7 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                     ctx.param_to_owner[self_param] = op
                     ctx.self_params.add(self_param)
                     _walk(op.body, op.name)
-                    current_block = exit_param.name
+                    current_block = ctx.tracker.name(exit_param)
                 else:
                     # Labels declare no parameters; they capture the
                     # enclosing region's %self/%exit when needed.
@@ -537,13 +537,14 @@ def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
     has no void phi.
     """
     _self_param, exit_param = op.body.parameters
+    exit_name = _ctx().tracker.name(exit_param)
     yield f"  br label %{op.name}"
     yield f"{op.name}:"
     yield from _emit_block_arg_phis(op)
     terminated = yield from emit_linearized(op.body)
     if not terminated:
-        yield f"  br label %{exit_param.name}"
-    yield f"{exit_param.name}:"
+        yield f"  br label %{exit_name}"
+    yield f"{exit_name}:"
     if not isinstance(constant(op.type), builtin.Nil):
         yield from _emit_exit_phi(op, _exit_phi_name(op), llvm_type(op.type))
 
