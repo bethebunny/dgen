@@ -25,8 +25,8 @@ from dgen.dialects import (
 )
 from dgen.ir.traversal import all_values
 from dgen.layout import Layout
-from dgen.builtins import ConstantOp, PackOp, pack, unpack
-from dgen.dialects.builtin import String
+from dgen.builtins import ConstantOp, PackOp, pack
+from dgen.dialects.builtin import Array, String
 from dgen.dialects.function import Function
 from dgen.memory import Memory
 from dgen.type import Constant, TypeType, Value, constant
@@ -192,16 +192,36 @@ class CodegenSlotTracker:
         self._used.add(name)
         return name
 
+    def fresh(self) -> str:
+        """Allocate an anonymous ``_N`` name not bound to any Value.
+
+        Used by emitters that produce intermediate SSA values (e.g. the
+        ``insertvalue`` chain that builds a PackOp's aggregate, or
+        ``extractvalue`` ops materialising body args from a bundle).
+        """
+        name = f"_{self._counter}"
+        self._counter += 1
+        self._used.add(name)
+        return name
+
     def __getitem__(self, value: dgen.Value) -> str:
         return self._slots[value]
 
 
 @dataclass
 class Predecessor:
-    """One incoming edge to a label/region block."""
+    """One incoming edge to a label/region block.
+
+    ``bundle`` is the single value being passed to the target — either a
+    ``PackOp`` constructed inline (``[%a, %b]``) or any other value whose
+    runtime shape is the bundle (e.g. a ``Tuple`` returned by a function
+    call). Codegen materialises the target's body args by either taking
+    ``bundle`` directly (1-element bundles short-circuit to the inner
+    value) or by ``extractvalue``-ing each field from the aggregate.
+    """
 
     source_name: str  # LLVM basic block name where the branch originates
-    args: list[dgen.Value]
+    bundle: dgen.Value
 
 
 @dataclass
@@ -215,6 +235,33 @@ class EmitContext:
         default_factory=dict
     )
     self_params: set[dgen.Value] = field(default_factory=set)
+
+
+def _is_empty_bundle(bundle: dgen.Value) -> bool:
+    """A bundle is empty when it's a ``PackOp`` with zero values; runtime
+    aggregates (Tuple from a function call, etc.) are never "empty" in this
+    sense — the IR can't even spell that — so they always carry data."""
+    return isinstance(bundle, PackOp) and not bundle.values
+
+
+def _bundle_llvm_type(arg_types: list) -> str:
+    """LLVM aggregate type for a list of body arg types.
+
+    - 0 args: ``"void"`` (no phi will be emitted; the type is informational).
+    - 1 arg:  the scalar LLVM type of that arg — bundles short-circuit to a
+      scalar phi at body entry, matching the pre-aggregate IR shape for
+      single-arg loops/regions.
+    - N args: ``"{ T0, T1, ... }"`` — LLVM struct merging via aggregate phi
+      and ``extractvalue`` per body arg.
+    """
+    fields = [llvm_type(t) for t in arg_types]
+    match fields:
+        case []:
+            return "void"
+        case [single]:
+            return single
+        case _:
+            return "{ " + ", ".join(fields) + " }"
 
 
 def _resolve_target(target: dgen.Value, ctx: EmitContext) -> dgen.Value:
@@ -241,11 +288,11 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
         ctx.tracker.track_name(arg)
 
     def _record_branch(
-        target: dgen.Value, args: list[dgen.Value], current_block: str
+        target: dgen.Value, bundle: dgen.Value, current_block: str
     ) -> None:
         resolved = _resolve_target(target, ctx)
         ctx.predecessors.setdefault(resolved, []).append(
-            Predecessor(source_name=current_block, args=args)
+            Predecessor(source_name=current_block, bundle=bundle)
         )
 
     def _walk(block: dgen.Block, current_block: str) -> None:
@@ -253,22 +300,24 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
             ctx.tracker.track_name(op)
 
             if isinstance(op, goto.BranchOp):
-                _record_branch(op.target, unpack(op.arguments), current_block)
+                _record_branch(op.target, op.arguments, current_block)
             elif isinstance(op, goto.ConditionalBranchOp):
-                _record_branch(op.true_target, unpack(op.true_arguments), current_block)
-                _record_branch(
-                    op.false_target, unpack(op.false_arguments), current_block
-                )
+                _record_branch(op.true_target, op.true_arguments, current_block)
+                _record_branch(op.false_target, op.false_arguments, current_block)
 
             if isinstance(op, (goto.RegionOp, goto.LabelOp)):
                 for arg in op.body.args:
                     ctx.tracker.track_name(arg)
 
-                # Record fall-through entry as a predecessor.
-                init_args = unpack(op.initial_arguments)
-                if op.body.args and init_args:
+                # Record fall-through entry as a predecessor when the body
+                # actually consumes a bundle and the bundle is non-empty.
+                # (An empty inline ``pack([])`` carries nothing — labels reach
+                # their body args via explicit branches in that case.)
+                if op.body.args and not _is_empty_bundle(op.initial_arguments):
                     ctx.predecessors.setdefault(op, []).append(
-                        Predecessor(source_name=current_block, args=init_args)
+                        Predecessor(
+                            source_name=current_block, bundle=op.initial_arguments
+                        )
                     )
 
                 if isinstance(op, goto.RegionOp):
@@ -305,11 +354,15 @@ def _ctx() -> EmitContext:
         return ctx
 
 
-# Ops whose results are structural / have no LLVM SSA value.
+# Ops whose results are structural / have no LLVM SSA value, or whose
+# emitter manages its own ``%name = `` assignment (because the emission
+# spans multiple lines starting with a prologue, e.g. ``extractvalue``
+# ops materialising args from a bundle before the actual call).
 _NO_ASSIGN_OPS: tuple[type[dgen.Op], ...] = (
     goto.RegionOp,
     goto.LabelOp,
     function.FunctionOp,
+    function.CallOp,
     goto.BranchOp,
     goto.ConditionalBranchOp,
     memory.StoreOp,
@@ -317,6 +370,7 @@ _NO_ASSIGN_OPS: tuple[type[dgen.Op], ...] = (
     ConstantOp,
     builtin.ChainOp,
     builtin.ExternOp,
+    llvm.CallOp,
 )
 
 
@@ -382,29 +436,66 @@ def _pred_block_name(pred: Predecessor) -> str:
     return pred.source_name
 
 
-def _emit_phi(target: dgen.Value, name: str, ty: str, arg_idx: int) -> Iterator[str]:
-    """Emit a single phi at *target*, sourcing ``pred.args[arg_idx]`` from
-    each predecessor recorded against *target*. The void check exists
-    because ``Nil``-typed phi inputs have no LLVM representation."""
+def _emit_bundle_phi(target: dgen.Value, name: str, ty: str) -> Iterator[str]:
+    """Emit a single phi at *target* merging predecessor *bundles*.
+
+    ``ty`` is the bundle's LLVM type (scalar for 1-element bundles, struct
+    for multi-element). Each predecessor contributes ``value_reference`` of
+    its bundle — which itself short-circuits to the scalar for 1-element
+    PackOp bundles, so the phi sources line up with ``ty`` whether the
+    bundle was inline or a runtime aggregate.
+    """
     if ty == "void":
         return
     preds = _ctx().predecessors.get(target, [])
     phi_parts = [
-        f"[ {value_reference(pred.args[arg_idx])}, %{_pred_block_name(pred)} ]"
+        f"[ {value_reference(pred.bundle)}, %{_pred_block_name(pred)} ]"
         for pred in preds
-        if arg_idx < len(pred.args)
     ]
     if phi_parts:
         yield f"  %{name} = phi {ty} {', '.join(phi_parts)}"
 
 
 def _emit_block_arg_phis(op: goto.RegionOp | goto.LabelOp) -> Iterator[str]:
-    """Emit one phi per ``op.body.args`` entry — fed by initial_arguments
-    (fall-through) and back-edges (branches to %self for regions, or
-    branches to the label op directly)."""
+    """Emit phi(s) at body entry materialising ``op.body.args``.
+
+    - 0 args: nothing to emit.
+    - 1 arg: scalar phi over the single body arg's type — same shape as the
+      pre-aggregate IR.
+    - N args: one aggregate phi merging the bundle, then ``extractvalue``
+      per body arg.
+    """
+    args = op.body.args
+    if not args:
+        return
     tracker = _ctx().tracker
-    for arg_idx, arg in enumerate(op.body.args):
-        yield from _emit_phi(op, tracker.track_name(arg), llvm_type(arg.type), arg_idx)
+    arg_types = [arg.type for arg in args]
+    bundle_ty = _bundle_llvm_type(arg_types)
+    if len(args) == 1:
+        # Scalar shortcut: the body arg IS the bundle phi.
+        yield from _emit_bundle_phi(op, tracker.track_name(args[0]), bundle_ty)
+        return
+    # Multi-arg: aggregate phi, then extractvalue per arg.
+    bundle_name = tracker.fresh()
+    yield from _emit_bundle_phi(op, bundle_name, bundle_ty)
+    for i, arg in enumerate(args):
+        elem_ty = llvm_type(arg.type)
+        if elem_ty == "void":
+            # Nil-typed body args have no LLVM value to extract; the
+            # consumer of the arg must already handle the void case.
+            continue
+        yield (
+            f"  %{tracker.track_name(arg)} = extractvalue {bundle_ty} "
+            f"%{bundle_name}, {i}"
+        )
+
+
+def _emit_exit_phi(op: goto.RegionOp, name: str, ty: str) -> Iterator[str]:
+    """Exit phi for a region — merges 1-element ``branch<%exit>([%result])``
+    bundles into the region's scalar result. Each predecessor's bundle is a
+    1-element PackOp; ``value_reference`` short-circuits to the inner value,
+    so the phi sees scalars directly."""
+    yield from _emit_bundle_phi(op.body.parameters[1], name, ty)
 
 
 def _exit_phi_name(op: goto.RegionOp) -> str:
@@ -439,7 +530,7 @@ def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
         yield f"  br label %{exit_param.name}"
     yield f"{exit_param.name}:"
     if not isinstance(constant(op.type), builtin.Nil):
-        yield from _emit_phi(exit_param, _exit_phi_name(op), llvm_type(op.type), 0)
+        yield from _emit_exit_phi(op, _exit_phi_name(op), llvm_type(op.type))
 
 
 @emitter_for(goto.LabelOp)
@@ -479,12 +570,52 @@ def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
     yield "}"
 
 
-@emitter_for(PackOp)
 @emitter_for(ConstantOp)
 @emitter_for(builtin.ChainOp)
 @emitter_for(builtin.ExternOp)
 def noop(op: dgen.Op) -> Iterator[str]:
     return ()
+
+
+def _is_type_metadata_pack(op: PackOp) -> bool:
+    """A PackOp whose elements are themselves types — e.g. the ``types``
+    parameter of a ``Tuple<types>`` or the ``arguments`` of a ``Function``
+    type. These exist purely as compile-time metadata of Type instances
+    and have no runtime LLVM representation."""
+    pack_type = op.type
+    if isinstance(pack_type, Array):
+        return isinstance(constant(pack_type.element_type), TypeType)
+    # Heterogeneous packs (Tuple-typed) hold mixed runtime types; types-only
+    # lists are uniformly TypeType-typed and so always come out homogeneous.
+    return False
+
+
+@emitter_for(PackOp)
+def emit_pack_op(op: PackOp) -> Iterator[str]:
+    """Build the bundle's LLVM aggregate via an ``insertvalue`` chain.
+
+    - Type-metadata packs (``Array<TypeType, n>``): nothing emitted; these
+      are compile-time data inside Type instances.
+    - 0 / 1 values: nothing emitted. ``value_reference`` short-circuits a
+      1-element pack to its inner value, and an empty pack should never be
+      referenced.
+    - N values: chain ``%intermediate_i = insertvalue {...} prev, T_i %v_i, i``,
+      with the last assignment binding the PackOp's tracker name so
+      consumers can reference the aggregate.
+    """
+    if len(op.values) < 2 or _is_type_metadata_pack(op):
+        return
+    ctx = _ctx()
+    bundle_ty = _bundle_llvm_type([v.type for v in op.values])
+    op_name = ctx.tracker.track_name(op)
+    cur = "undef"
+    last_idx = len(op.values) - 1
+    for i, val in enumerate(op.values):
+        target = op_name if i == last_idx else ctx.tracker.fresh()
+        yield (
+            f"  %{target} = insertvalue {bundle_ty} {cur}, {typed_reference(val)}, {i}"
+        )
+        cur = f"%{target}"
 
 
 def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
@@ -520,6 +651,17 @@ def value_reference(v: dgen.Value) -> str:
         return f"load {ty}, ptr @{sym}"
     if isinstance(v, function.FunctionOp) and v.name:
         return f"@{v.name}"
+    # PackOp short-circuits: a 1-element pack is equivalent to its inner
+    # value at the LLVM level (no aggregate constructed); a multi-element
+    # pack has been emitted as an ``insertvalue`` chain whose final SSA
+    # name is the tracker's name for the PackOp.
+    if isinstance(v, PackOp):
+        if len(v.values) == 1:
+            return value_reference(v.values[0])
+        if not v.values:
+            raise ValueError(
+                "value_reference: empty PackOp has no LLVM value to reference"
+            )
     # A region's value is the exit phi (named by ``_exit_phi_name``) when
     # its type is non-Nil. Nil-typed regions don't produce a value at the
     # LLVM level — referencing one is a usage error.
@@ -671,9 +813,48 @@ def emit_extract_value(op: llvm.ExtractValueOp) -> Iterator[str]:
 # ---------------------------------------------------------------------------
 
 
+def _extract_call_args(
+    bundle: dgen.Value, arg_types: list
+) -> tuple[list[str], str]:
+    """Materialise positional call args from a bundle.
+
+    Returns ``(prologue_lines, args_str)`` — prologue is any
+    ``extractvalue`` ops needed before the call, and ``args_str`` is the
+    comma-joined typed argument list ready to slot into ``call ret @f(...)``.
+
+    A ``PackOp`` bundle short-circuits: we read its ``.values`` directly
+    and skip the round-trip through an aggregate. A runtime aggregate
+    (e.g. a ``Tuple`` returned by another call) emits ``extractvalue`` per
+    arg. The two paths produce LLVM-equivalent IR after opt.
+    """
+    if not arg_types:
+        return [], ""
+    if isinstance(bundle, PackOp):
+        # PackOp short-circuit: each value is already in scope, no extraction.
+        return [], ", ".join(typed_reference(v) for v in bundle.values)
+    bundle_ty = _bundle_llvm_type(arg_types)
+    bundle_ref = value_reference(bundle)
+    if len(arg_types) == 1:
+        # Scalar bundle: no extractvalue needed; the bundle IS the arg.
+        return [], f"{llvm_type(arg_types[0])} {bundle_ref}"
+    prologue: list[str] = []
+    typed_args: list[str] = []
+    tracker = _ctx().tracker
+    for i, t in enumerate(arg_types):
+        name = tracker.fresh()
+        prologue.append(f"  %{name} = extractvalue {bundle_ty} {bundle_ref}, {i}")
+        typed_args.append(f"{llvm_type(t)} %{name}")
+    return prologue, ", ".join(typed_args)
+
+
 @emitter_for(function.CallOp)
 def emit_function_call(op: function.CallOp) -> Iterator[str]:
-    args = ", ".join(typed_reference(v) for v in unpack(op.arguments))
+    callee_type = op.callee.type
+    assert isinstance(callee_type, function.Function)
+    arg_types = constant(callee_type.arguments)
+    assert isinstance(arg_types, list)
+    prologue, args = _extract_call_args(op.arguments, arg_types)
+    yield from prologue
     callee = op.callee
     ret = llvm_type(op.type)
     if isinstance(callee, builtin.ExternOp):
@@ -683,15 +864,48 @@ def emit_function_call(op: function.CallOp) -> Iterator[str]:
     else:
         # Function-pointer call — callee is an arbitrary SSA value.
         callee_ref = value_reference(callee)
-    yield f"  call {ret} {callee_ref}({args})"
+    if ret == "void":
+        yield f"  call void {callee_ref}({args})"
+    else:
+        name = _ctx().tracker.track_name(op)
+        yield f"  %{name} = call {ret} {callee_ref}({args})"
 
 
 @emitter_for(llvm.CallOp)
 def emit_llvm_call(op: llvm.CallOp) -> Iterator[str]:
-    args = ", ".join(typed_reference(v) for v in unpack(op.args))
+    # llvm.call carries no callee signature in its IR; derive arg types from
+    # the bundle itself. PackOp bundles expose their .values directly;
+    # runtime aggregates get their types from the Tuple/Array carrying them.
+    arg_types = _bundle_arg_types(op.args)
+    prologue, args = _extract_call_args(op.args, arg_types)
+    yield from prologue
     callee = constant(op.callee)
     ret = llvm_type(op.type)
-    yield f"  call {ret} @{callee}({args})"
+    if ret == "void":
+        yield f"  call void @{callee}({args})"
+    else:
+        name = _ctx().tracker.track_name(op)
+        yield f"  %{name} = call {ret} @{callee}({args})"
+
+
+def _bundle_arg_types(bundle: dgen.Value) -> list:
+    """Per-arg types for a bundle. PackOp reads each ``.values[i].type``;
+    a runtime aggregate uses the bundle's type parameters."""
+    if isinstance(bundle, PackOp):
+        return [v.type for v in bundle.values]
+    bundle_type = constant(bundle.type)
+    if isinstance(bundle_type, builtin.Tuple):
+        types_param = constant(bundle_type.types)
+        assert isinstance(types_param, list)
+        return types_param
+    if isinstance(bundle_type, builtin.Array):
+        n = constant(bundle_type.n)
+        assert isinstance(n, int)
+        return [bundle_type.element_type] * n
+    raise TypeError(
+        f"Cannot derive bundle arg types from {bundle_type!r}; expected "
+        f"PackOp / Tuple / Array shape"
+    )
 
 
 # ---------------------------------------------------------------------------
