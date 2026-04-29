@@ -4,5 +4,5 @@ import index
 import record
 
 %t : Tuple<[index.Index, index.Index]> = record.pack([index.Index(10), index.Index(20)])
-%r : index.Index = goto.region(%t) body<%_: goto.Label, %r_exit: goto.Label>(%x: index.Index, %y: index.Index):
+%r : index.Index = goto.region(%t) body<%0: goto.Label, %1: goto.Label>(%x: index.Index, %y: index.Index):
     %sum : index.Index = algebra.add(%x, %y)

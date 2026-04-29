@@ -12,16 +12,15 @@ block while preserving dgen's single-result-per-op invariant:
 It lowers to a ``goto.region`` that passes the tuple straight through as
 ``initial_arguments``:
 
-    %r : T = goto.region(%t) body<%_, %r_exit>(%a: T0, %b: T1, ...):
+    %r : T = goto.region(%t) body<%_0, %_1>(%a: T0, %b: T1, ...):
         <body>
 
 The codegen aggregate-bundle phi already extracts each body arg from
 the predecessor tuple via ``extractvalue``, so no per-field op is
 needed at the dgen level. The synthesized ``%self`` / ``%exit``
-parameters satisfy the goto.region shape; ``%self`` is named ``%_``
-because back-edges never fire (unpack has no loops). ``%exit`` carries
-the body's value via its phi (after ``NormalizeRegionTerminators``)
-and gets a unique name for codegen's basic-block label scheme.
+parameters satisfy the goto.region shape but have no source name —
+back-edges never fire (unpack has no loops) and the exit label gets
+a tracker-generated name at codegen.
 """
 
 from __future__ import annotations
@@ -38,10 +37,9 @@ class LowerBuiltin(Pass):
     @lowering_for(builtin.UnpackOp)
     def lower_unpack(self, op: builtin.UnpackOp) -> dgen.Value | None:
         body = op.body
-        exit_name = f"{op.name}_exit" if op.name else "unpack_exit"
         body.parameters = [
-            BlockParameter(name="_", type=goto.Label()),
-            BlockParameter(name=exit_name, type=goto.Label()),
+            BlockParameter(type=goto.Label()),
+            BlockParameter(type=goto.Label()),
             *body.parameters,
         ]
         return goto.RegionOp(
