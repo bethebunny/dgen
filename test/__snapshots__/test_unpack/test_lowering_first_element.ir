@@ -2,10 +2,6 @@ import goto
 import index
 import record
 
-%a : index.Index = 99
-%b : index.Index = 1
-%t : Tuple<[index.Index, index.Index]> = record.pack([%a, %b])
-%r : index.Index = goto.region([]) body<%_: goto.Label, %r_exit: goto.Label>() captures(%t):
-    %x : index.Index = record.get<index.Index(0)>(%t)
-    %y : index.Index = record.get<index.Index(1)>(%t)
+%t : Tuple<[index.Index, index.Index]> = record.pack([index.Index(99), index.Index(1)])
+%r : index.Index = goto.region(%t) body<%_: goto.Label, %r_exit: goto.Label>(%x: index.Index, %y: index.Index):
     %first : index.Index = chain(%x, %y)
