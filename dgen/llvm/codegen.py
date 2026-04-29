@@ -193,18 +193,21 @@ class CodegenSlotTracker:
         """Stable LLVM SSA name for *value*. Idempotent: same value → same name."""
         if value in self._slots:
             return self._slots[value]
-        if value.name is not None and value.name not in self._used:
-            name = value.name
-        else:
-            name = self.fresh()
+        name = self.fresh(prefix=value.name)
         self._slots[value] = name
-        self._used.add(name)
         return name
 
-    def fresh(self, prefix: str = "_") -> str:
-        """A unique SSA name not bound to any Value. Each call returns a new name."""
+    def fresh(self, prefix: str | None = None) -> str:
+        """A unique SSA name. If *prefix* is given and free, returns it as-is;
+        otherwise returns ``{prefix}{counter}`` (with ``_`` as the fallback
+        base when no prefix is given, since LLVM requires bare-numeric names
+        to appear in sequential textual order)."""
+        if prefix and prefix not in self._used:
+            self._used.add(prefix)
+            return prefix
+        base = prefix or "_"
         while True:
-            name = f"{prefix}{self._counter}"
+            name = f"{base}{self._counter}"
             self._counter += 1
             if name not in self._used:
                 self._used.add(name)
