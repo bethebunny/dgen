@@ -971,7 +971,7 @@ class LLVMCodegen:
 
         func_type = entry.type
         assert isinstance(func_type, function.Function)
-        input_types = [constant(v) for v in unpack(func_type.arguments)]
+        input_types = constant(func_type.arguments)
         result_type = constant(func_type.result_type)
         assert entry.name is not None
 
@@ -990,7 +990,7 @@ def _wrap_callable(callable_value: dgen.Value) -> function.FunctionOp:
     that forwards its args to the callable."""
     func_type = callable_value.type
     assert isinstance(func_type, function.Function)
-    arg_types = unpack(func_type.arguments)
+    arg_types = constant(func_type.arguments)
     result_type_value = func_type.result_type
     result_type = constant(result_type_value)
     args = [BlockArgument(name=f"a{i}", type=t) for i, t in enumerate(arg_types)]
