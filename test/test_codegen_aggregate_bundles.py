@@ -1,16 +1,17 @@
-"""Tests for the aggregate-bundle codegen path.
+"""Tests for the aggregate-tuple codegen path.
 
-The codegen treats bundles uniformly: a ``PackOp`` constructed inline (the
-common case from inline ``[a, b]`` IR syntax) and a runtime aggregate
-value (a ``Tuple`` returned by a function call, etc.) are both valid
-bundles. PackOps short-circuit; runtime aggregates use ``extractvalue``.
+Codegen treats every "list of N values" slot uniformly as a *tuple*: a
+``PackOp`` constructed inline emits as an ``insertvalue`` chain producing
+a real LLVM aggregate; a runtime aggregate (e.g. a ``Tuple`` returned by
+another call) flows through directly. Phi/extractvalue at consumers
+materialise individual values.
 
-These tests pin down the runtime-aggregate behaviour end-to-end.
+Tests pin down both shapes end-to-end and snapshot the LLVM IR so the
+emitted shape is visible to reviewers.
 """
 
 from __future__ import annotations
 
-import dgen
 from dgen.asm.parser import parse
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
@@ -20,13 +21,12 @@ from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.normalize_region_terminators import NormalizeRegionTerminators
 from dgen.passes.record_to_memory import RecordToMemory
-from dgen.testing import llvm_compile, strip_prefix
+from dgen.testing import strip_prefix
 
 
-def _record_aware_compile(value: dgen.Value) -> Executable:
-    """Like ``llvm_compile`` but lowers ``record.pack`` through
-    ``RecordToMemory`` + ``MemoryToLLVM`` for tests that build runtime
-    aggregates with ``record.pack``."""
+def _compile(ir_text: str) -> Executable:
+    """Pipeline that lowers ``record.pack`` (used to build runtime tuples)
+    + the standard control-flow / builtin / algebra lowerings."""
     return Compiler(
         [
             ControlFlowToGoto(),
@@ -37,17 +37,48 @@ def _record_aware_compile(value: dgen.Value) -> Executable:
             AlgebraToLLVM(),
         ],
         LLVMCodegen(),
-    ).run(value)
+    ).run(parse(ir_text))
 
 
-def test_call_with_runtime_tuple_as_args():
-    """A function whose ``arguments`` come from a runtime Tuple value
-    (here, the result of another function call) should still execute
-    correctly — codegen extracts each LLVM arg via ``extractvalue``
-    rather than reading inline PackOp values."""
-    exe = _record_aware_compile(
-        parse(
-            strip_prefix("""
+# ---------------------------------------------------------------------------
+# Inline pack — the common case. ``[%a, %b]`` literal in IR.
+# ---------------------------------------------------------------------------
+
+
+def test_inline_pack_call(snapshot):
+    """A call whose arguments are an inline ``[%x, %y]`` PackOp. The
+    PackOp emits as an ``insertvalue`` chain; ``extractvalue`` at the
+    call site pulls each arg back out. After LLVM opt the round-trip
+    folds away."""
+    exe = _compile(
+        strip_prefix("""
+        | import algebra
+        | import index
+        | import function
+        |
+        | %add : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
+        |     %sum : index.Index = algebra.add(%a, %b)
+        | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index, %y: index.Index) captures(%add):
+        |     %r : index.Index = function.call<%add>([%x, %y])
+    """)
+    )
+    assert exe.run(11, 31).to_json() == 42
+    assert exe.ir == snapshot
+
+
+# ---------------------------------------------------------------------------
+# Runtime tuple as call args — the case that would silently miscompile
+# under the old per-arg unpack model.
+# ---------------------------------------------------------------------------
+
+
+def test_call_with_runtime_tuple_as_args(snapshot):
+    """A call whose ``arguments`` come from a runtime ``Tuple`` value
+    (built here via ``record.pack``, but morally any function returning
+    a ``Tuple`` would do). Codegen ``extractvalue``s each LLVM arg from
+    the runtime aggregate; the call sees positional scalars."""
+    exe = _compile(
+        strip_prefix("""
         | import algebra
         | import index
         | import record
@@ -59,40 +90,18 @@ def test_call_with_runtime_tuple_as_args():
         |     %t : Tuple<[index.Index, index.Index]> = record.pack([%x, %y])
         |     %r : index.Index = function.call<%add>(%t)
     """)
-        )
     )
     assert exe.run(7, 35).to_json() == 42
     assert exe.run(0, 0).to_json() == 0
     assert exe.run(100, 200).to_json() == 300
+    assert exe.ir == snapshot
 
 
-def test_packop_aggregate_round_trips_through_inline_pack_call():
-    """Sanity check the PackOp short-circuit: an inline ``[%a, %b]`` carrying
-    two homogeneous values still passes through extractvalue-free at the
-    call site (no aggregate constructed)."""
-    exe = llvm_compile(
-        parse(
-            strip_prefix("""
-        | import algebra
-        | import index
-        | import function
-        |
-        | %add : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
-        |     %sum : index.Index = algebra.add(%a, %b)
-        | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index, %y: index.Index) captures(%add):
-        |     %r : index.Index = function.call<%add>([%x, %y])
-    """)
-        )
-    )
-    assert exe.run(11, 31).to_json() == 42
-
-
-def test_call_with_heterogeneous_tuple_args():
-    """Mixed-type runtime tuple flowing into a call. Verifies that
-    ``extractvalue`` honours each field's individual type."""
-    exe = _record_aware_compile(
-        parse(
-            strip_prefix("""
+def test_call_with_heterogeneous_tuple_args(snapshot):
+    """Mixed-type runtime tuple flowing into a call. ``extractvalue``
+    honours each field's individual LLVM type."""
+    exe = _compile(
+        strip_prefix("""
         | import index
         | import number
         | import record
@@ -104,6 +113,51 @@ def test_call_with_heterogeneous_tuple_args():
         |     %t : Tuple<[index.Index, number.Float64]> = record.pack([%x, %y])
         |     %r : index.Index = function.call<%first>(%t)
     """)
-        )
     )
     assert exe.run(7, 0.5).to_json() == 7
+    assert exe.ir == snapshot
+
+
+# ---------------------------------------------------------------------------
+# Runtime pack of TypeType-typed values — the case the prior
+# ``_is_type_metadata_pack`` filter would have wrongly silenced. Codegen
+# emits the ``insertvalue`` chain because the pack is operand-reachable
+# (in ``runtime_dependencies`` of the consumer), regardless of the
+# elements' types.
+# ---------------------------------------------------------------------------
+
+
+def test_runtime_pack_of_type_values_is_emitted():
+    """A function whose call args are a runtime pack of ``Type`` values
+    (here built via ``builtin.type`` of a runtime value). Even though
+    the elements are TypeType-typed — the same shape as a ``Tuple``'s
+    compile-time ``types`` parameter — the pack is operand-reachable and
+    codegen emits its aggregate. A naive "skip TypeType-typed packs"
+    filter would silently drop it and produce broken IR.
+
+    No snapshot here because the inline Type-descriptor constants render
+    as runtime pointer addresses, which aren't stable across runs. The
+    structural shape is verified by the asserts below: the IR contains
+    an ``insertvalue`` chain over ``{ ptr, ptr }`` and the call
+    extracts both fields.
+    """
+    exe = _compile(
+        strip_prefix("""
+        | import index
+        | import function
+        |
+        | %first_type : function.Function<[Type, Type], Type> = function.function<Type>() body(%a: Type, %b: Type):
+        |     %_ : Type = chain(%a, %b)
+        | %main : function.Function<[index.Index], Type> = function.function<Type>() body(%x: index.Index) captures(%first_type):
+        |     %ta : Type = type(%x)
+        |     %r : Type = function.call<%first_type>([%ta, %ta])
+    """)
+    )
+    # Result is a Type descriptor pointer; verify the JSON shape — it
+    # should describe Index (the runtime type of %x).
+    out = exe.run(42).to_json()
+    assert out["tag"] == "index.Index"
+    # Structural: the pack of TypeType-typed values DID emit as an
+    # insertvalue chain (i.e. wasn't silently filtered as metadata).
+    assert "insertvalue { ptr, ptr }" in exe.ir
+    assert "extractvalue { ptr, ptr }" in exe.ir
