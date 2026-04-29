@@ -171,7 +171,13 @@ class Array(Layout):
 
     @cached_property
     def struct(self) -> Struct:
-        return Struct(f"{self.count}{self.element.struct.format}")
+        # Repeat the element's format string ``count`` times, rather than
+        # prefixing it with the count. Python's ``struct`` prefix-count
+        # syntax (``"2PQ"``) applies the count only to the next single
+        # format char, so a multi-field element layout (``"PQ"``,
+        # ``"2PQ"``) would be miscounted otherwise. Repeating the whole
+        # format gives ``"PQPQ"`` for a 2-element array of ``Span``s.
+        return Struct(self.element.struct.format * self.count)
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
         return [

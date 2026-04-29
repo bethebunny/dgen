@@ -101,37 +101,40 @@ class PackOp(Op):
         return Memory.from_json(self.type, json_list)
 
 
-def pack(values: Iterable[Value] = ()) -> PackOp:
-    """Create a PackOp with a type that honestly describes its contents.
+def pack(values: Iterable[Value] = ()) -> PackOp | Constant:
+    """Build the value bundle for a list of values.
 
-    - Empty / homogeneous (all elements share a type): ``Array<T, n>`` —
-      fixed-N inline bundle, exact byte layout = n × sizeof(T).
-    - Heterogeneous: ``Tuple<types>`` (Record layout). The inner ``types``
-      PackOp is itself genuinely homogeneous (TypeType values), so it
-      bottoms out at ``Array<TypeType, n>`` and the recursion terminates.
+    When every element is itself a ``Constant``, the result folds to a
+    plain ``Constant`` of the appropriate aggregate type — at codegen, no
+    PackOp survives in compile-time positions because there's nothing to
+    fold (or the operands themselves were unfoldable runtime values).
 
-    The Array shortcut isn't only an optimisation: ``Tuple<types>``'s layout
-    property iterates ``self.types``, which becomes a non-iterable
-    ``Constant`` after ``Type.from_json`` round-trips. ``Array.__layout__``
-    has no such dependency, so keeping Array as the leaf (and the
-    homogeneous outer type) avoids the round-trip break.
+    When any element is non-constant (a runtime SSA value, a ``Type``
+    instance — Types are *not* constants because their parameters can
+    depend on runtime values, etc.), the result is a ``PackOp`` carrying
+    those values for later emission as an ``insertvalue`` chain.
     """
     vals = list(values)
-    return PackOp(values=vals, type=_pack_type([v.type for v in vals]))
+    ty = _pack_type([v.type for v in vals])
+    if all(isinstance(v, Constant) for v in vals):
+        json_list = [v.value.to_json() for v in vals]
+        return Constant(type=ty, value=Memory.from_json(ty, json_list))
+    return PackOp(values=vals, type=ty)
 
 
 def _pack_type(element_types: list[Value[TypeType]]) -> Type:
-    """Pick the honest Array/Tuple type for a PackOp from its element types."""
+    """Pick the honest Array/Tuple type for a pack from its element types."""
     n = Index().constant(len(element_types))
     if not element_types:
         return Array(element_type=Nil(), n=n)
     first = element_types[0]
     if all(_same_type(t, first) for t in element_types[1:]):
         return Array(element_type=first, n=n)
-    types_pack = PackOp(
-        values=list(element_types),
-        type=Array(element_type=TypeType(), n=n),
-    )
+    # Heterogeneous: wrap each element type as ``Constant<TypeType>`` so
+    # ``pack`` folds the inner types-list to a Constant aggregate. This
+    # keeps the ``Tuple<types=...>`` parameter compile-time even when the
+    # outer pack itself is a runtime PackOp of mixed-type values.
+    types_pack = pack(TypeType().constant(constant(t)) for t in element_types)
     return Tuple(types=types_pack)
 
 
@@ -145,8 +148,76 @@ def _same_type(a: Value[TypeType], b: Value[TypeType]) -> bool:
 
 
 def unpack(val: Value) -> list[Value]:
-    """Unpack a PackOp into its elements, or wrap a single value in a list."""
-    return list(val) if isinstance(val, PackOp) else [val]
+    """Decompose a tuple-shaped value into its element Values.
+
+    A ``PackOp`` yields its ``.values`` directly. An aggregate
+    ``Constant`` (``Array`` / ``Tuple`` typed) gets reconstructed: each
+    element is wrapped back as a ``Constant`` of its field type, or
+    yielded directly when the rich form is already a ``Value`` (i.e. a
+    ``Type`` instance for ``TypeType``-typed fields).
+
+    Anything else (a runtime SSA value with no aggregate structure)
+    wraps in a singleton list.
+    """
+    if isinstance(val, PackOp):
+        return list(val)
+    if isinstance(val, Constant) and isinstance(val.type, (Array, Tuple)):
+        return list(_aggregate_elements(val))
+    return [val]
+
+
+def _aggregate_elements(c: Constant) -> Iterator[Value]:
+    """Yield each element of an aggregate Constant, wrapped as a Value of
+    its field type (or yielded directly when the rich form is already a
+    Value, e.g. a Type instance for TypeType-typed fields)."""
+    rich = c.value.to_native_value()
+    if isinstance(c.type, Array):
+        elem_type = constant(c.type.element_type)
+        assert isinstance(elem_type, Type)
+        for v in rich:
+            yield _wrap_field(elem_type, v)
+        return
+    # Tuple<types>: each field's type comes from ``types``, rich form is a
+    # dict keyed by stringified positional index.
+    elem_types = constant(c.type.types)
+    assert isinstance(elem_types, list)
+    for i, t in enumerate(elem_types):
+        yield _wrap_field(t, rich[str(i)])
+
+
+def _wrap_field(field_type: Type, rich_value: object) -> Value:
+    """Re-wrap a rich-form aggregate field value as a Value. Type
+    instances pass through; scalars get wrapped as ``Constant``s of the
+    declared field type."""
+    if isinstance(rich_value, Value):
+        return rich_value
+    return field_type.constant(rich_value)
+
+
+def _format_aggregate_constant(c: Constant, slot: SlotFn) -> str:
+    """Format an aggregate ``Constant`` as inline ``[elem0, elem1, ...]``.
+
+    Each element is materialised via ``_aggregate_elements`` and formatted
+    by its own ``format_asm`` — a Type instance prints as its name, a
+    scalar Constant prints as ``Type(value)``, and a nested aggregate
+    recurses into this same path.
+    """
+    return "[" + ", ".join(format_value(e, slot) for e in _aggregate_elements(c)) + "]"
+
+
+# Override Constant.format_asm so aggregate-typed constants format as
+# inline lists rather than the verbose ``Tuple<...>(dict)`` shape that
+# the default ``Type(value)`` formatter would produce. Keeps the surface
+# syntax for compile-time aggregates the same as the inline ``[a, b]``
+# sugar from ``PackOp``.
+def _constant_format_asm(self: Constant, slot: SlotFn = _default_slot) -> str:
+    if isinstance(self.type, (Array, Tuple)):
+        return _format_aggregate_constant(self, slot)
+    body = format_value(constant(self), slot)
+    return f"{self.type.format_asm(slot)}({body})"
+
+
+Constant.format_asm = _constant_format_asm
 
 
 # ===----------------------------------------------------------------------=== #

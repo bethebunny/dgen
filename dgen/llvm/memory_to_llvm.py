@@ -18,7 +18,7 @@ from dgen.dialects.index import Index
 from dgen.builtins import pack
 from dgen.layout import align_up
 from dgen.passes.pass_ import Pass, lowering_for
-from dgen.type import constant
+from dgen.type import TypeType, constant
 
 
 class MemoryToLLVM(Pass):
@@ -29,9 +29,14 @@ class MemoryToLLVM(Pass):
         # malloc(count * 8) for 8-byte doubles
         int64 = llvm.Int(bits=Index().constant(64))
         total = llvm.MulOp(lhs=op.count, rhs=int64.constant(8))
+        # Wrap the Index() Type as a Constant<TypeType> so ``pack`` folds
+        # the malloc-arg type list to a Constant aggregate; otherwise the
+        # type list lands at codegen as a runtime PackOp in a compile-time
+        # slot, which has no LLVM representation.
+        arg_types = pack([TypeType().constant(Index())])
         malloc = ExternOp(
             symbol=String().constant("malloc"),
-            type=function.Function(arguments=pack([Index()]), result_type=llvm.Ptr()),
+            type=function.Function(arguments=arg_types, result_type=llvm.Ptr()),
         )
         return function.CallOp(callee=malloc, arguments=pack([total]), type=llvm.Ptr())
 

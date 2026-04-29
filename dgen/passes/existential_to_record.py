@@ -34,7 +34,7 @@ class ExistentialToRecord(Pass):
         assert isinstance(value_type, dgen.Type)
 
         witness = TypeOp(value=op.value, type=TypeType())
-        inner_type = Tuple(types=pack([TypeType(), value_type]))
+        inner_type = Tuple(types=_type_list([TypeType(), value_type]))
         inner = record.PackOp(values=pack([witness, op.value]), type=inner_type)
         return heap_box(inner)
 
@@ -43,6 +43,17 @@ class ExistentialToRecord(Pass):
         witness_type = op.type
         assert isinstance(witness_type, dgen.Type)
 
-        inner_type = Tuple(types=pack([TypeType(), witness_type]))
+        inner_type = Tuple(types=_type_list([TypeType(), witness_type]))
         inner = memory.LoadOp(mem=op.box, ptr=op.box, type=inner_type)
         return record.GetOp(index=Index().constant(1), record=inner, type=witness_type)
+
+
+def _type_list(types: list[dgen.Type]) -> dgen.Value:
+    """Pack a list of fully-resolved Type instances as Constants of TypeType.
+
+    Wrapping each Type as a ``TypeType().constant(t)`` lets ``pack()``
+    fold the result to a single ``Constant`` of ``Array<TypeType, n>``,
+    so the surrounding ``Tuple<types=...>`` parameter holds a Constant
+    rather than a runtime PackOp at codegen.
+    """
+    return pack([TypeType().constant(t) for t in types])

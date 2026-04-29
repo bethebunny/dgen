@@ -8,14 +8,14 @@
   }
   define i64 @main(i64 %x, double %y) {
   entry:
-    %_1 = alloca double, i64 2
-    store i64 %x, ptr %_1
-    %_3 = getelementptr double, ptr %_1, i64 1
-    store double %y, ptr %_3
-    %_5 = load { i64, double }, ptr %_1
-    %_6 = extractvalue { i64, double } %_5, 0
-    %_7 = extractvalue { i64, double } %_5, 1
-    %r = call i64 @first(i64 %_6, double %_7)
+    %_0 = alloca double, i64 2
+    store i64 %x, ptr %_0
+    %_2 = getelementptr double, ptr %_0, i64 1
+    store double %y, ptr %_2
+    %_4 = load { i64, double }, ptr %_0
+    %_5 = extractvalue { i64, double } %_4, 0
+    %_6 = extractvalue { i64, double } %_4, 1
+    %r = call i64 @first(i64 %_5, double %_6)
     ret i64 %r
   }
   '''
@@ -30,14 +30,14 @@
   }
   define i64 @main(i64 %x, i64 %y) {
   entry:
-    %_2 = alloca double, i64 2
-    store i64 %x, ptr %_2
-    %_4 = getelementptr double, ptr %_2, i64 1
-    store i64 %y, ptr %_4
-    %_6 = load { i64, i64 }, ptr %_2
-    %_7 = extractvalue { i64, i64 } %_6, 0
-    %_8 = extractvalue { i64, i64 } %_6, 1
-    %r = call i64 @add(i64 %_7, i64 %_8)
+    %_1 = alloca double, i64 2
+    store i64 %x, ptr %_1
+    %_3 = getelementptr double, ptr %_1, i64 1
+    store i64 %y, ptr %_3
+    %_5 = load { i64, i64 }, ptr %_1
+    %_6 = extractvalue { i64, i64 } %_5, 0
+    %_7 = extractvalue { i64, i64 } %_5, 1
+    %r = call i64 @add(i64 %_6, i64 %_7)
     ret i64 %r
   }
   '''

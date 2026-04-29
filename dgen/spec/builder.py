@@ -162,11 +162,15 @@ def _make_layout(
             )
         ):
             pname = lp.name
+            # ``constant(...)`` resolves the parameter to its rich Python
+            # form (a list of Type instances) regardless of whether the
+            # underlying value is a ``PackOp`` (still iterable) or a
+            # ``Constant`` (not iterable as-is).
             return property(
                 lambda self, _n=pname: layout.Record(
                     [
                         (str(i), dgen.type.constant(t).__layout__)
-                        for i, t in enumerate(getattr(self, _n))
+                        for i, t in enumerate(dgen.type.constant(getattr(self, _n)))
                     ]
                 )
             )
