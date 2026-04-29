@@ -3,7 +3,7 @@
 The type a PackOp carries should reflect what's inside it. The previous
 heuristic (``Span<first.type>``) silently lied about heterogeneous mixes
 and would crash ``__constant__``. These tests pin down the new contract:
-homogeneous → ``Span<T>``, heterogeneous → ``Tuple<types>``.
+homogeneous → ``Array<T, n>``, heterogeneous → ``Tuple<types>``.
 """
 
 from __future__ import annotations
@@ -11,35 +11,44 @@ from __future__ import annotations
 from dgen import asm
 from dgen.asm.parser import parse
 from dgen.builtins import PackOp, pack
-from dgen.dialects.builtin import Nil, Span, String, Tuple
+from dgen.dialects.builtin import Array, Nil, String, Tuple
 from dgen.dialects.function import FunctionOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Float64
 from dgen.dialects.record import PackOp as RecordPackOp
 from dgen.testing import assert_ir_equivalent, strip_prefix
-from dgen.type import constant
+from dgen.type import TypeType, constant
 
 
 # -- pack() helper: type honesty -------------------------------------------
 
 
-def test_pack_empty_is_span_of_nil():
+def _array_n(t: Array) -> int:
+    n = constant(t.n)
+    assert isinstance(n, int)
+    return n
+
+
+def test_pack_empty_is_array_of_nil_size_zero():
     p = pack([])
-    assert isinstance(p.type, Span)
-    assert isinstance(p.type.pointee, Nil)
+    assert isinstance(p.type, Array)
+    assert isinstance(p.type.element_type, Nil)
+    assert _array_n(p.type) == 0
 
 
-def test_pack_homogeneous_is_span():
+def test_pack_homogeneous_is_array():
     p = pack([Index().constant(1), Index().constant(2)])
-    assert isinstance(p.type, Span)
-    assert isinstance(p.type.pointee, Index)
+    assert isinstance(p.type, Array)
+    assert isinstance(p.type.element_type, Index)
+    assert _array_n(p.type) == 2
 
 
-def test_pack_homogeneous_with_shared_type_instance_is_span():
+def test_pack_homogeneous_with_shared_type_instance_is_array():
     """Two values sharing the *same* Type instance — the cheap identity path."""
     t = Index()
     p = pack([t.constant(1), t.constant(2), t.constant(3)])
-    assert isinstance(p.type, Span)
+    assert isinstance(p.type, Array)
+    assert _array_n(p.type) == 3
 
 
 def test_pack_heterogeneous_is_tuple():
@@ -62,16 +71,15 @@ def test_pack_heterogeneous_three_kinds():
     assert isinstance(types[2], Float64)
 
 
-def test_pack_inner_types_pack_is_span_of_typetype():
-    """The Tuple<types>'s ``types`` field is itself a homogeneous Span<TypeType>."""
-    from dgen.type import TypeType
-
+def test_pack_inner_types_pack_is_array_of_typetype():
+    """The Tuple<types>'s ``types`` field is itself a homogeneous Array<TypeType, n>."""
     p = pack([Index().constant(1), String().constant("x")])
     assert isinstance(p.type, Tuple)
     inner = p.type.types
     assert isinstance(inner, PackOp)
-    assert isinstance(inner.type, Span)
-    assert isinstance(inner.type.pointee, TypeType)
+    assert isinstance(inner.type, Array)
+    assert isinstance(inner.type.element_type, TypeType)
+    assert _array_n(inner.type) == 2
 
 
 # -- PackOp.__constant__ no longer crashes on heterogeneous packs ---------
@@ -95,7 +103,7 @@ def test_pack_constant_heterogeneous_does_not_crash():
 # -- Parser produces honest PackOp types ---------------------------------
 
 
-def test_parser_homogeneous_pack_type_is_span():
+def test_parser_homogeneous_pack_type_is_array():
     """Pack literal in an op's operand position with homogeneous values."""
     ir = strip_prefix("""
         | import index
@@ -111,8 +119,9 @@ def test_parser_homogeneous_pack_type_is_span():
     assert isinstance(record_pack, RecordPackOp)
     pack_op = record_pack.values
     assert isinstance(pack_op, PackOp)
-    assert isinstance(pack_op.type, Span)
-    assert isinstance(pack_op.type.pointee, Index)
+    assert isinstance(pack_op.type, Array)
+    assert isinstance(pack_op.type.element_type, Index)
+    assert _array_n(pack_op.type) == 2
 
 
 def test_parser_heterogeneous_pack_type_is_tuple():
