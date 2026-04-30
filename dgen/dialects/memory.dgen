@@ -1,31 +1,42 @@
-from builtin import Nil, Pointer
+from builtin import Effect, Handler, Linear, Nil, Pointer
 from index import Index
 
+# State is the effect tag for memory access. A `Reference<T>` is its
+# handler — every `load`/`store` consumes one Reference and produces a
+# fresh one, threading the effect linearly through dataflow. See
+# `docs/effects.md`.
+type State:
+    data: Nil
+    has trait Effect
+
+# Reference<T>: linear handle to a single cell of type T.
 type Reference<element_type: Type>:
     data: Pointer<Nil>
+    has trait Linear
+    has trait Handler<State>
 
+# Buffer<T>: pointer to a count-element backing store of type T. Unlike
+# Reference, Buffer is unrestricted and admits indexed loads/stores via
+# an explicit `mem` operand for ordering — same pattern memory used
+# before the State effect landed. Used by ndbuffer/record/existential
+# lowerings where a single backing store is shared across many ops.
+type Buffer<element_type: Type>:
+    data: Pointer<Nil>
+
+# Single-cell ops. `load` returns Tuple<T, Reference<T>>; the caller
+# unpacks to recover both the value and the new Reference. `store` and
+# `deallocate` consume the input Reference and either return a fresh one
+# (`store`) or discharge the linear thread (`deallocate`).
 op stack_allocate<element_type: Type>() -> Reference<element_type>
-op heap_allocate<element_type: Type>(count: Index) -> Reference<element_type>
-op deallocate(mem, ptr: Reference) -> Nil
+op heap_allocate<element_type: Type>() -> Reference<element_type>
+op load(ptr: Reference)
+op store(ptr: Reference, value: Type) -> Reference
+op deallocate(ptr: Reference) -> Nil
 
-# The `mem` operand on load and store creates an explicit use-def edge for
-# memory ordering.  Pass the result of the previous memory operation (a prior
-# load, store, allocation, or control-flow op) as `mem` to declare that this
-# operation must execute after it.
-#
-# Example — initialize, then read back:
-#
-#     %alloc = memory.stack_allocate<index.Index>()
-#     %st    = memory.store(%alloc, 42, %alloc)   # mem = alloc
-#     %val   = memory.load(%st, %alloc)            # mem = store result
-#
-# The chain store→load is enforced by the use-def edge through `mem`.
-# For ordering across control flow (e.g. a loop that writes, then a load
-# after the loop), pass the loop result as `mem`:
-#
-#     %loop  = control_flow.for ...
-#     %val   = memory.load(%loop, %alloc)
-op load(mem, ptr: Reference)
-op store(mem, value: Type, ptr: Reference) -> Nil
-
-op offset(ptr: Reference, index: Index) -> Reference
+# Indexed ops on Buffer. The `mem` operand provides ordering between
+# successive operations; pass the previous op's result.
+op buffer_allocate<element_type: Type>(count: Index) -> Buffer<element_type>
+op buffer_stack_allocate<element_type: Type>(count: Index) -> Buffer<element_type>
+op buffer_load(mem, buf: Buffer, index: Index)
+op buffer_store(mem, buf: Buffer, index: Index, value: Type) -> Nil
+op buffer_deallocate(mem, buf: Buffer) -> Nil

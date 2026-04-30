@@ -6,35 +6,23 @@ import dgen
 from dgen.dialects import memory
 from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
-from dgen.layout import align_up
-from dgen.type import constant
 
 
 def heap_box(value: dgen.Value) -> dgen.Value:
-    """Heap-allocate space for *value*, store it, return the reference.
+    """Heap-allocate a single-element ``Buffer`` for *value*, store it,
+    and return the buffer (typed ``memory.Buffer<value.type>``).
 
-    Returns a ``ChainOp`` whose value is the ``Reference`` pointer with
-    a use-def dependency on the store (so the store is not dead).
+    Used to lift an SSA value into a heap pointer that downstream code
+    can pass around as a ``Some<T>`` / ``Any`` / similar pointer-shaped
+    type — Buffer is non-linear, so the resulting pointer can be aliased
+    freely (matching Some/Any's existing semantics).
     """
     element_type = value.type
-    resolved = constant(element_type)
-    assert isinstance(resolved, dgen.Type)
-    count = max(1, align_up(resolved.__layout__.byte_size, 8))
-    ref_type = memory.Reference(element_type=element_type)
-    ref = memory.HeapAllocateOp(
-        element_type=element_type, count=Index().constant(count), type=ref_type
+    buf_type = memory.Buffer(element_type=element_type)
+    buf = memory.BufferAllocateOp(
+        element_type=element_type, count=Index().constant(1), type=buf_type
     )
-    store = memory.StoreOp(mem=ref, value=value, ptr=ref)
-    return ChainOp(lhs=ref, rhs=store, type=ref_type)
-
-
-def stack_box(value: dgen.Value) -> dgen.Value:
-    """Stack-allocate space for *value*, store it, load it back.
-
-    Forces materialisation through memory and returns a by-value result
-    with the original type.
-    """
-    ref_type = memory.Reference(element_type=value.type)
-    ref = memory.StackAllocateOp(element_type=value.type, type=ref_type)
-    store = memory.StoreOp(mem=ref, value=value, ptr=ref)
-    return memory.LoadOp(mem=store, ptr=ref, type=value.type)
+    store = memory.BufferStoreOp(
+        mem=buf, buf=buf, index=Index().constant(0), value=value
+    )
+    return ChainOp(lhs=buf, rhs=store, type=buf_type)

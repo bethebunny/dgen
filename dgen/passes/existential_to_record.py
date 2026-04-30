@@ -4,12 +4,12 @@
 
     %witness    = builtin.type(value)
     %inner      = record.pack([%witness, %value])   : Tuple<[Type, T]>
-    %result     = heap_box(%inner)                   : Reference<Tuple<[Type, T]>>
+    %result     = heap_box(%inner)                   : Buffer<Tuple<[Type, T]>>
 
-``existential.unpack(box)`` dereferences the pointer and extracts the
-value field from the inner record:
+``existential.unpack(box)`` reads the inner record from the buffer and
+extracts the value field:
 
-    %inner      = memory.load(box, box)              : Tuple<[Type, T]>
+    %inner      = memory.buffer_load(%box, %box, 0)  : Tuple<[Type, T]>
     %result     = record.get<1>(%inner)              : T
 """
 
@@ -44,5 +44,7 @@ class ExistentialToRecord(Pass):
         assert isinstance(witness_type, dgen.Type)
 
         inner_type = Tuple(types=pack([TypeType(), witness_type]))
-        inner = memory.LoadOp(mem=op.box, ptr=op.box, type=inner_type)
+        inner = memory.BufferLoadOp(
+            mem=op.box, buf=op.box, index=Index().constant(0), type=inner_type
+        )
         return record.GetOp(index=Index().constant(1), record=inner, type=witness_type)

@@ -24,7 +24,7 @@ def test_compiler_as_pass_in_pipeline() -> None:
         | import record
         |
         | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
-        |     %packed : Span<index.Index> = record.pack([%a, %b])
+        |     %packed : Array<index.Index, index.Index(2)> = record.pack([%a, %b])
         |     %result : index.Index = record.get<index.Index(1)>(%packed)
     """)
         )

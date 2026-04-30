@@ -10,7 +10,7 @@ def test_roundtrip_stack_allocate():
         | import memory
         | import index
         |
-        | %0 : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        | %0 : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -23,7 +23,7 @@ def test_roundtrip_heap_allocate():
         | import number
         |
         | %n : index.Index = 10
-        | %0 : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
+        | %0 : memory.Buffer<number.Float64> = memory.buffer_allocate<number.Float64>(%n)
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -35,25 +35,10 @@ def test_roundtrip_load_store_with_mem():
         | import memory
         | import index
         |
-        | %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        | %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         | %val : index.Index = 42
-        | %st : Nil = memory.store(%alloc, %val, %alloc)
-        | %ld : index.Index = memory.load(%st, %alloc)
-    """)
-    value = parse(ir)
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
-
-
-def test_roundtrip_offset():
-    ir = strip_prefix("""
-        | import index
-        | import memory
-        | import number
-        |
-        | %n : index.Index = 10
-        | %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
-        | %idx : index.Index = 3
-        | %ptr : memory.Reference<number.Float64> = memory.offset(%alloc, %idx)
+        | %st : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %val)
+        | %ld : index.Index = memory.buffer_load(%st, %alloc, index.Index(0))
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -66,8 +51,8 @@ def test_roundtrip_deallocate():
         | import number
         |
         | %n : index.Index = 1
-        | %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
-        | %dealloc : Nil = memory.deallocate(%alloc, %alloc)
+        | %alloc : memory.Buffer<number.Float64> = memory.buffer_allocate<number.Float64>(%n)
+        | %dealloc : Nil = memory.buffer_deallocate(%alloc, %alloc)
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -79,32 +64,13 @@ def test_roundtrip_load_store_chain():
         | import memory
         | import index
         |
-        | %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        | %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         | %zero : index.Index = 0
-        | %st0 : Nil = memory.store(%alloc, %zero, %alloc)
-        | %ld0 : index.Index = memory.load(%st0, %alloc)
+        | %st0 : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %zero)
+        | %ld0 : index.Index = memory.buffer_load(%st0, %alloc, index.Index(0))
         | %one : index.Index = 1
-        | %st1 : Nil = memory.store(%ld0, %one, %alloc)
-        | %ld1 : index.Index = memory.load(%st1, %alloc)
-    """)
-    value = parse(ir)
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
-
-
-def test_roundtrip_offset_load_store():
-    """Offset + load/store: typical array access pattern."""
-    ir = strip_prefix("""
-        | import index
-        | import memory
-        | import number
-        |
-        | %n : index.Index = 10
-        | %alloc : memory.Reference<number.Float64> = memory.heap_allocate<number.Float64>(%n)
-        | %idx : index.Index = 5
-        | %ptr : memory.Reference<number.Float64> = memory.offset(%alloc, %idx)
-        | %val : number.Float64 = 3.14
-        | %st : Nil = memory.store(%ptr, %val, %ptr)
-        | %ld : number.Float64 = memory.load(%st, %ptr)
+        | %st1 : Nil = memory.buffer_store(%ld0, %alloc, index.Index(0), %one)
+        | %ld1 : index.Index = memory.buffer_load(%st1, %alloc, index.Index(0))
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -117,11 +83,11 @@ def test_roundtrip_mem_from_for_loop():
         | import memory
         | import index
         |
-        | %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        | %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         | %loop : Nil = control_flow.for<index.Index(0), index.Index(10)>([]) body(%iv: index.Index) captures(%alloc):
-        |     %cur : index.Index = memory.load(%alloc, %alloc)
-        |     %_ : Nil = memory.store(%cur, %iv, %alloc)
-        | %ld : index.Index = memory.load(%loop, %alloc)
+        |     %cur : index.Index = memory.buffer_load(%alloc, %alloc, index.Index(0))
+        |     %_ : Nil = memory.buffer_store(%cur, %alloc, index.Index(0), %iv)
+        | %ld : index.Index = memory.buffer_load(%loop, %alloc, index.Index(0))
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
@@ -134,15 +100,15 @@ def test_roundtrip_mem_from_if_else():
         | import memory
         | import index
         |
-        | %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        | %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         | %cond : index.Index = 1
         | %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
         |     %ten : index.Index = 10
-        |     %_ : Nil = memory.store(%alloc, %ten, %alloc)
+        |     %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %ten)
         | else_body() captures(%alloc):
         |     %twenty : index.Index = 20
-        |     %_ : Nil = memory.store(%alloc, %twenty, %alloc)
-        | %ld : index.Index = memory.load(%if, %alloc)
+        |     %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %twenty)
+        | %ld : index.Index = memory.buffer_load(%if, %alloc, index.Index(0))
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))
