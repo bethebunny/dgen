@@ -11,7 +11,14 @@ from dgen.dialects.builtin import Nil
 memory = Dialect("memory")
 
 @dataclass(eq=False)
+class State(Type): ...
+
+@dataclass(eq=False)
 class Reference(Type):
+    element_type: Value[dgen.TypeType]
+
+@dataclass(eq=False)
+class Buffer(Type):
     element_type: Value[dgen.TypeType]
 
 @dataclass(eq=False)
@@ -22,30 +29,53 @@ class StackAllocateOp(Op):
 @dataclass(eq=False)
 class HeapAllocateOp(Op):
     element_type: Value[dgen.TypeType]
-    count: Value
     type: Type
 
 @dataclass(eq=False)
-class DeallocateOp(Op):
-    mem: Value
-    ptr: Value
-    type: Type = Nil()
-
-@dataclass(eq=False)
 class LoadOp(Op):
-    mem: Value
     ptr: Value
     type: Type
 
 @dataclass(eq=False)
 class StoreOp(Op):
-    mem: Value
+    ptr: Value
     value: Value
+    type: Type
+
+@dataclass(eq=False)
+class DeallocateOp(Op):
     ptr: Value
     type: Type = Nil()
 
 @dataclass(eq=False)
-class OffsetOp(Op):
-    ptr: Value
+class BufferAllocateOp(Op):
+    element_type: Value[dgen.TypeType]
+    count: Value
+    type: Type
+
+@dataclass(eq=False)
+class BufferStackAllocateOp(Op):
+    element_type: Value[dgen.TypeType]
+    count: Value
+    type: Type
+
+@dataclass(eq=False)
+class BufferLoadOp(Op):
+    mem: Value
+    buf: Value
     index: Value
     type: Type
+
+@dataclass(eq=False)
+class BufferStoreOp(Op):
+    mem: Value
+    buf: Value
+    index: Value
+    value: Value
+    type: Type = Nil()
+
+@dataclass(eq=False)
+class BufferDeallocateOp(Op):
+    mem: Value
+    buf: Value
+    type: Type = Nil()

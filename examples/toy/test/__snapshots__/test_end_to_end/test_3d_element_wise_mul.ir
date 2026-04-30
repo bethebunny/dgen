@@ -6,72 +6,63 @@ import llvm
 import memory
 import ndbuffer
 import number
+import record
 import toy
 
 %main : function.Function<[], Nil> = function.function<Nil>() body():
     %0 : function.Function<[llvm.Ptr, index.Index], Nil> = extern<String("print_memref")>()
-    %1 : llvm.Ptr = llvm.alloca<index.Index(2)>()
-    %2 : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
-    %3 : llvm.Int<index.Index(64)> = llvm.mul(index.Index(8), llvm.Int<index.Index(64)>(8))
-    %4 : llvm.Ptr = function.call<%2>([%3])
-    %5 : Nil = memory.store(%1, %4, %1)
-    %6 : llvm.Ptr = llvm.gep(%1, index.Index(1))
-    %7 : Nil = memory.store(%5, index.Index(8), %6)
-    %8 : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(3)>([2, 2, 2]), number.Float64> = memory.load(%7, %1)
-    %9 : index.Index = 0
-    %10 : toy.Tensor<ndbuffer.Shape<index.Index(3)>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-    %11 : toy.Tensor<ndbuffer.Shape<index.Index(3)>([2, 2, 2]), number.Float64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-    %loop_header9 : Nil = goto.region([%9]) body<%self: goto.Label, %exit9: goto.Label>(%i9: index.Index) captures(%8, %10, %11):
-        %loop_body9 : goto.Label = goto.label([]) body(%12: index.Index) captures(%self, %exit9, %8, %10, %11):
-            %13 : index.Index = algebra.add(%12, index.Index(1))
-            %14 : index.Index = 0
-            %loop_header10 : Nil = goto.region([%14]) body<%15: goto.Label, %exit10: goto.Label>(%i10: index.Index) captures(%8, %10, %11, %12):
-                %loop_body10 : goto.Label = goto.label([]) body(%16: index.Index) captures(%15, %exit10, %8, %10, %11, %12):
-                    %17 : index.Index = algebra.add(%16, index.Index(1))
-                    %18 : index.Index = 0
-                    %loop_header11 : Nil = goto.region([%18]) body<%19: goto.Label, %exit11: goto.Label>(%i11: index.Index) captures(%8, %10, %11, %12, %16):
-                        %loop_body11 : goto.Label = goto.label([]) body(%20: index.Index) captures(%19, %exit11, %8, %10, %11, %12, %16):
-                            %21 : index.Index = algebra.add(%20, index.Index(1))
-                            %22 : memory.Reference<number.Float64> = llvm.extract_value<index.Index(0)>(%10)
-                            %23 : index.Index = algebra.multiply(%12, index.Index(4))
-                            %24 : index.Index = algebra.multiply(%16, index.Index(2))
-                            %25 : index.Index = algebra.add(%23, %24)
-                            %26 : index.Index = algebra.add(%25, %20)
-                            %27 : llvm.Ptr = llvm.gep(%22, %26)
-                            %28 : number.Float64 = memory.load(%10, %27)
-                            %29 : memory.Reference<number.Float64> = llvm.extract_value<index.Index(0)>(%11)
-                            %30 : index.Index = algebra.multiply(%12, index.Index(4))
-                            %31 : index.Index = algebra.multiply(%16, index.Index(2))
-                            %32 : index.Index = algebra.add(%30, %31)
-                            %33 : index.Index = algebra.add(%32, %20)
-                            %34 : llvm.Ptr = llvm.gep(%29, %33)
-                            %35 : number.Float64 = memory.load(%11, %34)
-                            %36 : number.Float64 = algebra.multiply(%28, %35)
-                            %37 : memory.Reference<number.Float64> = llvm.extract_value<index.Index(0)>(%8)
-                            %38 : index.Index = algebra.multiply(%12, index.Index(4))
-                            %39 : index.Index = algebra.multiply(%16, index.Index(2))
-                            %40 : index.Index = algebra.add(%38, %39)
-                            %41 : index.Index = algebra.add(%40, %20)
-                            %42 : llvm.Ptr = llvm.gep(%37, %41)
-                            %43 : Nil = memory.store(%36, %36, %42)
-                            %44 : index.Index = chain(%21, %43)
-                            %45 : Nil = goto.branch<%19>([%44])
+    %1 : function.Function<[index.Index], llvm.Ptr> = extern<String("malloc")>()
+    %2 : llvm.Int<index.Index(64)> = llvm.mul(index.Index(8), llvm.Int<index.Index(64)>(8))
+    %3 : llvm.Ptr = function.call<%1>([%2])
+    %4 : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(3)>([2, 2, 2]), number.Float64> = record.pack([%3, index.Index(8)])
+    %5 : toy.Tensor<ndbuffer.Shape<index.Index(3)>([2, 2, 2]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    %6 : toy.Tensor<ndbuffer.Shape<index.Index(3)>([2, 2, 2]), number.Float64> = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+    %loop_header9 : Nil = goto.region([index.Index(0)]) body<%self: goto.Label, %exit9: goto.Label>(%i9: index.Index) captures(%4, %5, %6):
+        %loop_body9 : goto.Label = goto.label([]) body(%7: index.Index) captures(%self, %exit9, %4, %5, %6):
+            %8 : index.Index = algebra.add(%7, index.Index(1))
+            %loop_header10 : Nil = goto.region([index.Index(0)]) body<%9: goto.Label, %exit10: goto.Label>(%i10: index.Index) captures(%4, %5, %6, %7):
+                %loop_body10 : goto.Label = goto.label([]) body(%10: index.Index) captures(%9, %exit10, %4, %5, %6, %7):
+                    %11 : index.Index = algebra.add(%10, index.Index(1))
+                    %loop_header11 : Nil = goto.region([index.Index(0)]) body<%12: goto.Label, %exit11: goto.Label>(%i11: index.Index) captures(%4, %5, %6, %7, %10):
+                        %loop_body11 : goto.Label = goto.label([]) body(%13: index.Index) captures(%12, %exit11, %4, %5, %6, %7, %10):
+                            %14 : index.Index = algebra.add(%13, index.Index(1))
+                            %15 : memory.Buffer<number.Float64> = llvm.extract_value<index.Index(0)>(%5)
+                            %16 : index.Index = algebra.multiply(%7, index.Index(4))
+                            %17 : index.Index = algebra.multiply(%10, index.Index(2))
+                            %18 : index.Index = algebra.add(%16, %17)
+                            %19 : index.Index = algebra.add(%18, %13)
+                            %20 : number.Float64 = memory.buffer_load(%5, %15, %19)
+                            %21 : memory.Buffer<number.Float64> = llvm.extract_value<index.Index(0)>(%6)
+                            %22 : index.Index = algebra.multiply(%7, index.Index(4))
+                            %23 : index.Index = algebra.multiply(%10, index.Index(2))
+                            %24 : index.Index = algebra.add(%22, %23)
+                            %25 : index.Index = algebra.add(%24, %13)
+                            %26 : number.Float64 = memory.buffer_load(%6, %21, %25)
+                            %27 : number.Float64 = algebra.multiply(%20, %26)
+                            %28 : memory.Buffer<number.Float64> = llvm.extract_value<index.Index(0)>(%4)
+                            %29 : index.Index = algebra.multiply(%7, index.Index(4))
+                            %30 : index.Index = algebra.multiply(%10, index.Index(2))
+                            %31 : index.Index = algebra.add(%29, %30)
+                            %32 : index.Index = algebra.add(%31, %13)
+                            %33 : Nil = memory.buffer_store(%27, %28, %32, %27)
+                            %34 : index.Index = chain(%14, %33)
+                            %35 : Nil = goto.branch<%12>([%34])
 
-                        %46 : number.Boolean = algebra.less_than(%i11, index.Index(2))
-                        %47 : Nil = goto.conditional_branch<%loop_body11, %exit11>(%46, [%i11], [])
+                        %36 : number.Boolean = algebra.less_than(%i11, index.Index(2))
+                        %37 : Nil = goto.conditional_branch<%loop_body11, %exit11>(%36, [%i11], [])
 
-                    %48 : index.Index = chain(%17, %loop_header11)
-                    %49 : Nil = goto.branch<%15>([%48])
+                    %38 : index.Index = chain(%11, %loop_header11)
+                    %39 : Nil = goto.branch<%9>([%38])
 
-                %50 : number.Boolean = algebra.less_than(%i10, index.Index(2))
-                %51 : Nil = goto.conditional_branch<%loop_body10, %exit10>(%50, [%i10], [])
+                %40 : number.Boolean = algebra.less_than(%i10, index.Index(2))
+                %41 : Nil = goto.conditional_branch<%loop_body10, %exit10>(%40, [%i10], [])
 
-            %52 : index.Index = chain(%13, %loop_header10)
-            %53 : Nil = goto.branch<%self>([%52])
+            %42 : index.Index = chain(%8, %loop_header10)
+            %43 : Nil = goto.branch<%self>([%42])
 
-        %54 : number.Boolean = algebra.less_than(%i9, index.Index(2))
-        %55 : Nil = goto.conditional_branch<%loop_body9, %exit9>(%54, [%i9], [])
+        %44 : number.Boolean = algebra.less_than(%i9, index.Index(2))
+        %45 : Nil = goto.conditional_branch<%loop_body9, %exit9>(%44, [%i9], [])
 
-    %56 : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(3)>([2, 2, 2]), number.Float64> = chain(%8, %loop_header9)
-    %57 : memory.Reference<number.Float64> = llvm.extract_value<index.Index(0)>(%56)
-    %58 : Nil = function.call<%0>([%57, index.Index(8)])
+    %46 : ndbuffer.NDBuffer<ndbuffer.Shape<index.Index(3)>([2, 2, 2]), number.Float64> = chain(%4, %loop_header9)
+    %47 : memory.Buffer<number.Float64> = llvm.extract_value<index.Index(0)>(%46)
+    %48 : Nil = function.call<%0>([%47, index.Index(8)])

@@ -1,6 +1,5 @@
-from builtin import Nil, Span
+from builtin import Span
 from index import Index
 
 op pack(values: Span)
 op get<index: Index>(record)
-op set<index: Index>(mem, ptr, value) -> Nil

@@ -16,7 +16,7 @@ def test_llvm_via_imports():
         |
         | %0 : Nil = llvm.alloca<index.Index(6)>()
         | %1 : number.Float64 = 1.0
-        | %store : Nil = memory.store(%0, %1, %0)
+        | %store : Nil = memory.buffer_store(%0, %0, index.Index(0), %1)
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))

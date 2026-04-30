@@ -39,10 +39,10 @@ def test_store_then_load_sees_stored_value():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %val : index.Index = 42
-        |     %st : Nil = memory.store(%alloc, %val, %alloc)
-        |     %ld : index.Index = memory.load(%st, %alloc)
+        |     %st : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %val)
+        |     %ld : index.Index = memory.buffer_load(%st, %alloc, index.Index(0))
     """)
         == 42
     )
@@ -61,12 +61,12 @@ def test_two_stores_last_wins():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %v10 : index.Index = 10
-        |     %st1 : Nil = memory.store(%alloc, %v10, %alloc)
+        |     %st1 : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %v10)
         |     %v20 : index.Index = 20
-        |     %st2 : Nil = memory.store(%st1, %v20, %alloc)
-        |     %ld : index.Index = memory.load(%st2, %alloc)
+        |     %st2 : Nil = memory.buffer_store(%st1, %alloc, index.Index(0), %v20)
+        |     %ld : index.Index = memory.buffer_load(%st2, %alloc, index.Index(0))
     """)
         == 20
     )
@@ -85,14 +85,14 @@ def test_three_stores_last_wins():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %v1 : index.Index = 1
-        |     %s1 : Nil = memory.store(%alloc, %v1, %alloc)
+        |     %s1 : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %v1)
         |     %v2 : index.Index = 2
-        |     %s2 : Nil = memory.store(%s1, %v2, %alloc)
+        |     %s2 : Nil = memory.buffer_store(%s1, %alloc, index.Index(0), %v2)
         |     %v3 : index.Index = 3
-        |     %s3 : Nil = memory.store(%s2, %v3, %alloc)
-        |     %ld : index.Index = memory.load(%s3, %alloc)
+        |     %s3 : Nil = memory.buffer_store(%s2, %alloc, index.Index(0), %v3)
+        |     %ld : index.Index = memory.buffer_load(%s3, %alloc, index.Index(0))
     """)
         == 3
     )
@@ -112,14 +112,14 @@ def test_read_modify_write():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %zero : index.Index = 0
-        |     %init : Nil = memory.store(%alloc, %zero, %alloc)
-        |     %cur : index.Index = memory.load(%init, %alloc)
+        |     %init : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %zero)
+        |     %cur : index.Index = memory.buffer_load(%init, %alloc, index.Index(0))
         |     %seven : index.Index = 7
         |     %sum : index.Index = algebra.add(%cur, %seven)
-        |     %st2 : Nil = memory.store(%cur, %sum, %alloc)
-        |     %result : index.Index = memory.load(%st2, %alloc)
+        |     %st2 : Nil = memory.buffer_store(%cur, %alloc, index.Index(0), %sum)
+        |     %result : index.Index = memory.buffer_load(%st2, %alloc, index.Index(0))
     """)
         == 7
     )
@@ -140,14 +140,14 @@ def test_two_independent_locations():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %a : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %v100 : index.Index = 100
-        |     %sta : Nil = memory.store(%a, %v100, %a)
-        |     %la : index.Index = memory.load(%sta, %a)
-        |     %b : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %sta : Nil = memory.buffer_store(%a, %a, index.Index(0), %v100)
+        |     %la : index.Index = memory.buffer_load(%sta, %a, index.Index(0))
+        |     %b : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %v200 : index.Index = 200
-        |     %stb : Nil = memory.store(%b, %v200, %b)
-        |     %lb : index.Index = memory.load(%stb, %b)
+        |     %stb : Nil = memory.buffer_store(%b, %b, index.Index(0), %v200)
+        |     %lb : index.Index = memory.buffer_load(%stb, %b, index.Index(0))
         |     %result : index.Index = algebra.add(%la, %lb)
     """)
         == 300
@@ -159,14 +159,15 @@ def test_store_float_then_load():
     assert (
         _jit("""
         | import function
+        | import index
         | import memory
         | import number
         |
         | %main : function.Function<[], number.Float64> = function.function<number.Float64>() body():
-        |     %alloc : memory.Reference<number.Float64> = memory.stack_allocate<number.Float64>()
+        |     %alloc : memory.Buffer<number.Float64> = memory.buffer_stack_allocate<number.Float64>(index.Index(1))
         |     %val : number.Float64 = 3.14
-        |     %st : Nil = memory.store(%alloc, %val, %alloc)
-        |     %ld : number.Float64 = memory.load(%st, %alloc)
+        |     %st : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %val)
+        |     %ld : number.Float64 = memory.buffer_load(%st, %alloc, index.Index(0))
     """)
         == 3.14
     )
@@ -184,11 +185,11 @@ def test_overwrite_with_input_arg():
         | import memory
         |
         | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %junk : index.Index = 999
-        |     %st1 : Nil = memory.store(%alloc, %junk, %alloc)
-        |     %st2 : Nil = memory.store(%st1, %x, %alloc)
-        |     %ld : index.Index = memory.load(%st2, %alloc)
+        |     %st1 : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %junk)
+        |     %st2 : Nil = memory.buffer_store(%st1, %alloc, index.Index(0), %x)
+        |     %ld : index.Index = memory.buffer_load(%st2, %alloc, index.Index(0))
     """
     assert _jit(ir, 42) == 42
     assert _jit(ir, 0) == 0
@@ -208,18 +209,18 @@ def test_double_read_modify_write():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %z : index.Index = 0
-        |     %init : Nil = memory.store(%alloc, %z, %alloc)
-        |     %l1 : index.Index = memory.load(%init, %alloc)
+        |     %init : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %z)
+        |     %l1 : index.Index = memory.buffer_load(%init, %alloc, index.Index(0))
         |     %five : index.Index = 5
         |     %a1 : index.Index = algebra.add(%l1, %five)
-        |     %s1 : Nil = memory.store(%l1, %a1, %alloc)
-        |     %l2 : index.Index = memory.load(%s1, %alloc)
+        |     %s1 : Nil = memory.buffer_store(%l1, %alloc, index.Index(0), %a1)
+        |     %l2 : index.Index = memory.buffer_load(%s1, %alloc, index.Index(0))
         |     %three : index.Index = 3
         |     %a2 : index.Index = algebra.add(%l2, %three)
-        |     %s2 : Nil = memory.store(%l2, %a2, %alloc)
-        |     %final : index.Index = memory.load(%s2, %alloc)
+        |     %s2 : Nil = memory.buffer_store(%l2, %alloc, index.Index(0), %a2)
+        |     %final : index.Index = memory.buffer_load(%s2, %alloc, index.Index(0))
     """)
         == 8
     )
@@ -238,11 +239,11 @@ def test_mem_from_chain_op():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %val : index.Index = 77
-        |     %st : Nil = memory.store(%alloc, %val, %alloc)
-        |     %ch : memory.Reference<index.Index> = chain(%alloc, %st)
-        |     %ld : index.Index = memory.load(%ch, %alloc)
+        |     %st : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %val)
+        |     %ch : memory.Buffer<index.Index> = chain(%alloc, %st)
+        |     %ld : index.Index = memory.buffer_load(%ch, %alloc, index.Index(0))
     """)
         == 77
     )
@@ -262,13 +263,13 @@ def test_cross_location_ordering():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %a : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %v55 : index.Index = 55
-        |     %sta : Nil = memory.store(%a, %v55, %a)
-        |     %la : index.Index = memory.load(%sta, %a)
-        |     %b : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-        |     %stb : Nil = memory.store(%la, %la, %b)
-        |     %lb : index.Index = memory.load(%stb, %b)
+        |     %sta : Nil = memory.buffer_store(%a, %a, index.Index(0), %v55)
+        |     %la : index.Index = memory.buffer_load(%sta, %a, index.Index(0))
+        |     %b : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
+        |     %stb : Nil = memory.buffer_store(%la, %b, index.Index(0), %la)
+        |     %lb : index.Index = memory.buffer_load(%stb, %b, index.Index(0))
     """)
         == 55
     )
@@ -292,19 +293,19 @@ def test_swap_via_mem_ordering():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %a : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %a : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %v10 : index.Index = 10
-        |     %ia : Nil = memory.store(%a, %v10, %a)
-        |     %la : index.Index = memory.load(%ia, %a)
-        |     %b : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %ia : Nil = memory.buffer_store(%a, %a, index.Index(0), %v10)
+        |     %la : index.Index = memory.buffer_load(%ia, %a, index.Index(0))
+        |     %b : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %v20 : index.Index = 20
-        |     %ib : Nil = memory.store(%b, %v20, %b)
-        |     %lb : index.Index = memory.load(%ib, %b)
+        |     %ib : Nil = memory.buffer_store(%b, %b, index.Index(0), %v20)
+        |     %lb : index.Index = memory.buffer_load(%ib, %b, index.Index(0))
         |     %both : index.Index = chain(%la, %lb)
-        |     %sa : Nil = memory.store(%both, %lb, %a)
-        |     %sb : Nil = memory.store(%both, %la, %b)
-        |     %fa : index.Index = memory.load(%sa, %a)
-        |     %fb : index.Index = memory.load(%sb, %b)
+        |     %sa : Nil = memory.buffer_store(%both, %a, index.Index(0), %lb)
+        |     %sb : Nil = memory.buffer_store(%both, %b, index.Index(0), %la)
+        |     %fa : index.Index = memory.buffer_load(%sa, %a, index.Index(0))
+        |     %fb : index.Index = memory.buffer_load(%sb, %b, index.Index(0))
         |     %h : index.Index = 100
         |     %bs : index.Index = algebra.multiply(%fb, %h)
         |     %result : index.Index = algebra.add(%fa, %bs)
@@ -329,15 +330,15 @@ def test_for_loop_accumulator():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %zero : index.Index = 0
-        |     %init : Nil = memory.store(%alloc, %zero, %alloc)
+        |     %init : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %zero)
         |     %loop : Nil = control_flow.for<index.Index(0), index.Index(5)>([]) body(%iv: index.Index) captures(%alloc, %init):
-        |         %cur : index.Index = memory.load(%init, %alloc)
+        |         %cur : index.Index = memory.buffer_load(%init, %alloc, index.Index(0))
         |         %one : index.Index = 1
         |         %next : index.Index = algebra.add(%cur, %one)
-        |         %_ : Nil = memory.store(%cur, %next, %alloc)
-        |     %result : index.Index = memory.load(%loop, %alloc)
+        |         %_ : Nil = memory.buffer_store(%cur, %alloc, index.Index(0), %next)
+        |     %result : index.Index = memory.buffer_load(%loop, %alloc, index.Index(0))
     """)
         == 5
     )
@@ -358,10 +359,10 @@ def test_for_loop_last_iv_stored():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %loop : Nil = control_flow.for<index.Index(0), index.Index(5)>([]) body(%iv: index.Index) captures(%alloc):
-        |         %_ : Nil = memory.store(%alloc, %iv, %alloc)
-        |     %result : index.Index = memory.load(%loop, %alloc)
+        |         %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %iv)
+        |     %result : index.Index = memory.buffer_load(%loop, %alloc, index.Index(0))
     """)
         == 4
     )
@@ -381,15 +382,15 @@ def test_if_else_stores_to_same_location():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %cond : index.Index = 1
         |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
         |         %t : index.Index = 42
-        |         %_ : Nil = memory.store(%alloc, %t, %alloc)
+        |         %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %t)
         |     else_body() captures(%alloc):
         |         %f : index.Index = 99
-        |         %_ : Nil = memory.store(%alloc, %f, %alloc)
-        |     %result : index.Index = memory.load(%if, %alloc)
+        |         %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %f)
+        |     %result : index.Index = memory.buffer_load(%if, %alloc, index.Index(0))
     """)
         == 42
     )
@@ -405,15 +406,15 @@ def test_if_else_false_branch():
         | import memory
         |
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
-        |     %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        |     %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         |     %cond : index.Index = 0
         |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
         |         %t : index.Index = 42
-        |         %_ : Nil = memory.store(%alloc, %t, %alloc)
+        |         %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %t)
         |     else_body() captures(%alloc):
         |         %f : index.Index = 99
-        |         %_ : Nil = memory.store(%alloc, %f, %alloc)
-        |     %result : index.Index = memory.load(%if, %alloc)
+        |         %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %f)
+        |     %result : index.Index = memory.buffer_load(%if, %alloc, index.Index(0))
     """)
         == 99
     )
