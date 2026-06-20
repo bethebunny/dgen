@@ -155,7 +155,14 @@ python -m dgen.spec examples/toy/dialects/toy.dgen > examples/toy/dialects/toy.p
 
 ## Debugging and Investigation
 
-**Never write throwaway Python scripts.** All investigation, debugging, value inspection, and behavior exploration must go through pytest. Use the `debugging-with-pytest` skill — invoke it before writing any standalone `.py` file, any `python -c` command, any `if __name__ == "__main__"` block, or any script that imports project modules. No exceptions.
+Quick, one-off inspection is fine — a `python -c` one-liner to print a value or check a behavior is often the cheapest way to answer a question, and you don't need to wrap it in a test.
+
+Reach for pytest (and the `debugging-with-pytest` skill) when the work is actually test-shaped:
+- You're iterating — repeated runs of very similar code. Re-typing near-identical `python -c` snippets burns tokens; a test you can re-run is cheaper and clearer.
+- You're debugging existing tests, or exploring behavior that belongs in a fixture/helper that's already there.
+- The exploration is worth keeping. If it verifies something real, write it as a test instead of throwing it away.
+
+Don't leave throwaway `.py` files lying around — if a scratch script earns its place, it becomes a test; otherwise delete it when you're done.
 
 ## Code style
 
