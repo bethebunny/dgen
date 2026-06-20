@@ -98,7 +98,7 @@ class ToyToStructured(Pass):
             )
 
         loop = _nested_for(in_shape, body, captures=[alloc, op.input])
-        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
+        return ChainOp(result=alloc, effect=loop, type=alloc.type)
 
     @lowering_for(toy.MulOp)
     def lower_mul(self, op: toy.MulOp) -> dgen.Value | None:
@@ -129,7 +129,7 @@ class ToyToStructured(Pass):
             return ndbuffer.StoreOp(mem=res, value=res, buffer=alloc, indices=idx)
 
         loop = _nested_for(shape, body, captures=[alloc, lhs, rhs])
-        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
+        return ChainOp(result=alloc, effect=loop, type=alloc.type)
 
     @lowering_for(toy.ReshapeOp)
     def lower_reshape(self, op: toy.ReshapeOp) -> dgen.Value | None:
@@ -163,7 +163,7 @@ class ToyToStructured(Pass):
             )
 
         loop = _nested_for(out_shape, body, captures=[alloc, op.input])
-        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
+        return ChainOp(result=alloc, effect=loop, type=alloc.type)
 
     @lowering_for(toy.ConcatOp)
     def lower_concat(self, op: toy.ConcatOp) -> dgen.Value | None:
@@ -196,8 +196,8 @@ class ToyToStructured(Pass):
             rhs_body,
             captures=[alloc, op.rhs, offset, lhs_loop],
         )
-        after_lhs = ChainOp(lhs=alloc, rhs=lhs_loop, type=alloc.type)
-        return ChainOp(lhs=after_lhs, rhs=rhs_loop, type=alloc.type)
+        after_lhs = ChainOp(result=alloc, effect=lhs_loop, type=alloc.type)
+        return ChainOp(result=after_lhs, effect=rhs_loop, type=alloc.type)
 
     @lowering_for(toy.NonzeroCountOp)
     def lower_nonzero_count(self, op: toy.NonzeroCountOp) -> dgen.Value | None:

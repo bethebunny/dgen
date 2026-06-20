@@ -74,8 +74,8 @@ def test_diff_empty_when_functions_wrapped_identically():
     """)
     from dgen.dialects.builtin import ChainOp
 
-    root_a = ChainOp(lhs=parse(a), rhs=parse(b), type=parse(a).type)
-    root_b = ChainOp(lhs=parse(a), rhs=parse(b), type=parse(a).type)
+    root_a = ChainOp(result=parse(a), effect=parse(b), type=parse(a).type)
+    root_b = ChainOp(result=parse(a), effect=parse(b), type=parse(a).type)
     assert diff_values(root_a, root_b) == ""
 
 

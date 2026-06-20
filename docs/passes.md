@@ -36,7 +36,7 @@ class ToyToStructured(Pass):
     def lower_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
         alloc = ndbuffer.AllocOp(shape=op.type.shape, type=...)
         # ... build nested for ops ...
-        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
+        return ChainOp(result=alloc, effect=loop, type=alloc.type)
 ```
 
 The handler returns the replacement value. The framework calls `block.replace_uses_of(op, result)` automatically — no manual `replace_uses` call needed.
@@ -173,7 +173,7 @@ The final design has handlers return a replacement value. The framework calls `b
 # Approach 3: handler returns replacement value
 alloc_op = ndbuffer.AllocOp(shape=...)
 loop = control_flow.ForOp(body=Block(result=..., ...))
-return ChainOp(lhs=alloc_op, rhs=loop, type=alloc_op.type)
+return ChainOp(result=alloc_op, effect=loop, type=alloc_op.type)
 ```
 
 The handler builds the new ops (which are automatically part of the use-def graph via their operand references) and returns the replacement. The framework calls `block.replace_uses_of(old, replacement)` which cascades through the graph. The new ops are reachable from the block's result because downstream ops now point to `alloc_op`. No splicing, no insertion ordering — the graph is the IR.
@@ -466,7 +466,7 @@ Restrict dgen to `IfOp`/`ForOp`/`WhileOp` and push linearization to codegen. Sim
 
 ### Chain ergonomics in pass handlers
 
-The chain mechanism ensures side effects are in the use-def graph, but handlers that produce side-effecting ops need to thread the chain naturally. The current convention is to use `ChainOp(lhs=result, rhs=side_effect, type=result.type)` — this is adequate but verbose.
+The chain mechanism ensures side effects are in the use-def graph, but handlers that produce side-effecting ops need to thread the chain naturally. The current convention is to use `ChainOp(result=result, effect=side_effect, type=result.type)` — this is adequate but verbose.
 
 ### Dead code elimination strategy
 
@@ -501,7 +501,7 @@ class ToyToStructured(Pass):
     def lower_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
         alloc = ndbuffer.AllocOp(shape=op.type.shape, type=...)
         # ... build ForOp with load/store body ...
-        return ChainOp(lhs=alloc, rhs=loop, type=alloc.type)
+        return ChainOp(result=alloc, effect=loop, type=alloc.type)
 ```
 
 ### Optimization pass (within toy dialect)

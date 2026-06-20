@@ -76,7 +76,7 @@ def test_transitive_dependencies_follows_chain_dependencies():
     """chain(lhs, rhs) creates dependency on rhs, transitive_dependencies finds both."""
     a = builtin.Index().constant(0)
     b = builtin.Index().constant(1)
-    c = builtin.ChainOp(lhs=b, rhs=a, type=builtin.Index())
+    c = builtin.ChainOp(result=b, effect=a, type=builtin.Index())
     deps = list(transitive_dependencies(c))
     assert a in deps and b in deps and c in deps
 
