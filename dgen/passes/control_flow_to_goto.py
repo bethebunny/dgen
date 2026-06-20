@@ -39,9 +39,12 @@ Key points:
 ## WhileOp lowering
 
 Similar structure but simpler: the condition and body are user-provided blocks.
-No explicit chain is needed for the body because the body result IS the
-next-iteration values — the back-edge branch arguments reference them
-transitively.
+When the body carries values, the body result IS the next-iteration tuple and
+the back-edge branch arguments reference them transitively. When the body
+carries nothing (a Nil effect token, e.g. dcc loops that mutate via captured
+memory buffers), that token is passed as the single back-edge argument so the
+branch depends on it (scheduled after the body's effects) and the body stays
+reachable; the Nil token has no runtime representation and emits no phi.
 
 ## IfOp lowering
 
@@ -309,11 +312,23 @@ class ControlFlowToGoto(Pass):
         if isinstance(body_result.type, Never):
             body_block_result: dgen.Value = body_result
         else:
-            assert isinstance(body_result.type, (Array, Tuple)), (
-                f"control_flow.while body result must be a tuple of carried "
-                f"values; got {body_result.type!r}"
-            )
-            body_block_result = goto.BranchOp(target=header_self, arguments=body_result)
+            # Carried values are a tuple lining up with the header's block
+            # args, fed to the back-edge directly. A body that carries no
+            # data values (e.g. dcc loops, which mutate through captured
+            # memory buffers) still produces a Nil effect token; pass it as
+            # the single back-edge argument. This is load-bearing: the
+            # branch must *depend* on body_result so it is scheduled after
+            # the body's side effects (the only dependency slot a branch has
+            # is its arguments), and it keeps the body reachable from the
+            # block result. The Nil token has no runtime representation, so
+            # codegen emits no phi for it. Cross-iteration memory ordering is
+            # delegated to the buffers' alloca lowering — Buffer's contract;
+            # see docs/roadmap.md.
+            if isinstance(body_result.type, (Array, Tuple)):
+                branch_args: dgen.Value = body_result
+            else:
+                branch_args = pack([body_result])
+            body_block_result = goto.BranchOp(target=header_self, arguments=branch_args)
 
         body_block = dgen.Block(
             result=body_block_result,
