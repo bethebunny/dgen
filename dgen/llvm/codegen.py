@@ -22,6 +22,7 @@ from dgen.dialects import (
     llvm,
     memory,
     number,
+    record,
 )
 from dgen.ir.traversal import all_values
 from dgen.layout import Layout
@@ -379,6 +380,10 @@ _NO_ASSIGN_OPS: tuple[type[dgen.Op], ...] = (
     goto.BranchOp,
     goto.ConditionalBranchOp,
     memory.StoreOp,
+    memory.LoadOp,
+    memory.BufferLoadOp,
+    memory.BufferStoreOp,
+    record.PackOp,
     PackOp,
     ConstantOp,
     builtin.ChainOp,
@@ -589,6 +594,7 @@ def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
 @emitter_for(ConstantOp)
 @emitter_for(builtin.ChainOp)
 @emitter_for(builtin.ExternOp)
+@emitter_for(record.PackOp)
 def noop(op: dgen.Op) -> Iterator[str]:
     return ()
 
@@ -679,6 +685,14 @@ def value_reference(v: dgen.Value) -> str:
         return ffi.llvm_constant(bytes(mem.buffer), mem.layout)
     if isinstance(v, builtin.ChainOp):
         return value_reference(v.lhs)
+    # memory.store(ptr, value) -> Reference<T> returns the same pointer.
+    if isinstance(v, memory.StoreOp):
+        return value_reference(v.ptr)
+    # record.pack is a type-tag wrapper around its `values` aggregate;
+    # the LLVM aggregate is whatever ``values`` produces (a PackOp's
+    # insertvalue chain, an aggregate Constant, etc.).
+    if isinstance(v, record.PackOp):
+        return value_reference(v.values)
     if isinstance(v, builtin.ExternOp):
         sym = constant(v.symbol)
         if isinstance(v.type, function.Function):
@@ -826,12 +840,63 @@ def emit_gep(op: llvm.GepOp) -> Iterator[str]:
 
 @emitter_for(memory.StoreOp)
 def emit_store(op: memory.StoreOp) -> Iterator[str]:
+    """memory.store(ptr, value) -> Reference<T>: emit `store`; the op's
+    SSA reference resolves through ``value_reference`` to ``ptr``'s name
+    (the returned Reference is the same pointer)."""
+    if llvm_type(op.value.type) == "void":
+        return
     yield f"  store {typed_reference(op.value)}, ptr {vr(op.ptr)}"
 
 
 @emitter_for(memory.LoadOp)
 def emit_load(op: memory.LoadOp) -> Iterator[str]:
-    yield f"  load {llvm_type(op.type)}, ptr {vr(op.ptr)}"
+    """memory.load(ptr) -> Tuple<T, Reference<T>>: load T from ptr, then
+    build a ``{T, ptr}`` aggregate via insertvalue. ``Nil`` element T
+    drops out — the aggregate becomes ``{ptr}``."""
+    ctx = _ctx()
+    tracker = ctx.tracker
+    op_name = tracker.name(op)
+    elem_llvm = llvm_type(op.ptr.type.element_type)
+    arg_types = _tuple_arg_types(op)
+    tuple_ty = _tuple_llvm_type(arg_types)
+    fields = _llvm_fields(arg_types)
+    if not fields:
+        return
+    if elem_llvm == "void":
+        # Only the ptr is LLVM-visible; Nil-typed value field drops out.
+        yield (f"  %{op_name} = insertvalue {tuple_ty} undef, ptr {vr(op.ptr)}, 0")
+        return
+    loaded = tracker.fresh()
+    yield f"  %{loaded} = load {elem_llvm}, ptr {vr(op.ptr)}"
+    mid = tracker.fresh()
+    yield (f"  %{mid} = insertvalue {tuple_ty} undef, {elem_llvm} %{loaded}, 0")
+    yield (f"  %{op_name} = insertvalue {tuple_ty} %{mid}, ptr {vr(op.ptr)}, 1")
+
+
+@emitter_for(memory.BufferLoadOp)
+def emit_buffer_load(op: memory.BufferLoadOp) -> Iterator[str]:
+    """buffer_load(mem, buf, index) -> T: gep then load."""
+    ctx = _ctx()
+    tracker = ctx.tracker
+    op_name = tracker.name(op)
+    ret_ty = llvm_type(op.type)
+    if ret_ty == "void":
+        return
+    gep = tracker.fresh()
+    yield f"  %{gep} = getelementptr double, ptr {vr(op.buf)}, {typed_reference(op.index)}"
+    yield f"  %{op_name} = load {ret_ty}, ptr %{gep}"
+
+
+@emitter_for(memory.BufferStoreOp)
+def emit_buffer_store(op: memory.BufferStoreOp) -> Iterator[str]:
+    """buffer_store(mem, buf, index, value) -> Nil: gep then store."""
+    val_ty = llvm_type(op.value.type)
+    if val_ty == "void":
+        return
+    ctx = _ctx()
+    gep = ctx.tracker.fresh()
+    yield f"  %{gep} = getelementptr double, ptr {vr(op.buf)}, {typed_reference(op.index)}"
+    yield f"  store {typed_reference(op.value)}, ptr %{gep}"
 
 
 @emitter_for(llvm.ExtractValueOp)

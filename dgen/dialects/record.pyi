@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dgen import Dialect, Op, Type, Value
-from dgen.dialects.builtin import Nil
 from dgen.dialects.index import Index
 
 record = Dialect("record")
@@ -20,11 +19,3 @@ class GetOp(Op):
     index: Value[Index]
     record: Value
     type: Type
-
-@dataclass(eq=False)
-class SetOp(Op):
-    index: Value[Index]
-    mem: Value
-    ptr: Value
-    value: Value
-    type: Type = Nil()

@@ -113,15 +113,15 @@ def test_if_void_lowering(ir_snapshot):
         | import control_flow
         | import index
         | import memory
-        | %alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+        | %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
         | %cond : index.Index = 1
         | %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%alloc):
         |     %t : index.Index = 42
-        |     %_ : Nil = memory.store(%alloc, %t, %alloc)
+        |     %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %t)
         | else_body() captures(%alloc):
         |     %f : index.Index = 99
-        |     %_ : Nil = memory.store(%alloc, %f, %alloc)
-        | %result : index.Index = memory.load(%if, %alloc)
+        |     %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %f)
+        | %result : index.Index = memory.buffer_load(%if, %alloc, index.Index(0))
     """)
     value = parse(ir)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(value)

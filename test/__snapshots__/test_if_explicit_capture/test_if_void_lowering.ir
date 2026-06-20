@@ -3,18 +3,18 @@ import index
 import memory
 
 %cond : index.Index = 1
-%alloc : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+%alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
 %if0 : Nil = goto.region([]) body<%self: goto.Label, %if_exit0: goto.Label>() captures(%cond, %alloc, %alloc):
-    %if_then0 : goto.Label = goto.label([]) body() captures(%if_exit0, %alloc):
+    %if_then0 : goto.Label = goto.label([]) body() captures(%alloc, %if_exit0):
         %t : index.Index = 42
-        %_ : Nil = memory.store(%alloc, %t, %alloc)
+        %_ : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %t)
         %0 : Nil = goto.branch<%if_exit0>([%_])
 
-    %if_else0 : goto.Label = goto.label([]) body() captures(%if_exit0, %alloc):
+    %if_else0 : goto.Label = goto.label([]) body() captures(%alloc, %if_exit0):
         %f : index.Index = 99
-        %1 : Nil = memory.store(%alloc, %f, %alloc)
+        %1 : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %f)
         %2 : Nil = goto.branch<%if_exit0>([%1])
 
     %3 : Nil = goto.conditional_branch<%if_then0, %if_else0>(%cond, [], [])
 
-%result : index.Index = memory.load(%if0, %alloc)
+%result : index.Index = memory.buffer_load(%if0, %alloc, index.Index(0))

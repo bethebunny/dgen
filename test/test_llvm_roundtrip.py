@@ -28,8 +28,8 @@ def test_roundtrip_gep_load_store():
         | %1 : index.Index = 0
         | %2 : Nil = llvm.gep(%0, %1)
         | %3 : number.Float64 = 1.0
-        | %4 : Nil = memory.store(%2, %3, %2)
-        | %5 : Nil = memory.load(%4, %2)
+        | %4 : Nil = memory.buffer_store(%2, %2, index.Index(0), %3)
+        | %5 : Nil = memory.buffer_load(%4, %2, index.Index(0))
     """)
     value = parse(ir)
     assert_ir_equivalent(value, asm.parse(asm.format(value)))

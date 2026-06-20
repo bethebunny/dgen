@@ -2,14 +2,9 @@ import index
 import memory
 import record
 
-%0 : memory.Reference<Tuple<[Type, index.Index]>> = memory.heap_allocate<Tuple<[Type, index.Index]>>(index.Index(2))
-
+%0 : memory.Buffer<Tuple<[Type, index.Index]>> = memory.buffer_allocate<Tuple<[Type, index.Index]>>(index.Index(1))
 %x : index.Index = 42
-
 %1 : Type = type(%x)
-
 %2 : Tuple<[Type, index.Index]> = record.pack([%1, %x])
-
-%3 : Nil = memory.store(%0, %2, %0)
-
-%4 : memory.Reference<Tuple<[Type, index.Index]>> = chain(%0, %3)
+%3 : Nil = memory.buffer_store(%0, %0, index.Index(0), %2)
+%4 : memory.Buffer<Tuple<[Type, index.Index]>> = chain(%0, %3)

@@ -47,7 +47,7 @@ def test_record_pack_get_field_zero() -> None:
         | import record
         |
         | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
-        |     %packed : Span<index.Index> = record.pack([%a, %b])
+        |     %packed : Array<index.Index, index.Index(2)> = record.pack([%a, %b])
         |     %result : index.Index = record.get<index.Index(0)>(%packed)
     """)
     )
@@ -63,7 +63,7 @@ def test_record_pack_get_field_one() -> None:
         | import record
         |
         | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
-        |     %packed : Span<index.Index> = record.pack([%a, %b])
+        |     %packed : Array<index.Index, index.Index(2)> = record.pack([%a, %b])
         |     %result : index.Index = record.get<index.Index(1)>(%packed)
     """)
     )
@@ -79,7 +79,7 @@ def test_record_pack_get_multiple_values() -> None:
         | import record
         |
         | %main : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
-        |     %packed : Span<index.Index> = record.pack([%a, %b])
+        |     %packed : Array<index.Index, index.Index(2)> = record.pack([%a, %b])
         |     %result : index.Index = record.get<index.Index(1)>(%packed)
     """)
     )
@@ -87,90 +87,7 @@ def test_record_pack_get_multiple_values() -> None:
         assert exe.run(a, b).to_json() == b
 
 
-# ---------------------------------------------------------------------------
-# record_set: mutate a field in a Reference, verify via load + record_get
-# ---------------------------------------------------------------------------
-
-
-def test_record_set_then_load_get() -> None:
-    """Pack, store to ref, set field 1, load back, get field 1."""
-    exe = _compile(
-        strip_prefix("""
-        | import function
-        | import index
-        | import record
-        | import memory
-        |
-        | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_b: index.Index):
-        |     %packed : Span<index.Index> = record.pack([%a, %b])
-        |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
-        |     %st : Nil = memory.store(%ref, %packed, %ref)
-        |     %st2 : Nil = record.set<index.Index(1)>(%st, %ref, %new_b)
-        |     %updated : Span<index.Index> = memory.load(%st2, %ref)
-        |     %result : index.Index = record.get<index.Index(1)>(%updated)
-    """)
-    )
-    assert exe.run(10, 20, 77).to_json() == 77
-
-
-def test_record_set_preserves_other_field() -> None:
-    """Set field 1, verify field 0 is unchanged."""
-    exe = _compile(
-        strip_prefix("""
-        | import function
-        | import index
-        | import record
-        | import memory
-        |
-        | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_b: index.Index):
-        |     %packed : Span<index.Index> = record.pack([%a, %b])
-        |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
-        |     %st : Nil = memory.store(%ref, %packed, %ref)
-        |     %st2 : Nil = record.set<index.Index(1)>(%st, %ref, %new_b)
-        |     %updated : Span<index.Index> = memory.load(%st2, %ref)
-        |     %result : index.Index = record.get<index.Index(0)>(%updated)
-    """)
-    )
-    assert exe.run(10, 20, 77).to_json() == 10
-
-
-def test_record_set_field_zero() -> None:
-    """Set field 0, read it back."""
-    exe = _compile(
-        strip_prefix("""
-        | import function
-        | import index
-        | import record
-        | import memory
-        |
-        | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_a: index.Index):
-        |     %packed : Span<index.Index> = record.pack([%a, %b])
-        |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
-        |     %st : Nil = memory.store(%ref, %packed, %ref)
-        |     %st2 : Nil = record.set<index.Index(0)>(%st, %ref, %new_a)
-        |     %updated : Span<index.Index> = memory.load(%st2, %ref)
-        |     %result : index.Index = record.get<index.Index(0)>(%updated)
-    """)
-    )
-    assert exe.run(10, 20, 99).to_json() == 99
-
-
-def test_record_set_field_zero_preserves_field_one() -> None:
-    """Set field 0, verify field 1 is unchanged."""
-    exe = _compile(
-        strip_prefix("""
-        | import function
-        | import index
-        | import record
-        | import memory
-        |
-        | %main : function.Function<[index.Index, index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index, %new_a: index.Index):
-        |     %packed : Span<index.Index> = record.pack([%a, %b])
-        |     %ref : memory.Reference<Span<index.Index>> = memory.stack_allocate<Span<index.Index>>()
-        |     %st : Nil = memory.store(%ref, %packed, %ref)
-        |     %st2 : Nil = record.set<index.Index(0)>(%st, %ref, %new_a)
-        |     %updated : Span<index.Index> = memory.load(%st2, %ref)
-        |     %result : index.Index = record.get<index.Index(1)>(%updated)
-    """)
-    )
-    assert exe.run(10, 20, 99).to_json() == 20
+# NOTE: record.set was removed alongside the State-effect / Linear
+# Reference refactor (see docs/effects.md). Records are SSA aggregates
+# now; in-place field mutation is expressed at the memory level via the
+# linear store/load pattern, not via a record op.

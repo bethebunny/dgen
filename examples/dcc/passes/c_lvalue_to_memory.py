@@ -2,14 +2,20 @@
 
 Memory ordering is carried by the use-def graph: each LvalueVarOp.source
 points to the prior operation on that variable. After replace_uses_of
-runs on earlier ops, sources become StoreOp/LoadOp/PackOp/control-flow
-values — any of these serve as mem tokens for the next operation.
+runs on earlier ops, sources become BufferStoreOp/BufferLoadOp/PackOp/
+control-flow values — any of these serve as mem tokens for the next
+operation.
 
 Only BlockArgument and ConstantOp indicate the first operation on a
 variable — those fall back to the alloca as the initial mem token.
 
 Reads depend on the latest write. Writes depend on all pending reads
 (via a PackOp source). Operations on different variables are independent.
+
+Each variable is a single-cell ``memory.Buffer<T>`` (count=1) — Buffer
+is non-linear, so it can be captured into nested control-flow blocks
+and used many times across the function body. Reference would not
+survive captures (Linear discipline).
 """
 
 from __future__ import annotations
@@ -17,16 +23,17 @@ from __future__ import annotations
 import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import memory
+from dgen.dialects.index import Index
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Constant
 
 from dcc.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 
 # After replace_uses_of, a LvalueVarOp.source that was originally an
-# AssignOp/LvalueToRvalueOp becomes the StoreOp/LoadOp/PackOp that
-# replaced it. Control flow ops (IfOp, WhileOp, RegionOp) also appear
-# as ordering fences when variables are read/written inside control flow.
-# All of these are valid mem tokens — use them directly.
+# AssignOp/LvalueToRvalueOp becomes the BufferStoreOp/BufferLoadOp/PackOp
+# that replaced it. Control flow ops (IfOp, WhileOp, RegionOp) also
+# appear as ordering fences when variables are read/written inside
+# control flow. All of these are valid mem tokens — use them directly.
 # Only BlockArgument and Constant indicate the first operation on a
 # variable — those fall back to the alloca as the initial mem token.
 _INITIAL_VALUE_TYPES = (BlockArgument, Constant)
@@ -43,7 +50,7 @@ class CLvalueToMemory(Pass):
     allow_unregistered_ops = True
 
     def __init__(self) -> None:
-        self._alloca: dict[str, memory.StackAllocateOp] = {}
+        self._alloca: dict[str, memory.BufferStackAllocateOp] = {}
         self._alloca_owner: dict[str, dgen.Block] = {}
         self._block_stack: list[dgen.Block] = []
 
@@ -58,7 +65,7 @@ class CLvalueToMemory(Pass):
         super()._lower_block(block)
         self._block_stack.pop()
 
-    def _capture_alloca(self, name: str, alloca: memory.StackAllocateOp) -> None:
+    def _capture_alloca(self, name: str, alloca: memory.BufferStackAllocateOp) -> None:
         """Add alloca as a capture to every block in the stack that isn't
         the block where the alloca was created."""
         owner = self._alloca_owner[name]
@@ -75,7 +82,9 @@ class CLvalueToMemory(Pass):
         self._capture_alloca(name, alloca)
         source = op.lvalue.source
         mem = alloca if isinstance(source, _INITIAL_VALUE_TYPES) else source
-        return memory.StoreOp(mem=mem, value=op.rvalue, ptr=alloca)
+        return memory.BufferStoreOp(
+            mem=mem, buf=alloca, index=Index().constant(0), value=op.rvalue
+        )
 
     @lowering_for(LvalueToRvalueOp)
     def lower_lvalue_to_rvalue(self, op: LvalueToRvalueOp) -> dgen.Value | None:
@@ -88,18 +97,21 @@ class CLvalueToMemory(Pass):
         self._capture_alloca(name, alloca)
         source = op.lvalue.source
         mem = alloca if isinstance(source, _INITIAL_VALUE_TYPES) else source
-        return memory.LoadOp(mem=mem, ptr=alloca, type=op.type)
+        return memory.BufferLoadOp(
+            mem=mem, buf=alloca, index=Index().constant(0), type=op.type
+        )
 
     def _ensure_alloca(
         self, name: str, element_type: dgen.Type
-    ) -> memory.StackAllocateOp:
-        """Get or create a stack allocation for a variable."""
+    ) -> memory.BufferStackAllocateOp:
+        """Get or create a stack-allocated 1-cell buffer for a variable."""
         alloca = self._alloca.get(name)
         if alloca is not None:
             return alloca
-        alloca = memory.StackAllocateOp(
+        alloca = memory.BufferStackAllocateOp(
             element_type=element_type,
-            type=memory.Reference(element_type=element_type),
+            count=Index().constant(1),
+            type=memory.Buffer(element_type=element_type),
         )
         self._alloca[name] = alloca
         # Allocas belong to the outermost block (function body), not

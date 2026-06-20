@@ -201,12 +201,25 @@ class ToyToStructured(Pass):
 
     @lowering_for(toy.NonzeroCountOp)
     def lower_nonzero_count(self, op: toy.NonzeroCountOp) -> dgen.Value | None:
-        """Count nonzero elements: stack-alloc accumulator, nested loop, load/compare/add."""
+        """Count nonzero elements: heap-alloc 1-cell accumulator, nested loop, load/compare/add.
+
+        Uses ``memory.Buffer<Index>(count=1)`` rather than ``Reference<Index>``:
+        the loop body captures the accumulator and threads a ``mem``-token
+        through ``buffer_load``/``buffer_store`` for ordering. Reference is
+        ``Linear`` and would not survive being captured into a loop body
+        (no loop-carry support on ``control_flow.for`` yet).
+        """
         shape = self._shape(op.input)
-        reference_type = memory.Reference(element_type=Index())
-        accumulator = memory.StackAllocateOp(element_type=Index(), type=reference_type)
-        initial_store = memory.StoreOp(
-            mem=accumulator, value=Index().constant(0), ptr=accumulator
+        buf_type = memory.Buffer(element_type=Index())
+        zero_idx = Index().constant(0)
+        accumulator = memory.BufferStackAllocateOp(
+            element_type=Index(), count=Index().constant(1), type=buf_type
+        )
+        initial_store = memory.BufferStoreOp(
+            mem=accumulator,
+            buf=accumulator,
+            index=zero_idx,
+            value=Index().constant(0),
         )
         zero = Float64().constant(0.0)
 
@@ -215,17 +228,23 @@ class ToyToStructured(Pass):
                 mem=op.input, buffer=op.input, indices=pack(ivars)
             )
             nonzero = algebra.NotEqualOp(left=element, right=zero, type=Boolean())
-            current = memory.LoadOp(mem=initial_store, ptr=accumulator, type=Index())
+            current = memory.BufferLoadOp(
+                mem=initial_store, buf=accumulator, index=zero_idx, type=Index()
+            )
             updated = algebra.AddOp(
                 left=current,
                 right=algebra.CastOp(input=nonzero, type=Index()),
                 type=Index(),
             )
-            return memory.StoreOp(mem=current, value=updated, ptr=accumulator)
+            return memory.BufferStoreOp(
+                mem=current, buf=accumulator, index=zero_idx, value=updated
+            )
 
         loop = _nested_for(
             shape,
             body,
             captures=[accumulator, initial_store, zero, op.input],
         )
-        return memory.LoadOp(mem=loop, ptr=accumulator, type=Index())
+        return memory.BufferLoadOp(
+            mem=loop, buf=accumulator, index=zero_idx, type=Index()
+        )

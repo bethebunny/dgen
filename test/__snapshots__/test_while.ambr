@@ -12,32 +12,27 @@
   while_body0:
     %_2 = phi { i64 } [ %_3, %while_body0_exit ]
     %wb0_oi = extractvalue { i64 } %_2, 0
-    %_4 = alloca double, i64 1
-    %_5 = add i64 %wb0_oi, 1
+    %_4 = add i64 %wb0_oi, 1
     br label %while_header1
   while_header1:
-    %_6 = phi { i64 } [ { i64 0 }, %while_body0 ], [ %_7, %while_body1 ]
-    %wh1_j = extractvalue { i64 } %_6, 0
+    %_5 = phi { i64 } [ { i64 0 }, %while_body0 ], [ { i64 0 }, %while_body1 ]
+    %wh1_j = extractvalue { i64 } %_5, 0
     br label %while_body1_exit
   while_body1:
-    %_8 = phi { i64 } [ %_9, %while_body1_exit ]
-    %wb1_j2 = extractvalue { i64 } %_8, 0
-    %_10 = alloca double, i64 1
-    store i64 0, ptr %_10
-    %_7 = load i64, ptr %_10
+    %_6 = phi { i64 } [ %_7, %while_body1_exit ]
+    %wb1_j2 = extractvalue { i64 } %_6, 0
     br label %while_header1
   while_body1_exit:
-    %_11 = icmp slt i64 %wh1_j, 2
-    %_9 = insertvalue { i64 } undef, i64 %wh1_j, 0
-    br i1 %_11, label %while_body1, label %exit1
+    %_8 = icmp slt i64 %wh1_j, 2
+    %_7 = insertvalue { i64 } undef, i64 %wh1_j, 0
+    br i1 %_8, label %while_body1, label %exit1
   exit1:
-    store i64 %_5, ptr %_4
-    %_1 = load i64, ptr %_4
+    %_1 = insertvalue { i64 } undef, i64 %_4, 0
     br label %while_header0
   while_body0_exit:
-    %_12 = icmp slt i64 %wh0_i, 2
+    %_9 = icmp slt i64 %wh0_i, 2
     %_3 = insertvalue { i64 } undef, i64 %wh0_i, 0
-    br i1 %_12, label %while_body0, label %exit0
+    br i1 %_9, label %while_body0, label %exit0
   exit0:
     ret void
   }
@@ -56,15 +51,13 @@
   while_body0:
     %_2 = phi { i64 } [ %_3, %while_body0_exit ]
     %wb0_i = extractvalue { i64 } %_2, 0
-    %_4 = alloca double, i64 1
-    %_5 = add i64 %wb0_i, 1
-    store i64 %_5, ptr %_4
-    %_1 = load i64, ptr %_4
+    %_4 = add i64 %wb0_i, 1
+    %_1 = insertvalue { i64 } undef, i64 %_4, 0
     br label %while_header0
   while_body0_exit:
-    %_6 = icmp slt i64 %wh0_i, 10
+    %_5 = icmp slt i64 %wh0_i, 10
     %_3 = insertvalue { i64 } undef, i64 %wh0_i, 0
-    br i1 %_6, label %while_body0, label %exit0
+    br i1 %_5, label %while_body0, label %exit0
   exit0:
     ret void
   }

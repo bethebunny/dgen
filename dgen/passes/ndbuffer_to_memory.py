@@ -1,12 +1,12 @@
 """Lower ndbuffer dialect to memory dialect.
 
-Converts shaped N-dimensional buffer ops to flat pointer ops with
-index linearization.
+Converts shaped N-dimensional buffer ops to flat ``memory.Buffer<T>``
+ops with index linearization.
 
-    ndbuffer.alloc(shape) → record.pack([heap_allocate(total), total])
-    ndbuffer.load(mem, buf, [i, j]) → memory.load(mem, memory.offset(deref(buf), linear))
-    ndbuffer.store(mem, val, buf, [i, j]) → memory.store(mem, val, memory.offset(...))
-    ndbuffer.dealloc → memory.deallocate
+    ndbuffer.alloc(shape) → record.pack([buffer_allocate(total), total])
+    ndbuffer.load(mem, buf, [i, j]) → memory.buffer_load(mem, deref(buf), linear)
+    ndbuffer.store(mem, val, buf, [i, j]) → memory.buffer_store(mem, deref(buf), linear, val)
+    ndbuffer.dealloc → memory.buffer_deallocate
     ndbuffer.print_memref → llvm.call<"print_memref">
 """
 
@@ -51,7 +51,7 @@ def _deref(val: dgen.Value) -> dgen.Value:
     return RecordGetOp(
         index=Index().constant(0),
         record=val,
-        type=memory.Reference(element_type=Float64()),
+        type=memory.Buffer(element_type=Float64()),
     )
 
 
@@ -77,10 +77,10 @@ class NDBufferToMemory(Pass):
         assert isinstance(shape, list)
         total = prod(shape)
         dtype = Float64()
-        alloc = memory.HeapAllocateOp(
+        alloc = memory.BufferAllocateOp(
             element_type=dtype,
             count=Index().constant(total),
-            type=memory.Reference(element_type=dtype),
+            type=memory.Buffer(element_type=dtype),
         )
         result = RecordPackOp(
             values=pack([alloc, Index().constant(total)]),
@@ -91,27 +91,25 @@ class NDBufferToMemory(Pass):
 
     @lowering_for(ndbuffer.DeallocOp)
     def lower_dealloc(self, op: ndbuffer.DeallocOp) -> dgen.Value | None:
-        return memory.DeallocateOp(mem=op.mem, ptr=_deref(op.buffer))
+        return memory.BufferDeallocateOp(mem=op.mem, buf=_deref(op.buffer))
 
     @lowering_for(ndbuffer.LoadOp)
     def lower_load(self, op: ndbuffer.LoadOp) -> dgen.Value | None:
-        ptr = _deref(op.buffer)
+        buf = _deref(op.buffer)
         shape = self._resolve_shape(op.buffer)
         offset = _linearize(shape, unpack(op.indices))
-        offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ptr.type)
-        return memory.LoadOp(mem=op.mem, ptr=offset_ptr, type=op.type)
+        return memory.BufferLoadOp(mem=op.mem, buf=buf, index=offset, type=op.type)
 
     @lowering_for(ndbuffer.StoreOp)
     def lower_store(self, op: ndbuffer.StoreOp) -> dgen.Value | None:
-        ptr = _deref(op.buffer)
+        buf = _deref(op.buffer)
         shape = self._resolve_shape(op.buffer)
         offset = _linearize(shape, unpack(op.indices))
-        offset_ptr = memory.OffsetOp(ptr=ptr, index=offset, type=ptr.type)
-        return memory.StoreOp(mem=op.mem, value=op.value, ptr=offset_ptr)
+        return memory.BufferStoreOp(mem=op.mem, buf=buf, index=offset, value=op.value)
 
     @lowering_for(ndbuffer.PrintMemrefOp)
     def lower_print(self, op: ndbuffer.PrintMemrefOp) -> dgen.Value | None:
-        ptr = _deref(op.buffer)
+        buf = _deref(op.buffer)
         shape = self._resolve_shape(op.buffer)
         size = prod(shape)
         print_memref = ExternOp(
@@ -120,5 +118,5 @@ class NDBufferToMemory(Pass):
                 arguments=pack([llvm.Ptr(), Index()]), result_type=Nil()
             ),
         )
-        args = pack([ptr, Index().constant(size)])
+        args = pack([buf, Index().constant(size)])
         return function.CallOp(callee=print_memref, arguments=args, type=Nil())
