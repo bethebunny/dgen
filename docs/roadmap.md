@@ -43,17 +43,19 @@ Two foundation items dominate the leverage map:
 
 - **Traits + type subtyping** gates collections (return-type polymorphism),
   actor supervision (effect subtyping), and self-hosting (op/trait hierarchies).
-- **Origins (linear memory)** gates actor message ownership, mutable collections /
-  builders, and dcc memory correctness at scale.
+- **Origins (linear memory)** gates actor message ownership and mutable collections /
+  builders. It does **not** gate dcc — C's unsafe pointer model (arbitrary pointer
+  arithmetic, manual `malloc`/`free`, aliasing) fits the legacy `Buffer`/mem-token
+  substrate, not the linear alias forest. See H1.
 
 Behind those: `func.recursive` + iterative traversal (recursion everywhere),
 FatPointer/List + the Span/value-bundle refactor (dynamic data + clean op fields),
 cross-function effects (actors), and Block-as-Value + generic ops (self-hosting).
 
 **Build the spine once; the verticals get much cheaper.** The plan therefore ships
-**dcc continuously** (it needs only a thin slice of spine and keeps producing demos)
-while the rest of the spine is built to serve collections, then actors, then
-self-hosting.
+**dcc continuously** — it is largely *decoupled* from the spine (it rides `Buffer` +
+LLVM, not origins; see H1) and keeps producing demos — while the spine is built to
+serve collections, then actors, then self-hosting.
 
 ---
 
@@ -90,6 +92,12 @@ The first end-to-end proof point. Mostly integration + scale, little new theory.
   ops; lets dcc drop its bespoke 3-op pass.
 - **Codegen correctness blockers for scale**: `Executable.run()` lifetime bug,
   `ChainOp` type forwarding, Boolean-typed conditions, proper "is-terminator" check.
+- **Memory: `Buffer` is dcc's permanent substrate** — not a stopgap. C is deliberately
+  unsafe, so dcc rides `memory.Buffer` (mem-token, lowered to `alloca` + LLVM mem2reg,
+  exactly how clang compiles C) and does **not** adopt origins (H2.2). The only
+  memory work dcc needs: the `control_flow_to_goto` loop regression fix (mem token
+  threaded as a loop carry), and hardening `Buffer`'s intra-block read/write ordering
+  if it proves incomplete at sqlite scale.
 - **sqlite scale test / ratchet** (Brick 12) — coverage measurement, raise thresholds.
 - **C-with-dependent-types demo** — rides the *already-working* staging engine (e.g. a C
   routine whose buffer size is a dependent type resolved at JIT time). This is the
@@ -103,9 +111,16 @@ Built to serve H3–H5. Internally dependency-ordered.
 
 1. **Traits + type subtyping** + **constraint expression evaluation** (`ExpressionConstraint`,
    `HasTypeConstraint` — today stored but skipped). *Keystone.*
-2. **Memory model: #184 → origins.** Land linear `Reference` + `Buffer` (#184), then the
-   full `docs/effects.md` origins design: destructor obligations, forest-based alias
-   analysis, ownership transfer on return. Retire mem tokens.
+2. **Memory model: finish origins (#184 was skeleton-only).** #184 landed the linear
+   `State`/`Reference<T>` *skeleton* (load → `Tuple<value, Reference>`, unpacked) but
+   left it essentially **unused**: every real consumer (dcc, toy, ndbuffer, record) was
+   parked on a renamed legacy mem-token type, `memory.Buffer`, and mem tokens were **not**
+   removed. So this is `docs/effects.md` implementation-plan steps 3–7, mostly unbuilt:
+   the **alias forest + sub-origins** (the safe form of indexed/structural access — what
+   actually lets the *safe* dialects leave `Buffer`), destructor obligations + ordering,
+   ownership transfer on return, loop-carry threading of the memory effect, and real
+   per-op linearity contracts. Retiring `Buffer` applies only to the **safe** dialects
+   (ndbuffer/record/collections); dcc keeps `Buffer` permanently (H1).
 3. **Effect maturation**: per-op **linearity contracts** (replace the unconditional
    "unknown" predicate), **effect subtyping** (`Raise <: Diverge`), loop-carry linearity.
 4. **Cross-function effects** — lift the v1 function-local limit. *Required by actors.*
@@ -164,7 +179,7 @@ Express transformations as dialect-described IR **without** giving up Python pas
 graph LR
     H0["H0 Unblock<br/>call-fork · func.recursive ·<br/>iterative walk · dcc Never chain"]
     H1["H1 dcc → sqlite<br/>bricks · scale · dependent-types demo · perf"]
-    H2["H2 Spine<br/>traits+subtyping · #184→origins ·<br/>cross-fn effects · FatPointer/List · type-staging"]
+    H2["H2 Spine<br/>traits+subtyping · finish origins (#184 skeleton) ·<br/>cross-fn effects · FatPointer/List · type-staging"]
     H3["H3 Collections<br/>trait hierarchy · immutable→mutable"]
     H4["H4 Actors + runtime<br/>Send/Spawn/Supervise · mailboxes/scheduler"]
     H5["H5 Self-hosting<br/>Block-as-Value · passes dialect (+Python)"]
@@ -182,27 +197,32 @@ dcc (H1) ships first and continuously. The spine (H2) is built next and feeds th
 remaining verticals, which overlap: collections (H3) leads actors (H4) because meshes
 depend on it; self-hosting (H5) rides the same op-field/Block-as-Value cleanups.
 
-## How the 9 open PRs map to horizons
+## How the open PRs map to horizons
 
-| PR | Feeds | Action |
-|----|-------|--------|
-| #165, #169 (dcc calls, return) | **H0/H1** | Order & land; add merge elision |
-| #128 (break/continue, `Never`) | **H0** | Reconcile with #169; one source of truth for `Never` |
-| #139 (call as operand) | **H0** | Decide vs Option C, then land — gates `func.recursive` |
-| #184 (linear `Reference`) | **H2.2** | Rebase to current `main`; step 1 of origins |
+Triage outcome (2026-06-20): #184 **merged**; #128, #97, #135, #43 **closed** as defunct.
+Remaining open:
+
+| PR | Feeds | Status / action |
+|----|-------|-----------------|
+| #165, #169 (dcc calls, return) | **H0/H1** | Rebasing onto post-#184 `main`; then add merge elision |
+| #139 (call as operand) | **H0** | Decide vs Option C, then re-implement — gates `func.recursive` (branch rotted) |
 | #102 (grad/autodiff) | Toy (off the critical path) | Rebase; land opportunistically |
-| #97 (fn-ref tests + conftest) | H0 hygiene | Rebase or fold in |
-| #135 (docs consolidation) | — | **Redo against current docs**, don't merge as-is |
-| #43 (manim viz) | demo/marketing | Orthogonal; keep or close |
+
+Closed: **#184** linear `State`/`Reference` skeleton merged (consumers stay on `Buffer`;
+the origins follow-through is H2.2). **#128** break/continue + `Never` superseded (already
+on `main`). **#97** fn-ref tests asserted the pre-#165 callee model. **#135** docs
+consolidation would delete cited docs — redo fresh in H0. **#43** manim viz bit-rotted.
 
 ## Risks & things to watch
 
 - **The actor in-process runtime is the biggest new scope** — it's a runtime/systems
   component, not a compiler pass. Budget for it as its own project; derisk with a
   minimal mailbox+scheduler spike before committing the full supervision model.
-- **Origins is large and central.** #184 is only step 1; the alias forest + destructor
-  ordering is the hard part. Mutable collections and actor messages both block on it —
-  sequence it early in H2.
+- **Origins is large, central, and barely started.** #184 shipped only the linear
+  skeleton and left it unused — mem tokens live on as `memory.Buffer` under every real
+  consumer. The hard parts (alias forest + sub-origins, destructor ordering, loop-carry
+  threading, per-op linearity contracts) are unbuilt. Actor messages and mutable
+  collections block on it — sequence it early in H2. dcc does **not** (it keeps `Buffer`).
 - **The `call`/recursion fork is overdue and cheap to decide** — every recursion-bearing
   objective waits on it. Decide in H0.
 - **Doc drift** (`docs/ongoing-work.md` §4): the design docs run both ahead of and
