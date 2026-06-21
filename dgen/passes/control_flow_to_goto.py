@@ -36,6 +36,18 @@ Key points:
   This is necessary because `add(%jv, 1)` doesn't naturally depend on the body
   result — without the chain, the increment could be scheduled before inner loops.
 
+Extra loop carries (beyond the IV) are supported via ``op.initial_arguments``.
+The convention is ``op.body.args == [iv, *carries]`` and
+``op.initial_arguments == pack([*carry_inits])`` (the IV init is
+``lower_bound``, not part of ``initial_arguments``). The header and body each
+gain a block arg per carry, the back-edge threads the next carry values
+(``op.body.result``, or its ``pack`` elements for multiple carries), and the
+region's ``initial_arguments`` becomes ``[lo, *carry_inits]``. With carries
+present the increment does NOT need a ``chain``: the back-edge already depends
+on the next carry values, which carry the body's effects via dataflow. The
+loop op result stays ``Nil`` — exit phis for carries are not materialized
+(consumers read carried state from memory after the loop).
+
 ## WhileOp lowering
 
 Similar structure but simpler: the condition and body are user-provided blocks.
@@ -75,7 +87,7 @@ from dgen.dialects.builtin import Array, ChainOp, Never, Tuple
 from dgen.ir.traversal import all_values
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean
-from dgen.builtins import ConstantOp, pack
+from dgen.builtins import ConstantOp, pack, unpack
 from dgen.passes.pass_ import Pass, lowering_for
 
 
@@ -214,20 +226,32 @@ class ControlFlowToGoto(Pass):
         lid = self._loop_counter
         self._loop_counter += 1
 
+        # Extra loop-carried values beyond the induction variable. The
+        # convention is ``op.body.args == [iv, *carries]`` and
+        # ``op.initial_arguments == pack([*carry_inits])`` (the IV's init is
+        # ``lower_bound``, NOT part of ``initial_arguments``). When there are
+        # no carries we preserve the original single-IV lowering exactly.
+        iv = op.body.args[0]
+        carries = op.body.args[1:]
+
         header_self = BlockParameter(name="self", type=goto.Label())
         header_exit = BlockParameter(name=f"exit{lid}", type=goto.Label())
         header_iv = BlockArgument(name=f"i{lid}", type=Index())
+        header_carries = [
+            BlockArgument(name=f"c{lid}_{n}", type=c.type)
+            for n, c in enumerate(carries)
+        ]
 
-        # Body label: reuse op.body's IV, chain(increment, body_result) as
-        # the back-edge arg so the increment happens after the body runs.
-        # If the body already terminates (Never-typed result, e.g. ends in
-        # ``continue`` / ``break``), the chain + back-edge are both dead;
-        # use the body's result directly.
-        iv = op.body.args[0]
         body_result = op.body.result
         if isinstance(body_result.type, Never):
+            # Body already terminates (e.g. ends in ``continue`` / ``break``);
+            # the back-edge is dead. Use the body's result directly.
             body_block_result: dgen.Value = body_result
-        else:
+        elif not carries:
+            # No extra carries: chain(increment, body_result) as the back-edge
+            # arg so the increment happens after the body runs. ``add(%iv, 1)``
+            # doesn't naturally depend on the body result, so without the chain
+            # the increment could be scheduled before inner loops.
             next_iv = ChainOp(
                 lhs=algebra.AddOp(left=iv, right=Index().constant(1), type=Index()),
                 rhs=body_result,
@@ -236,9 +260,24 @@ class ControlFlowToGoto(Pass):
             body_block_result = goto.BranchOp(
                 target=header_self, arguments=pack([next_iv])
             )
+        else:
+            # With carries present, the back-edge already depends on the next
+            # carry values (which carry the body's effects via dataflow), so a
+            # plain ``add(%iv, 1)`` suffices — no chain needed. ``body.result``
+            # is the next value of the single carry, or a ``pack`` of next
+            # carry values for multiple carries.
+            next_iv = algebra.AddOp(left=iv, right=Index().constant(1), type=Index())
+            if len(carries) == 1:
+                next_carry_values: list[dgen.Value] = [body_result]
+            else:
+                next_carry_values = unpack(body_result)
+            body_block_result = goto.BranchOp(
+                target=header_self,
+                arguments=pack([next_iv, *next_carry_values]),
+            )
         body_block = dgen.Block(
             result=body_block_result,
-            args=[iv],
+            args=[iv, *carries],
             captures=[header_self, header_exit, *op.body.captures],
         )
         body_label = goto.LabelOp(
@@ -256,7 +295,7 @@ class ControlFlowToGoto(Pass):
             condition=cmp,
             true_target=body_label,
             false_target=header_exit,
-            true_arguments=pack([header_iv]),
+            true_arguments=pack([header_iv, *header_carries]),
             false_arguments=pack([]),
         )
         lo = ConstantOp.from_constant(
@@ -264,12 +303,12 @@ class ControlFlowToGoto(Pass):
         )
         return goto.RegionOp(
             name=f"loop_header{lid}",
-            initial_arguments=pack([lo]),
+            initial_arguments=pack([lo, *unpack(op.initial_arguments)]),
             type=builtin.Nil(),
             body=dgen.Block(
                 result=cond_br,
                 parameters=[header_self, header_exit],
-                args=[header_iv],
+                args=[header_iv, *header_carries],
                 captures=list(op.body.captures),
             ),
         )

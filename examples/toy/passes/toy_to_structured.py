@@ -33,6 +33,10 @@ def _nested_for(
     captures: values from the enclosing scope referenced by body_fn (e.g.
     allocs, tensor constants, function parameters). Outer loop IVs are
     also added as captures at each nesting level.
+
+    No loop-carry: every level has empty ``initial_arguments`` and its body
+    result is whatever ``body_fn``/the inner loop produces. Used by the maps
+    (transpose/mul/add/tile/concat) whose iterations are independent.
     """
     ivars = [BlockArgument(type=Index()) for _ in shape]
     innermost: dgen.Value = body_fn(ivars)
@@ -48,6 +52,51 @@ def _nested_for(
                 result=innermost,
                 args=[ivars[depth]],
                 captures=all_captures,
+            ),
+        )
+    return innermost  # type: ignore[return-value]
+
+
+def _nested_for_carry(
+    shape: Sequence[int],
+    body_fn: Callable[[Sequence[dgen.Value], dgen.Value], dgen.Value],
+    carry_init: dgen.Value,
+    captures: Sequence[dgen.Value] = (),
+) -> control_flow.ForOp:
+    """Build nested ForOps threading a single carried token through every level.
+
+    Unlike :func:`_nested_for`, every nesting level carries one value: the
+    token is a body arg, ``initial_arguments=pack([carry_in])`` at every
+    level, and each level's body result is the next token. The innermost body
+    calls ``body_fn(ivars, token)`` and returns the next token; each outer
+    level's body result is the inner loop's result (the inner nest's final
+    token), and its incoming carry feeds the inner level's ``initial_arguments``.
+
+    This makes the cross-iteration dependency an explicit dataflow edge so a
+    future loop parallelizer (which only parallelizes loops with no
+    cross-iteration dataflow dependency) will NOT wrongly parallelize it.
+
+    carry_init: the token value entering the whole nest (e.g. an initial store).
+    captures: enclosing-scope values referenced by body_fn at every level.
+    """
+    ivars = [BlockArgument(type=Index()) for _ in shape]
+    carry_args = [BlockArgument(type=carry_init.type) for _ in shape]
+    innermost: dgen.Value = body_fn(ivars, carry_args[-1])
+    for depth in range(len(shape) - 1, -1, -1):
+        outer_ivars = ivars[:depth]
+        # ``carry_in`` feeds this level's ``initial_arguments``. For the
+        # outermost level it's the nest's entry token; for inner levels it's
+        # the enclosing body's carry arg — a local reference from the outer
+        # body block (where this ForOp lives), so NOT a capture of this body.
+        carry_in = carry_args[depth - 1] if depth > 0 else carry_init
+        innermost = control_flow.ForOp(
+            lower_bound=Index().constant(0),
+            upper_bound=Index().constant(shape[depth]),
+            initial_arguments=pack([carry_in]),
+            body=dgen.Block(
+                result=innermost,
+                args=[ivars[depth], carry_args[depth]],
+                captures=list(captures) + outer_ivars,
             ),
         )
     return innermost  # type: ignore[return-value]
@@ -204,10 +253,17 @@ class ToyToStructured(Pass):
         """Count nonzero elements: heap-alloc 1-cell accumulator, nested loop, load/compare/add.
 
         Uses ``memory.Buffer<Index>(count=1)`` rather than ``Reference<Index>``:
-        the loop body captures the accumulator and threads a ``mem``-token
-        through ``buffer_load``/``buffer_store`` for ordering. Reference is
-        ``Linear`` and would not survive being captured into a loop body
-        (no loop-carry support on ``control_flow.for`` yet).
+        the loop body captures the accumulator and reads/writes it through
+        ``buffer_load``/``buffer_store``. Reference is ``Linear`` and would not
+        survive being captured into a loop body.
+
+        The accumulator's cross-iteration ordering is an EXPLICIT dataflow edge:
+        a ``Nil``-typed memory token is threaded through the loop carry at every
+        nesting level (see :func:`_nested_for_carry`). The entry token is
+        ``initial_store``; each iteration's ``buffer_load`` reads ``mem=<carried
+        token>`` and returns its ``buffer_store`` as the next token. Iteration
+        N+1's load therefore transitively depends on iteration N's store, so a
+        future loop parallelizer will not wrongly parallelize this reduction.
         """
         shape = self._shape(op.input)
         buf_type = memory.Buffer(element_type=Index())
@@ -223,13 +279,13 @@ class ToyToStructured(Pass):
         )
         zero = Float64().constant(0.0)
 
-        def body(ivars: Sequence[dgen.Value]) -> dgen.Value:
+        def body(ivars: Sequence[dgen.Value], token: dgen.Value) -> dgen.Value:
             element = ndbuffer.LoadOp(
                 mem=op.input, buffer=op.input, indices=pack(ivars)
             )
             nonzero = algebra.NotEqualOp(left=element, right=zero, type=Boolean())
             current = memory.BufferLoadOp(
-                mem=initial_store, buf=accumulator, index=zero_idx, type=Index()
+                mem=token, buf=accumulator, index=zero_idx, type=Index()
             )
             updated = algebra.AddOp(
                 left=current,
@@ -240,10 +296,11 @@ class ToyToStructured(Pass):
                 mem=current, buf=accumulator, index=zero_idx, value=updated
             )
 
-        loop = _nested_for(
+        loop = _nested_for_carry(
             shape,
             body,
-            captures=[accumulator, initial_store, zero, op.input],
+            carry_init=initial_store,
+            captures=[accumulator, zero, op.input],
         )
         return memory.BufferLoadOp(
             mem=loop, buf=accumulator, index=zero_idx, type=Index()
