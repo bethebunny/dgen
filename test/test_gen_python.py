@@ -60,7 +60,8 @@ def test_generate_builtin_op_with_optional_operand():
     mod = importlib.import_module("dgen.dialects.builtin")
     code = generate_pyi(mod, "builtin")
     assert "class ChainOp(Op):" in code
-    assert "lhs: Value" in code
+    assert "result: Value" in code
+    assert "effect: Value" in code
 
 
 def test_generate_builtin_op_decorator():

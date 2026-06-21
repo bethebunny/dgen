@@ -105,7 +105,9 @@ class Lowering:
             self.has_value_return = True
             val = yield from self.lower_expr(ret.value)
             if self.last_effect is not None:
-                chain_op = builtin.ChainOp(lhs=val, rhs=self.last_effect, type=val.type)
+                chain_op = builtin.ChainOp(
+                    result=val, effect=self.last_effect, type=val.type
+                )
                 yield chain_op
                 self.return_value = chain_op
             else:
@@ -242,7 +244,9 @@ class Lowering:
     def _lower_print(self, p: PrintExpr) -> Generator[dgen.Op, None, dgen.Value]:
         arg = yield from self.lower_expr(p.arg)
         if self.last_effect is not None:
-            chain_op = builtin.ChainOp(lhs=arg, rhs=self.last_effect, type=arg.type)
+            chain_op = builtin.ChainOp(
+                result=arg, effect=self.last_effect, type=arg.type
+            )
             yield chain_op
             print_input = chain_op
         else:

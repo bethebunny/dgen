@@ -45,7 +45,7 @@ type Span<pointee: Type>:
 type Tuple<types: Span<Type>>:
     layout Record
 
-op chain(lhs, rhs)
+op chain(result, effect)
 op type(value) -> Type
 op extern<symbol: String>()
 op unpack(tuple):

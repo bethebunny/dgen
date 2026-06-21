@@ -352,7 +352,7 @@ def test_externs_dedup_distinct_instances_same_symbol():
     arg = BlockArgument(name="n", type=index.Index())
     call1 = function.CallOp(callee=malloc1, arguments=pack([arg]), type=llvm.Ptr())
     call2 = function.CallOp(callee=malloc2, arguments=pack([arg]), type=llvm.Ptr())
-    result = builtin.ChainOp(lhs=call1, rhs=call2, type=llvm.Ptr())
+    result = builtin.ChainOp(result=call1, effect=call2, type=llvm.Ptr())
     func = FunctionOp(
         name="f",
         body=dgen.Block(result=result, args=[arg]),

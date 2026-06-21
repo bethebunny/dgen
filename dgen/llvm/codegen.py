@@ -586,7 +586,7 @@ def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
             result = op.body.result
             # If the result is a ChainOp, unwrap to get the actual value.
             if isinstance(result, builtin.ChainOp):
-                result = result.lhs
+                result = result.result
             yield f"  ret {ret_type} {value_reference(result)}"
     yield "}"
 
@@ -684,7 +684,7 @@ def value_reference(v: dgen.Value) -> str:
             return _aggregate_constant_literal(v)
         return ffi.llvm_constant(bytes(mem.buffer), mem.layout)
     if isinstance(v, builtin.ChainOp):
-        return value_reference(v.lhs)
+        return value_reference(v.result)
     # memory.store(ptr, value) -> Reference<T> returns the same pointer.
     if isinstance(v, memory.StoreOp):
         return value_reference(v.ptr)

@@ -46,8 +46,8 @@ as data dependencies are satisfied. Optimizations may freely reorder, hoist, sin
 eliminate them.
 
 **Side-effecting ops** must be connected to the block's use-def graph via `ChainOp` to be
-reachable from the block result. Chain edges encode both liveness (the op will execute) and
-ordering (the chain spine defines the sequence).
+reachable from the block result. A chain edge encodes liveness (the chained `effect` op will
+execute) and orders that op before any consumer of the chain.
 
 **All ops in a block must be reachable from the block's `result` via `block.ops`.** An op
 not reachable from the result is dead and will not execute. The block's `result` is the
@@ -55,18 +55,28 @@ use-def root; `block.ops` on `result` gives the canonical op list.
 
 ### What `ChainOp` Is
 
-A `ChainOp(lhs, rhs)` encodes a **control edge disguised as a data edge**: `rhs` must
-execute and must not be eliminated, and the chain's result is `lhs`'s runtime value.
-Dataflow dependencies are the only ordering guarantee within a block; `ChainOp` is how
-side-effecting ops that produce no useful value are injected into the dataflow graph so
-they participate in that ordering.
+A `ChainOp(result, effect)` yields `result`'s runtime value, while making the chain op —
+and therefore anything that consumes the chain — depend on **both** `result` and `effect`.
+The `effect` operand must execute and must not be eliminated; consumers of the chain are
+ordered after both `result` and `effect`. Dataflow dependencies are the only ordering
+guarantee within a block; `ChainOp` is how side-effecting ops that produce no useful value
+are injected into the dataflow graph so they stay reachable and get sequenced before the
+chain's consumers.
+
+Crucially, a chain does **not** create a dependency edge between `result` and `effect`:
+they are unordered relative to each other unless a separate data dependency exists. The
+common misconception is that `chain(a, b)` "runs `a` after `b`" — it does not. It only
+guarantees that consumers of the chain run after both.
 
 ```
-# %val is passed through; %store_op is kept live and must execute
+# %val is passed through; %store_op is kept live and must execute.
+# Anything consuming %_ runs after both %val and %store_op, but %val and
+# %store_op are not ordered relative to each other.
 %_ = chain(%val, %store_op)
 ```
 
-The chain spine is the schedule for a block's side effects.
+The chain spine is how a block's side effects are kept live and sequenced before their
+consumers.
 
 ### What `transitive_dependencies` Follows
 
@@ -298,7 +308,7 @@ orthogonal to the totality classification.
 ### Implementation notes
 
 - The rule examines only the value itself — no transitive walk. A `ChainOp` whose
-  `rhs` is a `raise` is **not** itself PARTIAL; divergence-evidence is a property of
+  `effect` is a `raise` is **not** itself PARTIAL; divergence-evidence is a property of
   the value that holds the handler, not of every op downstream of it. Consumers that
   want a "may-this-block-diverge" predicate should walk the block's ops with this
   property.

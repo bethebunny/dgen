@@ -129,16 +129,16 @@ def test_block_replace_uses_of_captures():
 
     old_val = ConstantOp.from_constant(Index().constant(1), name="old")
     new_val = ConstantOp.from_constant(Index().constant(2), name="new")
-    inner_op = ChainOp(name="use", lhs=old_val, rhs=old_val, type=Index())
+    inner_op = ChainOp(name="use", result=old_val, effect=old_val, type=Index())
     block = dgen.Block(result=inner_op, captures=[old_val])
 
     assert old_val in block.captures
-    assert inner_op.lhs is old_val
+    assert inner_op.result is old_val
     block.replace_uses_of(old_val, new_val)
     assert new_val in block.captures
     assert old_val not in block.captures
-    assert inner_op.lhs is new_val
-    assert inner_op.rhs is new_val
+    assert inner_op.result is new_val
+    assert inner_op.effect is new_val
 
 
 def test_block_replace_uses_of_block_parameter_type():

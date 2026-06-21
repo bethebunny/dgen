@@ -331,7 +331,7 @@ def test_verify_mixed_ops_first_bad() -> None:
     bad = RequiresNumericOp(input=MyStr().constant("x"), name="bad")
     from dgen.dialects.builtin import ChainOp
 
-    chain = ChainOp(lhs=bad, rhs=good, type=MyInt())
+    chain = ChainOp(result=bad, effect=good, type=MyInt())
     with pytest.raises(ConstraintError, match="RequiresNumericOp %bad"):
         verify_constraints(_make_function(chain))
 
