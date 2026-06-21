@@ -17,7 +17,7 @@ from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.record_to_memory import RecordToMemory
-from dgen.testing import assert_ir_equivalent, strip_prefix
+from dgen.testing import assert_ir_equivalent, assert_valid_llvm, strip_prefix
 
 
 # -- ASM round-trip tests --
@@ -128,6 +128,7 @@ def test_while_llvm_ir(snapshot):
         ],
         LLVMCodegen(),
     ).compile(m)
+    assert_valid_llvm(exe.ir)
     assert exe.ir == snapshot
 
 
@@ -177,4 +178,5 @@ def test_nested_while_llvm_ir(snapshot):
         ],
         LLVMCodegen(),
     ).compile(m)
+    assert_valid_llvm(exe.ir)
     assert exe.ir == snapshot

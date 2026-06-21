@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import llvmlite.binding as llvm_binding
+
 import dgen
-from dgen.llvm.codegen import Executable, LLVMCodegen
+from dgen.llvm.codegen import Executable, LLVMCodegen, _ensure_initialized
 from dgen.passes.compiler import Compiler
 from dgen.ir.diff import structural_diff
 from dgen.ir.equivalence import graph_equivalent
@@ -30,6 +32,21 @@ def llvm_compile(value: dgen.Value) -> Executable:
         ],
         LLVMCodegen(),
     ).run(value)
+
+
+def assert_valid_llvm(ir: str) -> None:
+    """Parse and verify LLVM IR text, raising if it is malformed.
+
+    Text-snapshot comparisons (``assert exe.ir == snapshot``) never parse the
+    IR — they only compare strings — so they can silently bless invalid LLVM
+    (mismatched phi types, bad arity, ...): a codegen regression that emits
+    garbage just gets its snapshot regenerated and "passes". Call this
+    alongside such snapshots so malformed IR fails loudly. Mirrors the
+    parse+verify that ``_jit_engine`` does on the ``.run()`` path, without
+    building a JIT engine.
+    """
+    _ensure_initialized()
+    llvm_binding.parse_assembly(ir).verify()
 
 
 def strip_prefix(text: str) -> str:

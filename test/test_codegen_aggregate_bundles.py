@@ -21,7 +21,7 @@ from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.normalize_region_terminators import NormalizeRegionTerminators
 from dgen.passes.record_to_memory import RecordToMemory
-from dgen.testing import strip_prefix
+from dgen.testing import assert_valid_llvm, strip_prefix
 
 
 def _compile(ir_text: str) -> Executable:
@@ -63,6 +63,7 @@ def test_inline_pack_call(snapshot):
     """)
     )
     assert exe.run(11, 31).to_json() == 42
+    assert_valid_llvm(exe.ir)
     assert exe.ir == snapshot
 
 
@@ -94,6 +95,7 @@ def test_call_with_runtime_tuple_as_args(snapshot):
     assert exe.run(7, 35).to_json() == 42
     assert exe.run(0, 0).to_json() == 0
     assert exe.run(100, 200).to_json() == 300
+    assert_valid_llvm(exe.ir)
     assert exe.ir == snapshot
 
 
@@ -115,6 +117,7 @@ def test_call_with_heterogeneous_tuple_args(snapshot):
     """)
     )
     assert exe.run(7, 0.5).to_json() == 7
+    assert_valid_llvm(exe.ir)
     assert exe.ir == snapshot
 
 
