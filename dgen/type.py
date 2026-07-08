@@ -199,6 +199,23 @@ class Value(Generic[T]):
             if getattr(self, name) is old:
                 setattr(self, name, new)
 
+    def rebind_field(self, field: str, new: Value) -> None:
+        """Assign a single named edge — one operand/parameter/type field.
+
+        Unlike :meth:`replace_operand`, which substitutes by value identity
+        across every field, this targets exactly one edge: two fields
+        holding the same value can be rebound independently. ``field`` is a
+        name as yielded by ``operands``/``parameters`` (or ``"type"``);
+        values with synthesized edge names override this to interpret them.
+        """
+        known = itertools.chain(
+            (name for name, _ in self.__operands__),
+            (name for name, _ in self.__params__),
+            ("type",),
+        )
+        assert field in known, f"{type(self).__name__} has no edge {field!r}"
+        setattr(self, field, new)
+
     def replace_uses_of(self, old: Value, new: Value) -> None:
         """Replace all references to old with new in this value's fields and owned blocks."""
         self.replace_operand(old, new)

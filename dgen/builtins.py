@@ -97,6 +97,13 @@ class PackOp(Op):
     def replace_operand(self, old: Value, new: Value) -> None:
         self.values = [new if v is old else v for v in self.values]
 
+    def rebind_field(self, field: str, new: Value) -> None:
+        if field == "type":
+            self.type = new
+            return
+        index = int(field.removeprefix("values[").removesuffix("]"))
+        self.values[index] = new
+
     @property
     def __constant__(self) -> Memory:
         json_list = [v.__constant__.to_json() for v in self.values]
