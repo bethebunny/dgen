@@ -7,7 +7,13 @@ loop's entry branch.
 
 import pytest
 
+import dgen
 from dgen.asm.parser import parse
+from dgen.block import BlockArgument
+from dgen.builtins import pack
+from dgen.dialects import algebra, control_flow, record
+from dgen.dialects.builtin import Array
+from dgen.dialects.index import Index
 from dgen.llvm.codegen import LLVMCodegen
 from dgen.passes.compiler import Compiler, IdentityPass
 from dgen.testing import strip_prefix
@@ -29,8 +35,8 @@ NESTED_FOR = strip_prefix("""
 
 def test_nested_loop_after_control_flow_lowering(ir_snapshot):
     """Nested ForOps lowered to goto labels."""
-    m = parse(NESTED_FOR)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
+    parsed = parse(NESTED_FOR)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(parsed)
     assert lowered == ir_snapshot
 
 
@@ -46,15 +52,56 @@ def test_for_carry_type_mismatch_rejected():
         |     %0 : index.Index = 0
         |     %1 : Nil = chain(%0, %0)
     """)
-    m = parse(ir)
+    parsed = parse(ir)
     with pytest.raises(TypeError, match="carry"):
-        Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(parsed)
+
+
+def _two_carry_for(body_result_of) -> control_flow.ForOp:
+    """A ForOp with two Index carries; ``body_result_of(next_a, next_b)``
+    builds the body result from the next carry values."""
+    iv = BlockArgument(name="i", type=Index())
+    a = BlockArgument(name="a", type=Index())
+    b = BlockArgument(name="b", type=Index())
+    total = algebra.AddOp(left=a, right=b, type=Index())
+    return control_flow.ForOp(
+        lower_bound=Index().constant(0),
+        upper_bound=Index().constant(3),
+        initial_arguments=pack([Index().constant(1), Index().constant(2)]),
+        body=dgen.Block(result=body_result_of(b, total), args=[iv, a, b]),
+    )
+
+
+def test_for_multi_carry_llvm_ir(snapshot):
+    """Two Index carries exercise lower_for's multi-carry branch: the header
+    gets one phi per carry and the back-edge threads both next values.
+    ``run()`` parses and verifies the IR, so a malformed phi fails loudly."""
+    loop = _two_carry_for(lambda next_a, next_b: pack([next_a, next_b]))
+    exe = Compiler(
+        [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
+    ).compile(loop)
+    exe.run()
+    assert exe.ir == snapshot
+
+
+def test_for_multi_carry_undecomposable_result_rejected():
+    """A multi-carry body result that isn't a builtin.pack (here record.pack)
+    can't be spliced with the incremented IV — lowering must reject it rather
+    than emit a wrong-arity back-edge."""
+    loop = _two_carry_for(
+        lambda next_a, next_b: record.PackOp(
+            values=pack([next_a, next_b]),
+            type=Array(element_type=Index(), n=Index().constant(2)),
+        )
+    )
+    with pytest.raises(TypeError, match="decompose"):
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(loop)
 
 
 def test_nested_loop_llvm_ir(snapshot):
     """Nested loop all the way to LLVM IR — shows the codegen issue."""
-    m = parse(NESTED_FOR)
+    parsed = parse(NESTED_FOR)
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
-    ).compile(m)
+    ).compile(parsed)
     assert exe.ir == snapshot

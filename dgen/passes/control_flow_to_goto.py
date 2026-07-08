@@ -326,11 +326,8 @@ class ControlFlowToGoto(Pass):
         lid = self._loop_counter
         self._loop_counter += 1
 
-        # Extra loop-carried values beyond the induction variable. The
-        # convention is ``op.body.args == [iv, *carries]`` and
-        # ``op.initial_arguments == pack([*carry_inits])`` (the IV's init is
-        # ``lower_bound``, NOT part of ``initial_arguments``). When there are
-        # no carries we preserve the original single-IV lowering exactly.
+        # ``op.body.args == [iv, *carries]``; the IV's init is
+        # ``lower_bound``, not part of ``initial_arguments``.
         iv = op.body.args[0]
         carries = op.body.args[1:]
 
@@ -361,16 +358,22 @@ class ControlFlowToGoto(Pass):
                 target=header_self, arguments=pack([next_iv])
             )
         else:
-            # With carries present, the back-edge already depends on the next
-            # carry values (which carry the body's effects via dataflow), so a
-            # plain ``add(%iv, 1)`` suffices — no chain needed. ``body.result``
-            # is the next value of the single carry, or a ``pack`` of next
-            # carry values for multiple carries.
+            # No chain here: the back-edge already consumes the next carry
+            # values, which carry the body's effects via dataflow.
             next_iv = algebra.AddOp(left=iv, right=Index().constant(1), type=Index())
             if len(carries) == 1:
                 next_carry_values: list[dgen.Value] = [body_result]
             else:
                 next_carry_values = unpack(body_result)
+                # ``unpack`` decomposes only builtin.PackOp and aggregate
+                # Constants; any other tuple-shaped value (e.g. record.pack)
+                # cannot be spliced with the incremented IV here.
+                if len(next_carry_values) != len(carries):
+                    raise TypeError(
+                        f"ForOp body result must decompose into "
+                        f"{len(carries)} next carry values (a builtin.pack "
+                        f"or aggregate Constant); got {body_result.name!r}"
+                    )
             body_block_result = goto.BranchOp(
                 target=header_self,
                 arguments=pack([next_iv, *next_carry_values]),
