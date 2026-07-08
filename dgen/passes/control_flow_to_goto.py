@@ -132,8 +132,9 @@ def _resolve_jump_markers(
     """Replace BreakOp/ContinueOp with goto.BranchOp targeting exit/self.
 
     Recurses into child blocks but skips nested WhileOp/ForOp bodies —
-    inner loops resolve their own markers when they are lowered.
-    Returns the set of parameters that needed to be captured.
+    inner loops resolve their own markers when they are lowered. Each
+    block (this one included) captures exactly the parameters its subtree
+    came to reference; the return value lets enclosing blocks chain.
     """
     needed: set[BlockParameter] = set()
     for v in block.values:
@@ -149,13 +150,10 @@ def _resolve_jump_markers(
             needed.add(self_param)
         elif not isinstance(v, (control_flow.WhileOp, control_flow.ForOp)):
             for _, child_block in v.blocks:
-                child_needed = _resolve_jump_markers(
-                    child_block, self_param, exit_param
-                )
-                for param in child_needed:
-                    if param not in child_block.captures:
-                        child_block.captures.append(param)
-                needed |= child_needed
+                needed |= _resolve_jump_markers(child_block, self_param, exit_param)
+    for param in needed:
+        if param not in block.parameters and param not in block.captures:
+            block.captures.append(param)
     return needed
 
 
@@ -414,10 +412,13 @@ class ControlFlowToGoto(Pass):
                 target=header_self,
                 arguments=pack([next_iv, *next_carry_values]),
             )
+        # The back-edge branch references %self; %exit is captured only if
+        # a break inside needs it (added by _resolve_jump_markers).
+        back_edge = [header_self] if not isinstance(body_result.type, Never) else []
         body_block = dgen.Block(
             result=body_block_result,
             args=[iv, *carries],
-            captures=[header_self, header_exit, *op.body.captures],
+            captures=[*back_edge, *op.body.captures],
         )
         body_label = goto.LabelOp(
             name="loop_body",
@@ -491,10 +492,13 @@ class ControlFlowToGoto(Pass):
             )
             body_block_result = goto.BranchOp(target=header_self, arguments=body_result)
 
+        # The back-edge branch references %self; %exit is captured only if
+        # a break inside needs it (added by _resolve_jump_markers).
+        back_edge = [header_self] if not isinstance(body_result.type, Never) else []
         body_block = dgen.Block(
             result=body_block_result,
             args=body_args,
-            captures=[header_self, header_exit, *op.body.captures],
+            captures=[*back_edge, *op.body.captures],
         )
         body_label = goto.LabelOp(
             name="while_body",
