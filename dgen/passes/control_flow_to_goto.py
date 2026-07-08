@@ -28,7 +28,7 @@ use-def graph — absence of a carried token means absence of ordering.
 
 Loops that mutate shared memory (e.g. dcc's C ``while``/``for``) MUST thread
 a memory effect token through the carry to obtain sequential semantics; the
-frontend is responsible for establishing this (see dcc's CLvalueToMemory,
+frontend is responsible for establishing this (see dcc's ThreadLoopMemory,
 which threads a ``Nil`` effect token as a loop-carried block argument). The
 ``Nil`` carry has no runtime representation, so codegen erases its phi — the
 token exists purely to encode ordering at the IR level.
@@ -85,7 +85,7 @@ NOT relaxed. A loop that wants sequential iterations threads its effect token
 as one of these carried values — the frontend wraps the outgoing token in a
 1-tuple (``pack([token])``) so it satisfies the tuple contract and feeds the
 header's carried arg (see the iteration contract above and dcc's
-CLvalueToMemory).
+ThreadLoopMemory).
 
 ## IfOp lowering
 
@@ -224,26 +224,33 @@ class ControlFlowToGoto(Pass):
             raise TypeError(
                 f"{kind} carry arity: {len(carries)} carries but {len(types)} {label}"
             )
-        for carry, t in zip(carries, types):
-            if not types_equivalent(carry.type, t):
+        for carry, expected in zip(carries, types):
+            carry_type = carry.type
+            # Unresolved staged type values can't be compared yet; staging
+            # resolves them before the pass pipeline runs.
+            if not isinstance(carry_type, dgen.Type) or not isinstance(
+                expected, dgen.Type
+            ):
+                continue
+            if not types_equivalent(carry_type, expected):
                 raise TypeError(
-                    f"{kind} carry {carry.name!r}: type {carry.type} does not "
-                    f"match {label} type {t}"
+                    f"{kind} carry {carry.name!r}: type {carry_type} does not "
+                    f"match {label} type {expected}"
                 )
 
     @staticmethod
-    def _element_types(t: dgen.Value, n: int) -> list[dgen.Value]:
-        """Element types of a tuple-shaped type ``t`` holding ``n`` values.
+    def _element_types(tuple_type: dgen.Value, count: int) -> list[dgen.Value]:
+        """Element types of a tuple-shaped type holding ``count`` values.
 
         Works at the type level so it handles any tuple-shaped *value*
         (``builtin.pack``, ``record.pack``, an aggregate Constant, ...) —
         unlike ``unpack``, which only decomposes ``builtin.PackOp`` values.
         """
-        if isinstance(t, Tuple):
-            return unpack(t.types)
-        if isinstance(t, Array):
-            return [t.element_type] * n
-        raise TypeError(f"expected a tuple-shaped type; got {t}")
+        if isinstance(tuple_type, Tuple):
+            return unpack(tuple_type.types)
+        if isinstance(tuple_type, Array):
+            return [tuple_type.element_type] * count
+        raise TypeError(f"expected a tuple-shaped type; got {tuple_type}")
 
     @classmethod
     def _verify_while_carries(cls, op: control_flow.WhileOp) -> None:
@@ -358,11 +365,8 @@ class ControlFlowToGoto(Pass):
         lid = self._loop_counter
         self._loop_counter += 1
 
-        # Extra loop-carried values beyond the induction variable. The
-        # convention is ``op.body.args == [iv, *carries]`` and
-        # ``op.initial_arguments == pack([*carry_inits])`` (the IV's init is
-        # ``lower_bound``, NOT part of ``initial_arguments``). When there are
-        # no carries we preserve the original single-IV lowering exactly.
+        # ``op.body.args == [iv, *carries]``; the IV's init is
+        # ``lower_bound``, not part of ``initial_arguments``.
         iv = op.body.args[0]
         carries = op.body.args[1:]
 
@@ -393,16 +397,23 @@ class ControlFlowToGoto(Pass):
                 target=header_self, arguments=pack([next_iv])
             )
         else:
-            # With carries present, the back-edge already depends on the next
-            # carry values (which carry the body's effects via dataflow), so a
-            # plain ``add(%iv, 1)`` suffices — no chain needed. ``body.result``
-            # is the next value of the single carry, or a ``pack`` of next
-            # carry values for multiple carries.
+            # No chain here: the back-edge already consumes the next carry
+            # values, which carry the body's effects via dataflow.
             next_iv = algebra.AddOp(left=iv, right=Index().constant(1), type=Index())
             if len(carries) == 1:
                 next_carry_values: list[dgen.Value] = [body_result]
             else:
                 next_carry_values = unpack(body_result)
+                # ``unpack`` decomposes only builtin.PackOp and aggregate
+                # Constants; any other tuple-shaped value (e.g. record.pack)
+                # passes the type-level carry verification but cannot be
+                # spliced with the incremented IV here.
+                if len(next_carry_values) != len(carries):
+                    raise TypeError(
+                        f"ForOp body result must decompose into "
+                        f"{len(carries)} next carry values (a builtin.pack "
+                        f"or aggregate Constant); got {body_result.name!r}"
+                    )
             body_block_result = goto.BranchOp(
                 target=header_self,
                 arguments=pack([next_iv, *next_carry_values]),

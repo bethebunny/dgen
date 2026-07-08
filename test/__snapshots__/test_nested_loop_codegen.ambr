@@ -1,4 +1,38 @@
 # serializer version: 1
+# name: test_for_multi_carry_llvm_ir
+  '''
+  
+  define void @main() {
+  entry:
+    br label %loop_header0
+  loop_header0:
+    %_0 = phi { i64, i64, i64 } [ { i64 0, i64 1, i64 2 }, %entry ], [ %_1, %loop_body0 ]
+    %i0 = extractvalue { i64, i64, i64 } %_0, 0
+    %c0_0 = extractvalue { i64, i64, i64 } %_0, 1
+    %c0_1 = extractvalue { i64, i64, i64 } %_0, 2
+    br label %loop_body0_exit
+  loop_body0:
+    %_2 = phi { i64, i64, i64 } [ %_3, %loop_body0_exit ]
+    %i = extractvalue { i64, i64, i64 } %_2, 0
+    %a = extractvalue { i64, i64, i64 } %_2, 1
+    %b = extractvalue { i64, i64, i64 } %_2, 2
+    %_4 = add i64 %i, 1
+    %_5 = add i64 %a, %b
+    %_6 = insertvalue { i64, i64, i64 } undef, i64 %_4, 0
+    %_7 = insertvalue { i64, i64, i64 } %_6, i64 %b, 1
+    %_1 = insertvalue { i64, i64, i64 } %_7, i64 %_5, 2
+    br label %loop_header0
+  loop_body0_exit:
+    %_8 = icmp slt i64 %i0, 3
+    %_9 = insertvalue { i64, i64, i64 } undef, i64 %i0, 0
+    %_10 = insertvalue { i64, i64, i64 } %_9, i64 %c0_0, 1
+    %_3 = insertvalue { i64, i64, i64 } %_10, i64 %c0_1, 2
+    br i1 %_8, label %loop_body0, label %exit0
+  exit0:
+    ret void
+  }
+  '''
+# ---
 # name: test_nested_loop_llvm_ir
   '''
   
