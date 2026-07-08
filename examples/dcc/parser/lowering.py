@@ -402,7 +402,7 @@ class Parser:
                     return result
                 if isinstance(result.type, Never):
                     if last is not None:
-                        return ChainOp(lhs=last, rhs=result, type=result.type)
+                        return ChainOp(result=last, effect=result, type=result.type)
                     return result
                 last = result
         return last if last is not None else Nil().constant(None)
@@ -499,7 +499,7 @@ class Parser:
         body = self._body_result(node, scope)
         nil = Nil().constant(None)
         return dgen.Block(
-            result=ChainOp(lhs=nil, rhs=body, type=Nil()),
+            result=ChainOp(result=nil, effect=body, type=Nil()),
             captures=scope.captures,
         )
 
@@ -527,7 +527,7 @@ class Parser:
                 if isinstance(result.type, Never):
                     if results:
                         effects = pack(results) if len(results) != 1 else results[0]
-                        return ChainOp(lhs=effects, rhs=result, type=result.type)
+                        return ChainOp(result=effects, effect=result, type=result.type)
                     return result
                 results.append(result)
             return pack(results) if len(results) != 1 else results[0]
@@ -637,10 +637,10 @@ class Parser:
             update = self._statement(node.next, body_scope)
             if isinstance(update, _Return):
                 raise LoweringError("return in for-update")
-            body = ChainOp(lhs=update, rhs=body, type=update.type)
+            body = ChainOp(result=update, effect=body, type=update.type)
         nil = Nil().constant(None)
         body_block = dgen.Block(
-            result=ChainOp(lhs=nil, rhs=body, type=Nil()),
+            result=ChainOp(result=nil, effect=body, type=Nil()),
             captures=body_scope.captures,
         )
 

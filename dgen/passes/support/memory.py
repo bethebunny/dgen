@@ -25,4 +25,4 @@ def heap_box(value: dgen.Value) -> dgen.Value:
     store = memory.BufferStoreOp(
         mem=buf, buf=buf, index=Index().constant(0), value=value
     )
-    return ChainOp(lhs=buf, rhs=store, type=buf_type)
+    return ChainOp(result=buf, effect=store, type=buf_type)

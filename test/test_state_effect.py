@@ -148,7 +148,9 @@ def test_linearity_leak_when_capture_unused():
     """A Reference captured into a sub-block but never consumed there is a leak."""
     ref_type = memory.Reference(element_type=Index())
     ref = memory.StackAllocateOp(element_type=Index(), type=ref_type)
-    inner = ChainOp(lhs=Index().constant(0), rhs=Nil().constant(None), type=Index())
+    inner = ChainOp(
+        result=Index().constant(0), effect=Nil().constant(None), type=Index()
+    )
     inner_block = dgen.Block(result=inner, captures=[ref])
     tup = Index().constant(0)
     outer = UnpackOp(tuple=tup, body=inner_block, type=Index())

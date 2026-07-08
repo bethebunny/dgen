@@ -74,7 +74,14 @@ The parser and verifier enforce this.
 **Within a block, execution order is use-def order.** There is no implicit scheduling.
 Ops with no use-def relationship between them may execute in any order. Side-effecting ops
 must be chained via `ChainOp` to be reachable from `block.result` and to establish
-ordering. `ChainOp(lhs=X, rhs=Y)` returns X's value with a use-def dependency on Y.
+ordering. `ChainOp(result=X, effect=Y)` yields X's runtime value while making the chain
+op — and therefore anything that consumes the chain — depend on BOTH X and Y. So consumers
+of the chain are ordered after both X and Y. It does **not** create a dependency edge
+between X and Y: they remain unordered relative to each other unless a separate data
+dependency exists. Its purpose is to inject a value-less side-effecting op (`effect`) into
+the use-def graph so it stays reachable from `block.result` and is sequenced before the
+chain's consumers. Beware the common misconception: `chain(a, b)` does NOT "run a after b" —
+it does not order `a` and `b` relative to each other.
 
 **All ops must be reachable from `block.result` via `transitive_dependencies`.** Unreachable ops are
 dead. `block.ops` gives the complete, canonical op list for a block.

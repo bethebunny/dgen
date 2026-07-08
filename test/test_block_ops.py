@@ -26,7 +26,7 @@ def test_simple_chain():
     """Block.ops follows operands in topological order."""
     a = ConstantOp.from_constant(Index().constant(1), name="a")
     b = ConstantOp.from_constant(Index().constant(2), name="b")
-    c = ChainOp(name="c", lhs=a, rhs=b, type=Index())
+    c = ChainOp(name="c", result=a, effect=b, type=Index())
     block = Block(result=c)
     assert list(block.ops) == [a, b, c]
 
@@ -35,7 +35,7 @@ def test_block_args_not_included():
     """BlockArguments are not ops — Block.ops skips them."""
     x = BlockArgument(name="x", type=Index())
     a = ConstantOp.from_constant(Index().constant(1), name="a")
-    c = ChainOp(name="c", lhs=x, rhs=a, type=Index())
+    c = ChainOp(name="c", result=x, effect=a, type=Index())
     block = Block(result=c, args=[x])
     assert list(block.ops) == [a, c]
 
@@ -44,7 +44,7 @@ def test_captures_stop_walk():
     """Captured values are leaves — Block.ops doesn't traverse past them."""
     a = ConstantOp.from_constant(Index().constant(1), name="a")
     b = ConstantOp.from_constant(Index().constant(2), name="b")
-    c = ChainOp(name="c", lhs=a, rhs=b, type=Index())
+    c = ChainOp(name="c", result=a, effect=b, type=Index())
     # Stop at a — it's a capture, not included in results
     block = Block(result=c, captures=[a])
     assert list(block.ops) == [b, c]
@@ -58,7 +58,7 @@ def test_does_not_descend_into_label_body():
         name="lbl",
         body=Block(result=inner_op),
     )
-    outer_op = ChainOp(name="outer", lhs=label, rhs=label, type=Nil())
+    outer_op = ChainOp(name="outer", result=label, effect=label, type=Nil())
     block = Block(result=outer_op)
 
     ops = list(block.ops)
@@ -72,13 +72,13 @@ def test_label_body_is_separate_walk():
     """A label's body.ops is its own walk, independent of the parent."""
     inner_a = ConstantOp.from_constant(Index().constant(1), name="inner_a")
     inner_b = ConstantOp.from_constant(Index().constant(2), name="inner_b")
-    inner_result = ChainOp(name="inner_c", lhs=inner_a, rhs=inner_b, type=Nil())
+    inner_result = ChainOp(name="inner_c", result=inner_a, effect=inner_b, type=Nil())
     label = goto.LabelOp(
         initial_arguments=pack(),
         name="lbl",
         body=Block(result=inner_result),
     )
-    outer = ChainOp(name="outer", lhs=label, rhs=label, type=Nil())
+    outer = ChainOp(name="outer", result=label, effect=label, type=Nil())
     block = Block(result=outer)
 
     # Parent walk: sees label and outer, not inner ops
@@ -115,7 +115,7 @@ def test_follows_parameters():
 def test_captures_as_parent_dependencies():
     """Block.ops uses captures as stop set — captured values are leaves."""
     outer_val = ConstantOp.from_constant(Index().constant(99), name="outer")
-    inner_op = ChainOp(name="use", lhs=outer_val, rhs=outer_val, type=Index())
+    inner_op = ChainOp(name="use", result=outer_val, effect=outer_val, type=Index())
 
     # Without captures: walk reaches outer_val
     block_no_captures = Block(result=inner_op)
@@ -140,7 +140,7 @@ def test_parent_sees_child_block_captures():
         initial_arguments=pack(),
         name="lbl",
         body=Block(
-            result=ChainOp(lhs=inner_result, rhs=captured, type=Index()),
+            result=ChainOp(result=inner_result, effect=captured, type=Index()),
             captures=[captured],
         ),
     )

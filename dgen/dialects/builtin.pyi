@@ -56,8 +56,8 @@ class Tuple(Type):
 
 @dataclass(eq=False)
 class ChainOp(Op):
-    lhs: Value
-    rhs: Value
+    result: Value
+    effect: Value
     type: Type
 
 @dataclass(eq=False)

@@ -487,7 +487,7 @@ def test_verify_dag_detects_cycle():
     )
     assert isinstance(func, FunctionOp)
     # Create cycle: func.body.result → ChainOp → func
-    chain = ChainOp(lhs=func.body.result, rhs=func, type=Nil())
+    chain = ChainOp(result=func.body.result, effect=func, type=Nil())
     func.body = dgen.Block(result=chain, args=[])
     with pytest.raises(CycleError):
         verify_dag(func)

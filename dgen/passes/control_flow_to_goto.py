@@ -53,9 +53,12 @@ Key points:
 - The body is a ``label`` (only entered via conditional_branch)
 - `%self` parameter enables back-edges (breaks use-def cycles)
 - `%exit` parameter: codegen emits this as a fall-through label after the header
-- `chain(increment, body_result)` ensures the increment runs AFTER the body.
-  This is necessary because `add(%jv, 1)` doesn't naturally depend on the body
-  result — without the chain, the increment could be scheduled before inner loops.
+- `chain(result=increment, effect=body_result)` keeps `body_result` reachable
+  from the block result and makes the back-edge branch (which consumes `%next`)
+  depend on it, so the body's effects stay live and are sequenced before the
+  back-edge. The chain does NOT order the increment relative to the body — the
+  increment depends only on `%jv` (`add(%jv, 1)`) and is free to run in any order
+  with respect to the body.
 
 Extra loop carries (beyond the IV) are supported via ``op.initial_arguments``.
 The convention is ``op.body.args == [iv, *carries]`` and
@@ -382,8 +385,8 @@ class ControlFlowToGoto(Pass):
             # doesn't naturally depend on the body result, so without the chain
             # the increment could be scheduled before inner loops.
             next_iv = ChainOp(
-                lhs=algebra.AddOp(left=iv, right=Index().constant(1), type=Index()),
-                rhs=body_result,
+                result=algebra.AddOp(left=iv, right=Index().constant(1), type=Index()),
+                effect=body_result,
                 type=Index(),
             )
             body_block_result = goto.BranchOp(

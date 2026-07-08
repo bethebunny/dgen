@@ -56,7 +56,7 @@ class MemoryToLLVM(Pass):
 
     @lowering_for(memory.DeallocateOp)
     def lower_deallocate(self, op: memory.DeallocateOp) -> dgen.Value | None:
-        return ChainOp(lhs=Nil().constant(None), rhs=op.ptr, type=Nil())
+        return ChainOp(result=Nil().constant(None), effect=op.ptr, type=Nil())
 
     @lowering_for(memory.BufferAllocateOp)
     def lower_buffer_allocate(self, op: memory.BufferAllocateOp) -> dgen.Value | None:
@@ -76,7 +76,7 @@ class MemoryToLLVM(Pass):
     def lower_buffer_deallocate(
         self, op: memory.BufferDeallocateOp
     ) -> dgen.Value | None:
-        return ChainOp(lhs=Nil().constant(None), rhs=op.mem, type=Nil())
+        return ChainOp(result=Nil().constant(None), effect=op.mem, type=Nil())
 
     @lowering_for(RecordGetOp)
     def lower_record_get(self, op: RecordGetOp) -> dgen.Value | None:
