@@ -118,6 +118,7 @@ from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean
 from dgen.builtins import ConstantOp, pack, unpack
 from dgen.passes.pass_ import Pass, lowering_for
+from dgen.type import types_equivalent
 
 
 def _resolve_jump_markers(
@@ -182,22 +183,121 @@ class ControlFlowToGoto(Pass):
     def verify_preconditions(self, root: dgen.Value) -> None:
         super().verify_preconditions(root)
         for value in all_values(root):
-            if not isinstance(value, control_flow.IfOp):
-                continue
-            then_type = value.then_body.result.type
-            else_type = value.else_body.result.type
-            if isinstance(then_type, Never) or isinstance(else_type, Never):
-                continue
-            if then_type is not value.type and type(then_type) is not type(value.type):
+            if isinstance(value, control_flow.IfOp):
+                self._verify_if_types(value)
+            elif isinstance(value, control_flow.WhileOp):
+                self._verify_while_carries(value)
+            elif isinstance(value, control_flow.ForOp):
+                self._verify_for_carries(value)
+
+    @staticmethod
+    def _verify_if_types(value: control_flow.IfOp) -> None:
+        then_type = value.then_body.result.type
+        else_type = value.else_body.result.type
+        if isinstance(then_type, Never) or isinstance(else_type, Never):
+            return
+        if then_type is not value.type and type(then_type) is not type(value.type):
+            raise TypeError(
+                f"IfOp then-branch result type {then_type} "
+                f"does not match declared type {value.type}"
+            )
+        if else_type is not value.type and type(else_type) is not type(value.type):
+            raise TypeError(
+                f"IfOp else-branch result type {else_type} "
+                f"does not match declared type {value.type}"
+            )
+
+    @staticmethod
+    def _check_carry_types(
+        kind: str,
+        carries: list[BlockArgument],
+        label: str,
+        types: list[dgen.Value],
+    ) -> None:
+        """One carry-consistency check: ``types`` (the element types of the
+        loop's ``initial_arguments`` / condition args / next-iteration values)
+        must line up 1:1 with ``carries`` in count and type."""
+        if len(types) != len(carries):
+            raise TypeError(
+                f"{kind} carry arity: {len(carries)} carries but {len(types)} {label}"
+            )
+        for carry, t in zip(carries, types):
+            if not types_equivalent(carry.type, t):
                 raise TypeError(
-                    f"IfOp then-branch result type {then_type} "
-                    f"does not match declared type {value.type}"
+                    f"{kind} carry {carry.name!r}: type {carry.type} does not "
+                    f"match {label} type {t}"
                 )
-            if else_type is not value.type and type(else_type) is not type(value.type):
-                raise TypeError(
-                    f"IfOp else-branch result type {else_type} "
-                    f"does not match declared type {value.type}"
-                )
+
+    @staticmethod
+    def _element_types(t: dgen.Value, n: int) -> list[dgen.Value]:
+        """Element types of a tuple-shaped type ``t`` holding ``n`` values.
+
+        Works at the type level so it handles any tuple-shaped *value*
+        (``builtin.pack``, ``record.pack``, an aggregate Constant, ...) —
+        unlike ``unpack``, which only decomposes ``builtin.PackOp`` values.
+        """
+        if isinstance(t, Tuple):
+            return unpack(t.types)
+        if isinstance(t, Array):
+            return [t.element_type] * n
+        raise TypeError(f"expected a tuple-shaped type; got {t}")
+
+    @classmethod
+    def _verify_while_carries(cls, op: control_flow.WhileOp) -> None:
+        """A WhileOp's loop-carried values must agree in type across its
+        ``initial_arguments``, condition/body block args, and the body
+        result (a tuple of next-iteration values). Without this, a carry
+        whose next value mismatches its declared type lowers to an invalid
+        back-edge phi (e.g. a Nil next value for an i64 carry)."""
+        carries = op.body.args
+        if not carries:
+            return  # zero-carry: body-result shape is checked at lowering
+        if isinstance(op.body.result.type, Never):
+            return  # body diverges (break/continue): no back-edge
+        if not isinstance(op.body.result.type, (Array, Tuple)):
+            raise TypeError(
+                f"WhileOp with carries must have a tuple body result; got "
+                f"{op.body.result.type}"
+            )
+        cls._check_carry_types(
+            "WhileOp",
+            carries,
+            "initial_arguments",
+            [v.type for v in unpack(op.initial_arguments)],
+        )
+        cls._check_carry_types(
+            "WhileOp", carries, "condition arg", [a.type for a in op.condition.args]
+        )
+        cls._check_carry_types(
+            "WhileOp",
+            carries,
+            "body result",
+            cls._element_types(op.body.result.type, len(carries)),
+        )
+
+    @classmethod
+    def _verify_for_carries(cls, op: control_flow.ForOp) -> None:
+        """A ForOp's carries (block args beyond the induction variable) must
+        agree in type with their ``initial_arguments`` and next-iteration
+        values. ``body.result`` is the single next value for one carry, or a
+        tuple for several (matching ``lower_for``)."""
+        carries = op.body.args[1:]
+        if not carries:
+            return
+        if isinstance(op.body.result.type, Never):
+            return
+        next_types = (
+            [op.body.result.type]
+            if len(carries) == 1
+            else cls._element_types(op.body.result.type, len(carries))
+        )
+        cls._check_carry_types(
+            "ForOp",
+            carries,
+            "initial_arguments",
+            [v.type for v in unpack(op.initial_arguments)],
+        )
+        cls._check_carry_types("ForOp", carries, "body result", next_types)
 
     @staticmethod
     def _make_branch_label(

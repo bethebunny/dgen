@@ -5,6 +5,8 @@ inner loop's exit label, not inside the outer body block before the inner
 loop's entry branch.
 """
 
+import pytest
+
 from dgen.asm.parser import parse
 from dgen.llvm.codegen import LLVMCodegen
 from dgen.passes.compiler import Compiler, IdentityPass
@@ -30,6 +32,23 @@ def test_nested_loop_after_control_flow_lowering(ir_snapshot):
     m = parse(NESTED_FOR)
     lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
     assert lowered == ir_snapshot
+
+
+def test_for_carry_type_mismatch_rejected():
+    """A ForOp carry whose body result type doesn't match the carry type is
+    rejected at lowering — it would otherwise produce an invalid back-edge phi
+    (a Nil next value for an i64 carry). Guards the carry-threading machinery."""
+    ir = strip_prefix("""
+        | import control_flow
+        | import index
+        |
+        | %loop : Nil = control_flow.for<index.Index(0), index.Index(2)>([index.Index(0)]) body(%j: index.Index, %acc: index.Index):
+        |     %0 : index.Index = 0
+        |     %1 : Nil = chain(%0, %0)
+    """)
+    m = parse(ir)
+    with pytest.raises(TypeError, match="carry"):
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
 
 
 def test_nested_loop_llvm_ir(snapshot):
