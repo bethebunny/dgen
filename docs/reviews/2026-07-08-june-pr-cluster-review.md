@@ -131,3 +131,20 @@ including the predicted cross-PR conflict.
 2. A stated invariant that passes moving buffer ops must preserve threading.
 3. Mark toy's `Nil`-token threading as a placeholder pending origins, so the
    shim doesn't quietly become the design.
+
+## Resolution (2026-07-08)
+
+This branch integrates the five code PRs in the order above and lands the
+review findings on top:
+
+- `ChainOp` kwarg reconciliation and the `ThreadLoopMemory` doc-reference fix.
+- Follow-up 1: `ThreadLoopMemory.verify_postconditions` rejects any in-loop
+  buffer op reading a loop-external mem, with a negative test.
+- The multi-carry `lower_for` path is now tested (LLVM-validated two-carry
+  snapshot) and hardened (clear `TypeError` for undecomposable body results).
+  Writing that test surfaced and fixed a codegen bug: aggregate `Constant`s
+  over 16 bytes were referenced as host pointers where codegen types
+  aggregates as `{ ... }` structs (invalid IR in loop-entry phis).
+- Comment/docstring/naming cleanups across the cluster's code.
+
+Suite after integration: 840 passed (main before: 824 passed / 10 failed).
