@@ -54,7 +54,8 @@ def _nested_for(
                 captures=all_captures,
             ),
         )
-    return innermost  # type: ignore[return-value]
+    assert isinstance(innermost, control_flow.ForOp)
+    return innermost
 
 
 def _nested_for_carry(
@@ -63,31 +64,26 @@ def _nested_for_carry(
     carry_init: dgen.Value,
     captures: Sequence[dgen.Value] = (),
 ) -> control_flow.ForOp:
-    """Build nested ForOps threading a single carried token through every level.
+    """Build nested ForOps threading one carried token through every level.
 
-    Unlike :func:`_nested_for`, every nesting level carries one value: the
-    token is a body arg, ``initial_arguments=pack([carry_in])`` at every
-    level, and each level's body result is the next token. The innermost body
-    calls ``body_fn(ivars, token)`` and returns the next token; each outer
-    level's body result is the inner loop's result (the inner nest's final
-    token), and its incoming carry feeds the inner level's ``initial_arguments``.
+    Each level's body takes ``(iv, token)`` and yields the next token: the
+    innermost body is ``body_fn(ivars, token)``, and each outer body's
+    result is its inner loop (the inner nest's final token). Threading
+    every level makes the cross-iteration dependency an explicit dataflow
+    edge, so a loop parallelizer cannot wrongly reorder any level of the
+    nest.
 
-    This makes the cross-iteration dependency an explicit dataflow edge so a
-    future loop parallelizer (which only parallelizes loops with no
-    cross-iteration dataflow dependency) will NOT wrongly parallelize it.
-
-    carry_init: the token value entering the whole nest (e.g. an initial store).
-    captures: enclosing-scope values referenced by body_fn at every level.
+    carry_init: the token entering the whole nest (e.g. an initial store).
+    captures: enclosing-scope values referenced by body_fn, at every level.
     """
     ivars = [BlockArgument(type=Index()) for _ in shape]
     carry_args = [BlockArgument(type=carry_init.type) for _ in shape]
     innermost: dgen.Value = body_fn(ivars, carry_args[-1])
     for depth in range(len(shape) - 1, -1, -1):
         outer_ivars = ivars[:depth]
-        # ``carry_in`` feeds this level's ``initial_arguments``. For the
-        # outermost level it's the nest's entry token; for inner levels it's
-        # the enclosing body's carry arg — a local reference from the outer
-        # body block (where this ForOp lives), so NOT a capture of this body.
+        # An inner level's entry token is the enclosing body's carry arg —
+        # a local reference from the outer body block (where this ForOp
+        # lives), so NOT a capture of this body.
         carry_in = carry_args[depth - 1] if depth > 0 else carry_init
         innermost = control_flow.ForOp(
             lower_bound=Index().constant(0),
@@ -99,7 +95,8 @@ def _nested_for_carry(
                 captures=list(captures) + outer_ivars,
             ),
         )
-    return innermost  # type: ignore[return-value]
+    assert isinstance(innermost, control_flow.ForOp)
+    return innermost
 
 
 class ToyToStructured(Pass):
@@ -250,20 +247,14 @@ class ToyToStructured(Pass):
 
     @lowering_for(toy.NonzeroCountOp)
     def lower_nonzero_count(self, op: toy.NonzeroCountOp) -> dgen.Value | None:
-        """Count nonzero elements: heap-alloc 1-cell accumulator, nested loop, load/compare/add.
+        """Count nonzero elements: 1-cell accumulator, nested loop, load/compare/add.
 
-        Uses ``memory.Buffer<Index>(count=1)`` rather than ``Reference<Index>``:
-        the loop body captures the accumulator and reads/writes it through
-        ``buffer_load``/``buffer_store``. Reference is ``Linear`` and would not
-        survive being captured into a loop body.
-
-        The accumulator's cross-iteration ordering is an EXPLICIT dataflow edge:
-        a ``Nil``-typed memory token is threaded through the loop carry at every
-        nesting level (see :func:`_nested_for_carry`). The entry token is
-        ``initial_store``; each iteration's ``buffer_load`` reads ``mem=<carried
-        token>`` and returns its ``buffer_store`` as the next token. Iteration
-        N+1's load therefore transitively depends on iteration N's store, so a
-        future loop parallelizer will not wrongly parallelize this reduction.
+        Uses ``memory.Buffer<Index>`` rather than ``Reference<Index>``:
+        Reference is ``Linear`` and would not survive being captured into a
+        loop body. The accumulator's cross-iteration ordering is an explicit
+        dataflow edge — each iteration's load reads the carried token and its
+        store is the next token (see :func:`_nested_for_carry`) — so a loop
+        parallelizer will not wrongly parallelize this reduction.
         """
         shape = self._shape(op.input)
         buf_type = memory.Buffer(element_type=Index())
