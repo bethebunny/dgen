@@ -17,6 +17,8 @@ non-loop blocks (e.g. ``if`` bodies) but stops at nested loops.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import dgen
 from dgen.block import BlockArgument
 from dgen.builtins import pack
@@ -27,6 +29,73 @@ from dgen.passes.pass_ import Pass, lowering_for
 
 _LOOP_OPS = (control_flow.WhileOp, control_flow.ForOp)
 _BUFFER_OPS = (memory.BufferLoadOp, memory.BufferStoreOp)
+
+
+def _buffer_ops(
+    block: dgen.Block,
+) -> Iterator[memory.BufferLoadOp | memory.BufferStoreOp]:
+    """Buffer loads/stores in ``block``'s non-loop subtree."""
+    for value in block.values:
+        if isinstance(value, _BUFFER_OPS):
+            yield value
+        if not isinstance(value, _LOOP_OPS):
+            for _, nested in value.blocks:
+                yield from _buffer_ops(nested)
+
+
+def _defined_values(block: dgen.Block) -> Iterator[dgen.Value]:
+    """Values defined in ``block``'s non-loop subtree: its args and ops,
+    and those of every nested non-loop block."""
+    yield from block.args
+    for value in block.values:
+        yield value
+        if not isinstance(value, _LOOP_OPS):
+            for _, nested in value.blocks:
+                yield from _defined_values(nested)
+
+
+def _nested_blocks(block: dgen.Block) -> Iterator[dgen.Block]:
+    """Non-loop blocks nested within ``block``, recursively."""
+    for value in block.values:
+        if isinstance(value, _LOOP_OPS):
+            continue
+        for _, nested in value.blocks:
+            yield nested
+            yield from _nested_blocks(nested)
+
+
+def _direct_operands(block: dgen.Block) -> set[dgen.Value]:
+    """Operands of ops directly in ``block`` (not nested blocks)."""
+    return {operand for value in block.values for _, operand in value.operands}
+
+
+def _subtree_operands(block: dgen.Block) -> set[dgen.Value]:
+    """Operands of every op in ``block``'s non-loop subtree."""
+    return _direct_operands(block).union(
+        *(_direct_operands(nested) for nested in _nested_blocks(block))
+    )
+
+
+def _fix_captures(
+    block: dgen.Block, token: BlockArgument, rewired: set[dgen.Value]
+) -> None:
+    """Repair captures after the ``mem`` rewire: nested non-loop blocks
+    that now reference ``token`` capture it, and rewired external mems
+    no longer referenced anywhere are dropped. Allocas (still used as
+    ``buf``) stay referenced, so they survive the drop."""
+    for nested in _nested_blocks(block):
+        if token in _direct_operands(nested) and token not in nested.captures:
+            nested.captures = [*nested.captures, token]
+        nested.captures = [
+            capture
+            for capture in nested.captures
+            if capture not in rewired or capture in _subtree_operands(nested)
+        ]
+    block.captures = [
+        capture
+        for capture in block.captures
+        if capture not in rewired or capture in _subtree_operands(block)
+    ]
 
 
 class ThreadLoopMemory(Pass):
@@ -45,8 +114,8 @@ class ThreadLoopMemory(Pass):
             if not isinstance(op, control_flow.WhileOp):
                 continue
             for block in (op.condition, op.body):
-                defined = set(self._defined_values(block))
-                for buffer_op in self._buffer_ops(block):
+                defined = set(_defined_values(block))
+                for buffer_op in _buffer_ops(block):
                     if buffer_op.mem not in defined:
                         raise ValueError(
                             f"buffer op {buffer_op.name!r} in a loop reads "
@@ -70,9 +139,11 @@ class ThreadLoopMemory(Pass):
 
         for block in (op.condition, op.body):
             token = BlockArgument(name="mem", type=Nil())
-            defined = set(self._defined_values(block))
+            defined = set(_defined_values(block))
             rewired: set[dgen.Value] = set()
-            for buffer_op in self._buffer_ops(block):
+            # Materialize before rewiring: the walks behind these helpers
+            # follow the very ``mem`` operand edges the loop mutates.
+            for buffer_op in list(_buffer_ops(block)):
                 if buffer_op.mem in defined:
                     continue
                 mem = buffer_op.mem
@@ -85,7 +156,7 @@ class ThreadLoopMemory(Pass):
                 # buffer and its initial mem token (``buf is mem``).
                 buffer_op.mem = token
             block.args = [*block.args, token]
-            self._fix_captures(block, token, rewired)
+            _fix_captures(block, token, rewired)
 
         # ChainOp's result depends on both operands, so a left-fold yields
         # one value that transitively depends on every rewired mem.
@@ -99,76 +170,3 @@ class ThreadLoopMemory(Pass):
         op.body.result = pack([op.body.result])
         op.initial_arguments = pack([entry])
         return op
-
-    @classmethod
-    def _buffer_ops(
-        cls, block: dgen.Block
-    ) -> list[memory.BufferLoadOp | memory.BufferStoreOp]:
-        """Buffer loads/stores in ``block``'s non-loop subtree."""
-        ops: list[memory.BufferLoadOp | memory.BufferStoreOp] = []
-        for value in block.values:
-            if isinstance(value, _BUFFER_OPS):
-                ops.append(value)
-            if not isinstance(value, _LOOP_OPS):
-                for _, nested in value.blocks:
-                    ops.extend(cls._buffer_ops(nested))
-        return ops
-
-    @classmethod
-    def _defined_values(cls, block: dgen.Block) -> list[dgen.Value]:
-        """Values defined in ``block``'s non-loop subtree: its args and ops,
-        and those of every nested non-loop block."""
-        defined: list[dgen.Value] = list(block.args)
-        for value in block.values:
-            defined.append(value)
-            if not isinstance(value, _LOOP_OPS):
-                for _, nested in value.blocks:
-                    defined.extend(cls._defined_values(nested))
-        return defined
-
-    @classmethod
-    def _fix_captures(
-        cls, block: dgen.Block, token: BlockArgument, rewired: set[dgen.Value]
-    ) -> None:
-        """Repair captures after the ``mem`` rewire: nested non-loop blocks
-        that now reference ``token`` capture it, and rewired external mems
-        no longer referenced anywhere are dropped. Allocas (still used as
-        ``buf``) stay referenced, so they survive the drop."""
-        for nested in cls._nested_blocks(block):
-            if token in cls._direct_operands(nested) and token not in nested.captures:
-                nested.captures = [*nested.captures, token]
-            nested.captures = [
-                capture
-                for capture in nested.captures
-                if capture not in rewired or capture in cls._subtree_operands(nested)
-            ]
-        block.captures = [
-            capture
-            for capture in block.captures
-            if capture not in rewired or capture in cls._subtree_operands(block)
-        ]
-
-    @classmethod
-    def _nested_blocks(cls, block: dgen.Block) -> list[dgen.Block]:
-        """Non-loop blocks nested within ``block``, recursively."""
-        nested: list[dgen.Block] = []
-        for value in block.values:
-            if isinstance(value, _LOOP_OPS):
-                continue
-            for _, child in value.blocks:
-                nested.append(child)
-                nested.extend(cls._nested_blocks(child))
-        return nested
-
-    @staticmethod
-    def _direct_operands(block: dgen.Block) -> set[dgen.Value]:
-        """Operands of ops directly in ``block`` (not nested blocks)."""
-        return {operand for value in block.values for _, operand in value.operands}
-
-    @classmethod
-    def _subtree_operands(cls, block: dgen.Block) -> set[dgen.Value]:
-        """Operands of every op in ``block``'s non-loop subtree."""
-        operands = cls._direct_operands(block)
-        for nested in cls._nested_blocks(block):
-            operands |= cls._direct_operands(nested)
-        return operands
