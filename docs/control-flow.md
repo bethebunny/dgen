@@ -186,7 +186,7 @@ reorderable. Absence of a carried token is the natural use-def reading of
 
 Loops that mutate shared memory (e.g. dcc's C `while`/`for`) must thread a
 memory effect token through the carry to obtain sequential semantics. The
-frontend establishes this — dcc's `CLvalueToMemory` rewires each in-loop
+frontend establishes this — dcc's `ThreadLoopMemory` rewires each in-loop
 buffer load/store whose `mem` operand is loop-external onto a fresh `Nil`
 loop-carried block argument, and wraps the outgoing token in a 1-tuple so it
 feeds back through the header. The `Nil` carry has no runtime representation,

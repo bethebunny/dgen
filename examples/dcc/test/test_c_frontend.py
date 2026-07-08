@@ -19,11 +19,15 @@ from dgen.builtins import pack
 
 from click.testing import CliRunner
 
+from dgen.passes.compiler import Compiler, IdentityPass
+
 from dcc.cli import c_compiler, main, run_file
 from dcc.dialects import c, c_double, c_float, c_int, c_ptr, c_void
 from dcc.parser.c_parser import parse_c_string
 from dcc.parser.lowering import LoweringError, Parser, Scope, lower
 from dcc.parser.type_resolver import TypeResolver, TypeResolverError
+from dcc.passes.c_lvalue_to_memory import CLvalueToMemory
+from dcc.passes.thread_loop_memory import ThreadLoopMemory
 
 TESTDATA_DIR = Path(__file__).parent / "testdata"
 
@@ -561,6 +565,21 @@ class TestEndToEnd:
             )
             == 30
         )
+
+
+class TestThreadLoopMemory:
+    def test_unthreaded_loop_rejected(self) -> None:
+        """The pass postcondition catches a loop whose buffer ops read
+        loop-external mem — the shape whose cross-iteration ordering is
+        only implicit in the alloca, which the iteration contract forbids."""
+        ir = lower(
+            parse_c_string(
+                "int f(int n) { int i = 0; while (i < n) { i = i + 1; } return i; }"
+            )
+        )
+        unthreaded = Compiler([CLvalueToMemory()], IdentityPass()).run(ir)
+        with pytest.raises(ValueError, match="loop-external mem"):
+            ThreadLoopMemory().verify_postconditions(unthreaded)
 
 
 class TestBreakContinue:
