@@ -673,15 +673,19 @@ def value_reference(v: dgen.Value) -> str:
         # generation, that bytearray is GC'd and the pointer dangles.
         if not mem.layout.register_passable or mem.origins:
             ctx.host_buffers.append(mem)
-        if not mem.layout.register_passable:
-            return f"inttoptr (i64 {mem.address} to ptr)"
         # Aggregate Constants build their LLVM literal element-by-element
         # so the form matches ``_tuple_llvm_type`` (uniform ``{ T1, ... }``
-        # shape — no scalar collapse). ``ffi.llvm_constant`` would emit
-        # the FFI/ABI-collapsed scalar form for single-field layouts,
-        # which mismatches the internal aggregate type used elsewhere.
+        # shape — no scalar collapse). This must precede the
+        # register-passable check: codegen represents Array/Tuple values
+        # as ``{ ... }`` structs internally regardless of byte size, so
+        # the pointer form would type-mismatch every internal use site
+        # (phi, extractvalue). ``ffi.llvm_constant`` would emit the
+        # FFI/ABI-collapsed scalar form for single-field layouts, which
+        # mismatches the internal aggregate type used elsewhere.
         if isinstance(v.type, (builtin.Array, builtin.Tuple)):
             return _aggregate_constant_literal(v)
+        if not mem.layout.register_passable:
+            return f"inttoptr (i64 {mem.address} to ptr)"
         return ffi.llvm_constant(bytes(mem.buffer), mem.layout)
     if isinstance(v, builtin.ChainOp):
         return value_reference(v.result)
