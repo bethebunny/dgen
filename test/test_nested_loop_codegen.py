@@ -10,7 +10,7 @@ import pytest
 from dgen.asm.parser import parse
 from dgen.llvm.codegen import LLVMCodegen
 from dgen.passes.compiler import Compiler, IdentityPass
-from dgen.testing import strip_prefix
+from dgen.testing import assert_valid_llvm, strip_prefix
 from dgen.llvm.algebra_to_llvm import AlgebraToLLVM
 from dgen.llvm.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
@@ -57,4 +57,5 @@ def test_nested_loop_llvm_ir(snapshot):
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
     ).compile(m)
+    assert_valid_llvm(exe.ir)
     assert exe.ir == snapshot
