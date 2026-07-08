@@ -23,7 +23,6 @@ from dgen.builtins import pack
 from dgen.dialects import control_flow, memory
 from dgen.dialects.builtin import ChainOp, Nil
 from dgen.ir.traversal import all_values
-from dgen.passes.compiler import Compiler
 from dgen.passes.pass_ import Pass, lowering_for
 
 _LOOP_OPS = (control_flow.WhileOp, control_flow.ForOp)
@@ -34,13 +33,6 @@ class ThreadLoopMemory(Pass):
     """Thread a memory effect token through each loop's carry."""
 
     allow_unregistered_ops = True
-
-    def __init__(self) -> None:
-        self._loop_counter = 0
-
-    def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
-        self._loop_counter = 0
-        return super().run(value, compiler)
 
     def verify_postconditions(self, value: dgen.Value) -> None:
         """Every buffer op inside a loop reads a loop-internal mem token.
@@ -73,14 +65,11 @@ class ThreadLoopMemory(Pass):
         so the final token feeds back through the carry. The ``Nil`` token
         has no runtime representation — codegen erases its phi.
         """
-        loop_id = self._loop_counter
-        self._loop_counter += 1
-
         entry_mems: list[dgen.Value] = []
         seen_entry_mems: set[dgen.Value] = set()
 
         for block in (op.condition, op.body):
-            token = BlockArgument(name=f"mem{loop_id}", type=Nil())
+            token = BlockArgument(name="mem", type=Nil())
             defined = set(self._defined_values(block))
             rewired: set[dgen.Value] = set()
             for buffer_op in self._buffer_ops(block):

@@ -4,36 +4,36 @@
   
   define void @main() {
   entry:
+    br label %while_header
+  while_header:
+    %_3 = phi { i64 } [ { i64 0 }, %entry ], [ %_4, %exit ]
+    %i = extractvalue { i64 } %_3, 0
+    br label %while_body_exit
+  while_body:
+    %_5 = phi { i64 } [ %_6, %while_body_exit ]
+    %oi = extractvalue { i64 } %_5, 0
+    %_7 = add i64 %oi, 1
     br label %while_header0
   while_header0:
-    %_0 = phi { i64 } [ { i64 0 }, %entry ], [ %_1, %exit1 ]
-    %wh0_i = extractvalue { i64 } %_0, 0
-    br label %while_body0_exit
-  while_body0:
-    %_2 = phi { i64 } [ %_3, %while_body0_exit ]
-    %wb0_oi = extractvalue { i64 } %_2, 0
-    %_4 = add i64 %wb0_oi, 1
-    br label %while_header1
-  while_header1:
-    %_5 = phi { i64 } [ { i64 0 }, %while_body0 ], [ { i64 0 }, %while_body1 ]
-    %wh1_j = extractvalue { i64 } %_5, 0
+    %_8 = phi { i64 } [ { i64 0 }, %while_body ], [ { i64 0 }, %while_body1 ]
+    %j = extractvalue { i64 } %_8, 0
     br label %while_body1_exit
   while_body1:
-    %_6 = phi { i64 } [ %_7, %while_body1_exit ]
-    %wb1_j2 = extractvalue { i64 } %_6, 0
-    br label %while_header1
-  while_body1_exit:
-    %_8 = icmp slt i64 %wh1_j, 2
-    %_7 = insertvalue { i64 } undef, i64 %wh1_j, 0
-    br i1 %_8, label %while_body1, label %exit1
-  exit1:
-    %_1 = insertvalue { i64 } undef, i64 %_4, 0
+    %_9 = phi { i64 } [ %_10, %while_body1_exit ]
+    %j2 = extractvalue { i64 } %_9, 0
     br label %while_header0
-  while_body0_exit:
-    %_9 = icmp slt i64 %wh0_i, 2
-    %_3 = insertvalue { i64 } undef, i64 %wh0_i, 0
-    br i1 %_9, label %while_body0, label %exit0
-  exit0:
+  while_body1_exit:
+    %_11 = icmp slt i64 %j, 2
+    %_10 = insertvalue { i64 } undef, i64 %j, 0
+    br i1 %_11, label %while_body1, label %exit
+  exit:
+    %_4 = insertvalue { i64 } undef, i64 %_7, 0
+    br label %while_header
+  while_body_exit:
+    %_12 = icmp slt i64 %i, 2
+    %_6 = insertvalue { i64 } undef, i64 %i, 0
+    br i1 %_12, label %while_body, label %exit2
+  exit2:
     ret void
   }
   '''
@@ -43,22 +43,22 @@
   
   define void @main() {
   entry:
-    br label %while_header0
-  while_header0:
-    %_0 = phi { i64 } [ { i64 0 }, %entry ], [ %_1, %while_body0 ]
-    %wh0_i = extractvalue { i64 } %_0, 0
-    br label %while_body0_exit
-  while_body0:
-    %_2 = phi { i64 } [ %_3, %while_body0_exit ]
-    %wb0_i = extractvalue { i64 } %_2, 0
-    %_4 = add i64 %wb0_i, 1
-    %_1 = insertvalue { i64 } undef, i64 %_4, 0
-    br label %while_header0
-  while_body0_exit:
-    %_5 = icmp slt i64 %wh0_i, 10
-    %_3 = insertvalue { i64 } undef, i64 %wh0_i, 0
-    br i1 %_5, label %while_body0, label %exit0
-  exit0:
+    br label %while_header
+  while_header:
+    %_0 = phi { i64 } [ { i64 0 }, %entry ], [ %_1, %while_body ]
+    %i = extractvalue { i64 } %_0, 0
+    br label %while_body_exit
+  while_body:
+    %_2 = phi { i64 } [ %_3, %while_body_exit ]
+    %i4 = extractvalue { i64 } %_2, 0
+    %_5 = add i64 %i4, 1
+    %_1 = insertvalue { i64 } undef, i64 %_5, 0
+    br label %while_header
+  while_body_exit:
+    %_6 = icmp slt i64 %i, 10
+    %_3 = insertvalue { i64 } undef, i64 %i, 0
+    br i1 %_6, label %while_body, label %exit
+  exit:
     ret void
   }
   '''

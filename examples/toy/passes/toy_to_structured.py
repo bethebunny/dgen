@@ -25,21 +25,21 @@ if TYPE_CHECKING:
 
 def _nested_for(
     shape: Sequence[int],
-    body_fn: Callable[[Sequence[dgen.Value]], dgen.Value],
+    build_body: Callable[[Sequence[dgen.Value]], dgen.Value],
     captures: Sequence[dgen.Value] = (),
 ) -> control_flow.ForOp:
     """Build nested ForOps for each dimension, innermost first.
 
-    captures: values from the enclosing scope referenced by body_fn (e.g.
+    captures: values from the enclosing scope referenced by build_body (e.g.
     allocs, tensor constants, function parameters). Outer loop IVs are
     also added as captures at each nesting level.
 
     No loop-carry: every level has empty ``initial_arguments`` and its body
-    result is whatever ``body_fn``/the inner loop produces. Used by the maps
+    result is whatever ``build_body``/the inner loop produces. Used by the maps
     (transpose/mul/add/tile/concat) whose iterations are independent.
     """
     ivars = [BlockArgument(type=Index()) for _ in shape]
-    innermost: dgen.Value = body_fn(ivars)
+    innermost: dgen.Value = build_body(ivars)
     for depth in range(len(shape) - 1, -1, -1):
         # Outer IVs are captures, not threaded block args.
         outer_ivars = ivars[:depth]
@@ -60,25 +60,25 @@ def _nested_for(
 
 def _nested_for_carry(
     shape: Sequence[int],
-    body_fn: Callable[[Sequence[dgen.Value], dgen.Value], dgen.Value],
+    build_body: Callable[[Sequence[dgen.Value], dgen.Value], dgen.Value],
     carry_init: dgen.Value,
     captures: Sequence[dgen.Value] = (),
 ) -> control_flow.ForOp:
     """Build nested ForOps threading one carried token through every level.
 
     Each level's body takes ``(iv, token)`` and yields the next token: the
-    innermost body is ``body_fn(ivars, token)``, and each outer body's
+    innermost body is ``build_body(ivars, token)``, and each outer body's
     result is its inner loop (the inner nest's final token). Threading
     every level makes the cross-iteration dependency an explicit dataflow
     edge, so a loop parallelizer cannot wrongly reorder any level of the
     nest.
 
     carry_init: the token entering the whole nest (e.g. an initial store).
-    captures: enclosing-scope values referenced by body_fn, at every level.
+    captures: enclosing-scope values referenced by build_body, at every level.
     """
     ivars = [BlockArgument(type=Index()) for _ in shape]
     carry_args = [BlockArgument(type=carry_init.type) for _ in shape]
-    innermost: dgen.Value = body_fn(ivars, carry_args[-1])
+    innermost: dgen.Value = build_body(ivars, carry_args[-1])
     for depth in range(len(shape) - 1, -1, -1):
         outer_ivars = ivars[:depth]
         # An inner level's entry token is the enclosing body's carry arg —
@@ -257,15 +257,15 @@ class ToyToStructured(Pass):
         parallelizer will not wrongly parallelize this reduction.
         """
         shape = self._shape(op.input)
-        buf_type = memory.Buffer(element_type=Index())
-        zero_idx = Index().constant(0)
+        buffer_type = memory.Buffer(element_type=Index())
+        zero_index = Index().constant(0)
         accumulator = memory.BufferStackAllocateOp(
-            element_type=Index(), count=Index().constant(1), type=buf_type
+            element_type=Index(), count=Index().constant(1), type=buffer_type
         )
         initial_store = memory.BufferStoreOp(
             mem=accumulator,
             buf=accumulator,
-            index=zero_idx,
+            index=zero_index,
             value=Index().constant(0),
         )
         zero = Float64().constant(0.0)
@@ -276,7 +276,7 @@ class ToyToStructured(Pass):
             )
             nonzero = algebra.NotEqualOp(left=element, right=zero, type=Boolean())
             current = memory.BufferLoadOp(
-                mem=token, buf=accumulator, index=zero_idx, type=Index()
+                mem=token, buf=accumulator, index=zero_index, type=Index()
             )
             updated = algebra.AddOp(
                 left=current,
@@ -284,7 +284,7 @@ class ToyToStructured(Pass):
                 type=Index(),
             )
             return memory.BufferStoreOp(
-                mem=current, buf=accumulator, index=zero_idx, value=updated
+                mem=current, buf=accumulator, index=zero_index, value=updated
             )
 
         loop = _nested_for_carry(
@@ -294,5 +294,5 @@ class ToyToStructured(Pass):
             captures=[accumulator, zero, op.input],
         )
         return memory.BufferLoadOp(
-            mem=loop, buf=accumulator, index=zero_idx, type=Index()
+            mem=loop, buf=accumulator, index=zero_index, type=Index()
         )

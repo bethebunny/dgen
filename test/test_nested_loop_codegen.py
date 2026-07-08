@@ -35,8 +35,8 @@ NESTED_FOR = strip_prefix("""
 
 def test_nested_loop_after_control_flow_lowering(ir_snapshot):
     """Nested ForOps lowered to goto labels."""
-    m = parse(NESTED_FOR)
-    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
+    parsed = parse(NESTED_FOR)
+    lowered = Compiler([ControlFlowToGoto()], IdentityPass()).compile(parsed)
     assert lowered == ir_snapshot
 
 
@@ -52,9 +52,9 @@ def test_for_carry_type_mismatch_rejected():
         |     %0 : index.Index = 0
         |     %1 : Nil = chain(%0, %0)
     """)
-    m = parse(ir)
+    parsed = parse(ir)
     with pytest.raises(TypeError, match="carry"):
-        Compiler([ControlFlowToGoto()], IdentityPass()).compile(m)
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(parsed)
 
 
 def _two_carry_for(body_result_of) -> control_flow.ForOp:
@@ -100,9 +100,9 @@ def test_for_multi_carry_undecomposable_result_rejected():
 
 def test_nested_loop_llvm_ir(snapshot):
     """Nested loop all the way to LLVM IR — shows the codegen issue."""
-    m = parse(NESTED_FOR)
+    parsed = parse(NESTED_FOR)
     exe = Compiler(
         [ControlFlowToGoto(), BuiltinToLLVM(), AlgebraToLLVM()], LLVMCodegen()
-    ).compile(m)
+    ).compile(parsed)
     assert_valid_llvm(exe.ir)
     assert exe.ir == snapshot
