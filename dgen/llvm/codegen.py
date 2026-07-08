@@ -345,13 +345,13 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
                     self_param, exit_param = op.body.parameters
                     ctx.param_to_owner[self_param] = op
                     ctx.self_params.add(self_param)
-                    _walk(op.body, op.name)
+                    _walk(op.body, ctx.tracker.name(op))
                     current_block = ctx.tracker.name(exit_param)
                 else:
                     # Labels declare no parameters; they capture the
                     # enclosing region's %self/%exit when needed.
-                    _walk(op.body, op.name)
-                    current_block = f"{op.name}_exit"
+                    _walk(op.body, ctx.tracker.name(op))
+                    current_block = f"{ctx.tracker.name(op)}_exit"
 
     _walk(func.body, "entry")
 
@@ -523,7 +523,7 @@ def _exit_phi_name(op: goto.RegionOp) -> str:
     ``value_reference(op)`` resolves to. Stable, deterministic; lets
     consumers reference the region's value without inspecting block args.
     """
-    return f"{op.name}_result"
+    return f"{_ctx().tracker.name(op)}_result"
 
 
 @emitter_for(goto.RegionOp)
@@ -542,9 +542,11 @@ def emit_region_op(op: goto.RegionOp) -> Iterator[str]:
     has no void phi.
     """
     _self_param, exit_param = op.body.parameters
-    exit_name = _ctx().tracker.name(exit_param)
-    yield f"  br label %{op.name}"
-    yield f"{op.name}:"
+    tracker = _ctx().tracker
+    name = tracker.name(op)
+    exit_name = tracker.name(exit_param)
+    yield f"  br label %{name}"
+    yield f"{name}:"
     yield from _emit_block_arg_phis(op)
     terminated = yield from emit_linearized(op.body)
     if not terminated:
@@ -561,9 +563,10 @@ def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
     Terminates the current basic block with a skip branch, emits the
     label body, then resumes with an exit label.
     """
-    exit_name = f"{op.name}_exit"
+    name = _ctx().tracker.name(op)
+    exit_name = f"{name}_exit"
     yield f"  br label %{exit_name}"
-    yield f"{op.name}:"
+    yield f"{name}:"
     yield from _emit_block_arg_phis(op)
     yield from emit_linearized(op.body)
     yield f"{exit_name}:"
