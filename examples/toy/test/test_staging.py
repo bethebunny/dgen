@@ -111,6 +111,27 @@ def test_tile_nonzero_plus_add():
     )
 
 
+def test_tile_nonzero_count_2d():
+    """nonzero_count on a 2-D constant tensor → 3 nonzeros → 3 copies.
+
+    Exercises the nested-loop reduction with the memory token threaded
+    through BOTH nesting levels (see ToyToStructured.lower_nonzero_count).
+    """
+    assert (
+        _toy("""
+        def main() {
+            var mask = [[1, 0, 3], [0, 5, 0]];
+            var n = nonzero_count(mask);
+            var base = [7, 8];
+            var t = tile(base, n);
+            print(t);
+            return;
+        }
+    """)
+        == "7, 8, 7, 8, 7, 8"
+    )
+
+
 def test_tile_shape_propagates_to_mul():
     """tile shape propagates through downstream mul.
 
