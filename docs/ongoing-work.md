@@ -7,6 +7,11 @@ roadmap itself.*
 Sources: `TODO.md`, the design docs under `docs/` (incl. `docs/plans/`), the 9
 open PRs, and the current state of `main`. Compiled 2026-06-20.
 
+> **Update 2026-06-21**: the loop memory-effect threading cluster
+> (#185, #186, #188, #189, #190) postdates this snapshot. #186 fixes the
+> 10 dcc loop tests the #184 merge broke; read §1's PR table with that
+> cluster in mind.
+
 ---
 
 ## 0. Snapshot: where things stand
