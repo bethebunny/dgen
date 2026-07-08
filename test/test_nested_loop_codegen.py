@@ -19,7 +19,7 @@ NESTED_FOR = strip_prefix("""
     | import index
     |
     | %outer : Nil = control_flow.for<index.Index(0), index.Index(2)>([]) body(%i: index.Index):
-    |     %inner : Nil = control_flow.for<index.Index(0), index.Index(2)>([%i]) body(%j: index.Index, %i: index.Index):
+    |     %inner : Nil = control_flow.for<index.Index(0), index.Index(2)>([]) body(%j: index.Index):
     |         %0 : index.Index = 0
     |         %1 : Nil = chain(%0, %0)
 """)
