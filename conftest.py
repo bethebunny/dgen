@@ -1,5 +1,6 @@
 """Root conftest.py — shared pytest fixtures."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ dgen.PATH.append(Path(__file__).parent / "examples" / "dcc" / "dialects")
 
 
 @pytest.fixture(autouse=True)
-def _enable_pass_verification():
+def _enable_pass_verification() -> Iterator[None]:
     """Enable IR verification for all pass pre/postconditions in every test."""
     token = verify_passes.set(True)
     yield
