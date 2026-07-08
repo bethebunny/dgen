@@ -533,6 +533,25 @@ class TestEndToEnd:
             == 2
         )
 
+    def test_nested_while_in_while(self) -> None:
+        """Loop-in-loop: each loop must carry its OWN memory token.
+
+        f(n) runs an inner while n times for each of n outer iterations,
+        incrementing t once per inner iteration -> t == n*n. Threading is
+        per-loop: the inner loop is threaded by its own handler, not
+        double-threaded by the outer.
+        """
+        assert (
+            run_c(
+                "int f(int n) { int t = 0; int i = 0;"
+                " while (i < n) { int j = 0;"
+                " while (j < n) { t = t + 1; j = j + 1; }"
+                " i = i + 1; } return t; }",
+                4,
+            )
+            == 16
+        )
+
     def test_while_read_then_outer_write(self) -> None:
         """Reads inside while body must fence subsequent write."""
         assert (

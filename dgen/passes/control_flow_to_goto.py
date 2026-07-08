@@ -12,6 +12,27 @@ exit label.
 ``goto.label`` is a pure jump target — only reachable via explicit branch.
 It emits as a separate basic block with no fall-through entry.
 
+## Loop iteration contract: concurrent vs sequential
+
+A loop's iterations are SEQUENTIAL iff its carry threads a dataflow/effect
+token — a value produced by iteration *n* and consumed by iteration *n+1*
+(e.g. a memory effect token). Threading such a token makes the
+cross-iteration ordering explicit in the IR: each iteration's memory effects
+depend on the previous iteration's via the carried value, so the iterations
+cannot be reordered.
+
+A loop with NO such carry has CONCURRENT iterations: there is no
+iteration-to-iteration data dependency, so iterations are independent and may
+be executed (or scheduled) in any order. This is the natural reading of the
+use-def graph — absence of a carried token means absence of ordering.
+
+Loops that mutate shared memory (e.g. dcc's C ``while``/``for``) MUST thread
+a memory effect token through the carry to obtain sequential semantics; the
+frontend is responsible for establishing this (see dcc's CLvalueToMemory,
+which threads a ``Nil`` effect token as a loop-carried block argument). The
+``Nil`` carry has no runtime representation, so codegen erases its phi — the
+token exists purely to encode ordering at the IR level.
+
 ## ForOp lowering
 
     control_flow.for<lo, hi>([init]) body(%iv):
@@ -42,6 +63,14 @@ Similar structure but simpler: the condition and body are user-provided blocks.
 No explicit chain is needed for the body because the body result IS the
 next-iteration values — the back-edge branch arguments reference them
 transitively.
+
+The body result MUST be a tuple shape (``Array`` or ``Tuple``) so its fields
+line up with the header's block args; this assertion is load-bearing and is
+NOT relaxed. A loop that wants sequential iterations threads its effect token
+as one of these carried values — the frontend wraps the outgoing token in a
+1-tuple (``pack([token])``) so it satisfies the tuple contract and feeds the
+header's carried arg (see the iteration contract above and dcc's
+CLvalueToMemory).
 
 ## IfOp lowering
 
