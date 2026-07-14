@@ -40,6 +40,23 @@ def test_nested_loop_after_control_flow_lowering(ir_snapshot):
     assert lowered == ir_snapshot
 
 
+def test_for_carry_type_mismatch_rejected():
+    """A ForOp carry whose body result type doesn't match the carry type is
+    rejected at lowering — it would otherwise produce an invalid back-edge phi
+    (a Nil next value for an i64 carry). Guards the carry-threading machinery."""
+    ir = strip_prefix("""
+        | import control_flow
+        | import index
+        |
+        | %loop : Nil = control_flow.for<index.Index(0), index.Index(2)>([index.Index(0)]) body(%j: index.Index, %acc: index.Index):
+        |     %0 : index.Index = 0
+        |     %1 : Nil = chain(%0, %0)
+    """)
+    parsed = parse(ir)
+    with pytest.raises(TypeError, match="carry"):
+        Compiler([ControlFlowToGoto()], IdentityPass()).compile(parsed)
+
+
 def _two_carry_for(body_result_of) -> control_flow.ForOp:
     """A ForOp with two Index carries; ``body_result_of(next_a, next_b)``
     builds the body result from the next carry values."""

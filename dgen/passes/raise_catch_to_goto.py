@@ -49,9 +49,6 @@ class RaiseCatchToGoto(Pass):
 
     allow_unregistered_ops = True
 
-    def __init__(self) -> None:
-        self._counter = 0
-
     def verify_preconditions(self, root: dgen.Value) -> None:
         """Body and except result types must be compatible with the try's
         declared type. ``Never`` is universally compatible (a diverging
@@ -79,9 +76,6 @@ class RaiseCatchToGoto(Pass):
 
     @lowering_for(error.TryOp)
     def lower_try(self, op: error.TryOp) -> dgen.Value | None:
-        cid = self._counter
-        self._counter += 1
-
         handler = op.body.parameters[0]
 
         # %self is unused for try-merge (no back-edge); %exit carries the
@@ -89,13 +83,13 @@ class RaiseCatchToGoto(Pass):
         # both terminate with branch<%exit>(result), and codegen emits
         # the phi at %exit from the two predecessors.
         merge_self = BlockParameter(name="self", type=goto.Label())
-        merge_exit = BlockParameter(name=f"try_exit{cid}", type=goto.Label())
+        merge_exit = BlockParameter(name="try_exit", type=goto.Label())
 
         # except block becomes a goto.label that branches to %exit with
         # its recovery value (or stays as-is if it already diverges).
         redirect_to_exit(op.except_, merge_exit)
         except_label = goto.LabelOp(
-            name=f"except{cid}", initial_arguments=pack([]), body=op.except_
+            name="except", initial_arguments=pack([]), body=op.except_
         )
 
         # Substitute handler (effect-layer evidence) with except_label
@@ -113,7 +107,7 @@ class RaiseCatchToGoto(Pass):
         op.body.parameters[:] = [merge_self, merge_exit]
 
         return goto.RegionOp(
-            name=f"try{cid}", initial_arguments=pack([]), type=op.type, body=op.body
+            name="try", initial_arguments=pack([]), type=op.type, body=op.body
         )
 
     @lowering_for(error.RaiseOp)
