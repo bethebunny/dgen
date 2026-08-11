@@ -9,6 +9,23 @@ trait Handler<effect_type: Type>
 trait Linear
 trait Affine
 
+# Block-execution contracts: how a block-holding op runs its owned
+# blocks, declared so the linearity verifier can charge linear captures
+# precisely (see docs/linear_types.md and Op.verify_block_linearity).
+# We believe these three to be exhaustive; a block-holding op should
+# declare exactly one of them, or override Op.verify_block_linearity
+# with its own implementation. Ops that do neither are verified
+# conservatively.
+#
+# - ExactlyOnce:      every owned block runs exactly once per execution.
+# - Alternatives:     exactly one owned block runs, and the blocks never
+#                     transfer control into each other.
+# - BodyWithHandler:  a body block that always starts plus a handler
+#                     block that runs iff the body diverges into it.
+trait ExactlyOnce
+trait Alternatives
+trait BodyWithHandler
+
 type Nil:
     layout Void
 
@@ -50,3 +67,4 @@ op type(value) -> Type
 op extern<symbol: String>()
 op unpack(tuple):
     block body
+    has trait ExactlyOnce

@@ -1,6 +1,9 @@
-from builtin import Never, Nil, Span
+from builtin import Alternatives, Never, Nil, Span
 from index import Index
 
+# for/while declare no block-execution contract: their bodies run
+# zero-or-more times, which needs the loop-carry rule (see TODO.md)
+# before the linearity verifier can treat them precisely.
 op for<lower_bound: Index, upper_bound: Index>(initial_arguments: Span) -> Nil:
     block body
 op while(initial_arguments: Span) -> Nil:
@@ -9,5 +12,6 @@ op while(initial_arguments: Span) -> Nil:
 op if(condition: Index, then_arguments: Span, else_arguments: Span):
     block then_body
     block else_body
+    has trait Alternatives
 op break() -> Never
 op continue() -> Never

@@ -95,20 +95,26 @@ linear values by its root.
 
 ### Block-execution contracts
 
-Ops may declare a block-execution contract (`BlockExecution` in
-`dgen/ir/verification.py`, registered in `_BLOCK_CONTRACTS`), letting the
-verifier charge linear captures precisely at the parent:
+Block-holding ops declare how they run their owned blocks via the
+block-execution traits in `builtin.dgen` (`has trait` in the op's `.dgen`
+definition), letting the verifier charge linear captures precisely at the
+parent. The verifier reaches the contract through the
+`Op.verify_block_linearity` protocol: the default implementation
+dispatches on the declared trait via `BlockLinearityContext`
+(`dgen/ir/verification.py`), and an op with bespoke execution semantics
+may override the method and compose the context's primitives instead.
+The three traits are believed exhaustive:
 
-- `EXACTLY_ONCE` (`unpack`): each capturing block runs and consumes its
+- `ExactlyOnce` (`unpack`): each capturing block runs and consumes its
   linear captures — the capture is `Consumed` at the op; two children
   capturing the same linear value is a static double-consume.
-- `ALTERNATIVES` (`control_flow.if`): exactly one child runs, and children
+- `Alternatives` (`control_flow.if`): exactly one child runs, and children
   never transfer control into each other. A linear capture is `Consumed`
   when every completing (non-`Never`-result) alternative captures it; left
   untouched when only diverging alternatives capture it (see
   "divergence-aware composition" below); rejected when captured by only
   some completing alternatives — that is conditional consumption.
-- `BODY_WITH_HANDLER` (`error.try`): the body always starts; the handler
+- `BodyWithHandler` (`error.try`): the body always starts; the handler
   block runs iff the body diverges into it. Because the body may consume a
   capture *before* diverging (at-site discharge), only the cleanup-scope
   pattern — both children capture — charges `Consumed`; other shapes park
@@ -118,10 +124,8 @@ Affine captures keep the permissive `MaybeAvailable` treatment even under
 a contract: an affine value (raise handler, exit label) is legitimately
 captured by many sibling scopes, at most one of which fires per path.
 
-Contracts are declared in the verifier's registry today; declaring them in
-`.dgen` op definitions is future work. Loops stay unregistered until the
-carry-pair rule lands; the goto family stays unregistered because label
-bodies run zero-or-more times.
+Loops declare no trait until the carry-pair rule lands; the goto family
+declares none because label bodies run zero-or-more times.
 
 ### Unknown block-holding ops
 

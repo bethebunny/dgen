@@ -1,4 +1,4 @@
-from builtin import Never, Effect, Handler, Diverge, Affine
+from builtin import Never, Effect, Handler, Diverge, Affine, BodyWithHandler
 
 type Raise<error_type: Type>:
     layout Void
@@ -14,3 +14,4 @@ op raise<error_type: Type>(handler: RaiseHandler, error: error_type) -> Never
 op try<error_type: Type>():
     block body
     block except
+    has trait BodyWithHandler

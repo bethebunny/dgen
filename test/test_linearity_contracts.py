@@ -8,18 +8,32 @@ the parent's Γ instead of parking them at ``MAYBE_AVAILABLE``:
   alternative captures it; left available when only diverging
   alternatives capture it; rejected when captured by only some
   completing alternatives (conditional consumption).
-- ``error.try`` (BODY_WITH_HANDLER): consumed for the cleanup-scope
+- ``error.try`` (BodyWithHandler): consumed for the cleanup-scope
   pattern (body and except both capture); otherwise permissive.
+
+Ops declare these as traits in their ``.dgen`` definitions; the
+verifier reaches them through the ``Op.verify_block_linearity``
+protocol, which bespoke block-holding ops may override instead (see
+the custom-op test at the bottom).
 
 ``memory.Reference`` is the linear type used throughout.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import ClassVar
+
 import pytest
 
+import dgen
 from dgen.asm.parser import parse
+from dgen.dialect import Dialect
+from dgen.dialects import memory
+from dgen.dialects.builtin import ChainOp, Nil
+from dgen.dialects.index import Index
 from dgen.ir.verification import (
+    BlockLinearityContext,
     DoubleConsumeError,
     LinearLeakError,
     verify_linearity,
@@ -206,3 +220,55 @@ def test_unpack_charges_consumed_so_reuse_is_double_consume():
     | %final : index.Index = chain(%out, %d3)
 """
         )
+
+
+# ---------------------------------------------------------------------------
+# Custom block-holding ops override Op.verify_block_linearity
+# ---------------------------------------------------------------------------
+
+
+_test_dialect = Dialect("linearity_contract_test")
+
+
+@_test_dialect.op("scope")
+@dataclass(eq=False)
+class _ScopeOp(dgen.Op):
+    """Test-only block-holding op with no declared block-execution
+    trait; it implements the protocol directly, composing a standard
+    context implementation."""
+
+    body: dgen.Block
+    type: dgen.Type
+    __blocks__: ClassVar[tuple[str, ...]] = ("body",)
+
+    def verify_block_linearity(self, ctx: BlockLinearityContext) -> None:
+        ctx.exactly_once()
+
+
+def _scope_over_consumed_ref() -> tuple[dgen.Value, dgen.Value]:
+    """A _ScopeOp whose body captures and deallocates a Reference;
+    returns (scope op, the reference)."""
+    ref = memory.StackAllocateOp(
+        element_type=Index(), type=memory.Reference(element_type=Index())
+    )
+    dealloc = memory.DeallocateOp(ptr=ref, type=Nil())
+    inner = ChainOp(lhs=Index().constant(0), rhs=dealloc, type=Index())
+    scope = _ScopeOp(body=dgen.Block(result=inner, captures=[ref]), type=Index())
+    return scope, ref
+
+
+def test_custom_op_protocol_override_is_legal():
+    """A bespoke op's override charges its capture like exactly-once."""
+    scope, _ = _scope_over_consumed_ref()
+    verify_linearity(scope)
+
+
+def test_custom_op_protocol_override_charges_consumed():
+    """The override's charge is real: reusing the capture after the op
+    is a double-consume, where the conservative default (no trait, no
+    override) would have silently accepted it."""
+    scope, ref = _scope_over_consumed_ref()
+    second = memory.DeallocateOp(ptr=ref, type=Nil())
+    root = ChainOp(lhs=scope, rhs=second, type=Index())
+    with pytest.raises(DoubleConsumeError):
+        verify_linearity(root)
