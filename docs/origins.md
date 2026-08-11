@@ -308,16 +308,61 @@ Ordered so each step keeps the tree green:
 
 ## Open questions
 
+Each question is annotated with its *forcing point* — the migration step (or
+external event) by which it must be resolved. Questions with no forcing point
+are clean extensions: resolving them later strengthens the verifier or adds
+ops, without revisiting decisions made here.
+
 - **Partial-op drain rule**: lowering-inserted unwind destroys (the leaning)
-  vs. frontend-explicit discharge. Blocked on a forcing test case.
+  vs. frontend-explicit discharge. Both candidates use the existing
+  `destroy`/destruct machinery — no op or type changes either way; the choice
+  localizes to `raise_catch_to_goto` vs. frontends. *Forcing point:* before
+  step 4/5 origins (with real deallocation obligations) coexist with
+  try/raise in the same programs — until then, blocked on a forcing test
+  case, as the TODO says.
+- **Destruct-block evidence**: destructors need to load/store the region
+  being torn down (flush a buffer, free children). Intended shape: the
+  `destruct` block receives an `Origin` block parameter valid for the
+  duration of destruction, consumed by handing off to the next destructor in
+  the stack (base deallocation last), so evidence stays total inside cleanup
+  code — no raw-access escape hatch. The precise block contract (parameter
+  and result types, how handoff composes through nested `attach`) is open.
+  *Forcing point:* step 3 — the contract is part of `attach`'s signature.
 - **Runtime-index split soundness**: `split_at(o, i)` is disjoint by
-  construction, but re-splitting ranges and proving *which* side a given
-  `element_ref(ref, j)` falls in requires relating `j` to `i`. v1: accesses
-  through a child origin are verified only dynamically-unchecked (trust the
-  producer pass); a refinement/index-arithmetic story is future work.
+  construction, but proving *which* side a given `element_ref(ref, j)` falls
+  in requires relating `j` to `i`. v1: splits are introduced only by compiler
+  passes that construct both the split and the accesses (trust the producer).
+  The future refinement needs child origins to carry their range —
+  parameterizing `Origin` later is verifier-facing only (origins have no
+  runtime representation), so it is additive. *Forcing point:* none for v1;
+  revisit when a frontend wants to write splits by hand.
 - **Escape analysis**: a `Ref` outliving its origin is dangling. Linearity
   prevents the origin disappearing while *threaded* uses remain, but a stored
   `Ref` reloaded after `destroy` is not caught. Candidate: origins
-  parameterize `Ref` types (`Ref<T, o>`) so staleness is a type error — heavy;
-  deferred until dependent types mature.
+  parameterize `Ref` types (`Ref<T, o>`) so staleness is a type error. This
+  is a monotone strengthening — it rejects more programs and changes no
+  semantics — and addressing ops just propagate the parameter, so
+  addressing-is-pure survives. Churn is broad but mechanical. *Forcing
+  point:* none; deferred until dependent types mature.
+- **Concurrency, atomics, volatile/MMIO**: linear origins rule out
+  concurrent access by construction — that is the feature, but it means
+  shared mutable state has no story here. Candidates: a sibling effect to
+  `State` with unrestricted handlers (atomic cells as their own type, not
+  origin-governed), `world`-threading as a stopgap, fractional permissions
+  for cross-thread read sharing. Cross-thread ordering is not use-def
+  expressible, so this needs its own design regardless; the effect framework
+  supports sibling effects, and `world`/top covers mixed access
+  conservatively in the meantime. *Forcing point:* none until dgen targets
+  concurrent code (actor dialect sharing memory).
+- **Erasure-boundary enforcement**: after `memory_to_llvm`, origins are
+  erased and ordering survives only as opaque chains — so alias-dependent
+  transformations are sound only *above* the boundary, and raw accesses may
+  only be produced by lowering, never written above it. The invariant is
+  settled; how to enforce it mechanically (a verifier rejecting raw llvm
+  accesses in pre-erasure IR, dialect-legality checks, or pass-ordering
+  constraints in `Compiler`) is open. *Forcing point:* none — pass ordering
+  already provides the soundness; enforcement is hygiene.
 - **Frozen reclamation**: arenas or refcounting via `attach`-style wrapping.
+  Purely additive (new ops beside `freeze`). One deliberate irreversibility:
+  data frozen via v1 `freeze` is unreclaimable — matching today's
+  `Some`/`Any` behavior. *Forcing point:* none.
