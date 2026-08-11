@@ -300,25 +300,32 @@ verifier exemption — see open questions.
 
 #### Worked example
 
-Allocate a cell, run a computation that may raise, store its result, read it
-back, destroy, with a fallback on the exceptional path. Pre-lowering, fully
-explicit: the origin *threads through* the partial `if` — in via both
-argument spans, out via the result tuple on the surviving path, destroyed
-before the raise on the divergent path:
+`safe_div(a, b)`: allocate a cell, compute `div_checked(a, b)` — the
+canonical composite from `docs/effects.md`, not a primitive but an expansion
+containing an explicit conditional and internal raise — store the quotient,
+read it back, destroy, with a fallback on the exceptional path.
+Pre-lowering, fully explicit: the origin *threads through* the partial `if`
+— in via both argument spans, out via the result tuple on the surviving
+path, destroyed before the raise on the divergent path. (A real frontend
+would define a `DivByZero` error type; `index.Index` stands in here.)
 
 ```
-%f : function.Function<[number.Boolean, index.Index], index.Index> = function.function<index.Index>() body(%cond: number.Boolean, %a: index.Index):
-    %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%cond, %a):
+%f : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
+    %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%a, %b):
         %alloc : Tuple<[memory.Ref<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
-        %r : index.Index = unpack(%alloc) body(%ref: memory.Ref<index.Index>, %o: memory.Origin) captures(%cond, %a, %h):
-            %qo : Tuple<[index.Index, memory.Origin]> = control_flow.if(%cond, [%o], [%o]) then_body(%o_t: memory.Origin) captures(%h):
-                %val : index.Index = 1
+        %r : index.Index = unpack(%alloc) body(%ref: memory.Ref<index.Index>, %o: memory.Origin) captures(%a, %b, %h):
+            # -- div_checked(%h, %a, %b), expanded at this site --
+            %zero : index.Index = 0
+            %iszero : number.Boolean = algebra.equal(%b, %zero)
+            %qo : Tuple<[index.Index, memory.Origin]> = control_flow.if(%iszero, [%o], [%o]) then_body(%o_t: memory.Origin) captures(%h):
+                %code : index.Index = 1
                 %d0 : Nil = memory.destroy(%o_t)          # explicit discharge
-                %val2 : index.Index = chain(%val, %d0)    # ordered before the raise
-                %raised : Never = error.raise<index.Index>(%h, %val2)
-            else_body(%o_e: memory.Origin) captures(%a):
-                %ok : index.Index = algebra.add(%a, %a)
-                %pair : Tuple<[index.Index, memory.Origin]> = pack([%ok, %o_e])
+                %err0 : index.Index = chain(%code, %d0)   # ordered before the raise
+                %raised : Never = error.raise<index.Index>(%h, %err0)
+            else_body(%o_e: memory.Origin) captures(%a, %b):
+                %quot : index.Index = algebra.divide(%a, %b)
+                %pair : Tuple<[index.Index, memory.Origin]> = pack([%quot, %o_e])
+            # -- end div_checked --
             %res : index.Index = unpack(%qo) body(%q: index.Index, %o1: memory.Origin) captures(%ref):
                 %o2 : memory.Origin = memory.store(%o1, %ref, %q)
                 %loaded : Tuple<[index.Index, memory.Origin]> = memory.load(%o2, %ref)
@@ -326,9 +333,22 @@ before the raise on the divergent path:
                     %d : Nil = memory.destroy(%o3)
                     %done : index.Index = chain(%v, %d)
     except(%err: index.Index):
-        %zero : index.Index = 0
-        %fallback : index.Index = algebra.add(%err, %zero)
+        %z : index.Index = 0
+        %fallback : index.Index = algebra.add(%err, %z)
 ```
+
+The expansion is where the caller's linear context gets woven in. The
+composite's *definition* (`handler, a, b → quotient`) says nothing about
+origins; the *expansion site* threads whatever is live there — a different
+call site with two open origins would thread both. This is why
+composites-as-expansions compose with the threading rule while
+composites-as-functions are harder: an outlined `div_checked` called via
+`function.call` would make the call op partial (handler operand), and a
+caller holding an origin across it would need the origin *in the callee's
+signature* (`(h, a, b, o: Origin) -> Tuple<Index, Origin>`) — linear
+context surfacing in signatures. v1 already forbids handlers crossing
+function boundaries, so composites are expansions for now; the outlined
+form is exactly the deferred function-boundary effect design.
 
 Verifier's view, per block (locality as in `docs/linear_types.md`):
 
@@ -357,12 +377,12 @@ capture cascade; the destroy is already in the IR, ordered before the branch
 by the same chain:
 
 ```
-            %qo : Tuple<[index.Index, memory.Origin]> = control_flow.if(%cond, [%o], [%o]) then_body(%o_t: memory.Origin) captures(%except):
-                %val : index.Index = 1
+            %qo : Tuple<[index.Index, memory.Origin]> = control_flow.if(%iszero, [%o], [%o]) then_body(%o_t: memory.Origin) captures(%except):
+                %code : index.Index = 1
                 %d0 : Nil = memory.destroy(%o_t)
-                %val2 : index.Index = chain(%val, %d0)
-                %1 : Nil = goto.branch<%except>([%val2])
-            else_body(%o_e: memory.Origin) captures(%a):
+                %err0 : index.Index = chain(%code, %d0)
+                %1 : Nil = goto.branch<%except>([%err0])
+            else_body(%o_e: memory.Origin) captures(%a, %b):
                 ...unchanged...
 ```
 
