@@ -93,13 +93,40 @@ The verifier does not consult the children's internal Γ. Each child block is
 locally responsible for its own correctness, including consuming its captured
 linear values by its root.
 
+### Block-execution contracts
+
+Ops may declare a block-execution contract (`BlockExecution` in
+`dgen/ir/verification.py`, registered in `_BLOCK_CONTRACTS`), letting the
+verifier charge linear captures precisely at the parent:
+
+- `EXACTLY_ONCE` (`unpack`): each capturing block runs and consumes its
+  linear captures — the capture is `Consumed` at the op; two children
+  capturing the same linear value is a static double-consume.
+- `ALTERNATIVES` (`control_flow.if`): exactly one child runs, and children
+  never transfer control into each other. A linear capture is `Consumed`
+  when every completing (non-`Never`-result) alternative captures it; left
+  untouched when only diverging alternatives capture it (see
+  "divergence-aware composition" below); rejected when captured by only
+  some completing alternatives — that is conditional consumption.
+- `BODY_WITH_HANDLER` (`error.try`): the body always starts; the handler
+  block runs iff the body diverges into it. Because the body may consume a
+  capture *before* diverging (at-site discharge), only the cleanup-scope
+  pattern — both children capture — charges `Consumed`; other shapes park
+  at `MaybeAvailable`.
+
+Affine captures keep the permissive `MaybeAvailable` treatment even under
+a contract: an affine value (raise handler, exit label) is legitimately
+captured by many sibling scopes, at most one of which fires per path.
+
+Contracts are declared in the verifier's registry today; declaring them in
+`.dgen` op definitions is future work. Loops stay unregistered until the
+carry-pair rule lands; the goto family stays unregistered because label
+bodies run zero-or-more times.
+
 ### Unknown block-holding ops
 
-An op with owned blocks whose block-execution contract isn't known to the
-verifier is handled conservatively. Today every op with blocks falls in this
-category — there is no per-op contract framework yet, so the predicate
-`_has_known_block_semantics(op)` returns `False` unconditionally (see
-`dgen/ir/verification.py`). When that lands, a future fix.
+An op with owned blocks and no registered contract is handled
+conservatively.
 
 For each capture into an unknown op's child block:
 
@@ -138,6 +165,14 @@ For an op like `if` whose alternatives are mutually exclusive:
 
 This means "branch disagreement" is detected through each alternative's local
 verification, not through a parent-side join.
+
+**Divergence-aware composition**: a capture consumed only inside an
+alternative whose every exit diverges (result type `Never`) does not charge
+the parent's Γ — that alternative never returns control, so on every path
+that reaches the parent's subsequent ops the value is still available.
+This is what lets a diverging branch destroy a linear value at-site (e.g.
+before a raise) while the normal path continues the thread. See
+`docs/origins.md`.
 
 ## Loops (zero-or-more-with-carry)
 

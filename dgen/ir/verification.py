@@ -6,12 +6,13 @@ import enum
 import weakref
 
 import dgen
+from dgen.asm import asm_with_imports
 from dgen.block import Block, BlockArgument, BlockParameter
-from dgen.dialects.builtin import Affine, Linear
+from dgen.dialects import control_flow, error
+from dgen.dialects.builtin import Affine, Linear, Never, UnpackOp
 from dgen.dialects.function import FunctionOp
 from dgen.ir.constraints import TraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
-from dgen.asm import asm_with_imports
 from dgen.type import Type, constant, format_value
 
 # Singleton trait instances — `linearity()` is on the hot path, and naive
@@ -23,7 +24,7 @@ _AFFINE_TRAIT = Affine()
 # `to_json()` comparison per declared trait; profiling showed this accounted
 # for ~40% of test time. Linear/Affine declarations are class-level facts
 # in this codebase, so a per-type-instance cache is safe.
-_LINEARITY_CACHE: weakref.WeakKeyDictionary["dgen.Value", "Linearity"] = (
+_LINEARITY_CACHE: weakref.WeakKeyDictionary[dgen.Value, Linearity] = (
     weakref.WeakKeyDictionary()
 )
 
@@ -285,16 +286,15 @@ def verify_constraints(root: dgen.Value) -> None:
 # own Γ_in and the parent's Γ proceeds without consulting the children's
 # internal state.
 #
-# Block-holding ops are conservative: any op with owned blocks is treated
-# as having unknown semantics today (see ``_has_known_block_semantics``).
-# A capture into such an op transitions the source value to
+# Block-holding ops with a declared contract (``_BLOCK_CONTRACTS``)
+# charge linear captures precisely — see ``BlockExecution`` and
+# ``_charge_contracted_captures``. Ops without a contract stay
+# conservative: a capture transitions the source value to
 # ``MAYBE_AVAILABLE`` in the parent's Γ rather than ``CONSUMED`` — the
 # inner block may or may not have actually used the value, so neither
 # "definitely consumed" nor "definitely still available" is right. At
 # the parent's exit check ``MAYBE_AVAILABLE`` is treated permissively
-# (no leak). Once an op declares its block-execution contract precisely
-# the verifier can transition to ``CONSUMED`` for ops known to consume
-# captured values.
+# (no leak).
 
 
 class Linearity(enum.Enum):
@@ -356,20 +356,52 @@ class _State(enum.Enum):
     CONSUMED = "consumed"
 
 
-def _has_known_block_semantics(op: dgen.Op) -> bool:
-    """Whether the verifier knows how *op* uses its captured-into-child
-    substructural values.
+class BlockExecution(enum.Enum):
+    """An op's block-execution contract, for linearity accounting.
 
-    Today: always ``False`` for any op with owned blocks. This is the
-    conservative shim that keeps the verifier sound while we don't have
-    per-op linearity contracts. Ops without blocks (``raise``, ``branch``,
-    chains, etc.) don't reach this codepath at all.
+    Declares how an op runs its owned blocks, so the verifier can charge
+    linear captures precisely in the parent's Γ instead of parking them
+    at ``MAYBE_AVAILABLE``. See ``docs/linear_types.md``.
 
-    See `TODO.md` (Type system / effects) for the path forward — likely a
-    trait or method on ``Op`` that ops opt into when they want precise
-    treatment.
+    - ``EXACTLY_ONCE``  — every owned block runs exactly once per
+      execution of the op (e.g. ``unpack``'s body).
+    - ``ALTERNATIVES``  — exactly one of the owned blocks runs, and the
+      children never transfer control into each other (e.g. ``if``'s
+      branches).
+    - ``BODY_WITH_HANDLER`` — a body block that always starts plus a
+      handler block that runs iff the body diverges into it (``try``'s
+      body/except pair). Unlike ``ALTERNATIVES``, the body may consume a
+      capture *before* diverging (at-site discharge), so a body-only
+      capture cannot be charged precisely; only the cleanup-scope
+      pattern — every child captures the value — charges ``CONSUMED``.
     """
-    return False
+
+    EXACTLY_ONCE = "exactly_once"
+    ALTERNATIVES = "alternatives"
+    BODY_WITH_HANDLER = "body_with_handler"
+
+
+# Op class → contract. Ops absent from this registry are treated
+# conservatively (captures park at ``MAYBE_AVAILABLE``). Loops
+# (``control_flow.for``/``while``) stay unregistered until the carry-pair
+# rule lands, and the goto family stays unregistered because a label's
+# body runs zero-or-more times depending on branches taken. Declaring
+# contracts in ``.dgen`` op definitions is future work — the registry is
+# the framework's storage, not its surface.
+_BLOCK_CONTRACTS: dict[type, BlockExecution] = {
+    UnpackOp: BlockExecution.EXACTLY_ONCE,
+    control_flow.IfOp: BlockExecution.ALTERNATIVES,
+    error.TryOp: BlockExecution.BODY_WITH_HANDLER,
+}
+
+
+def _diverges(block: Block) -> bool:
+    """Whether *block* never returns control to its parent.
+
+    Proxied by a ``Never`` result type — same proxy used by
+    ``ControlFlowToGoto``; see the terminator-check TODO in ``TODO.md``.
+    """
+    return isinstance(block.result.type, Never)
 
 
 def _consume_at(
@@ -428,6 +460,98 @@ def _capture_into_unknown(
         gamma[value] = _State.MAYBE_AVAILABLE
 
 
+def _charge_contracted_captures(
+    gamma: dict[dgen.Value, _State],
+    op: dgen.Op,
+    contract: BlockExecution,
+    *,
+    root: dgen.Value,
+) -> None:
+    """Update the parent's Γ for captures into an op with a declared
+    block-execution contract.
+
+    Linear captures charge precisely. Affine captures keep the permissive
+    ``MAYBE_AVAILABLE`` treatment even under a contract: an affine value
+    (a raise handler, an exit label) is legitimately captured by many
+    sibling scopes — at most one of the captured uses fires per runtime
+    path, and charging ``CONSUMED`` at the first scope would reject the
+    rest.
+
+    Linear charging by contract:
+
+    - ``EXACTLY_ONCE``: each capturing block runs and (by its own local
+      verification) consumes the capture — so two children capturing the
+      same linear value is a static double-consume, and one child
+      capturing it consumes it at the op.
+    - ``ALTERNATIVES``: exactly one child completes.
+      * Every non-capturing child diverges → every *completing* path
+        consumes the value → charge ``CONSUMED`` (one charge, deduped
+        across children — branch composition).
+      * Every capturing child diverges → the value is consumed only on
+        paths that never return → the parent's thread continues
+        (divergence-aware branch composition; capture-after-consume is
+        still rejected).
+      * Otherwise some completing path consumes and another leaks —
+        reject.
+    """
+    children = [child for _, child in op.blocks]
+    linear_capturing: dict[dgen.Value, list[Block]] = {}
+    affine_caps: set[dgen.Value] = set()
+    for child in children:
+        for cap in child.captures:
+            if is_linear(cap):
+                linear_capturing.setdefault(cap, []).append(child)
+            elif is_affine_or_linear(cap):
+                affine_caps.add(cap)
+    for cap in affine_caps:
+        _capture_into_unknown(gamma, cap, by=op, root=root)
+
+    for cap, capturing in linear_capturing.items():
+        if contract is BlockExecution.EXACTLY_ONCE:
+            if len(capturing) > 1:
+                raise DoubleConsumeError(
+                    f"linear {type(cap).__name__} %{cap.name} captured by "
+                    f"{len(capturing)} blocks of {type(op).__name__} "
+                    f"%{op.name}, each of which runs\n\n" + _annotated_asm(root, cap)
+                )
+            _consume_at(gamma, cap, by=op, root=root)
+        elif contract is BlockExecution.ALTERNATIVES:
+            noncapturing = [c for c in children if c not in capturing]
+            if all(_diverges(c) for c in noncapturing):
+                # Every completing path consumes — one charge, deduped.
+                _consume_at(gamma, cap, by=op, root=root)
+            elif all(_diverges(c) for c in capturing):
+                # Consumed only on non-returning paths — the parent's
+                # thread continues (divergence-aware branch composition);
+                # capturing an already-consumed value is still rejected.
+                if gamma.get(cap) is _State.CONSUMED:
+                    raise DoubleConsumeError(
+                        f"linear {type(cap).__name__} %{cap.name} captured "
+                        f"into {type(op).__name__} %{op.name} after being "
+                        f"consumed\n\n" + _annotated_asm(root, cap)
+                    )
+            else:
+                raise LinearLeakError(
+                    f"linear {type(cap).__name__} %{cap.name} is captured "
+                    f"by only some completing alternatives of "
+                    f"{type(op).__name__} %{op.name} — it leaks on the "
+                    f"alternatives that neither capture it nor diverge\n\n"
+                    + _annotated_asm(root, cap)
+                )
+        else:  # BODY_WITH_HANDLER
+            if len(capturing) == len(children):
+                # The cleanup-scope pattern: body consumes on its
+                # completing path, the handler consumes on the divergent
+                # path — exactly one fires per execution.
+                _consume_at(gamma, cap, by=op, root=root)
+            else:
+                # A body-only capture may have been consumed before a
+                # divergence (at-site discharge) or not at all on the
+                # handler path — park at MAYBE_AVAILABLE, as for
+                # unknown ops.
+                _capture_into_unknown(gamma, cap, by=op, root=root)
+
+
 def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
     """Verify the typing-context invariants on a single block.
 
@@ -454,18 +578,22 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
             for _, dep in source:
                 if is_affine_or_linear(dep):
                     _consume_at(gamma, dep, by=v, root=root)
-        # Captures into child blocks. Today every block-holding op is
-        # treated as unknown-semantics — the captured value transitions
-        # to ``MAYBE_AVAILABLE`` rather than ``CONSUMED``. Captures dedup
-        # across alternative children of one op (branch-composition).
-        if v.blocks and not _has_known_block_semantics(v):
-            for cap in {
-                c
-                for _, child in v.blocks
-                for c in child.captures
-                if is_affine_or_linear(c)
-            }:
-                _capture_into_unknown(gamma, cap, by=v, root=root)
+        # Captures into child blocks. Ops with a declared contract charge
+        # linear captures precisely; everything else parks captures at
+        # ``MAYBE_AVAILABLE``. Captures dedup across alternative children
+        # of one op (branch-composition).
+        if v.blocks:
+            contract = _BLOCK_CONTRACTS.get(type(v))
+            if contract is not None:
+                _charge_contracted_captures(gamma, v, contract, root=root)
+            else:
+                for cap in {
+                    c
+                    for _, child in v.blocks
+                    for c in child.captures
+                    if is_affine_or_linear(c)
+                }:
+                    _capture_into_unknown(gamma, cap, by=v, root=root)
         # Each child block verified independently with its own Γ_in.
         for _, child in v.blocks:
             _verify_linearity_block(child, root)
