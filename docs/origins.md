@@ -145,8 +145,8 @@ Three properties fall out with no new machinery:
 **Destruct blocks must be total**: their signature may not include a
 `Handler<Diverge>` capability (checkable from the signature alone, per the
 totality rules in `docs/linear_types.md`). A raising destructor would leak
-the remainder of the destructor stack; totality is also what makes inserting
-destroys on unwind edges sound (see "Interaction with raise" below).
+the remainder of the destructor stack; totality is also what makes running
+destructors on divergent paths sound (see "Interaction with raise" below).
 
 Destructor code is ordinary explicit IR — no hidden runtime, no registration
 machinery; codegen inlines the blocks at the destroy site.
@@ -237,49 +237,62 @@ type is `Handler<Diverge>` (`dgen/type.py`). Partiality propagates outward
 through captures: an `if` whose branch captures a raise handler is itself
 partial from the enclosing block's view.
 
-A raise that unwinds past an open origin must not leak its obligation. The
-design pins this down as *declared semantics*, not a lowering accident:
+A raise that unwinds past an open origin must not leak its obligation. An
+earlier draft of this section resolved that with *declared semantics* — "a
+partial op discharges, on its divergent edges, every origin thread open
+across it" — materialized by `raise_catch_to_goto` inserting destroys. That
+design has a disqualifying flaw: it gives the partial op an **implicit
+dependency** on every open origin. Which origins are open across an op is a
+fact about the op's *uses* (the downstream store is what makes an origin
+open across the `if`), so the op's divergent behavior would be defined by
+its context — invisible to `dependencies`, `transitive_dependencies`
+(staging extraction would miss the origin on the divergent path),
+`replace_uses_of`, and dead-code elimination (deleting the store would
+silently change what the `if` does on divergence). dgen's core contract is
+that dataflow is explicit; discharge must be too.
 
-> **A partial op discharges, on its divergent edges, every linear origin
-> whose thread is open across it, in reverse creation order.**
+The end state instead makes divergence consume explicitly, via two rules:
 
-"Open across P" means: created independently of P, with a consumer that
-transitively depends on P. Reverse creation order gives stack discipline —
-children before parents falls out for free, since a child origin is always
-created after its parent's split.
+1. **Threading rule (per-block verification).** For every partial op `P`
+   and linear value `v` in a block, `v`'s thread must relate to `P` in
+   exactly one of three ways: it *completes before* `P` (its consumer is a
+   transitive dependency of `P`), *starts after* `P` (its creation depends
+   on `P`'s result), or *threads through* `P` (passed in via `P`'s
+   arguments/captures and yielded back in `P`'s result on every
+   non-divergent path — the loop-carry pattern applied to alternatives).
+   A thread that *bypasses* `P` is rejected: on a divergent execution the
+   bypassed obligation leaks, and whether its consumer had run at
+   divergence time is schedule-dependent. The check needs only
+   `transitive_dependencies`.
 
-Two rules implement this, split between verifier and lowering:
+2. **Divergent-block drain rule (local, signature-level).** A block whose
+   result type is `Never` must consume every linear input (argument,
+   parameter, capture). Checkable from the block alone. The discharge is
+   ordinary IR the frontend writes — `destroy` the origins and chain them
+   into the raise's operands, ordering cleanup before the transfer. `raise`
+   needs no signature change, and `raise_catch_to_goto` inserts nothing: it
+   lowers exactly what is written.
 
-1. **Verifier (well-formedness, pre-lowering)**: every linear value's thread
-   must be *ordered* with respect to every partial op in its block — either
-   the thread's consumer is a transitive dependency of the partial op (the
-   thread completes before any divergence), or the value's creation depends
-   on the partial op (the thread starts after), or the thread is open across
-   it (consumer depends on the partial op). An *unordered* thread — neither
-   creation nor consumption related to the partial op by use-def — is
-   rejected. This is a genuine bug, not a style rule: execution order is
-   use-def order, so an unordered consumer may run before or after the
-   divergence at runtime, making the exceptional-path obligation
-   nondeterministic — and unwind-edge insertion would risk a double-destroy
-   (normal-path destroy scheduled before the branch, unwind destroy fires
-   too). The check is generic and needs only `transitive_dependencies`.
+Destruction *order* on the unwind path is whatever the frontend writes; the
+one hard requirement — children before parents — is already enforced by
+linearity (a parent cannot be destroyed while a child's thread is open).
 
-2. **Lowering (mechanism)**: `raise_catch_to_goto` materializes the declared
-   discharge. Post-CPS, each raise site is a distinct `goto.branch` — the
-   only place per-site edges exist — and the pass inserts the destroy chain
-   for open origins on the unwind edge, before the branch to the except
-   label. Post-lowering IR is ordinary explicit ops; the verifier re-checks
-   it with no special contract.
+The division of labor this preserves: *semantics* stay local (every consume
+is an operand edge), while *verification* may be non-local (the threading
+rule inspects the whole block, exactly as `verify_linearity` already does).
+Non-local checks are fine; non-local meaning is not.
 
-Why the discharge cannot be frontend-written in structured IR: the `except`
-block is a single block shared by every raise site. Different sites have
-different open-origin sets, and an origin created *after* one raise site does
-not exist on that site's edge — per-site cleanup has no expression point
-until CPS lowering creates per-site edges. (The only structured encoding is
-nested try/destroy/re-raise per resource, which is heavy and obscures
-intent.) So the verifier enforces that frontends produce well-formed IR —
-ordered threads, all normal-path obligations accounted — while the lowering
-writes the unwind cleanup, once, at the point with exact information.
+**Frontend ergonomics.** The liveness a frontend needs is trivial by
+construction: linearity forbids conditional consumption (an alternative
+that consumes a capture must diverge or yield a replacement), so "is this
+origin still live here" is path-unique and syntactic — no drop flags exist
+in this IR. A frontend with lexically scoped resources reads the live set
+out of its own symbol table. Frontends that want automatic RAII insertion
+can use an optional, dialect-independent **explication pass** that computes
+open threads and rewrites them into threaded form with divergent-path
+destroys — normalization sugar that produces the canonical explicit IR
+*before* verification gates. Semantics are defined only on the explicit
+form; the pass is convenience, never meaning.
 
 Deliberate leaks (process exit, arena teardown, C frontends) should be an
 explicit `forget(o)`-style op that forfeits the obligation visibly, not a
@@ -288,24 +301,30 @@ verifier exemption — see open questions.
 #### Worked example
 
 Allocate a cell, run a computation that may raise, store its result, read it
-back, destroy, with a fallback on the exceptional path. Pre-lowering
-(well-formed; the origin thread is *open across* the partial `if`):
+back, destroy, with a fallback on the exceptional path. Pre-lowering, fully
+explicit: the origin *threads through* the partial `if` — in via both
+argument spans, out via the result tuple on the surviving path, destroyed
+before the raise on the divergent path:
 
 ```
 %f : function.Function<[number.Boolean, index.Index], index.Index> = function.function<index.Index>() body(%cond: number.Boolean, %a: index.Index):
     %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%cond, %a):
         %alloc : Tuple<[memory.Ref<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
         %r : index.Index = unpack(%alloc) body(%ref: memory.Ref<index.Index>, %o: memory.Origin) captures(%cond, %a, %h):
-            %q : index.Index = control_flow.if(%cond, [], []) then_body() captures(%h):
+            %qo : Tuple<[index.Index, memory.Origin]> = control_flow.if(%cond, [%o], [%o]) then_body(%o_t: memory.Origin) captures(%h):
                 %val : index.Index = 1
-                %raised : Never = error.raise<index.Index>(%h, %val)
-            else_body() captures(%a):
+                %d0 : Nil = memory.destroy(%o_t)          # explicit discharge
+                %val2 : index.Index = chain(%val, %d0)    # ordered before the raise
+                %raised : Never = error.raise<index.Index>(%h, %val2)
+            else_body(%o_e: memory.Origin) captures(%a):
                 %ok : index.Index = algebra.add(%a, %a)
-            %o1 : memory.Origin = memory.store(%o, %ref, %q)
-            %loaded : Tuple<[index.Index, memory.Origin]> = memory.load(%o1, %ref)
-            %res : index.Index = unpack(%loaded) body(%v: index.Index, %o2: memory.Origin):
-                %d : Nil = memory.destroy(%o2)
-                %out : index.Index = chain(%v, %d)
+                %pair : Tuple<[index.Index, memory.Origin]> = pack([%ok, %o_e])
+            %res : index.Index = unpack(%qo) body(%q: index.Index, %o1: memory.Origin) captures(%ref):
+                %o2 : memory.Origin = memory.store(%o1, %ref, %q)
+                %loaded : Tuple<[index.Index, memory.Origin]> = memory.load(%o2, %ref)
+                %out : index.Index = unpack(%loaded) body(%v: index.Index, %o3: memory.Origin):
+                    %d : Nil = memory.destroy(%o3)
+                    %done : index.Index = chain(%v, %d)
     except(%err: index.Index):
         %zero : index.Index = 0
         %fallback : index.Index = algebra.add(%err, %zero)
@@ -313,53 +332,46 @@ back, destroy, with a fallback on the exceptional path. Pre-lowering
 
 Verifier's view, per block (locality as in `docs/linear_types.md`):
 
-- In the inner unpack body, the partial op is the `if` (its `then_body`
-  captures `%h`, a `Handler<Diverge>`). `%o`'s consumer is the store, whose
-  operand `%q` transitively depends on the `if` — the thread is *open
-  across* the partial op: legal, discharged on its divergent edge by
-  declared semantics. `%o1` and `%o2` complete downstream.
+- In the outer unpack body, the partial op is the `if` (its `then_body`
+  captures `%h`, a `Handler<Diverge>`). `%o` *threads through* it: consumed
+  as an argument (appearing in both spans, deduplicated per branch
+  composition), reborn from the result tuple on the surviving path.
+  `%o1`/`%o2`/`%o3` all *start after* the `if` — the other legal relation.
+  No thread bypasses the partial op.
+- `then_body` has result type `Never`, so the divergent-block drain rule
+  applies: its linear input `%o_t` must be consumed — it is, by the destroy,
+  chained into the raise so cleanup is ordered before the transfer. `Never`
+  is result-compatible with the `if`'s tuple type, as usual.
+- The destroyed origin is the thread state *as of the divergence*: the store
+  has not run on this path, so the destructor stack is whatever was attached
+  before the `if`; the base destructor frees the cell regardless of its
+  contents.
 - In the try body, the partial op is the *unpack* (partiality propagates
   outward through its `%h` capture). `%alloc` — a tuple containing a linear
-  component, hence linear — is consumed *by* the partial op itself.
+  component, hence linear — is consumed *by* the partial op: the third legal
+  relation.
 
-After `raise_catch_to_goto` (before terminator normalization), with the
-inserted discharge; the pass already rewrites capture lists at raise sites
-(handler → except label), and adding `%o` rides the same cascade:
+`raise_catch_to_goto` then has nothing to insert. It rewrites the raise to a
+`goto.branch` targeting the except label via the existing handler→label
+capture cascade; the destroy is already in the IR, ordered before the branch
+by the same chain:
 
 ```
-    %t : index.Index = goto.region([]) body<%self: goto.Label, %try_exit: goto.Label>() captures(%cond, %a):
-        %except : goto.Label = goto.label([]) body(%err: index.Index) captures(%try_exit):
-            %zero : index.Index = 0
-            %fallback : index.Index = algebra.add(%err, %zero)
-            %0 : Nil = goto.branch<%try_exit>([%fallback])
-
-        %alloc : Tuple<[memory.Ref<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
-        %r : index.Index = unpack(%alloc) body(%ref: memory.Ref<index.Index>, %o: memory.Origin) captures(%cond, %a, %except):
-            %q : index.Index = control_flow.if(%cond, [], []) then_body() captures(%except, %o):
+            %qo : Tuple<[index.Index, memory.Origin]> = control_flow.if(%cond, [%o], [%o]) then_body(%o_t: memory.Origin) captures(%except):
                 %val : index.Index = 1
-                %d0 : Nil = memory.destroy(%o)          # inserted discharge
-                %val2 : index.Index = chain(%val, %d0)  # orders destroy before the branch
+                %d0 : Nil = memory.destroy(%o_t)
+                %val2 : index.Index = chain(%val, %d0)
                 %1 : Nil = goto.branch<%except>([%val2])
-            else_body() captures(%a):
-                %ok : index.Index = algebra.add(%a, %a)
-            %o1 : memory.Origin = memory.store(%o, %ref, %q)
-            ...store/load/destroy unchanged...
+            else_body(%o_e: memory.Origin) captures(%a):
+                ...unchanged...
 ```
 
-Notes on the lowered form:
-
-- The discharged origin is `%o`'s thread state *as of the divergence*: the
-  store has not run on this path (it depends on `%q`), so the destructor
-  stack is whatever was attached before the partial op; the base destructor
-  frees the cell regardless of its contents.
-- Ordering destroy-before-branch is plain use-def (the destroy chains into
-  the branch argument) — no new mechanism.
-- Post-lowering, `%o` is captured by `then_body` *and* consumed by the
-  parent's store. Today's verifier accepts this via `MaybeAvailable`; the
-  precise per-op contract is the divergence-aware branch-composition rule —
-  **a capture consumed only inside an alternative whose every exit diverges
-  does not charge the parent's Γ** — sound because that alternative never
-  returns control to the parent thread.
+The same rules verify the lowered form with no special contract. One
+refinement the precise contract framework needs either way: **a capture or
+argument consumed only inside an alternative whose every exit diverges does
+not charge the parent's Γ** — the divergence-aware version of the
+branch-composition rule, sound because that alternative never returns
+control to the parent thread.
 
 ### Functions
 
@@ -440,8 +452,8 @@ Ordered so each step keeps the tree green:
    let passes use origin-forest disjointness (first client: loop
    parallelization / vectorization legality in the structured lowering).
 7. **Observe contracts for loads** (read/read commutation), the
-   thread-ordering verifier rule for partial ops, and the raise-unwind
-   destroy insertion in `raise_catch_to_goto`.
+   threading + divergent-drain verifier rules for partial ops, and the
+   optional discharge-explication normalization pass.
 8. **`world` origin** for externs; retire ad-hoc chaining of effectful calls.
 
 ## Open questions
