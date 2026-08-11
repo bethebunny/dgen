@@ -460,8 +460,44 @@ Origins are ordinary values, so function boundaries need no new features:
   Tuple<..., Origin>`. The caller's thread continues from the returned value.
 
 Since origins have `layout Void`, none of this has ABI cost — signatures
-carry the evidence at compile time and erase at codegen. Effect polymorphism
-and richer borrow inference remain out of scope, as in `docs/effects.md`.
+carry the evidence at compile time and erase at codegen.
+
+**Effectful functions.** The cleanup-scope design leaves surprisingly
+little for functions to add. A may-raise function's signature carries only
+its own effect — `div_checked : (RaiseHandler<E>, Index, Index) -> Index`
+— never its callers' resources; callers hold origins across calls using
+the same local try/cleanup/re-raise scopes as anywhere else. What extends,
+and what is genuinely deferred:
+
+- **Call-site partiality** falls out of `Value.totality` once aggregate
+  types taint: `function.call` arguments arrive packed, so a `Tuple` with
+  a `Handler<Diverge>`-bearing component must itself count for totality —
+  the products half of the "handlers inside aggregates" open question,
+  with effectful calls as its forcing consumer. The coverage rule then
+  applies at call sites unchanged.
+- **Callee-side coverage terminus**: inside the callee the handler is a
+  parameter — no local try introduced it. The rule's extension: a raise
+  targeting a handler *parameter* must have an empty coverage set (no
+  linear value open across it); a callee that holds origins across risky
+  code wraps its own local try and re-raises to the parameter. Always
+  achievable, no new ops.
+- **Handlers are second-class**: passable downward as arguments, never
+  returned, stored to memory, or captured into escaping function values.
+  They are `layout Void`, so storage is meaningless anyway; a verifier
+  rule makes the restriction explicit. This is what keeps handler
+  resolution meaningful under inlining and lowering.
+- **The only real gap is lowering.** `raise_catch_to_goto` resolves each
+  raise to its try by handler identity, and `goto.Label`s are
+  intra-function — that is the actual content of `docs/effects.md`'s "v1:
+  no effects across functions". Outlined may-raise functions need a
+  calling convention: the standard two-path result (tagged return; the
+  call site branches on the tag, continuing or branching to its local
+  except label), or inlining — which a JIT wants for composites anyway,
+  and under which identity resolution just works. Either is a lowering
+  strategy; none of the semantics above change with the choice.
+
+Effect polymorphism and richer borrow inference remain out of scope, as in
+`docs/effects.md`.
 
 ### Loops
 
@@ -541,13 +577,17 @@ forcing points — the destruct-block contract and the partial-op drain rule —
 are resolved in the "Destructors" and "Interaction with raise" sections
 above.)
 
-- **Handlers inside sum types**: `Value.totality` classifies partiality from
-  the *direct* types of dependencies. There is no art yet for a union or
-  existential value that *may* contain a `Handler<Diverge>` (or a linear
-  component). Intended conservative rules when such types land: a sum that
-  may contain a diverging handler counts as one for totality; a sum with a
-  linear alternative is itself linear. *Forcing point:* when sums/
-  existentials start carrying handlers or linear values.
+- **Handlers inside aggregate types**: `Value.totality` classifies
+  partiality from the *direct* types of dependencies. There is no art yet
+  for a product, union, or existential that contains (or may contain) a
+  `Handler<Diverge>` or a linear component. Intended rules: a `Tuple` with
+  a handler component bears `Handler<Diverge>` for totality (taint); a sum
+  that *may* contain one counts as one; linear components make the
+  aggregate linear. *Forcing point:* effectful function calls —
+  `function.call` arguments arrive packed, so without aggregate taint a
+  handler argument hides inside a `Tuple` operand and the call is
+  misclassified `TOTAL`. Sums/existentials force later, when they start
+  carrying handlers or linear values.
 - **Deliberate leaks**: a `forget(o)` op that consumes an origin and
   visibly forfeits its obligation (process exit, arena teardown, C
   frontends whose semantics permit leaks). Purely additive. *Forcing
