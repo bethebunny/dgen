@@ -130,6 +130,11 @@ This limits the scope of what can be expressed (no cross-function error propagat
 
 ## Origins
 
+> **Superseded.** This section predates the landed `State`/`Reference` memory
+> API and is superseded by `docs/origins.md`, which describes the intended end
+> state (references as data, origins as erased linear evidence, split/join
+> sub-origins, destructors via `attach`/`destroy`). Kept for history.
+
 ### Motivation
 
 Origins replace mem tokens. They track provenance for alias analysis and carry destruction obligations. Each origin is a linear value: using it produces a new origin; the old one is consumed. This preserves the dataflow ordering the mem pattern provided and adds static guarantees.

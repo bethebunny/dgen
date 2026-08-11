@@ -1,0 +1,323 @@
+# End State: Memory Effects and Origins
+
+## Status
+
+Proposal. Describes the intended *end state* of the memory effect system and
+origins, reconciling the landed `State`/`Reference` design with the Origins
+sketch in `docs/effects.md`. Supersedes the "Origins" section of
+`docs/effects.md`; the effect framework and raise/try sections there remain
+authoritative.
+
+## Where we are (landed)
+
+- `Effect`, `Handler<E>`, `Linear`, `Affine` traits (`dgen/dialects/builtin.dgen`).
+- Raise/try with CPS lowering through goto (`dgen/dialects/error.dgen`,
+  `dgen/passes/raise_catch_to_goto.py`).
+- The `State` effect with `Reference<T>` as its linear handler: `load`/`store`
+  consume the input `Reference` and produce a fresh one; `deallocate`
+  discharges the thread (`dgen/dialects/memory.dgen`).
+- The linearity verifier (`verify_linearity`, `dgen/ir/verification.py`),
+  wired into every pass's pre/post hooks. Block-holding ops are treated
+  conservatively (`MaybeAvailable`) — no per-op contract framework yet.
+- `Buffer<T>`: unrestricted pointer with the legacy `mem`-token operand for
+  ordering. Used by the ndbuffer/record/existential lowerings.
+- `memory.deallocate` lowers to a no-op (leaks). No destructors. No aliasing
+  model beyond "same token thread".
+
+## The tension to resolve
+
+The landed `Reference<T>` fuses two roles into one value:
+
+1. **Data**: the pointer.
+2. **Evidence**: the linear `Handler<State>` that orders accesses and carries
+   the deallocation obligation.
+
+Fusing them works for a single cell but cannot scale:
+
+- A buffer has one allocation but many addressable elements — evidence
+  per-element would make disjointness and deallocation incoherent.
+- Two loads of the same cell serialize (each consumes the reference), even
+  though reads commute.
+- A pointer that must be aliased freely (`Some`/`Any`, shared immutable data)
+  cannot be linear at all — which is why `Buffer` fell back to untyped mem
+  tokens.
+
+The end state splits the roles.
+
+## The model
+
+Five commitments:
+
+1. **References are data.** `Ref<T>` is an unrestricted pointer value. It can
+   be copied, stored, packed into records, passed anywhere. Producing an
+   address is pure.
+2. **Origins are evidence.** An `Origin` is a linear, zero-layout SSA value:
+   simultaneously the `Handler<State>` for a region of memory, the carrier of
+   its destruction obligation, and its provenance for alias analysis. Origins
+   are erased at codegen.
+3. **Addressing is pure; access requires evidence.** Computing
+   `element_ref(ref, i)` or a field address needs no origin. `load`/`store`
+   take the governing origin; stores consume it and produce a fresh one.
+4. **Ordering is origin threading.** Two accesses are ordered iff they are
+   connected through an origin's use-def thread. Accesses through unrelated
+   origins commute — and that commutation is *sound*, because unrelated
+   origins govern disjoint memory (see "Alias forest").
+5. **Alias analysis is the IR.** Provenance is not a separate analysis
+   lattice; it is literally the origin value's def chain. Two accesses may
+   alias iff their origins are related by ancestry through split/join ops.
+
+### Types
+
+```
+type State:
+    data: Nil
+    has trait Effect
+
+# Linear evidence for a disjoint region of memory. Zero layout; erased.
+type Origin:
+    layout Void
+    has trait Linear
+    has trait Handler<State>
+
+# Plain pointer data. Unrestricted.
+type Ref<element_type: Type>:
+    data: Pointer<Nil>
+```
+
+`Reference<T>` (linear, fused) and `Buffer<T>` (unrestricted, mem-token) both
+dissolve into `Ref<T>` + `Origin`. Indexed storage is `Ref<Array<T, n>>` /
+`Ref<Span<T>>` rather than a distinct buffer type, matching the existing TODO
+to move `toy.Tensor` to `Pointer<Array<...>>`.
+
+### Core ops
+
+```
+# Allocation returns the address and the evidence. The origin's base
+# destructor is the matching deallocation (free / stack lifetime end).
+op heap_allocate<T: Type>()  -> Tuple<Ref<T>, Origin>
+op stack_allocate<T: Type>() -> Tuple<Ref<T>, Origin>
+
+# Addressing: pure, no evidence involved.
+op element_ref(ref: Ref<Array<T, n>>, index: Index) -> Ref<T>
+op field_ref<index: Index>(ref: Ref<R>) -> Ref<F>
+
+# Access: evidence in, evidence out.
+op load(o: Origin, ref: Ref<T>) -> Tuple<T, Origin>
+op store(o: Origin, ref: Ref<T>, value: T) -> Origin
+
+# Discharge: runs the origin's destructor stack, then its base deallocation.
+op destroy(o: Origin) -> Nil
+```
+
+Ops that produce `Linear` values are never CSE'd, duplicated, or deleted by
+passes — each execution mints a distinct obligation. This is a pass-framework
+invariant the verifier backstops (a deleted allocation shows up as a consumed
+origin with no producer; a duplicated one as a double obligation).
+
+### Destructors
+
+The base destructor comes from the allocation op. Additional cleanup wraps
+the origin:
+
+```
+op attach(o: Origin) -> Origin:
+    block destruct
+```
+
+`attach(o) destruct(...)` consumes `o` and produces a new origin whose
+destructor runs the `destruct` block and then `o`'s destructors. `destroy`
+unwinds the whole stack: attached destructors innermost-first, base
+deallocation last. Destructor code is ordinary explicit IR — no hidden
+runtime, no registration machinery; codegen inlines the blocks at the destroy
+site.
+
+This fixes the current leak: `deallocate`-as-no-op disappears; heap origins'
+base destructor is a real `free`, and stack origins' base destructor lowers to
+an LLVM lifetime-end marker (a concrete payoff of tracking lifetimes: alloca
+reuse and better register allocation for free).
+
+### Sub-origins: split and join
+
+Disjoint parallel mutation needs disjoint evidence. Structural decomposition
+ops consume a parent origin and produce child origins that govern provably
+disjoint sub-regions, plus a linear `Join` ticket that reconstitutes the
+parent:
+
+```
+type Join:
+    layout Void
+    has trait Linear
+
+# Examples of the schema — the concrete set is enumerated per structure.
+op split_at(o: Origin, index: Index) -> Tuple<Origin, Origin, Join>  # [0,i) / [i,n)
+op split_field<index: Index>(o: Origin) -> Tuple<Origin, Origin, Join>  # field / rest
+op join(j: Join, a: Origin, b: Origin) -> Origin
+```
+
+Disjointness is by construction per op (distinct fields; ranges split at an
+index), never by arbitrary pointer arithmetic. Linearity already enforces the
+whole forest protocol with zero new machinery: the parent is consumed by the
+split, so it cannot be accessed or destroyed while children are live; children
+must each be consumed exactly once, and `join` is the only op that gets the
+parent back. "Sub-origins must be destroyed before their parents" is not a
+special rule — it is ordinary single-consume.
+
+### Alias forest
+
+- Fresh roots come from allocation ops.
+- Children come from split ops; `join` returns to the parent.
+- Two accesses may alias iff their origins are connected through the origin
+  def chain without diverging at a split (ancestry).
+- Origins whose def chains diverge at a split, or that come from different
+  allocations, are disjoint — accesses through them commute and may be
+  reordered or parallelized.
+- `world` (below) is top: may alias anything.
+
+A pass asking "may these two stores alias?" walks two origin def chains. No
+side tables, no invalidation problem — replacement cascades keep the def
+chains correct the same way they keep every other operand correct.
+
+### The world origin
+
+Opaque external effects (extern calls, `print_memref`, I/O) thread a
+distinguished top origin:
+
+```
+op world() -> Origin   # one per function entry; may-alias-everything
+```
+
+Extern calls that touch memory take and produce the world origin. This
+replaces ad-hoc chaining for externals, gives them a principled ordering
+story, and marks exactly where alias analysis must give up. Passing `world`
+into a function is the v1 story for "this function may perform I/O".
+
+### Reads: observe vs consume
+
+The end state distinguishes two operand modes in per-op linearity contracts:
+
+- **Consume**: the op ends the value's thread (store, destroy, split).
+- **Observe**: the op requires the value live but does not end it (load).
+
+Scheduling rule: every observer of a linear value executes before its
+consumer — the consume is a fence for its observers. This makes read/read
+commute (two loads observe the same origin, no order between them) while
+read/write and write/write stay ordered through the thread.
+
+This is staged *after* the per-op contract framework lands (existing TODO in
+`TODO.md`): observe is precisely a contract annotation, and the verifier's Γ
+transitions extend naturally (observing uses don't transition state; codegen
+gains observer→consumer anti-dependence edges). Until then, `load` consumes
+and reproduces, exactly as today — correct, merely over-sequential.
+
+### Interaction with raise and partial ops
+
+A raise that unwinds past a live origin must not leak its obligation. The
+intended mechanism is *discharge at CPS lowering*: `raise_catch_to_goto`
+rewrites each raise site into a branch, and at that moment it has exact
+liveness — it inserts the destroy chain for origins live at that raise site on
+the unwind edge, before the branch to the except label. Source IR states
+obligations; lowering discharges them mechanically; the linearity verifier
+checks the *result*, so nothing is implicit in the final IR.
+
+This is the leaning, not yet settled (see the partial-op TODO): the
+alternative — requiring frontends to consume every live linear value before
+any partial op — is simpler for the verifier but pushes per-raise-site
+liveness bookkeeping onto every frontend. Pin down when a real test forces it.
+
+### Functions
+
+Origins are ordinary values, so function boundaries need no new features:
+
+- **Ownership transfer out**: return an `Origin` (alone or paired with its
+  `Ref`). Returning consumes it locally; the caller receives the obligation.
+- **Ownership transfer in**: take an `Origin` parameter. The callee must
+  consume it (destroy, return, or thread into a returned structure).
+- **Borrowing**: take an origin and return it — `(o: Origin, ...) ->
+  Tuple<..., Origin>`. The caller's thread continues from the returned value.
+
+Since origins have `layout Void`, none of this has ABI cost — signatures
+carry the evidence at compile time and erase at codegen. Effect polymorphism
+and richer borrow inference remain out of scope, as in `docs/effects.md`.
+
+### Loops
+
+A loop body that stores must thread its origin as a loop carry: the body
+consumes the carry and yields a fresh origin of the same type
+(yield-as-consume, `docs/linear_types.md`). This makes the verifier's
+carry-pair modeling (existing TODO) a *prerequisite* for migrating the
+ndbuffer lowering — its generated loops are exactly stores-in-a-body.
+
+### Shared immutable data
+
+`Some`/`Any` and other freely-aliased pointer-shaped values get:
+
+```
+op freeze(o: Origin) -> FrozenOrigin   # FrozenOrigin: unrestricted, read-only evidence
+```
+
+Freezing consumes the linear origin and forfeits the destruction obligation
+(today's `Some`/`Any` already leak; this makes the leak a visible, typed
+decision rather than an accident of `Buffer`). Loads accept either origin
+kind; stores require `Origin`. Reclaiming frozen data (arenas, refcounts) is
+future work layered on `attach`.
+
+### Staging
+
+Origins are compile-time values in exactly the sense types are: SSA values
+that participate in dataflow, constrain scheduling, and erase. They are stage
+artifacts, not runtime state — `layout Void`, no `Memory` representation, no
+constant form. An op is never runtime-dependent *because of* its origin
+operands.
+
+### Lowering
+
+Origins lower by erasure in `memory_to_llvm`:
+
+- `heap_allocate` → malloc call; the origin result vanishes, its consumers
+  rewire to pure ordering (the use-def thread is preserved through lowering,
+  so codegen's use-def scheduling keeps access order without tokens).
+- `store`/`load` → LLVM store/load; the threaded origin becomes the chain
+  that already orders them today.
+- `destroy` → inlined destructor blocks, then free / lifetime-end.
+- `split`/`join`/`freeze`/`world` → nothing.
+
+## Migration plan
+
+Ordered so each step keeps the tree green:
+
+1. **Per-op linearity contracts** (existing TODO): the framework for declaring
+   consume/observe/borrow semantics per op. Prerequisite for everything below;
+   also immediately improves precision for block-holding ops.
+2. **Loop-carry linearity** (existing TODO): carry-pair modeling in
+   `verify_linearity`. Prerequisite for origin-threaded loops.
+3. **Introduce `Origin` + split ops** in `memory.dgen` alongside the current
+   API: `Ref<T>`, two-result allocation, `load(o, ref)`/`store(o, ref, v)`,
+   `destroy`, `attach`. Mark `Origin` as `Linear` — the verifier picks it up
+   with no plumbing (existing TODO).
+4. **Migrate single-cell users** off fused `Reference<T>`; delete
+   `Reference`'s `Linear`/`Handler` traits by folding it into `Ref<T>`.
+5. **Migrate buffer users** (ndbuffer, record, existential lowerings,
+   `passes/support/memory.py`) off mem tokens; delete `Buffer<T>` and the
+   `mem` operands. Real `free` in destroy; stack lifetime markers.
+6. **split/join + alias-aware reordering**: land the decomposition ops, then
+   let passes use origin-forest disjointness (first client: loop
+   parallelization / vectorization legality in the structured lowering).
+7. **Observe contracts for loads** (read/read commutation) and the
+   raise-unwind destroy insertion in `raise_catch_to_goto`.
+8. **`world` origin** for externs; retire ad-hoc chaining of effectful calls.
+
+## Open questions
+
+- **Partial-op drain rule**: lowering-inserted unwind destroys (the leaning)
+  vs. frontend-explicit discharge. Blocked on a forcing test case.
+- **Runtime-index split soundness**: `split_at(o, i)` is disjoint by
+  construction, but re-splitting ranges and proving *which* side a given
+  `element_ref(ref, j)` falls in requires relating `j` to `i`. v1: accesses
+  through a child origin are verified only dynamically-unchecked (trust the
+  producer pass); a refinement/index-arithmetic story is future work.
+- **Escape analysis**: a `Ref` outliving its origin is dangling. Linearity
+  prevents the origin disappearing while *threaded* uses remain, but a stored
+  `Ref` reloaded after `destroy` is not caught. Candidate: origins
+  parameterize `Ref` types (`Ref<T, o>`) so staleness is a type error — heavy;
+  deferred until dependent types mature.
+- **Frozen reclamation**: arenas or refcounting via `attach`-style wrapping.
