@@ -18,7 +18,8 @@ verifier reaches them through the ``Op.verify_block_linearity``
 protocol, which bespoke block-holding ops may override instead. See
 the custom-op tests at the bottom.
 
-``memory.Reference`` is the linear type used throughout.
+``memory.Origin`` is the linear type used throughout. Origins come from
+allocation tuples, so each scenario opens with an ``unpack``.
 """
 
 from __future__ import annotations
@@ -31,9 +32,6 @@ import pytest
 import dgen
 from dgen.asm.parser import parse
 from dgen.dialect import Dialect
-from dgen.dialects import memory
-from dgen.dialects.builtin import ChainOp, Nil
-from dgen.dialects.index import Index
 from dgen.ir.verification import (
     BlockLinearityContext,
     DoubleConsumeError,
@@ -58,12 +56,13 @@ IF_BOTH_CONSUME = """
     | import control_flow
     | import index
     | import memory
-    | %ref : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-    | %cond : index.Index = 1
-    | %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%ref):
-    |     %d1 : Nil = memory.deallocate(%ref)
-    | else_body() captures(%ref):
-    |     %d2 : Nil = memory.deallocate(%ref)
+    | %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+    | %r : Nil = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o: memory.Origin):
+    |     %cond : index.Index = 1
+    |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%o):
+    |         %d1 : Nil = memory.destroy(%o)
+    |     else_body() captures(%o):
+    |         %d2 : Nil = memory.destroy(%o)
 """
 
 
@@ -82,8 +81,8 @@ def test_if_charges_consumed_so_reuse_is_double_consume():
         _verify(
             IF_BOTH_CONSUME
             + """
-    | %d3 : Nil = memory.deallocate(%ref)
-    | %result : Nil = chain(%if, %d3)
+    |     %d3 : Nil = memory.destroy(%o)
+    |     %res : Nil = chain(%if, %d3)
 """
         )
 
@@ -96,12 +95,13 @@ def test_if_conditional_consumption_rejected():
             | import control_flow
             | import index
             | import memory
-            | %ref : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-            | %cond : index.Index = 1
-            | %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%ref):
-            |     %d1 : Nil = memory.deallocate(%ref)
-            | else_body():
-            |     %z : index.Index = 0
+            | %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+            | %r : Nil = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o: memory.Origin):
+            |     %cond : index.Index = 1
+            |     %if : Nil = control_flow.if(%cond, [], []) then_body() captures(%o):
+            |         %d1 : Nil = memory.destroy(%o)
+            |     else_body():
+            |         %z : index.Index = 0
         """)
 
 
@@ -114,21 +114,22 @@ def test_if_diverging_alternative_leaves_thread_open():
         | import error
         | import index
         | import memory
-        | %ref : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-        | %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%ref):
-        |     %cond : index.Index = 1
-        |     %val : index.Index = control_flow.if(%cond, [], []) then_body() captures(%ref, %h):
-        |         %d1 : Nil = memory.deallocate(%ref)
-        |         %code : index.Index = 7
-        |         %code2 : index.Index = chain(%code, %d1)
-        |         %raised : Never = error.raise<index.Index>(%h, %code2)
-        |     else_body():
-        |         %five : index.Index = 5
-        |     %d2 : Nil = memory.deallocate(%ref)
-        |     %out : index.Index = chain(%val, %d2)
-        | except(%err: index.Index):
-        |     %one : index.Index = 1
-        |     %rec : index.Index = chain(%err, %one)
+        | %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+        | %r : index.Index = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o: memory.Origin):
+        |     %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%o):
+        |         %cond : index.Index = 1
+        |         %val : index.Index = control_flow.if(%cond, [], []) then_body() captures(%o, %h):
+        |             %d1 : Nil = memory.destroy(%o)
+        |             %code : index.Index = 7
+        |             %code2 : index.Index = chain(%code, %d1)
+        |             %raised : Never = error.raise<index.Index>(%h, %code2)
+        |         else_body():
+        |             %five : index.Index = 5
+        |         %d2 : Nil = memory.destroy(%o)
+        |         %out : index.Index = chain(%val, %d2)
+        |     except(%err: index.Index):
+        |         %one : index.Index = 1
+        |         %rec : index.Index = chain(%err, %one)
     """)
 
 
@@ -141,14 +142,15 @@ TRY_CLEANUP_SCOPE = """
     | import error
     | import index
     | import memory
-    | %ref : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-    | %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%ref):
-    |     %seven : index.Index = 7
-    |     %d1 : Nil = memory.deallocate(%ref)
-    |     %bodyv : index.Index = chain(%seven, %d1)
-    | except(%err: index.Index) captures(%ref):
-    |     %d2 : Nil = memory.deallocate(%ref)
-    |     %rec : index.Index = chain(%err, %d2)
+    | %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+    | %r : index.Index = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o: memory.Origin):
+    |     %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%o):
+    |         %seven : index.Index = 7
+    |         %d1 : Nil = memory.destroy(%o)
+    |         %bodyv : index.Index = chain(%seven, %d1)
+    |     except(%err: index.Index) captures(%o):
+    |         %d2 : Nil = memory.destroy(%o)
+    |         %rec : index.Index = chain(%err, %d2)
 """
 
 
@@ -165,8 +167,8 @@ def test_try_cleanup_scope_charges_consumed():
         _verify(
             TRY_CLEANUP_SCOPE
             + """
-    | %d3 : Nil = memory.deallocate(%ref)
-    | %result : index.Index = chain(%t, %d3)
+    |     %d3 : Nil = memory.destroy(%o)
+    |     %res : index.Index = chain(%t, %d3)
 """
         )
 
@@ -178,14 +180,15 @@ def test_try_body_only_capture_stays_permissive():
         | import error
         | import index
         | import memory
-        | %ref : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-        | %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%ref):
-        |     %seven : index.Index = 7
-        |     %d1 : Nil = memory.deallocate(%ref)
-        |     %bodyv : index.Index = chain(%seven, %d1)
-        | except(%err: index.Index):
-        |     %one : index.Index = 1
-        |     %rec : index.Index = chain(%err, %one)
+        | %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+        | %r : index.Index = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o: memory.Origin):
+        |     %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%o):
+        |         %seven : index.Index = 7
+        |         %d1 : Nil = memory.destroy(%o)
+        |         %bodyv : index.Index = chain(%seven, %d1)
+        |     except(%err: index.Index):
+        |         %one : index.Index = 1
+        |         %rec : index.Index = chain(%err, %one)
     """)
 
 
@@ -197,16 +200,15 @@ def test_try_body_only_capture_stays_permissive():
 UNPACK_CONSUMES_CAPTURE = """
     | import index
     | import memory
-    | %r1 : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-    | %r2 : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-    | %v : index.Index = 3
-    | %r1b : memory.Reference<index.Index> = memory.store(%r1, %v)
-    | %loaded : Tuple<[index.Index, memory.Reference<index.Index>]> = memory.load(%r1b)
-    | %out : index.Index = unpack(%loaded) body(%x: index.Index, %r1c: memory.Reference<index.Index>) captures(%r2):
-    |     %d1 : Nil = memory.deallocate(%r1c)
-    |     %d2 : Nil = memory.deallocate(%r2)
-    |     %dd : Nil = chain(%d1, %d2)
-    |     %res : index.Index = chain(%x, %dd)
+    | %a1 : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+    | %a2 : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+    | %r : index.Index = unpack(%a1) body(%ref1: memory.Reference<index.Index>, %oA: memory.Origin) captures(%a2):
+    |     %inner : index.Index = unpack(%a2) body(%ref2: memory.Reference<index.Index>, %oB: memory.Origin) captures(%oA):
+    |         %d1 : Nil = memory.destroy(%oA)
+    |         %d2 : Nil = memory.destroy(%oB)
+    |         %dd : Nil = chain(%d1, %d2)
+    |         %five : index.Index = 5
+    |         %res : index.Index = chain(%five, %dd)
 """
 
 
@@ -221,8 +223,8 @@ def test_unpack_charges_consumed_so_reuse_is_double_consume():
         _verify(
             UNPACK_CONSUMES_CAPTURE
             + """
-    | %d3 : Nil = memory.deallocate(%r2)
-    | %final : index.Index = chain(%out, %d3)
+    |     %d3 : Nil = memory.destroy(%oA)
+    |     %final : index.Index = chain(%inner, %d3)
 """
         )
 
@@ -250,32 +252,35 @@ class _ScopeOp(dgen.Op):
         ctx.exactly_once()
 
 
-def _scope_over_consumed_ref() -> tuple[dgen.Value, dgen.Value]:
-    """A _ScopeOp whose body captures and deallocates a Reference.
-    Returns (scope op, the reference)."""
-    ref = memory.StackAllocateOp(
-        element_type=Index(), type=memory.Reference(element_type=Index())
-    )
-    dealloc = memory.DeallocateOp(ptr=ref, type=Nil())
-    inner = ChainOp(lhs=Index().constant(0), rhs=dealloc, type=Index())
-    scope = _ScopeOp(body=dgen.Block(result=inner, captures=[ref]), type=Index())
-    return scope, ref
+SCOPE_CONSUMES_CAPTURE = """
+    | import index
+    | import linearity_contract_test
+    | import memory
+    | %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+    | %r : index.Index = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o: memory.Origin):
+    |     %s : index.Index = linearity_contract_test.scope() body() captures(%o):
+    |         %zero : index.Index = 0
+    |         %d : Nil = memory.destroy(%o)
+    |         %inner : index.Index = chain(%zero, %d)
+"""
 
 
 def test_custom_op_protocol_override_is_legal():
     """A bespoke op's override charges its capture like exactly-once."""
-    scope, _ = _scope_over_consumed_ref()
-    verify_linearity(scope)
+    _verify(SCOPE_CONSUMES_CAPTURE)
 
 
 def test_custom_op_protocol_override_charges_consumed():
     """The override's charge is real. Reusing the capture after the op
     is a double-consume."""
-    scope, ref = _scope_over_consumed_ref()
-    second = memory.DeallocateOp(ptr=ref, type=Nil())
-    root = ChainOp(lhs=scope, rhs=second, type=Index())
     with pytest.raises(DoubleConsumeError):
-        verify_linearity(root)
+        _verify(
+            SCOPE_CONSUMES_CAPTURE
+            + """
+    |     %d2 : Nil = memory.destroy(%o)
+    |     %res : index.Index = chain(%s, %d2)
+"""
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -292,10 +297,10 @@ def test_loop_linear_capture_rejected():
             | import control_flow
             | import index
             | import memory
-            | %ref : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
-            | %loop : Nil = control_flow.for<index.Index(0), index.Index(5)>([]) body(%iv: index.Index) captures(%ref):
-            |     %d : Nil = memory.deallocate(%ref)
-            | %r : Nil = chain(%loop, %loop)
+            | %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.stack_allocate<index.Index>()
+            | %r : Nil = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o: memory.Origin):
+            |     %loop : Nil = control_flow.for<index.Index(0), index.Index(5)>([]) body(%iv: index.Index) captures(%o):
+            |         %d : Nil = memory.destroy(%o)
         """)
 
 
@@ -312,17 +317,22 @@ def test_loop_unrestricted_capture_still_fine():
     """)
 
 
+@_test_dialect.op("undeclared_scope")
+@dataclass(eq=False)
+class _UndeclaredScopeOp(dgen.Op):
+    """Test-only block-holding op with no trait and no override."""
+
+    body: dgen.Block
+    type: dgen.Type
+    __blocks__: ClassVar[tuple[str, ...]] = ("body",)
+
+
 def test_undeclared_block_holding_op_fails():
     """A block-holding op with no trait and no override is rejected."""
-
-    @_test_dialect.op("undeclared_scope")
-    @dataclass(eq=False)
-    class _UndeclaredScopeOp(dgen.Op):
-        body: dgen.Block
-        type: dgen.Type
-        __blocks__: ClassVar[tuple[str, ...]] = ("body",)
-
-    inner = Index().constant(0)
-    op = _UndeclaredScopeOp(body=dgen.Block(result=inner), type=Index())
     with pytest.raises(UndeclaredBlockContractError):
-        verify_linearity(op)
+        _verify("""
+            | import index
+            | import linearity_contract_test
+            | %u : index.Index = linearity_contract_test.undeclared_scope() body():
+            |     %zero : index.Index = 0
+        """)

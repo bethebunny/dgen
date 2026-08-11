@@ -14,6 +14,9 @@ memory = Dialect("memory")
 class State(Type): ...
 
 @dataclass(eq=False)
+class Origin(Type): ...
+
+@dataclass(eq=False)
 class Reference(Type):
     element_type: Value[dgen.TypeType]
 
@@ -33,18 +36,20 @@ class HeapAllocateOp(Op):
 
 @dataclass(eq=False)
 class LoadOp(Op):
-    ptr: Value
+    origin: Value
+    ref: Value
     type: Type
 
 @dataclass(eq=False)
 class StoreOp(Op):
-    ptr: Value
+    origin: Value
+    ref: Value
     value: Value
-    type: Type
+    type: Type = Origin()
 
 @dataclass(eq=False)
-class DeallocateOp(Op):
-    ptr: Value
+class DestroyOp(Op):
+    origin: Value
     type: Type = Nil()
 
 @dataclass(eq=False)

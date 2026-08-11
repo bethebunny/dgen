@@ -14,7 +14,7 @@ Reads depend on the latest write. Writes depend on all pending reads
 
 Each variable is a single-cell ``memory.Buffer<T>`` (count=1) — Buffer
 is non-linear, so it can be captured into nested control-flow blocks
-and used many times across the function body. Reference would not
+and used many times across the function body. An ``Origin`` would not
 survive captures (Linear discipline).
 """
 
