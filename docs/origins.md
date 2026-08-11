@@ -251,48 +251,69 @@ its context — invisible to `dependencies`, `transitive_dependencies`
 silently change what the `if` does on divergence). dgen's core contract is
 that dataflow is explicit; discharge must be too.
 
-The end state instead makes divergence consume explicitly, via two rules:
+The end state instead makes divergence consume explicitly. The organizing
+idea: **the try is the cleanup scope**. A frontend holding linear values
+across may-raise code wraps that code in its own `try` whose `except`
+destroys the values it owns and re-raises outward. Each scope cleans up its
+own values; re-raising composes scopes. This is the landing-pad structure
+every production exception implementation uses, expressed as ordinary IR —
+and after CPS lowering it is *literally* that structure: a cascade of goto
+labels, each destroying its scope's origins and branching to the next
+handler out. Zero cost on the normal path, no unwinder.
 
-1. **Threading rule (per-block verification).** For every partial op `P`
-   and linear value `v` in a block, `v`'s thread must relate to `P` in
-   exactly one of three ways: it *completes before* `P` (its consumer is a
-   transitive dependency of `P`), *starts after* `P` (its creation depends
-   on `P`'s result), or *threads through* `P` (passed in via `P`'s
-   arguments/captures and yielded back in `P`'s result on every
-   non-divergent path — the loop-carry pattern applied to alternatives).
-   A thread that *bypasses* `P` is rejected: on a divergent execution the
-   bypassed obligation leaks, and whether its consumer had run at
-   divergence time is schedule-dependent. The check needs only
-   `transitive_dependencies`.
+The verifier rules:
 
-2. **Divergent-block drain rule (local, signature-level).** A block whose
-   result type is `Never` must consume every linear input (argument,
-   parameter, capture). Checkable from the block alone. The discharge is
-   ordinary IR the frontend writes — `destroy` the origins and chain them
-   into the raise's operands, ordering cleanup before the transfer. `raise`
-   needs no signature change, and `raise_catch_to_goto` inserts nothing: it
-   lowers exactly what is written.
+1. **Block drain (already landed behavior).** Every block must consume its
+   linear inputs (arguments, parameters, captures) by its root — this is
+   ordinary linearity (`LinearLeakError` today). For a divergent block
+   (`Never` result), consumption is chained before the divergence. An
+   `except` that cleans up and re-raises is verified by exactly this rule,
+   with nothing added.
 
-Destruction *order* on the unwind path is whatever the frontend writes; the
-one hard requirement — children before parents — is already enforced by
-linearity (a parent cannot be destroyed while a child's thread is open).
+2. **Coverage rule (per-scope verification).** For each partial op `P`
+   diverging via handler `h`, and each linear value `v` *open across* `P`
+   (created independently of `P`, consumed by an op depending on `P`): `v`
+   must be captured and consumed by the `except` block of the `try` that
+   introduced `h`. Two corollaries:
+   - **Uniformity**: a linear value consumed by an `except` must be open
+     across *every* `h`-diverging op in the body — a value live at only
+     some raise sites means the try is mis-scoped; the fix is nesting
+     another try at the scope boundary where the value's lifetime begins.
+   - **Ordering**: a consumer unordered with respect to `P` (neither a
+     dependency of `P` nor dependent on it) is rejected — whether the value
+     was still open at divergence would be schedule-dependent, and cleanup
+     would risk double-destroy.
+
+   Values may still *complete before* `P`, *start after* `P`, or thread
+   through pure control flow (`if` argument spans, loop carries) as
+   ordinary dataflow; the coverage rule governs only threads that stay open
+   across a divergence.
+
+3. **Recursion for free.** An `except` that re-raises captures the outer
+   handler, which makes the whole inner `try` partial in the enclosing
+   block (`Value.totality` propagates through owned-block captures) — so
+   the enclosing scope's coverage obligation arises automatically, with no
+   extra machinery. Scopes compose because partiality composes.
+
+Destruction *order* within a scope's cleanup is whatever the frontend
+writes; the one hard requirement — children before parents — is already
+enforced by linearity (a parent cannot be destroyed while a child's thread
+is open).
 
 The division of labor this preserves: *semantics* stay local (every consume
-is an operand edge), while *verification* may be non-local (the threading
-rule inspects the whole block, exactly as `verify_linearity` already does).
-Non-local checks are fine; non-local meaning is not.
+is an operand edge in an `except` the frontend wrote), while *verification*
+may be non-local (the coverage rule inspects the scope, exactly as
+`verify_linearity` already does). Non-local checks are fine; non-local
+meaning is not.
 
-**Frontend ergonomics.** The liveness a frontend needs is trivial by
-construction: linearity forbids conditional consumption (an alternative
-that consumes a capture must diverge or yield a replacement), so "is this
-origin still live here" is path-unique and syntactic — no drop flags exist
-in this IR. A frontend with lexically scoped resources reads the live set
-out of its own symbol table. Frontends that want automatic RAII insertion
-can use an optional, dialect-independent **explication pass** that computes
-open threads and rewrites them into threaded form with divergent-path
-destroys — normalization sugar that produces the canonical explicit IR
-*before* verification gates. Semantics are defined only on the explicit
-form; the pass is convenience, never meaning.
+**Frontend ergonomics.** The try-per-scope structure mirrors what a
+frontend has anyway: each source scope owning resources compiles to a try
+whose except destroys them and re-raises. Liveness is trivial by
+construction — linearity forbids conditional consumption, so "is this
+origin still live here" is path-unique and syntactic; no drop flags exist
+in this IR. A cleanup-only scope (except that always re-raises) is the
+IR encoding of `finally`-on-unwind / RAII drop scopes; sugar (a `defer` or
+`scope` op lowering to it) can come later without touching semantics.
 
 Deliberate leaks (process exit, arena teardown, C frontends) should be an
 explicit `forget(o)`-style op that forfeits the obligation visibly, not a
@@ -301,33 +322,35 @@ verifier exemption — see open questions.
 #### Worked example
 
 `safe_div(a, b)`: allocate a cell, compute `div_checked(a, b)` — the
-canonical composite from `docs/effects.md`, not a primitive but an expansion
-containing an explicit conditional and internal raise — store the quotient,
-read it back, destroy, with a fallback on the exceptional path.
-Pre-lowering, fully explicit: the origin *threads through* the partial `if`
-— in via both argument spans, out via the result tuple on the surviving
-path, destroyed before the raise on the divergent path. (A real frontend
-would define a `DivByZero` error type; `index.Index` stands in here.)
+canonical composite from `docs/effects.md`, kept **un-expanded** with its
+natural signature — store the quotient, read it back, destroy, with a
+fallback on the exceptional path:
+
+```
+# checked.dgen (illustrative) — no origins in the signature, ever
+op div_checked(handler: RaiseHandler, dividend, divisor)
+```
+
+The caller holds an origin across the may-raise call, so it wraps the call
+in its own **cleanup scope**: a `try` whose `except` destroys the origin
+and re-raises outward. (A real frontend would define a `DivByZero` error
+type; `index.Index` stands in here.)
 
 ```
 %f : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
     %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%a, %b):
         %alloc : Tuple<[memory.Ref<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
         %r : index.Index = unpack(%alloc) body(%ref: memory.Ref<index.Index>, %o: memory.Origin) captures(%a, %b, %h):
-            # -- div_checked(%h, %a, %b), expanded at this site --
-            %zero : index.Index = 0
-            %iszero : number.Boolean = algebra.equal(%b, %zero)
-            %qo : Tuple<[index.Index, memory.Origin]> = control_flow.if(%iszero, [%o], [%o]) then_body(%o_t: memory.Origin) captures(%h):
-                %code : index.Index = 1
-                %d0 : Nil = memory.destroy(%o_t)          # explicit discharge
-                %err0 : index.Index = chain(%code, %d0)   # ordered before the raise
-                %raised : Never = error.raise<index.Index>(%h, %err0)
-            else_body(%o_e: memory.Origin) captures(%a, %b):
-                %quot : index.Index = algebra.divide(%a, %b)
-                %pair : Tuple<[index.Index, memory.Origin]> = pack([%quot, %o_e])
-            # -- end div_checked --
-            %res : index.Index = unpack(%qo) body(%q: index.Index, %o1: memory.Origin) captures(%ref):
-                %o2 : memory.Origin = memory.store(%o1, %ref, %q)
+            # cleanup scope for %o
+            %qo : Tuple<[index.Index, memory.Origin]> = error.try<index.Index>() body<%h2: error.RaiseHandler<index.Index>>() captures(%a, %b, %o):
+                %q : index.Index = checked.div_checked(%h2, %a, %b)
+                %pair : Tuple<[index.Index, memory.Origin]> = pack([%q, %o])
+            except(%err: index.Index) captures(%o, %h):
+                %d0 : Nil = memory.destroy(%o)            # this scope's cleanup
+                %err2 : index.Index = chain(%err, %d0)    # ordered before the re-raise
+                %raised : Never = error.raise<index.Index>(%h, %err2)
+            %res : index.Index = unpack(%qo) body(%q2: index.Index, %o1: memory.Origin) captures(%ref):
+                %o2 : memory.Origin = memory.store(%o1, %ref, %q2)
                 %loaded : Tuple<[index.Index, memory.Origin]> = memory.load(%o2, %ref)
                 %out : index.Index = unpack(%loaded) body(%v: index.Index, %o3: memory.Origin):
                     %d : Nil = memory.destroy(%o3)
@@ -337,105 +360,93 @@ would define a `DivByZero` error type; `index.Index` stands in here.)
         %fallback : index.Index = algebra.add(%err, %z)
 ```
 
-The expansion is where the caller's linear context gets woven in. The
-composite's *definition* (`handler, a, b → quotient`) says nothing about
-origins; the *expansion site* threads whatever is live there — a different
-call site with two open origins would thread both. This is why
-composites-as-expansions compose with the threading rule while
-composites-as-functions are harder: an outlined `div_checked` called via
-`function.call` would make the call op partial (handler operand), and a
-caller holding an origin across it would need the origin *in the callee's
-signature* (`(h, a, b, o: Origin) -> Tuple<Index, Origin>`) — linear
-context surfacing in signatures. v1 already forbids handlers crossing
-function boundaries, so composites are expansions for now; the outlined
-form is exactly the deferred function-boundary effect design.
-
-#### The un-expanded form
-
-Expansion need not happen at frontend elaboration time. A dialect can keep
-`div_checked` un-expanded in the IR — a leaf op expanded later by a lowering
-pass — provided the threading is part of its signature. The pattern: a
-`Span` operand carrying the linear values to thread, returned positionally
-in the result tuple on the surviving path:
-
-```
-# checked.dgen (illustrative)
-op div_checked(handler: RaiseHandler, dividend, divisor, thread: Span) -> Tuple
-```
-
-The call site, replacing the expansion above:
-
-```
-            %qo : Tuple<[index.Index, memory.Origin]> = checked.div_checked(%h, %a, %b, [%o])
-            %res : index.Index = unpack(%qo) body(%q: index.Index, %o1: memory.Origin) captures(%ref):
-                %o2 : memory.Origin = memory.store(%o1, %ref, %q)
-                ...as before...
-```
-
-- **The discharge dependency stays explicit dataflow**: `%o` is an operand.
-  The op's linearity contract (migration step 1) declares that elements of
-  `thread` are consumed and re-produced positionally in the result on the
-  surviving path, destroyed on divergence. The flaw that killed implicit
-  discharge cannot return: the op discharges exactly what it names, never
-  what its context happens to leave open.
-- **The result type depends on the `thread` operand's types**
-  (`Tuple<[Index, Origin]>` here). Result types are SSA values in dgen, so
-  operand-dependent result types are the ordinary dependent-type machinery,
-  resolved by staging.
-- **`control_flow.if` already has this shape** — its argument spans are its
-  threading surface. Leaf composites and block-holding ops thread the same
-  way; a call site with nothing open passes `[]`.
-- **The expansion pass must produce IR satisfying the contract** — the
-  expanded example above is exactly that output, and the post-pass verifier
-  checks it with the ordinary rules. Contract on the un-expanded op,
-  explicit ops after expansion: the same relationship `try` has to
-  `raise_catch_to_goto`.
-- An outlined function version would have the same signature shape; the
-  thread span is what the deferred function-boundary design generalizes
-  (manual threading first, polymorphism later).
+**Why this composes.** The composite's signature carries only its own
+effect (the handler), never its callers' resources. A site with two open
+origins destroys both in its one except; the callee is untouched. The
+outlined-function form works the same way: a future `div_checked`
+*function* is `(h, a, b) -> Index` — the caller's cleanup scope wraps the
+call, exactly as real exception systems keep callee signatures free of
+caller frame information. The deferred function-boundary design only needs
+to answer how *handlers* cross boundaries; linear cleanup never crosses at
+all.
 
 Verifier's view, per block (locality as in `docs/linear_types.md`):
 
-- In the outer unpack body, the partial op is the `if` (its `then_body`
-  captures `%h`, a `Handler<Diverge>`). `%o` *threads through* it: consumed
-  as an argument (appearing in both spans, deduplicated per branch
-  composition), reborn from the result tuple on the surviving path.
-  `%o1`/`%o2`/`%o3` all *start after* the `if` — the other legal relation.
-  No thread bypasses the partial op.
-- `then_body` has result type `Never`, so the divergent-block drain rule
-  applies: its linear input `%o_t` must be consumed — it is, by the destroy,
-  chained into the raise so cleanup is ordered before the transfer. `Never`
-  is result-compatible with the `if`'s tuple type, as usual.
-- The destroyed origin is the thread state *as of the divergence*: the store
-  has not run on this path, so the destructor stack is whatever was attached
-  before the `if`; the base destructor frees the cell regardless of its
-  contents.
-- In the try body, the partial op is the *unpack* (partiality propagates
-  outward through its `%h` capture). `%alloc` — a tuple containing a linear
-  component, hence linear — is consumed *by* the partial op: the third legal
-  relation.
+- **Inner try body**: the partial op is `div_checked` (operand `%h2`).
+  `%o` is open across it — created outside, consumed by the pack, which
+  depends on `%q`. Coverage: `%h2`'s except captures and consumes `%o` ✓;
+  it is the only `%h2`-diverging op, so uniformity is trivial.
+- **Except block**: linear capture `%o` consumed by the destroy, chained
+  into the re-raise; affine capture `%h` consumed by the raise; result
+  `Never`. This is plain block drain — the rule the landed verifier
+  already enforces (`LinearLeakError` on an unconsumed linear capture).
+- **Unpack body (parent of the inner try)**: `%o` is captured by the try's
+  body *and* its except — consumption alternatives, deduplicated exactly as
+  branch composition prescribes; one of them runs to completion per
+  execution. The parent sees the try consume `%o` and rebinds `%o1` from
+  the result tuple. Nothing is open across the inner try from outside: by
+  the time control reaches the *outer* except, the origin is already
+  destroyed by the inner scope, so the outer except needs no cleanup
+  captures. **Each scope cleans its own — that is the composition
+  invariant.**
+- **Recursion via totality**: the inner try captures `%h` (through its
+  except), making the try itself partial in the unpack body — the
+  enclosing scope's coverage obligation arises automatically and is
+  satisfied vacuously.
+- The destroyed origin is the thread state *as of the divergence*: the
+  store has not run on the exceptional path, so the destructor stack is
+  whatever was attached before the call; the base destructor frees the
+  cell regardless of its contents.
 
-`raise_catch_to_goto` then has nothing to insert. It rewrites the raise to a
-`goto.branch` targeting the except label via the existing handler→label
-capture cascade; the destroy is already in the IR, ordered before the branch
-by the same chain:
+If `div_checked` is expanded — by the frontend or a later lowering pass —
+the expansion drops into the inner try body unchanged and context-free.
+Its internal conditional raises against `%h2`; `%o`, open across that
+`if`, is covered by the same except. The expansion never names the
+caller's origins:
 
 ```
-            %qo : Tuple<[index.Index, memory.Origin]> = control_flow.if(%iszero, [%o], [%o]) then_body(%o_t: memory.Origin) captures(%except):
-                %code : index.Index = 1
-                %d0 : Nil = memory.destroy(%o_t)
-                %err0 : index.Index = chain(%code, %d0)
-                %1 : Nil = goto.branch<%except>([%err0])
-            else_body(%o_e: memory.Origin) captures(%a, %b):
-                ...unchanged...
+                # -- div_checked(%h2, %a, %b), expanded --
+                %zero : index.Index = 0
+                %iszero : number.Boolean = algebra.equal(%b, %zero)
+                %q : index.Index = control_flow.if(%iszero, [], []) then_body() captures(%h2):
+                    %code : index.Index = 1
+                    %raised2 : Never = error.raise<index.Index>(%h2, %code)
+                else_body() captures(%a, %b):
+                    %quot : index.Index = algebra.divide(%a, %b)
+                %pair : Tuple<[index.Index, memory.Origin]> = pack([%q, %o])
 ```
 
-The same rules verify the lowered form with no special contract. One
-refinement the precise contract framework needs either way: **a capture or
-argument consumed only inside an alternative whose every exit diverges does
-not charge the parent's Γ** — the divergence-aware version of the
+Compare with threading `%o` through the `if`'s argument spans: no origin
+arguments, no destroy at the raise site, no tuple result from the `if`.
+Both styles remain legal — an at-site destroy-before-raise satisfies
+coverage vacuously, since that thread completes before the divergence —
+but the scope style is the composable default.
+
+After `raise_catch_to_goto`, the scopes become the landing-pad cascade:
+each except is a `goto.label` that destroys its scope's origins and
+branches to the next handler out. The re-raise is a branch; the cascade is
+straight-line cleanup code on the exceptional path and free on the normal
+path:
+
+```
+            %qo : Tuple<[index.Index, memory.Origin]> = goto.region([]) body<%self: goto.Label, %exit2: goto.Label>() captures(%a, %b, %o, %except):
+                %except2 : goto.Label = goto.label([]) body(%err: index.Index) captures(%o, %except):
+                    %d0 : Nil = memory.destroy(%o)
+                    %err2 : index.Index = chain(%err, %d0)
+                    %1 : Nil = goto.branch<%except>([%err2])   # re-raise = branch to outer handler
+                %q : index.Index = checked.div_checked(%except2, %a, %b)
+                %pair : Tuple<[index.Index, memory.Origin]> = pack([%q, %o])
+```
+
+(The handler→label substitution flows into the un-expanded op's operand,
+as it flows into capture lists today; the op's own expansion then emits
+the branch.) The same rules verify the lowered form with no special
+contract. One refinement the precise contract framework needs either way:
+**a capture consumed only inside an alternative whose every exit diverges
+does not charge the parent's Γ** — the divergence-aware version of the
 branch-composition rule, sound because that alternative never returns
-control to the parent thread.
+control to the parent thread. Try body/except are exactly such
+alternatives.
 
 ### Functions
 
@@ -515,9 +526,9 @@ Ordered so each step keeps the tree green:
 6. **split/join + alias-aware reordering**: land the decomposition ops, then
    let passes use origin-forest disjointness (first client: loop
    parallelization / vectorization legality in the structured lowering).
-7. **Observe contracts for loads** (read/read commutation), the
-   threading + divergent-drain verifier rules for partial ops, and the
-   optional discharge-explication normalization pass.
+7. **Observe contracts for loads** (read/read commutation) and the
+   coverage rule for cleanup scopes (block drain is already landed
+   behavior).
 8. **`world` origin** for externs; retire ad-hoc chaining of effectful calls.
 
 ## Open questions
