@@ -350,6 +350,50 @@ context surfacing in signatures. v1 already forbids handlers crossing
 function boundaries, so composites are expansions for now; the outlined
 form is exactly the deferred function-boundary effect design.
 
+#### The un-expanded form
+
+Expansion need not happen at frontend elaboration time. A dialect can keep
+`div_checked` un-expanded in the IR — a leaf op expanded later by a lowering
+pass — provided the threading is part of its signature. The pattern: a
+`Span` operand carrying the linear values to thread, returned positionally
+in the result tuple on the surviving path:
+
+```
+# checked.dgen (illustrative)
+op div_checked(handler: RaiseHandler, dividend, divisor, thread: Span) -> Tuple
+```
+
+The call site, replacing the expansion above:
+
+```
+            %qo : Tuple<[index.Index, memory.Origin]> = checked.div_checked(%h, %a, %b, [%o])
+            %res : index.Index = unpack(%qo) body(%q: index.Index, %o1: memory.Origin) captures(%ref):
+                %o2 : memory.Origin = memory.store(%o1, %ref, %q)
+                ...as before...
+```
+
+- **The discharge dependency stays explicit dataflow**: `%o` is an operand.
+  The op's linearity contract (migration step 1) declares that elements of
+  `thread` are consumed and re-produced positionally in the result on the
+  surviving path, destroyed on divergence. The flaw that killed implicit
+  discharge cannot return: the op discharges exactly what it names, never
+  what its context happens to leave open.
+- **The result type depends on the `thread` operand's types**
+  (`Tuple<[Index, Origin]>` here). Result types are SSA values in dgen, so
+  operand-dependent result types are the ordinary dependent-type machinery,
+  resolved by staging.
+- **`control_flow.if` already has this shape** — its argument spans are its
+  threading surface. Leaf composites and block-holding ops thread the same
+  way; a call site with nothing open passes `[]`.
+- **The expansion pass must produce IR satisfying the contract** — the
+  expanded example above is exactly that output, and the post-pass verifier
+  checks it with the ordinary rules. Contract on the un-expanded op,
+  explicit ops after expansion: the same relationship `try` has to
+  `raise_catch_to_goto`.
+- An outlined function version would have the same signature shape; the
+  thread span is what the deferred function-boundary design generalizes
+  (manual threading first, polymorphism later).
+
 Verifier's view, per block (locality as in `docs/linear_types.md`):
 
 - In the outer unpack body, the partial op is the `if` (its `then_body`
