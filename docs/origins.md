@@ -285,6 +285,82 @@ Deliberate leaks (process exit, arena teardown, C frontends) should be an
 explicit `forget(o)`-style op that forfeits the obligation visibly, not a
 verifier exemption — see open questions.
 
+#### Worked example
+
+Allocate a cell, run a computation that may raise, store its result, read it
+back, destroy, with a fallback on the exceptional path. Pre-lowering
+(well-formed; the origin thread is *open across* the partial `if`):
+
+```
+%f : function.Function<[number.Boolean, index.Index], index.Index> = function.function<index.Index>() body(%cond: number.Boolean, %a: index.Index):
+    %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%cond, %a):
+        %alloc : Tuple<[memory.Ref<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
+        %r : index.Index = unpack(%alloc) body(%ref: memory.Ref<index.Index>, %o: memory.Origin) captures(%cond, %a, %h):
+            %q : index.Index = control_flow.if(%cond, [], []) then_body() captures(%h):
+                %val : index.Index = 1
+                %raised : Never = error.raise<index.Index>(%h, %val)
+            else_body() captures(%a):
+                %ok : index.Index = algebra.add(%a, %a)
+            %o1 : memory.Origin = memory.store(%o, %ref, %q)
+            %loaded : Tuple<[index.Index, memory.Origin]> = memory.load(%o1, %ref)
+            %res : index.Index = unpack(%loaded) body(%v: index.Index, %o2: memory.Origin):
+                %d : Nil = memory.destroy(%o2)
+                %out : index.Index = chain(%v, %d)
+    except(%err: index.Index):
+        %zero : index.Index = 0
+        %fallback : index.Index = algebra.add(%err, %zero)
+```
+
+Verifier's view, per block (locality as in `docs/linear_types.md`):
+
+- In the inner unpack body, the partial op is the `if` (its `then_body`
+  captures `%h`, a `Handler<Diverge>`). `%o`'s consumer is the store, whose
+  operand `%q` transitively depends on the `if` — the thread is *open
+  across* the partial op: legal, discharged on its divergent edge by
+  declared semantics. `%o1` and `%o2` complete downstream.
+- In the try body, the partial op is the *unpack* (partiality propagates
+  outward through its `%h` capture). `%alloc` — a tuple containing a linear
+  component, hence linear — is consumed *by* the partial op itself.
+
+After `raise_catch_to_goto` (before terminator normalization), with the
+inserted discharge; the pass already rewrites capture lists at raise sites
+(handler → except label), and adding `%o` rides the same cascade:
+
+```
+    %t : index.Index = goto.region([]) body<%self: goto.Label, %try_exit: goto.Label>() captures(%cond, %a):
+        %except : goto.Label = goto.label([]) body(%err: index.Index) captures(%try_exit):
+            %zero : index.Index = 0
+            %fallback : index.Index = algebra.add(%err, %zero)
+            %0 : Nil = goto.branch<%try_exit>([%fallback])
+
+        %alloc : Tuple<[memory.Ref<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
+        %r : index.Index = unpack(%alloc) body(%ref: memory.Ref<index.Index>, %o: memory.Origin) captures(%cond, %a, %except):
+            %q : index.Index = control_flow.if(%cond, [], []) then_body() captures(%except, %o):
+                %val : index.Index = 1
+                %d0 : Nil = memory.destroy(%o)          # inserted discharge
+                %val2 : index.Index = chain(%val, %d0)  # orders destroy before the branch
+                %1 : Nil = goto.branch<%except>([%val2])
+            else_body() captures(%a):
+                %ok : index.Index = algebra.add(%a, %a)
+            %o1 : memory.Origin = memory.store(%o, %ref, %q)
+            ...store/load/destroy unchanged...
+```
+
+Notes on the lowered form:
+
+- The discharged origin is `%o`'s thread state *as of the divergence*: the
+  store has not run on this path (it depends on `%q`), so the destructor
+  stack is whatever was attached before the partial op; the base destructor
+  frees the cell regardless of its contents.
+- Ordering destroy-before-branch is plain use-def (the destroy chains into
+  the branch argument) — no new mechanism.
+- Post-lowering, `%o` is captured by `then_body` *and* consumed by the
+  parent's store. Today's verifier accepts this via `MaybeAvailable`; the
+  precise per-op contract is the divergence-aware branch-composition rule —
+  **a capture consumed only inside an alternative whose every exit diverges
+  does not charge the parent's Γ** — sound because that alternative never
+  returns control to the parent thread.
+
 ### Functions
 
 Origins are ordinary values, so function boundaries need no new features:
