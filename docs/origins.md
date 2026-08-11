@@ -121,15 +121,35 @@ the origin:
 
 ```
 op attach(o: Origin) -> Origin:
-    block destruct
+    block destruct    # signature: (%o: Origin) -> Origin
 ```
 
-`attach(o) destruct(...)` consumes `o` and produces a new origin whose
-destructor runs the `destruct` block and then `o`'s destructors. `destroy`
-unwinds the whole stack: attached destructors innermost-first, base
-deallocation last. Destructor code is ordinary explicit IR — no hidden
-runtime, no registration machinery; codegen inlines the blocks at the destroy
-site.
+**Destruct-block contract.** The `destruct` block receives, as a block
+parameter, the origin that `attach` consumed — evidence for the region for
+the duration of teardown. Cleanup loads/stores thread through it, and the
+block's result *is* the threaded origin: yield-as-consume, the same rule loop
+carries use (`docs/linear_types.md`). The framing: `attach` does not end the
+origin's thread — it defers its continuation into the block. `destroy`
+resumes it: the most recently attached block runs first (LIFO), each block's
+yielded origin feeds the next block inward, and the base deallocation is the
+final consumer.
+
+Three properties fall out with no new machinery:
+
+- Evidence stays total inside cleanup code — no raw-access escape hatch.
+- Resurrection is impossible: the only way to satisfy linearity is to yield
+  the origin onward.
+- Verification is the ordinary local Γ walk: origin `Available` at block
+  entry, the yield is its consumption.
+
+**Destruct blocks must be total**: their signature may not include a
+`Handler<Diverge>` capability (checkable from the signature alone, per the
+totality rules in `docs/linear_types.md`). A raising destructor would leak
+the remainder of the destructor stack; totality is also what makes inserting
+destroys on unwind edges sound (see "Interaction with raise" below).
+
+Destructor code is ordinary explicit IR — no hidden runtime, no registration
+machinery; codegen inlines the blocks at the destroy site.
 
 This fixes the current leak: `deallocate`-as-no-op disappears; heap origins'
 base destructor is a real `free`, and stack origins' base destructor lowers to
@@ -211,18 +231,59 @@ and reproduces, exactly as today — correct, merely over-sequential.
 
 ### Interaction with raise and partial ops
 
-A raise that unwinds past a live origin must not leak its obligation. The
-intended mechanism is *discharge at CPS lowering*: `raise_catch_to_goto`
-rewrites each raise site into a branch, and at that moment it has exact
-liveness — it inserts the destroy chain for origins live at that raise site on
-the unwind edge, before the branch to the except label. Source IR states
-obligations; lowering discharges them mechanically; the linearity verifier
-checks the *result*, so nothing is implicit in the final IR.
+An op is *partial* iff `Value.totality` is `PARTIAL`: it has a direct
+dependency — operand, parameter, or owned-block capture — on a value whose
+type is `Handler<Diverge>` (`dgen/type.py`). Partiality propagates outward
+through captures: an `if` whose branch captures a raise handler is itself
+partial from the enclosing block's view.
 
-This is the leaning, not yet settled (see the partial-op TODO): the
-alternative — requiring frontends to consume every live linear value before
-any partial op — is simpler for the verifier but pushes per-raise-site
-liveness bookkeeping onto every frontend. Pin down when a real test forces it.
+A raise that unwinds past an open origin must not leak its obligation. The
+design pins this down as *declared semantics*, not a lowering accident:
+
+> **A partial op discharges, on its divergent edges, every linear origin
+> whose thread is open across it, in reverse creation order.**
+
+"Open across P" means: created independently of P, with a consumer that
+transitively depends on P. Reverse creation order gives stack discipline —
+children before parents falls out for free, since a child origin is always
+created after its parent's split.
+
+Two rules implement this, split between verifier and lowering:
+
+1. **Verifier (well-formedness, pre-lowering)**: every linear value's thread
+   must be *ordered* with respect to every partial op in its block — either
+   the thread's consumer is a transitive dependency of the partial op (the
+   thread completes before any divergence), or the value's creation depends
+   on the partial op (the thread starts after), or the thread is open across
+   it (consumer depends on the partial op). An *unordered* thread — neither
+   creation nor consumption related to the partial op by use-def — is
+   rejected. This is a genuine bug, not a style rule: execution order is
+   use-def order, so an unordered consumer may run before or after the
+   divergence at runtime, making the exceptional-path obligation
+   nondeterministic — and unwind-edge insertion would risk a double-destroy
+   (normal-path destroy scheduled before the branch, unwind destroy fires
+   too). The check is generic and needs only `transitive_dependencies`.
+
+2. **Lowering (mechanism)**: `raise_catch_to_goto` materializes the declared
+   discharge. Post-CPS, each raise site is a distinct `goto.branch` — the
+   only place per-site edges exist — and the pass inserts the destroy chain
+   for open origins on the unwind edge, before the branch to the except
+   label. Post-lowering IR is ordinary explicit ops; the verifier re-checks
+   it with no special contract.
+
+Why the discharge cannot be frontend-written in structured IR: the `except`
+block is a single block shared by every raise site. Different sites have
+different open-origin sets, and an origin created *after* one raise site does
+not exist on that site's edge — per-site cleanup has no expression point
+until CPS lowering creates per-site edges. (The only structured encoding is
+nested try/destroy/re-raise per resource, which is heavy and obscures
+intent.) So the verifier enforces that frontends produce well-formed IR —
+ordered threads, all normal-path obligations accounted — while the lowering
+writes the unwind cleanup, once, at the point with exact information.
+
+Deliberate leaks (process exit, arena teardown, C frontends) should be an
+explicit `forget(o)`-style op that forfeits the obligation visibly, not a
+verifier exemption — see open questions.
 
 ### Functions
 
@@ -302,8 +363,9 @@ Ordered so each step keeps the tree green:
 6. **split/join + alias-aware reordering**: land the decomposition ops, then
    let passes use origin-forest disjointness (first client: loop
    parallelization / vectorization legality in the structured lowering).
-7. **Observe contracts for loads** (read/read commutation) and the
-   raise-unwind destroy insertion in `raise_catch_to_goto`.
+7. **Observe contracts for loads** (read/read commutation), the
+   thread-ordering verifier rule for partial ops, and the raise-unwind
+   destroy insertion in `raise_catch_to_goto`.
 8. **`world` origin** for externs; retire ad-hoc chaining of effectful calls.
 
 ## Open questions
@@ -311,23 +373,22 @@ Ordered so each step keeps the tree green:
 Each question is annotated with its *forcing point* — the migration step (or
 external event) by which it must be resolved. Questions with no forcing point
 are clean extensions: resolving them later strengthens the verifier or adds
-ops, without revisiting decisions made here.
+ops, without revisiting decisions made here. (The two questions that had hard
+forcing points — the destruct-block contract and the partial-op drain rule —
+are resolved in the "Destructors" and "Interaction with raise" sections
+above.)
 
-- **Partial-op drain rule**: lowering-inserted unwind destroys (the leaning)
-  vs. frontend-explicit discharge. Both candidates use the existing
-  `destroy`/destruct machinery — no op or type changes either way; the choice
-  localizes to `raise_catch_to_goto` vs. frontends. *Forcing point:* before
-  step 4/5 origins (with real deallocation obligations) coexist with
-  try/raise in the same programs — until then, blocked on a forcing test
-  case, as the TODO says.
-- **Destruct-block evidence**: destructors need to load/store the region
-  being torn down (flush a buffer, free children). Intended shape: the
-  `destruct` block receives an `Origin` block parameter valid for the
-  duration of destruction, consumed by handing off to the next destructor in
-  the stack (base deallocation last), so evidence stays total inside cleanup
-  code — no raw-access escape hatch. The precise block contract (parameter
-  and result types, how handoff composes through nested `attach`) is open.
-  *Forcing point:* step 3 — the contract is part of `attach`'s signature.
+- **Handlers inside sum types**: `Value.totality` classifies partiality from
+  the *direct* types of dependencies. There is no art yet for a union or
+  existential value that *may* contain a `Handler<Diverge>` (or a linear
+  component). Intended conservative rules when such types land: a sum that
+  may contain a diverging handler counts as one for totality; a sum with a
+  linear alternative is itself linear. *Forcing point:* when sums/
+  existentials start carrying handlers or linear values.
+- **Deliberate leaks**: a `forget(o)` op that consumes an origin and
+  visibly forfeits its obligation (process exit, arena teardown, C
+  frontends whose semantics permit leaks). Purely additive. *Forcing
+  point:* first frontend that needs it.
 - **Runtime-index split soundness**: `split_at(o, i)` is disjoint by
   construction, but proving *which* side a given `element_ref(ref, j)` falls
   in requires relating `j` to `i`. v1: splits are introduced only by compiler
