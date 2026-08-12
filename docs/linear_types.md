@@ -18,6 +18,20 @@ Each value carries a multiplicity:
 - `Affine`: must be consumed at most once.
 - `Unrestricted`: not tracked.
 
+Multiplicity is hereditary through aggregates. A type's multiplicity is
+its own declaration joined with its components' (`Tuple` element types,
+`Array` element type), and the least permissive wins. A tuple carrying
+an `Origin` is linear, since dropping it would drop the obligation.
+Consuming the aggregate transfers the whole obligation, and unpacking
+rebinds each component at its own multiplicity.
+
+Capability possession is hereditary the same way. `Value.totality`
+treats a dependency on an aggregate containing a `Handler<Diverge>` as
+potentially diverging, since the handler can be projected out. Trait
+identity is not hereditary: the aggregate is not itself usable where
+the handler's type is required. Heredity stops at pointer indirection,
+and sums and existentials are future work (see `docs/origins.md`).
+
 ## Block totality
 
 Determined entirely by the block's signature (parameters, captures, operands,
