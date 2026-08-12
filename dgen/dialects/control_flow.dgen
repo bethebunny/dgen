@@ -1,9 +1,9 @@
 from builtin import Alternatives, Never, Nil, Span, ZeroOrMore
 from index import Index
 
-# Loop bodies run zero-or-more times: linear captures are rejected
-# (thread linear values as carries once the carry-pair rule lands —
-# see TODO.md).
+# Loop bodies run zero or more times, so linear captures are
+# rejected. Thread linear values as carries once the carry-pair rule
+# lands (see TODO.md).
 op for<lower_bound: Index, upper_bound: Index>(initial_arguments: Span) -> Nil:
     block body
     has trait ZeroOrMore

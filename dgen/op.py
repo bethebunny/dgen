@@ -31,9 +31,8 @@ class Op(Value):
         block's linearity context Γ.
 
         The default dispatches on the op's declared block-execution
-        trait (``ExactlyOnce`` / ``Alternatives`` / ``BodyWithHandler``
-        — see ``builtin.dgen``); an op declaring none is handled
-        conservatively. A block-holding op with bespoke execution
+        trait from ``builtin.dgen``. An op declaring none fails
+        verification. A block-holding op with bespoke execution
         semantics may override this and compose the context's
         primitives instead. See ``docs/linear_types.md``.
         """

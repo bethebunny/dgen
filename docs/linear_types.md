@@ -96,77 +96,78 @@ linear values by its root.
 ### Block-execution contracts
 
 Block-holding ops declare how they run their owned blocks via the
-block-execution traits in `builtin.dgen` (`has trait` in the op's `.dgen`
-definition), letting the verifier charge linear captures precisely at the
-parent. The verifier reaches the contract through the
-`Op.verify_block_linearity` protocol: the default implementation
-dispatches on the declared trait via `BlockLinearityContext`
-(`dgen/ir/verification.py`), and an op with bespoke execution semantics
-may override the method and compose the context's primitives instead.
-The traits cover ops whose block-execution multiplicity is *intrinsic* —
-fixed by the op's own semantics:
+block-execution traits in `builtin.dgen`, written as `has trait` in the
+op's `.dgen` definition. This lets the verifier charge linear captures
+precisely at the parent. The verifier reaches the contract through the
+`Op.verify_block_linearity` protocol. The default implementation
+dispatches on the declared trait via `BlockLinearityContext` in
+`dgen/ir/verification.py`. An op with bespoke execution semantics may
+override the method and compose the context's primitives instead. An op
+that neither declares a trait nor overrides the method fails
+verification. The first four traits cover ops whose block-execution
+multiplicity is intrinsic, meaning fixed by the op's own semantics.
 
-- `ExactlyOnce` (`unpack`): each capturing block runs and consumes its
-  linear captures — the capture is `Consumed` at the op; two children
+- `ExactlyOnce` (`unpack`). Each capturing block runs and consumes its
+  linear captures, so the capture is `Consumed` at the op. Two children
   capturing the same linear value is a static double-consume.
-- `Alternatives` (`control_flow.if`): exactly one child runs, and children
-  never transfer control into each other. A linear capture is `Consumed`
-  when every completing (non-`Never`-result) alternative captures it; left
-  untouched when only diverging alternatives capture it (see
-  "divergence-aware composition" below); rejected when captured by only
-  some completing alternatives — that is conditional consumption.
-- `BodyWithHandler` (`error.try`): the body always starts; the handler
-  block runs iff the body diverges into it. Because the body may consume a
-  capture *before* diverging (at-site discharge), only the cleanup-scope
-  pattern — both children capture — charges `Consumed`; other shapes park
-  at `MaybeAvailable`.
-- `ZeroOrMore` (`control_flow.for`/`while`): owned blocks run zero or
-  more times. No consumption count is sound for a linear capture — zero
-  runs leak it, two runs double-consume it — so linear captures are
-  *rejected outright*; a linear value enters a loop only as a carry
-  (yield-as-consume, "Loops" below), which awaits the carry-pair rule.
-  Until carries land, rejection is the contract's entire content.
+- `Alternatives` (`control_flow.if`). Exactly one child runs, and
+  children never transfer control into each other. A linear capture is
+  `Consumed` when every completing alternative captures it. It is left
+  untouched when only diverging alternatives capture it, per the
+  divergence-aware composition rule below. It is rejected when captured
+  by only some completing alternatives, which is conditional
+  consumption.
+- `BodyWithHandler` (`error.try`). The body always starts, and the
+  handler block runs iff the body diverges into it. The body may
+  consume a capture before diverging, so only the cleanup-scope pattern
+  where both children capture charges `Consumed`. Other shapes park at
+  `MaybeAvailable`.
+- `ZeroOrMore` (`control_flow.for`/`while`, `function.function`, actor
+  bodies). Owned blocks run zero or more times. No consumption count is
+  sound for a linear capture, because zero runs leak it and two runs
+  double-consume it, so linear captures are rejected. A linear value
+  enters a loop only as a carry (see "Loops" below), which awaits the
+  carry-pair rule. Until carries land, rejection is the contract's
+  entire content.
 
 Affine captures keep the permissive `MaybeAvailable` treatment even under
-a contract: an affine value (raise handler, exit label) is legitimately
-captured by many sibling scopes, at most one of which fires per path.
+a contract. An affine value such as a raise handler or an exit label is
+legitimately captured by many sibling scopes, at most one of which fires
+per path.
 
-The goto family declares **no** trait, and that is not an omission: a
-label body's multiplicity is *extrinsic* — determined by the branch graph
-around it, not by the op. The same `goto.label` op is an at-most-once
-except-target in one function and an unbounded loop header in another, so
-no per-op-class trait can be honest. Goto-level IR is verified
-conservatively (`MaybeAvailable` parking); the precision lives at the
-structured level, and goto IR is generated from verified structured IR by
-the lowerings. Recovering precision post-lowering would take either
-per-label multiplicity annotations stamped by the lowering that knows
-them, or a CFG dataflow analysis over the branch graph — both future
-work if ever needed.
+The fifth trait, `ExtrinsicBlocks`, is for the goto family. A label
+body's multiplicity is not a property of the op. The branch graph around
+it determines the run count, and the same `goto.label` op is an
+at-most-once except target in one function and an unbounded loop header
+in another, so no intrinsic trait can be honest. `ExtrinsicBlocks` opts
+into conservative verification explicitly, parking captures at
+`MaybeAvailable`. The precision lives at the structured level, and goto
+IR is generated from verified structured IR by the lowerings. Recovering
+precision after lowering would take per-label multiplicity annotations
+stamped by the lowering that knows them, or a CFG dataflow analysis over
+the branch graph. Both are future work if ever needed.
 
-### Unknown block-holding ops
+### Conservative capture parking
 
-An op with owned blocks and no registered contract is handled
-conservatively.
-
-For each capture into an unknown op's child block:
+Ops declaring `ExtrinsicBlocks` park their captures. For each capture
+into such an op's child block:
 
 - `Available → MaybeAvailable`
 - `MaybeAvailable → MaybeAvailable`
 - `Consumed → reject` (cannot capture an already-consumed value)
 
-`MaybeAvailable` says "the inner block might or might not have actually
-consumed this." Multiple sibling unknown ops capturing the same value all
-park at `MaybeAvailable` rather than each charging a `Consumed` transition.
-This is what lets the goto-style if/else lower without tripping double-consume:
-`%then` and `%else` are sibling `goto.label` ops both capturing `%exit`, and
-neither op individually can be said to "definitely consume" `%exit` — only
-the runtime path picks one.
+`MaybeAvailable` says the inner block might or might not have actually
+consumed this. Multiple sibling parked ops capturing the same value all
+stay at `MaybeAvailable` rather than each charging a `Consumed`
+transition. This is what lets the goto-style if/else lower without
+tripping double-consume. `%then` and `%else` are sibling `goto.label`
+ops both capturing `%exit`, and neither op individually can be said to
+definitely consume `%exit`. Only the runtime path picks one.
 
-Direct operand consumes still transition `MaybeAvailable → Consumed`: if a
-known-semantics op afterwards uses the value as a plain operand, the verifier
-trusts that explicit consume. The model is permissive on the unknown side
-and precise on the known side; tightening happens by giving more ops their
-contracts.
+Direct operand consumes still transition `MaybeAvailable → Consumed`. If
+a known-semantics op afterwards uses the value as a plain operand, the
+verifier trusts that explicit consume. The model is permissive on the
+parked side and precise on the contracted side.
 
 ## Branch composition (at-most-once-alternative ops)
 

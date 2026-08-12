@@ -1,20 +1,22 @@
 """Tests for per-op block-execution contracts in ``verify_linearity``.
 
-Contracted ops (``_BLOCK_CONTRACTS``) charge linear captures precisely in
-the parent's Γ instead of parking them at ``MAYBE_AVAILABLE``:
+Contracted ops charge linear captures precisely in the parent's Γ
+instead of parking them at ``MAYBE_AVAILABLE``.
 
-- ``unpack`` (EXACTLY_ONCE): a linear capture is consumed at the op.
-- ``control_flow.if`` (ALTERNATIVES): consumed when every completing
-  alternative captures it; left available when only diverging
-  alternatives capture it; rejected when captured by only some
-  completing alternatives (conditional consumption).
-- ``error.try`` (BodyWithHandler): consumed for the cleanup-scope
-  pattern (body and except both capture); otherwise permissive.
+- ``unpack`` (ExactlyOnce) consumes a linear capture at the op.
+- ``control_flow.if`` (Alternatives) consumes when every completing
+  alternative captures. It leaves the thread open when only diverging
+  alternatives capture, and rejects a capture by only some completing
+  alternatives as conditional consumption.
+- ``error.try`` (BodyWithHandler) consumes for the cleanup-scope
+  pattern where body and except both capture. Other shapes stay
+  permissive.
+- ``control_flow.for``/``while`` (ZeroOrMore) reject linear captures.
 
-Ops declare these as traits in their ``.dgen`` definitions; the
+Ops declare these as traits in their ``.dgen`` definitions. The
 verifier reaches them through the ``Op.verify_block_linearity``
-protocol, which bespoke block-holding ops may override instead (see
-the custom-op test at the bottom).
+protocol, which bespoke block-holding ops may override instead. See
+the custom-op tests at the bottom.
 
 ``memory.Reference`` is the linear type used throughout.
 """
@@ -36,6 +38,7 @@ from dgen.ir.verification import (
     BlockLinearityContext,
     DoubleConsumeError,
     LinearLeakError,
+    UndeclaredBlockContractError,
     ZeroOrMoreCaptureError,
     verify_linearity,
 )
@@ -65,7 +68,7 @@ IF_BOTH_CONSUME = """
 
 
 def test_if_both_alternatives_consume_is_legal():
-    """Every completing alternative consumes the capture — no error."""
+    """Every completing alternative consumes the capture. No error."""
     _verify(IF_BOTH_CONSUME)
 
 
@@ -86,7 +89,7 @@ def test_if_charges_consumed_so_reuse_is_double_consume():
 
 
 def test_if_conditional_consumption_rejected():
-    """Captured and consumed by one completing alternative only — the
+    """Captured and consumed by one completing alternative only. The
     other completing alternative leaks it."""
     with pytest.raises(LinearLeakError):
         _verify("""
@@ -104,8 +107,8 @@ def test_if_conditional_consumption_rejected():
 
 def test_if_diverging_alternative_leaves_thread_open():
     """A capture consumed only inside a diverging alternative does not
-    charge the parent — the normal path's consume afterwards is legal
-    (divergence-aware branch composition, docs/origins.md)."""
+    charge the parent. The normal path's consume afterwards is legal
+    per divergence-aware branch composition (docs/origins.md)."""
     _verify("""
         | import control_flow
         | import error
@@ -150,13 +153,14 @@ TRY_CLEANUP_SCOPE = """
 
 
 def test_try_cleanup_scope_is_legal():
-    """Body consumes on the completing path, except on the divergent
-    path — the canonical cleanup-scope pattern."""
+    """Body consumes on the completing path and except consumes on the
+    divergent path. The canonical cleanup-scope pattern."""
     _verify(TRY_CLEANUP_SCOPE)
 
 
 def test_try_cleanup_scope_charges_consumed():
-    """Both children capture → the try consumes; parent reuse is caught."""
+    """Both children capture, so the try consumes. Parent reuse is
+    caught."""
     with pytest.raises(DoubleConsumeError):
         _verify(
             TRY_CLEANUP_SCOPE
@@ -168,8 +172,8 @@ def test_try_cleanup_scope_charges_consumed():
 
 
 def test_try_body_only_capture_stays_permissive():
-    """A body-only capture may be discharged at-site before a raise —
-    the try cannot charge it precisely and must not reject it."""
+    """A body-only capture may be discharged at-site before a raise.
+    The try cannot charge it precisely and must not reject it."""
     _verify("""
         | import error
         | import index
@@ -211,7 +215,7 @@ def test_unpack_capture_consume_is_legal():
 
 
 def test_unpack_charges_consumed_so_reuse_is_double_consume():
-    """The body runs exactly once and consumes its capture — a later
+    """The body runs exactly once and consumes its capture. A later
     direct consume in the parent is a double-consume."""
     with pytest.raises(DoubleConsumeError):
         _verify(
@@ -235,7 +239,7 @@ _test_dialect = Dialect("linearity_contract_test")
 @dataclass(eq=False)
 class _ScopeOp(dgen.Op):
     """Test-only block-holding op with no declared block-execution
-    trait; it implements the protocol directly, composing a standard
+    trait. It implements the protocol directly, composing a standard
     context implementation."""
 
     body: dgen.Block
@@ -247,8 +251,8 @@ class _ScopeOp(dgen.Op):
 
 
 def _scope_over_consumed_ref() -> tuple[dgen.Value, dgen.Value]:
-    """A _ScopeOp whose body captures and deallocates a Reference;
-    returns (scope op, the reference)."""
+    """A _ScopeOp whose body captures and deallocates a Reference.
+    Returns (scope op, the reference)."""
     ref = memory.StackAllocateOp(
         element_type=Index(), type=memory.Reference(element_type=Index())
     )
@@ -265,9 +269,8 @@ def test_custom_op_protocol_override_is_legal():
 
 
 def test_custom_op_protocol_override_charges_consumed():
-    """The override's charge is real: reusing the capture after the op
-    is a double-consume, where the conservative default (no trait, no
-    override) would have silently accepted it."""
+    """The override's charge is real. Reusing the capture after the op
+    is a double-consume."""
     scope, ref = _scope_over_consumed_ref()
     second = memory.DeallocateOp(ptr=ref, type=Nil())
     root = ChainOp(lhs=scope, rhs=second, type=Index())
@@ -282,7 +285,7 @@ def test_custom_op_protocol_override_charges_consumed():
 
 def test_loop_linear_capture_rejected():
     """A linear value captured into a loop body is unsound in both
-    directions (zero iterations leak it, two double-consume it) — the
+    directions. Zero iterations leak it and two double-consume it. The
     ZeroOrMore contract rejects it outright."""
     with pytest.raises(ZeroOrMoreCaptureError):
         _verify("""
@@ -307,3 +310,19 @@ def test_loop_unrestricted_capture_still_fine():
         |     %v : index.Index = 1
         |     %s : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %v)
     """)
+
+
+def test_undeclared_block_holding_op_fails():
+    """A block-holding op with no trait and no override is rejected."""
+
+    @_test_dialect.op("undeclared_scope")
+    @dataclass(eq=False)
+    class _UndeclaredScopeOp(dgen.Op):
+        body: dgen.Block
+        type: dgen.Type
+        __blocks__: ClassVar[tuple[str, ...]] = ("body",)
+
+    inner = Index().constant(0)
+    op = _UndeclaredScopeOp(body=dgen.Block(result=inner), type=Index())
+    with pytest.raises(UndeclaredBlockContractError):
+        verify_linearity(op)
