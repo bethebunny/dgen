@@ -36,6 +36,7 @@ from dgen.ir.verification import (
     BlockLinearityContext,
     DoubleConsumeError,
     LinearLeakError,
+    ZeroOrMoreCaptureError,
     verify_linearity,
 )
 from dgen.testing import strip_prefix
@@ -272,3 +273,37 @@ def test_custom_op_protocol_override_charges_consumed():
     root = ChainOp(lhs=scope, rhs=second, type=Index())
     with pytest.raises(DoubleConsumeError):
         verify_linearity(root)
+
+
+# ---------------------------------------------------------------------------
+# control_flow.for / while — ZeroOrMore
+# ---------------------------------------------------------------------------
+
+
+def test_loop_linear_capture_rejected():
+    """A linear value captured into a loop body is unsound in both
+    directions (zero iterations leak it, two double-consume it) — the
+    ZeroOrMore contract rejects it outright."""
+    with pytest.raises(ZeroOrMoreCaptureError):
+        _verify("""
+            | import control_flow
+            | import index
+            | import memory
+            | %ref : memory.Reference<index.Index> = memory.stack_allocate<index.Index>()
+            | %loop : Nil = control_flow.for<index.Index(0), index.Index(5)>([]) body(%iv: index.Index) captures(%ref):
+            |     %d : Nil = memory.deallocate(%ref)
+            | %r : Nil = chain(%loop, %loop)
+        """)
+
+
+def test_loop_unrestricted_capture_still_fine():
+    """Unrestricted captures into loops are untouched by the contract."""
+    _verify("""
+        | import control_flow
+        | import index
+        | import memory
+        | %alloc : memory.Buffer<index.Index> = memory.buffer_stack_allocate<index.Index>(index.Index(1))
+        | %loop : Nil = control_flow.for<index.Index(0), index.Index(5)>([]) body(%iv: index.Index) captures(%alloc):
+        |     %v : index.Index = 1
+        |     %s : Nil = memory.buffer_store(%alloc, %alloc, index.Index(0), %v)
+    """)

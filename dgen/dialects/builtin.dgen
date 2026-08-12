@@ -12,19 +12,31 @@ trait Affine
 # Block-execution contracts: how a block-holding op runs its owned
 # blocks, declared so the linearity verifier can charge linear captures
 # precisely (see docs/linear_types.md and Op.verify_block_linearity).
-# We believe these three to be exhaustive; a block-holding op should
-# declare exactly one of them, or override Op.verify_block_linearity
-# with its own implementation. Ops that do neither are verified
-# conservatively.
+# A block-holding op whose execution multiplicity is *intrinsic* (fixed
+# by the op's own semantics) should declare exactly one of these, or
+# override Op.verify_block_linearity with its own implementation. Ops
+# that do neither are verified conservatively — which is the honest
+# treatment for the goto family, whose bodies' multiplicity is
+# *extrinsic*: determined by the branch graph around a label, not by
+# the label op itself.
 #
 # - ExactlyOnce:      every owned block runs exactly once per execution.
 # - Alternatives:     exactly one owned block runs, and the blocks never
 #                     transfer control into each other.
 # - BodyWithHandler:  a body block that always starts plus a handler
 #                     block that runs iff the body diverges into it.
+# - ZeroOrMore:       owned blocks run zero or more times per execution
+#                     (loops). A linear value can never be soundly
+#                     captured into such a block (zero runs leak it, two
+#                     runs double-consume it) — it must be threaded as a
+#                     loop carry instead. Carry threading needs the
+#                     carry-pair rule (see TODO.md); until then the
+#                     contract's whole content is rejecting linear
+#                     captures.
 trait ExactlyOnce
 trait Alternatives
 trait BodyWithHandler
+trait ZeroOrMore
 
 type Nil:
     layout Void

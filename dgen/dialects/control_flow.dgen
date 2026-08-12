@@ -1,14 +1,16 @@
-from builtin import Alternatives, Never, Nil, Span
+from builtin import Alternatives, Never, Nil, Span, ZeroOrMore
 from index import Index
 
-# for/while declare no block-execution contract: their bodies run
-# zero-or-more times, which needs the loop-carry rule (see TODO.md)
-# before the linearity verifier can treat them precisely.
+# Loop bodies run zero-or-more times: linear captures are rejected
+# (thread linear values as carries once the carry-pair rule lands —
+# see TODO.md).
 op for<lower_bound: Index, upper_bound: Index>(initial_arguments: Span) -> Nil:
     block body
+    has trait ZeroOrMore
 op while(initial_arguments: Span) -> Nil:
     block condition
     block body
+    has trait ZeroOrMore
 op if(condition: Index, then_arguments: Span, else_arguments: Span):
     block then_body
     block else_body

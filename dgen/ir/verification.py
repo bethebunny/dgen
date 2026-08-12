@@ -15,6 +15,7 @@ from dgen.dialects.builtin import (
     ExactlyOnce,
     Linear,
     Never,
+    ZeroOrMore,
 )
 from dgen.dialects.function import FunctionOp
 from dgen.ir.constraints import TraitConstraint
@@ -30,6 +31,7 @@ _AFFINE_TRAIT = Affine()
 _EXACTLY_ONCE_TRAIT = ExactlyOnce()
 _ALTERNATIVES_TRAIT = Alternatives()
 _BODY_WITH_HANDLER_TRAIT = BodyWithHandler()
+_ZERO_OR_MORE_TRAIT = ZeroOrMore()
 
 # Cache `linearity` keyed on the value's type. `has_trait` does a structural
 # `to_json()` comparison per declared trait; profiling showed this accounted
@@ -71,6 +73,12 @@ class DoubleConsumeError(LinearityError):
 class LinearLeakError(LinearityError):
     """A linear value remains ``Available`` at a block's exit and is not
     the block's result — its single-consume obligation is unmet."""
+
+
+class ZeroOrMoreCaptureError(LinearityError):
+    """A linear value is captured into a block that runs zero or more
+    times — unsound in both directions (zero runs leak it, two runs
+    double-consume it). Thread it as a loop carry instead."""
 
 
 def _annotated_asm(root: dgen.Value, target: dgen.Value) -> str:
@@ -512,6 +520,8 @@ class BlockLinearityContext:
             self.alternatives()
         elif op.has_trait(_BODY_WITH_HANDLER_TRAIT):
             self.body_with_handler()
+        elif op.has_trait(_ZERO_OR_MORE_TRAIT):
+            self.zero_or_more()
         else:
             self.conservative()
 
@@ -593,6 +603,25 @@ class BlockLinearityContext:
                 self.consume(cap)
             else:
                 self.park(cap)
+
+    def zero_or_more(self) -> None:
+        """Owned blocks run zero or more times (loops). No consumption
+        count works for a linear capture — zero runs leak it, two runs
+        double-consume it — so linear captures are rejected outright;
+        linear values must enter a loop as carries (yield-as-consume),
+        which awaits the carry-pair rule (see ``TODO.md``). Affine
+        captures park as usual."""
+        linear_capturing, affine_caps = self._collected_captures()
+        for cap in affine_caps:
+            self.park(cap)
+        for cap in linear_capturing:
+            raise ZeroOrMoreCaptureError(
+                f"linear {type(cap).__name__} %{cap.name} captured into a "
+                f"zero-or-more block of {type(self._op).__name__} "
+                f"%{self._op.name} — a linear value cannot be captured "
+                f"into a body that may run zero or more times; thread it "
+                f"as a loop carry instead\n\n" + _annotated_asm(self._root, cap)
+            )
 
 
 def _verify_linearity_block(block: Block, root: dgen.Value) -> None:

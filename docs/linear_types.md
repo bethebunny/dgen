@@ -103,7 +103,8 @@ parent. The verifier reaches the contract through the
 dispatches on the declared trait via `BlockLinearityContext`
 (`dgen/ir/verification.py`), and an op with bespoke execution semantics
 may override the method and compose the context's primitives instead.
-The three traits are believed exhaustive:
+The traits cover ops whose block-execution multiplicity is *intrinsic* —
+fixed by the op's own semantics:
 
 - `ExactlyOnce` (`unpack`): each capturing block runs and consumes its
   linear captures — the capture is `Consumed` at the op; two children
@@ -119,13 +120,28 @@ The three traits are believed exhaustive:
   capture *before* diverging (at-site discharge), only the cleanup-scope
   pattern — both children capture — charges `Consumed`; other shapes park
   at `MaybeAvailable`.
+- `ZeroOrMore` (`control_flow.for`/`while`): owned blocks run zero or
+  more times. No consumption count is sound for a linear capture — zero
+  runs leak it, two runs double-consume it — so linear captures are
+  *rejected outright*; a linear value enters a loop only as a carry
+  (yield-as-consume, "Loops" below), which awaits the carry-pair rule.
+  Until carries land, rejection is the contract's entire content.
 
 Affine captures keep the permissive `MaybeAvailable` treatment even under
 a contract: an affine value (raise handler, exit label) is legitimately
 captured by many sibling scopes, at most one of which fires per path.
 
-Loops declare no trait until the carry-pair rule lands; the goto family
-declares none because label bodies run zero-or-more times.
+The goto family declares **no** trait, and that is not an omission: a
+label body's multiplicity is *extrinsic* — determined by the branch graph
+around it, not by the op. The same `goto.label` op is an at-most-once
+except-target in one function and an unbounded loop header in another, so
+no per-op-class trait can be honest. Goto-level IR is verified
+conservatively (`MaybeAvailable` parking); the precision lives at the
+structured level, and goto IR is generated from verified structured IR by
+the lowerings. Recovering precision post-lowering would take either
+per-label multiplicity annotations stamped by the lowering that knows
+them, or a CFG dataflow analysis over the branch graph — both future
+work if ever needed.
 
 ### Unknown block-holding ops
 
