@@ -15,6 +15,7 @@ import llvmlite.binding as llvmlite
 import dgen
 from dgen import Type
 from dgen.block import BlockArgument
+from dgen.builtins import ConstantOp, PackOp, _aggregate_elements, pack
 from dgen.dialects import (
     builtin,
     function,
@@ -24,16 +25,15 @@ from dgen.dialects import (
     number,
     record,
 )
-from dgen.ir.traversal import all_values
-from dgen.layout import Layout
-from dgen.builtins import ConstantOp, PackOp, _aggregate_elements, pack
 from dgen.dialects.builtin import String
 from dgen.dialects.function import Function
-from dgen.memory import Memory
-from dgen.type import Constant, TypeType, Value, constant
+from dgen.ir.traversal import all_values
+from dgen.layout import Layout
 
 # ---------------------------------------------------------------------------
 from dgen.llvm import ffi
+from dgen.memory import Memory
+from dgen.type import Constant, TypeType, Value, constant
 
 
 def _ffi_ctype(layout: Layout) -> type[ctypes._CData]:
@@ -685,9 +685,6 @@ def value_reference(v: dgen.Value) -> str:
         return ffi.llvm_constant(bytes(mem.buffer), mem.layout)
     if isinstance(v, builtin.ChainOp):
         return value_reference(v.lhs)
-    # memory.store(ptr, value) -> Reference<T> returns the same pointer.
-    if isinstance(v, memory.StoreOp):
-        return value_reference(v.ptr)
     # record.pack is a type-tag wrapper around its `values` aggregate;
     # the LLVM aggregate is whatever ``values`` produces (a PackOp's
     # insertvalue chain, an aggregate Constant, etc.).
@@ -840,37 +837,31 @@ def emit_gep(op: llvm.GepOp) -> Iterator[str]:
 
 @emitter_for(memory.StoreOp)
 def emit_store(op: memory.StoreOp) -> Iterator[str]:
-    """memory.store(ptr, value) -> Reference<T>: emit `store`; the op's
-    SSA reference resolves through ``value_reference`` to ``ptr``'s name
-    (the returned Reference is the same pointer)."""
+    """Emit the store for memory.store(origin, ref, value). The result
+    Origin is zero-sized and nothing references it at the LLVM level.
+    Its use-def thread is what ordered us here."""
     if llvm_type(op.value.type) == "void":
         return
-    yield f"  store {typed_reference(op.value)}, ptr {vr(op.ptr)}"
+    yield f"  store {typed_reference(op.value)}, ptr {vr(op.ref)}"
 
 
 @emitter_for(memory.LoadOp)
 def emit_load(op: memory.LoadOp) -> Iterator[str]:
-    """memory.load(ptr) -> Tuple<T, Reference<T>>: load T from ptr, then
-    build a ``{T, ptr}`` aggregate via insertvalue. ``Nil`` element T
-    drops out — the aggregate becomes ``{ptr}``."""
+    """Emit the load for memory.load(origin, ref) and build its
+    Tuple<[T, Origin]> result aggregate. The Origin field is zero-sized
+    and drops out, leaving ``{T}``, or nothing when T is ``Nil``."""
     ctx = _ctx()
     tracker = ctx.tracker
     op_name = tracker.name(op)
-    elem_llvm = llvm_type(op.ptr.type.element_type)
+    elem_llvm = llvm_type(op.ref.type.element_type)
     arg_types = _tuple_arg_types(op)
     tuple_ty = _tuple_llvm_type(arg_types)
     fields = _llvm_fields(arg_types)
-    if not fields:
-        return
-    if elem_llvm == "void":
-        # Only the ptr is LLVM-visible; Nil-typed value field drops out.
-        yield (f"  %{op_name} = insertvalue {tuple_ty} undef, ptr {vr(op.ptr)}, 0")
+    if not fields or elem_llvm == "void":
         return
     loaded = tracker.fresh()
-    yield f"  %{loaded} = load {elem_llvm}, ptr {vr(op.ptr)}"
-    mid = tracker.fresh()
-    yield (f"  %{mid} = insertvalue {tuple_ty} undef, {elem_llvm} %{loaded}, 0")
-    yield (f"  %{op_name} = insertvalue {tuple_ty} %{mid}, ptr {vr(op.ptr)}, 1")
+    yield f"  %{loaded} = load {elem_llvm}, ptr {vr(op.ref)}"
+    yield (f"  %{op_name} = insertvalue {tuple_ty} undef, {elem_llvm} %{loaded}, 0")
 
 
 @emitter_for(memory.BufferLoadOp)

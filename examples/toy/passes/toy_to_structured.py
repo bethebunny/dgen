@@ -201,13 +201,11 @@ class ToyToStructured(Pass):
 
     @lowering_for(toy.NonzeroCountOp)
     def lower_nonzero_count(self, op: toy.NonzeroCountOp) -> dgen.Value | None:
-        """Count nonzero elements: heap-alloc 1-cell accumulator, nested loop, load/compare/add.
+        """Count nonzero elements with a heap 1-cell accumulator and a nested loop.
 
-        Uses ``memory.Buffer<Index>(count=1)`` rather than ``Reference<Index>``:
-        the loop body captures the accumulator and threads a ``mem``-token
-        through ``buffer_load``/``buffer_store`` for ordering. Reference is
-        ``Linear`` and would not survive being captured into a loop body
-        (no loop-carry support on ``control_flow.for`` yet).
+        Uses a 1-cell ``memory.Buffer<Index>`` for the accumulator. The
+        loop body captures it, and a linear ``Origin`` cannot be
+        captured into a loop body.
         """
         shape = self._shape(op.input)
         buf_type = memory.Buffer(element_type=Index())

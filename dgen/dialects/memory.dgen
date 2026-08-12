@@ -1,40 +1,36 @@
-from builtin import Effect, Handler, Linear, Nil, Pointer
+from builtin import Effect, Handler, Linear, Nil, Pointer, Tuple
 from index import Index
 
-# State is the effect tag for memory access. A `Reference<T>` is its
-# handler — every `load`/`store` consumes one Reference and produces a
-# fresh one, threading the effect linearly through dataflow. See
-# `docs/effects.md`.
+# State is the effect tag for memory access. Origins handle it: each
+# access consumes an origin and produces a fresh one, so accesses to
+# the same region form a use-def thread. See docs/origins.md.
 type State:
     data: Nil
     has trait Effect
 
-# Reference<T>: linear handle to a single cell of type T.
-type Reference<element_type: Type>:
-    data: Pointer<Nil>
+# Zero-sized evidence for a region of memory. Erased at codegen.
+type Origin:
+    data: Nil
     has trait Linear
     has trait Handler<State>
 
-# Buffer<T>: pointer to a count-element backing store of type T. Unlike
-# Reference, Buffer is unrestricted and admits indexed loads/stores via
-# an explicit `mem` operand for ordering — same pattern memory used
-# before the State effect landed. Used by ndbuffer/record/existential
-# lowerings where a single backing store is shared across many ops.
+# Pointer to a single cell. Access requires the region's origin.
+type Reference<element_type: Type>:
+    data: Pointer<element_type>
+
+# Pointer to a count-element backing store, shared across many ops.
+# Accesses are ordered by a mem operand instead of an origin.
 type Buffer<element_type: Type>:
     data: Pointer<Nil>
 
-# Single-cell ops. `load` returns Tuple<T, Reference<T>>; the caller
-# unpacks to recover both the value and the new Reference. `store` and
-# `deallocate` consume the input Reference and either return a fresh one
-# (`store`) or discharge the linear thread (`deallocate`).
-op stack_allocate<element_type: Type>() -> Reference<element_type>
-op heap_allocate<element_type: Type>() -> Reference<element_type>
-op load(ptr: Reference)
-op store(ptr: Reference, value: Type) -> Reference
-op deallocate(ptr: Reference) -> Nil
+# load returns Tuple<[element_type, Origin]>.
+op stack_allocate<element_type: Type>() -> Tuple<[Reference<element_type>, Origin]>
+op heap_allocate<element_type: Type>() -> Tuple<[Reference<element_type>, Origin]>
+op load(origin: Origin, ref: Reference)
+op store(origin: Origin, ref: Reference, value: Type) -> Origin
+op destroy(origin: Origin) -> Nil
 
-# Indexed ops on Buffer. The `mem` operand provides ordering between
-# successive operations; pass the previous op's result.
+# The mem operand is the previous operation on the buffer.
 op buffer_allocate<element_type: Type>(count: Index) -> Buffer<element_type>
 op buffer_stack_allocate<element_type: Type>(count: Index) -> Buffer<element_type>
 op buffer_load(mem, buf: Buffer, index: Index)

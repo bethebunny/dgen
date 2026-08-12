@@ -2,26 +2,30 @@
 
 Allocation/deallocation ops lower here:
 
-    memory.heap_allocate<T>()       → extern<"malloc"> + function.call(byte_size(T))
-    memory.stack_allocate<T>()      → llvm.alloca(byte_size(T))
-    memory.deallocate(ptr)          → no-op (leak for now)
+    memory.heap_allocate<T>()       → extern<"malloc"> + function.call(byte_size(T)),
+                                      packed as the 1-field aggregate the
+                                      allocation's Tuple<[Reference<T>, Origin]>
+                                      consumers expect. Origin is zero-sized.
+    memory.stack_allocate<T>()      → llvm.alloca(byte_size(T)), packed likewise
+    memory.destroy(origin)          → no-op. This leaks. Real deallocation
+                                      lands with the destructor design in
+                                      docs/origins.md.
     memory.buffer_allocate<T>(n)    → extern<"malloc"> + function.call(n * 8)
     memory.buffer_deallocate(_, _)  → no-op
 
 memory.load / memory.store / memory.buffer_load / memory.buffer_store
-pass through to codegen unchanged — codegen emits the LLVM load/store
-plus, for ``load``, the ``insertvalue`` chain that builds the
-``Tuple<T, Reference<T>>`` aggregate result.
+pass through to codegen unchanged. Codegen emits the LLVM load or store
+plus, for ``load``, the ``insertvalue`` that builds the
+``Tuple<[T, Origin]>`` aggregate result. The Origin field erases.
 """
 
 from __future__ import annotations
 
 import dgen
-from dgen.dialects import function, llvm, memory
-from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
-from dgen.dialects.record import GetOp as RecordGetOp
-from dgen.dialects.index import Index
 from dgen.builtins import pack
+from dgen.dialects import function, llvm, memory, record
+from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
+from dgen.dialects.index import Index
 from dgen.layout import align_up
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import constant
@@ -44,19 +48,21 @@ class MemoryToLLVM(Pass):
         element_type = constant(op.element_type)
         assert isinstance(element_type, dgen.Type)
         byte_size = max(1, align_up(element_type.__layout__.byte_size, 8))
-        return _malloc_call(Index().constant(byte_size))
+        # The op's Tuple<[Reference<T>, Origin]> consumers see a
+        # 1-field aggregate. Origin is zero-sized and erases here.
+        return pack([_malloc_call(Index().constant(byte_size))])
 
     @lowering_for(memory.StackAllocateOp)
     def lower_stack_allocate(self, op: memory.StackAllocateOp) -> dgen.Value | None:
         element_type = constant(op.element_type)
         byte_size = element_type.__layout__.byte_size
-        # alloca uses 8-byte (double) units; round up.
-        count = max(1, align_up(byte_size, 8))
-        return llvm.AllocaOp(elem_count=Index().constant(count))
+        # alloca counts in 8-byte (double) units.
+        count = max(1, align_up(byte_size, 8) // 8)
+        return pack([llvm.AllocaOp(elem_count=Index().constant(count))])
 
-    @lowering_for(memory.DeallocateOp)
-    def lower_deallocate(self, op: memory.DeallocateOp) -> dgen.Value | None:
-        return ChainOp(lhs=Nil().constant(None), rhs=op.ptr, type=Nil())
+    @lowering_for(memory.DestroyOp)
+    def lower_destroy(self, op: memory.DestroyOp) -> dgen.Value | None:
+        return ChainOp(lhs=Nil().constant(None), rhs=op.origin, type=Nil())
 
     @lowering_for(memory.BufferAllocateOp)
     def lower_buffer_allocate(self, op: memory.BufferAllocateOp) -> dgen.Value | None:
@@ -78,8 +84,8 @@ class MemoryToLLVM(Pass):
     ) -> dgen.Value | None:
         return ChainOp(lhs=Nil().constant(None), rhs=op.mem, type=Nil())
 
-    @lowering_for(RecordGetOp)
-    def lower_record_get(self, op: RecordGetOp) -> dgen.Value | None:
+    @lowering_for(record.GetOp)
+    def lower_record_get(self, op: record.GetOp) -> dgen.Value | None:
         from dgen.llvm.ffi import _LLVM, _struct_fields
 
         record_type = constant(op.record.type)
