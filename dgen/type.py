@@ -4,7 +4,7 @@ import enum
 import itertools
 import keyword
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass, fields, is_dataclass
 from functools import cached_property
 from typing import ClassVar, Generic, Iterator, TypeVar
 
@@ -345,9 +345,22 @@ class Type(Value["TypeType"]):
         return Memory.from_json(TypeType(), self.to_json())
 
     def format_asm(self, slot: SlotFn = _default_slot) -> str:
-        """Format as ``dialect.Name<params>`` (no prefix for builtin)."""
+        """Format as ``dialect.Name<params>`` (no prefix for builtin).
+
+        Trailing parameters that still hold their declared default
+        instance are omitted. Dataclass defaults are shared instances,
+        so identity distinguishes a defaulted parameter from an
+        explicitly supplied one.
+        """
         name = self.dialect.qualified_name(self.asm_name)
+        defaults = (
+            {f.name: f.default for f in fields(self) if f.default is not MISSING}
+            if is_dataclass(self)
+            else {}
+        )
         params = list(self.parameters)
+        while params and params[-1][1] is defaults.get(params[-1][0]):
+            params.pop()
         if not params:
             return name
         args = ", ".join(format_value(val, slot) for _, val in params)

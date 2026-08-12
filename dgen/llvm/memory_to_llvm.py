@@ -8,8 +8,8 @@ Allocation/deallocation ops lower here:
                                       consumers expect. Origin is zero-sized.
     memory.stack_allocate<T>()      → llvm.alloca(byte_size(T)), packed likewise
     memory.deallocate(origin, ref)  → extern<"free"> + function.call(ref)
-    memory.destroy(origin)          → error. LowerDestroy resolves destroys
-                                      to deallocate or a stack no-op before
+    memory.destroy(origin)          → error. LowerDestroy applies each
+                                      origin's attached destructor before
                                       this pass runs.
     memory.buffer_allocate<T>(n)    → extern<"malloc"> + function.call(n * 8)
     memory.buffer_deallocate(_, _)  → no-op

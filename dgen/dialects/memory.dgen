@@ -1,5 +1,6 @@
 from builtin import Effect, Handler, Linear, Nil, Pointer, Tuple
 from index import Index
+import function
 
 # State is the effect tag for memory access. Origins handle it: each
 # access consumes an origin and produces a fresh one, so accesses to
@@ -9,7 +10,9 @@ type State:
     has trait Effect
 
 # Zero-sized evidence for a region of memory. Erased at codegen.
-type Origin:
+# destructor is the function destroy applies to the origin, set by
+# attach. The default Nil means destroy has no runtime action.
+type Origin<destructor: function.Function = Nil>:
     data: Nil
     has trait Linear
     has trait Handler<State>
@@ -30,8 +33,13 @@ op load(origin: Origin, ref: Reference)
 op store(origin: Origin, ref: Reference, value: Type) -> Origin
 op destroy(origin: Origin) -> Nil
 
-# Emitted by the LowerDestroy pass for heap destroys. Frontends use
-# destroy.
+# Consume an origin, return one whose type carries the destructor.
+# The result is annotated Origin<destructor>; ops that thread the
+# origin (store, load) annotate their results with the same type.
+op attach(origin: Origin, destructor: function.Function)
+
+# Frees the reference. The primitive a heap destructor's body calls;
+# frontends use destroy.
 op deallocate(origin: Origin, ref: Reference) -> Nil
 
 # The mem operand is the previous operation on the buffer.

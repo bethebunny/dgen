@@ -111,7 +111,12 @@ def _jit_evaluate(target: dgen.Value, compiler: Compiler[object]) -> ConstantOp:
     )
     exe = compiler.run(func)
     result = exe.run()  # type: ignore[attr-defined]
-    return ConstantOp.from_constant(target.type.constant(result.to_json()))
+    # Keep the result Memory itself rather than a to_json round-trip. A
+    # pointer-typed result (e.g. a Function value) is an address whose
+    # identity the round-trip destroys. The executable is pinned to the
+    # Memory so addresses into its code and heap stay valid.
+    result.origins.append(exe)
+    return ConstantOp(value=result, type=target.type)
 
 
 # ---------------------------------------------------------------------------

@@ -56,7 +56,8 @@ def _jit(ir: str, *args: object) -> object:
 
 
 def test_alloc_store_load_unpack_destroy():
-    """The canonical sketch from docs/origins.md works end-to-end."""
+    """The canonical sketch from docs/origins.md works end-to-end. The
+    heap cell attaches its destructor, so the destroy frees it."""
     assert (
         _jit("""
         | import function
@@ -66,10 +67,13 @@ def test_alloc_store_load_unpack_destroy():
         | %main : function.Function<[], index.Index> = function.function<index.Index>() body():
         |     %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
         |     %result : index.Index = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o0: memory.Origin):
+        |         %dtor : function.Function<[memory.Origin], Nil> = function.function<Nil>() body(%o: memory.Origin) captures(%ref):
+        |             %n : Nil = memory.deallocate(%o, %ref)
+        |         %oa : memory.Origin<%dtor> = memory.attach(%o0, %dtor)
         |         %zero : index.Index = 0
-        |         %o1 : memory.Origin = memory.store(%o0, %ref, %zero)
-        |         %loaded : Tuple<[index.Index, memory.Origin]> = memory.load(%o1, %ref)
-        |         %r : index.Index = unpack(%loaded) body(%v: index.Index, %o2: memory.Origin):
+        |         %o1 : memory.Origin<%dtor> = memory.store(%oa, %ref, %zero)
+        |         %loaded : Tuple<[index.Index, memory.Origin<%dtor>]> = memory.load(%o1, %ref)
+        |         %r : index.Index = unpack(%loaded) body(%v: index.Index, %o2: memory.Origin<%dtor>) captures(%ref, %dtor):
         |             %d : Nil = memory.destroy(%o2)
         |             %out : index.Index = chain(%v, %d)
     """)

@@ -394,10 +394,17 @@ _NO_ASSIGN_OPS: tuple[type[dgen.Op], ...] = (
 
 def emit_linearized(block: dgen.Block) -> Iterator[str]:
     """Emit LLVM IR for the runtime ops of a block, in dependency order."""
+    runtime = set(runtime_dependencies(block.result, stop=block.captures))
+    runtime.add(block.result)
     for op in block.ops:
         # FunctionOps and ExternOps reachable as operands (e.g. a call's
         # callee) are top-level declarations, not block instructions.
         if isinstance(op, (function.FunctionOp, builtin.ExternOp)):
+            continue
+        # A pack reachable only through type or parameter edges is
+        # compile-time metadata (e.g. a Tuple annotation's element
+        # list), not a runtime aggregate.
+        if isinstance(op, PackOp) and op not in runtime:
             continue
         yield from emit(op)
         if isinstance(op, (goto.BranchOp, goto.ConditionalBranchOp)):
@@ -573,8 +580,12 @@ def emit_label_op(op: goto.LabelOp) -> Iterator[str]:
 def emit_function_op(op: function.FunctionOp) -> Iterator[str]:
     ctx = _ctx()
     ret_type = llvm_type(op.result_type)
+    # Zero-sized args (e.g. Origin) are dropped, matching the call-site
+    # behavior in _extract_call_args.
     arguments = ", ".join(
-        f"{llvm_type(arg.type)} %{ctx.tracker.name(arg)}" for arg in op.body.args
+        f"{llvm_type(arg.type)} %{ctx.tracker.name(arg)}"
+        for arg in op.body.args
+        if llvm_type(arg.type) != "void"
     )
     yield f"define {ret_type} @{op.name}({arguments}) {{"
     yield "entry:"

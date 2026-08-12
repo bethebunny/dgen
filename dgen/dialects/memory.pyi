@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import dgen
 from dgen import Dialect, Op, Type, Value
+import dgen.dialects.function as function
 from dgen.dialects.builtin import Nil
 
 memory = Dialect("memory")
@@ -14,7 +15,8 @@ memory = Dialect("memory")
 class State(Type): ...
 
 @dataclass(eq=False)
-class Origin(Type): ...
+class Origin(Type):
+    destructor: Value[function.Function] = Nil()
 
 @dataclass(eq=False)
 class Reference(Type):
@@ -45,12 +47,18 @@ class StoreOp(Op):
     origin: Value
     ref: Value
     value: Value
-    type: Type = Origin()
+    type: Type = Origin(destructor=Nil())
 
 @dataclass(eq=False)
 class DestroyOp(Op):
     origin: Value
     type: Type = Nil()
+
+@dataclass(eq=False)
+class AttachOp(Op):
+    origin: Value
+    destructor: Value
+    type: Type
 
 @dataclass(eq=False)
 class DeallocateOp(Op):

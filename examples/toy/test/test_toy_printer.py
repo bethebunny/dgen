@@ -31,7 +31,7 @@ def test_constant_op():
         | import number
         | import toy
         |
-        | %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        | %0 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3])> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     """)
 
 
@@ -42,7 +42,7 @@ def test_transpose_op():
         | import number
         | import toy
         |
-        | %0 : toy.InferredShapeTensor<number.Float64> = toy.transpose(%a)
+        | %0 : toy.InferredShapeTensor = toy.transpose(%a)
     """)
 
 
@@ -55,7 +55,7 @@ def test_reshape_op():
         | import number
         | import toy
         |
-        | %1 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3]), number.Float64> = toy.reshape(%0)
+        | %1 : toy.Tensor<ndbuffer.Shape<index.Index(2)>([2, 3])> = toy.reshape(%0)
     """)
 
 
@@ -67,7 +67,7 @@ def test_mul_op():
         | import number
         | import toy
         |
-        | %2 : toy.InferredShapeTensor<number.Float64> = toy.mul(%0, %1)
+        | %2 : toy.InferredShapeTensor = toy.mul(%0, %1)
     """)
 
 
@@ -79,7 +79,7 @@ def test_add_op():
         | import number
         | import toy
         |
-        | %2 : toy.InferredShapeTensor<number.Float64> = toy.add(%0, %1)
+        | %2 : toy.InferredShapeTensor = toy.add(%0, %1)
     """)
 
 
@@ -103,7 +103,7 @@ def test_call_op():
         | import number
         | import toy
         |
-        | %4 : toy.InferredShapeTensor<number.Float64> = function.call<%multiply_transpose>([%1, %3])
+        | %4 : toy.InferredShapeTensor = function.call<%multiply_transpose>([%1, %3])
     """)
 
 
@@ -134,7 +134,7 @@ def test_concat_op():
         | import number
         | import toy
         |
-        | %2 : toy.InferredShapeTensor<number.Float64> = toy.concat<index.Index(0)>(%0, %1)
+        | %2 : toy.InferredShapeTensor = toy.concat<index.Index(0)>(%0, %1)
     """)
 
 
@@ -147,7 +147,7 @@ def test_tile_op():
         | import number
         | import toy
         |
-        | %1 : toy.InferredShapeTensor<number.Float64> = toy.tile<%n>(%0)
+        | %1 : toy.InferredShapeTensor = toy.tile<%n>(%0)
     """)
 
 
