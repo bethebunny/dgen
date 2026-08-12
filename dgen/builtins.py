@@ -29,7 +29,6 @@ from dgen.type import (
     types_equivalent,
 )
 
-
 # ===----------------------------------------------------------------------=== #
 # ConstantOp (custom __init__, multiple inheritance)
 # ===----------------------------------------------------------------------=== #
@@ -128,6 +127,37 @@ def _pack_type(element_types: list[Value[TypeType]]) -> Type:
     if all(_same_type(t, first) for t in element_types[1:]):
         return Array(element_type=first, n=n)
     return Tuple(types=pack(element_types))
+
+
+def component_types(t: Value[TypeType]) -> Iterator[Type]:
+    """Resolved component types of an aggregate type.
+
+    Tuples yield each element type and Arrays yield their element type
+    once. Non-aggregate and unresolved types yield nothing. Substructural
+    multiplicity and capability possession are hereditary through these
+    components (see docs/linear_types.md); trait identity is not.
+    """
+    if isinstance(t, Tuple):
+        if not is_constant(t.types):
+            return
+        types = constant(t.types)
+        assert isinstance(types, list)
+        for ct in types:
+            if isinstance(ct, Type):
+                yield ct
+    elif isinstance(t, Array):
+        et = t.element_type
+        if isinstance(et, Type):
+            yield et
+
+
+def type_contains_trait(t: Value[TypeType], trait: Type) -> bool:
+    """Whether *t* declares *trait*, or any aggregate component does,
+    transitively. Recursive type declarations are not constructible
+    today (see the recursive-types TODO), so recursion terminates."""
+    if t.has_trait(trait):
+        return True
+    return any(type_contains_trait(ct, trait) for ct in component_types(t))
 
 
 def _same_type(a: Value[TypeType], b: Value[TypeType]) -> bool:

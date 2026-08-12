@@ -8,6 +8,7 @@ import weakref
 import dgen
 from dgen.asm import asm_with_imports
 from dgen.block import Block, BlockArgument, BlockParameter
+from dgen.builtins import component_types
 from dgen.dialects.builtin import (
     Affine,
     Alternatives,
@@ -361,13 +362,25 @@ def linearity(value: dgen.Value) -> Linearity:
     cached = _LINEARITY_CACHE.get(t)
     if cached is not None:
         return cached
-    if t.has_trait(_LINEAR_TRAIT):
-        result = Linearity.LINEAR
-    elif t.has_trait(_AFFINE_TRAIT):
-        result = Linearity.AFFINE
-    else:
-        result = Linearity.UNRESTRICTED
+    result = _type_linearity(t)
     _LINEARITY_CACHE[t] = result
+    return result
+
+
+def _type_linearity(t: dgen.Value) -> Linearity:
+    """A type's multiplicity: its own declaration joined with its
+    aggregate components' (the least permissive wins). A tuple carrying
+    an Origin must be consumed exactly once, since dropping it would
+    drop the obligation."""
+    if t.has_trait(_LINEAR_TRAIT):
+        return Linearity.LINEAR
+    result = Linearity.AFFINE if t.has_trait(_AFFINE_TRAIT) else Linearity.UNRESTRICTED
+    for ct in component_types(t):
+        component = _type_linearity(ct)
+        if component is Linearity.LINEAR:
+            return Linearity.LINEAR
+        if component is Linearity.AFFINE:
+            result = Linearity.AFFINE
     return result
 
 

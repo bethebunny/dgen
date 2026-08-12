@@ -3,10 +3,10 @@ from __future__ import annotations
 import enum
 import itertools
 import keyword
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from functools import cached_property
-from typing import ClassVar, Generic, Iterator, TypeVar
+from typing import ClassVar, Generic, TypeVar
 
 from typing_extensions import Self
 
@@ -179,18 +179,25 @@ class Value(Generic[T]):
         The trait/type imports are deferred to function scope because
         they live in ``dgen.dialects.builtin``, downstream of this module.
         """
-        # ``Diverge``/``Handler`` come from the builtin dialect, which is
-        # built on top of this module — defer the import to break the
-        # cycle (the property only runs after both modules load).
+        # ``Diverge``/``Handler`` and the containment helper come from
+        # modules built on top of this one — defer the imports to break
+        # the cycle (the property only runs after both modules load).
+        from dgen.builtins import type_contains_trait
         from dgen.dialects.builtin import Diverge, Handler
 
+        # Containment counts: an aggregate carrying a handler conveys it
+        # (the component can be projected out), so a dependency on the
+        # aggregate may diverge. Possession propagates through
+        # components; usability as a handler operand does not.
         handler_diverge = Handler(effect_type=Diverge())
         candidates = itertools.chain(
             (operand for _, operand in self.operands),
             (param for _, param in self.parameters),
             (capture for _, block in self.blocks for capture in block.captures),
         )
-        is_partial = any(v.type.has_trait(handler_diverge) for v in candidates)
+        is_partial = any(
+            type_contains_trait(v.type, handler_diverge) for v in candidates
+        )
         return Totality.PARTIAL if is_partial else Totality.TOTAL
 
     def replace_operand(self, old: Value, new: Value) -> None:
