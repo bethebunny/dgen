@@ -93,33 +93,81 @@ The verifier does not consult the children's internal Γ. Each child block is
 locally responsible for its own correctness, including consuming its captured
 linear values by its root.
 
-### Unknown block-holding ops
+### Block-execution contracts
 
-An op with owned blocks whose block-execution contract isn't known to the
-verifier is handled conservatively. Today every op with blocks falls in this
-category — there is no per-op contract framework yet, so the predicate
-`_has_known_block_semantics(op)` returns `False` unconditionally (see
-`dgen/ir/verification.py`). When that lands, a future fix.
+Block-holding ops declare how they run their owned blocks via the
+block-execution traits in `builtin.dgen`, written as `has trait` in the
+op's `.dgen` definition. This lets the verifier charge linear captures
+precisely at the parent. The verifier reaches the contract through the
+`Op.verify_block_linearity` protocol. The default implementation
+dispatches on the declared trait via `BlockLinearityContext` in
+`dgen/ir/verification.py`. An op with bespoke execution semantics may
+override the method and compose the context's primitives instead. An op
+that neither declares a trait nor overrides the method fails
+verification. The first four traits cover ops whose block-execution
+multiplicity is intrinsic, meaning fixed by the op's own semantics.
 
-For each capture into an unknown op's child block:
+- `ExactlyOnce` (`unpack`). Each capturing block runs and consumes its
+  linear captures, so the capture is `Consumed` at the op. Two children
+  capturing the same linear value is a static double-consume.
+- `Alternatives` (`control_flow.if`). Exactly one child runs, and
+  children never transfer control into each other. A linear capture is
+  `Consumed` when every completing alternative captures it. It is left
+  untouched when only diverging alternatives capture it, per the
+  divergence-aware composition rule below. It is rejected when captured
+  by only some completing alternatives, which is conditional
+  consumption.
+- `BodyWithHandler` (`error.try`). The body always starts, and the
+  handler block runs iff the body diverges into it. The body may
+  consume a capture before diverging, so only the cleanup-scope pattern
+  where both children capture charges `Consumed`. Other shapes park at
+  `MaybeAvailable`.
+- `ZeroOrMore` (`control_flow.for`/`while`, `function.function`, actor
+  bodies). Owned blocks run zero or more times. No consumption count is
+  sound for a linear capture, because zero runs leak it and two runs
+  double-consume it, so linear captures are rejected. A linear value
+  enters a loop only as a carry (see "Loops" below), which awaits the
+  carry-pair rule. Until carries land, rejection is the contract's
+  entire content.
+
+Affine captures keep the permissive `MaybeAvailable` treatment even under
+a contract. An affine value such as a raise handler or an exit label is
+legitimately captured by many sibling scopes, at most one of which fires
+per path.
+
+The fifth trait, `ExtrinsicBlocks`, is for the goto family. A label
+body's multiplicity is not a property of the op. The branch graph around
+it determines the run count, and the same `goto.label` op is an
+at-most-once except target in one function and an unbounded loop header
+in another, so no intrinsic trait can be honest. `ExtrinsicBlocks` opts
+into conservative verification explicitly, parking captures at
+`MaybeAvailable`. The precision lives at the structured level, and goto
+IR is generated from verified structured IR by the lowerings. Recovering
+precision after lowering would take per-label multiplicity annotations
+stamped by the lowering that knows them, or a CFG dataflow analysis over
+the branch graph. Both are future work if ever needed.
+
+### Conservative capture parking
+
+Ops declaring `ExtrinsicBlocks` park their captures. For each capture
+into such an op's child block:
 
 - `Available → MaybeAvailable`
 - `MaybeAvailable → MaybeAvailable`
 - `Consumed → reject` (cannot capture an already-consumed value)
 
-`MaybeAvailable` says "the inner block might or might not have actually
-consumed this." Multiple sibling unknown ops capturing the same value all
-park at `MaybeAvailable` rather than each charging a `Consumed` transition.
-This is what lets the goto-style if/else lower without tripping double-consume:
-`%then` and `%else` are sibling `goto.label` ops both capturing `%exit`, and
-neither op individually can be said to "definitely consume" `%exit` — only
-the runtime path picks one.
+`MaybeAvailable` says the inner block might or might not have actually
+consumed this. Multiple sibling parked ops capturing the same value all
+stay at `MaybeAvailable` rather than each charging a `Consumed`
+transition. This is what lets the goto-style if/else lower without
+tripping double-consume. `%then` and `%else` are sibling `goto.label`
+ops both capturing `%exit`, and neither op individually can be said to
+definitely consume `%exit`. Only the runtime path picks one.
 
-Direct operand consumes still transition `MaybeAvailable → Consumed`: if a
-known-semantics op afterwards uses the value as a plain operand, the verifier
-trusts that explicit consume. The model is permissive on the unknown side
-and precise on the known side; tightening happens by giving more ops their
-contracts.
+Direct operand consumes still transition `MaybeAvailable → Consumed`. If
+a known-semantics op afterwards uses the value as a plain operand, the
+verifier trusts that explicit consume. The model is permissive on the
+parked side and precise on the contracted side.
 
 ## Branch composition (at-most-once-alternative ops)
 
@@ -138,6 +186,14 @@ For an op like `if` whose alternatives are mutually exclusive:
 
 This means "branch disagreement" is detected through each alternative's local
 verification, not through a parent-side join.
+
+**Divergence-aware composition**: a capture consumed only inside an
+alternative whose every exit diverges (result type `Never`) does not charge
+the parent's Γ — that alternative never returns control, so on every path
+that reaches the parent's subsequent ops the value is still available.
+This is what lets a diverging branch destroy a linear value at-site (e.g.
+before a raise) while the normal path continues the thread. See
+`docs/origins.md`.
 
 ## Loops (zero-or-more-with-carry)
 

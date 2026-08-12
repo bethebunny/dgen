@@ -1,8 +1,12 @@
-from builtin import Nil, Span
+from builtin import Nil, Span, ZeroOrMore
 
 type Function<arguments: Span<Type>, result_type: Type>:
     data: Pointer<Nil>
 
+# A function body runs once per call, which is zero or more times
+# relative to its defining scope. Linear captures (closures over
+# linear values) are rejected, matching docs/origins.md.
 op function<result_type: Type>() -> Function:
     block body
+    has trait ZeroOrMore
 op call<callee: Function>(arguments: Span)

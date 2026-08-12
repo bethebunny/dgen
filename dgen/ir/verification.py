@@ -6,12 +6,21 @@ import enum
 import weakref
 
 import dgen
+from dgen.asm import asm_with_imports
 from dgen.block import Block, BlockArgument, BlockParameter
-from dgen.dialects.builtin import Affine, Linear
+from dgen.dialects.builtin import (
+    Affine,
+    Alternatives,
+    BodyWithHandler,
+    ExactlyOnce,
+    ExtrinsicBlocks,
+    Linear,
+    Never,
+    ZeroOrMore,
+)
 from dgen.dialects.function import FunctionOp
 from dgen.ir.constraints import TraitConstraint
 from dgen.ir.traversal import all_blocks, all_values
-from dgen.asm import asm_with_imports
 from dgen.type import Type, constant, format_value
 
 # Singleton trait instances — `linearity()` is on the hot path, and naive
@@ -19,11 +28,23 @@ from dgen.type import Type, constant, format_value
 _LINEAR_TRAIT = Linear()
 _AFFINE_TRAIT = Affine()
 
+# Block-execution traits (see builtin.dgen and Op.verify_block_linearity).
+_EXACTLY_ONCE_TRAIT = ExactlyOnce()
+_ALTERNATIVES_TRAIT = Alternatives()
+_BODY_WITH_HANDLER_TRAIT = BodyWithHandler()
+_ZERO_OR_MORE_TRAIT = ZeroOrMore()
+_EXTRINSIC_BLOCKS_TRAIT = ExtrinsicBlocks()
+
 # Cache `linearity` keyed on the value's type. `has_trait` does a structural
 # `to_json()` comparison per declared trait; profiling showed this accounted
 # for ~40% of test time. Linear/Affine declarations are class-level facts
-# in this codebase, so a per-type-instance cache is safe.
-_LINEARITY_CACHE: weakref.WeakKeyDictionary["dgen.Value", "Linearity"] = (
+# in this codebase, so a per-type-instance cache is safe. Keying per
+# instance rather than per class keeps this correct even if trait
+# declarations ever become parametric. The remaining hazard would be
+# in-place mutation of a type's declared traits, which nothing does. The
+# `traits` property is built from the immutable `.dgen` declaration at
+# dialect load.
+_LINEARITY_CACHE: weakref.WeakKeyDictionary[dgen.Value, Linearity] = (
     weakref.WeakKeyDictionary()
 )
 
@@ -55,6 +76,19 @@ class DoubleConsumeError(LinearityError):
 class LinearLeakError(LinearityError):
     """A linear value remains ``Available`` at a block's exit and is not
     the block's result — its single-consume obligation is unmet."""
+
+
+class ZeroOrMoreCaptureError(LinearityError):
+    """A linear value is captured into a block that runs zero or more
+    times. Zero runs leak it and two runs double-consume it. Thread it
+    as a loop carry instead."""
+
+
+class UndeclaredBlockContractError(VerificationError):
+    """A block-holding op neither declares a block-execution trait nor
+    overrides ``Op.verify_block_linearity``. The verifier has no basis
+    for charging its captures. Declare one of the block-execution
+    traits in ``builtin.dgen``."""
 
 
 def _annotated_asm(root: dgen.Value, target: dgen.Value) -> str:
@@ -285,16 +319,16 @@ def verify_constraints(root: dgen.Value) -> None:
 # own Γ_in and the parent's Γ proceeds without consulting the children's
 # internal state.
 #
-# Block-holding ops are conservative: any op with owned blocks is treated
-# as having unknown semantics today (see ``_has_known_block_semantics``).
-# A capture into such an op transitions the source value to
-# ``MAYBE_AVAILABLE`` in the parent's Γ rather than ``CONSUMED`` — the
-# inner block may or may not have actually used the value, so neither
-# "definitely consumed" nor "definitely still available" is right. At
-# the parent's exit check ``MAYBE_AVAILABLE`` is treated permissively
-# (no leak). Once an op declares its block-execution contract precisely
-# the verifier can transition to ``CONSUMED`` for ops known to consume
-# captured values.
+# Block-holding ops charge their child-block captures through the
+# ``Op.verify_block_linearity`` protocol. The default implementation
+# dispatches on the op's declared block-execution trait (see
+# ``builtin.dgen``) via ``BlockLinearityContext``. Bespoke ops may
+# override the method instead. An op that declares no trait and does
+# not override fails verification. ``ExtrinsicBlocks`` ops park each
+# capture at ``MAYBE_AVAILABLE`` in the parent's Γ rather than
+# ``CONSUMED``, because the inner block may or may not have used the
+# value. The parent's exit check treats ``MAYBE_AVAILABLE``
+# permissively.
 
 
 class Linearity(enum.Enum):
@@ -356,20 +390,18 @@ class _State(enum.Enum):
     CONSUMED = "consumed"
 
 
-def _has_known_block_semantics(op: dgen.Op) -> bool:
-    """Whether the verifier knows how *op* uses its captured-into-child
-    substructural values.
+def _diverges(block: Block) -> bool:
+    """Whether *block* never returns control to its parent.
 
-    Today: always ``False`` for any op with owned blocks. This is the
-    conservative shim that keeps the verifier sound while we don't have
-    per-op linearity contracts. Ops without blocks (``raise``, ``branch``,
-    chains, etc.) don't reach this codepath at all.
-
-    See `TODO.md` (Type system / effects) for the path forward — likely a
-    trait or method on ``Op`` that ops opt into when they want precise
-    treatment.
+    Proxied by a ``Never`` result type, the same proxy
+    ``ControlFlowToGoto`` uses. See the terminator-check TODO in
+    ``TODO.md``. An unresolved result type (still a plain ``Value``,
+    not yet a resolved ``Type``) reads as completing. That direction is
+    safe. Every rule consulting this treats completing as the demanding
+    case, so misreading a diverging block as completing can only reject
+    more programs. It can never accept a leak.
     """
-    return False
+    return isinstance(block.result.type, Never)
 
 
 def _consume_at(
@@ -428,6 +460,189 @@ def _capture_into_unknown(
         gamma[value] = _State.MAYBE_AVAILABLE
 
 
+class BlockLinearityContext:
+    """The API handed to ``Op.verify_block_linearity``.
+
+    Exposes primitives for charging captured values in the enclosing
+    block's Γ, plus a standard implementation for each block-execution
+    trait declared in ``builtin.dgen``. The default
+    ``Op.verify_block_linearity`` calls :meth:`from_traits`.
+    Block-holding ops with bespoke semantics override the method and
+    compose the primitives instead.
+
+    Throughout, linear captures charge precisely while affine captures
+    keep the permissive ``MAYBE_AVAILABLE`` treatment. An affine value
+    such as a raise handler or an exit label is legitimately captured
+    by many sibling scopes. At most one of the captured uses fires per
+    runtime path, and charging ``CONSUMED`` at the first scope would
+    reject the rest.
+    """
+
+    def __init__(
+        self,
+        gamma: dict[dgen.Value, _State],
+        op: dgen.Op,
+        root: dgen.Value,
+    ) -> None:
+        self._gamma = gamma
+        self._op = op
+        self._root = root
+
+    # -- primitives --------------------------------------------------------
+
+    def consume(self, value: dgen.Value) -> None:
+        """Charge *value* ``CONSUMED``. Rejects a double-consume."""
+        _consume_at(self._gamma, value, by=self._op, root=self._root)
+
+    def park(self, value: dgen.Value) -> None:
+        """Park *value* at ``MAYBE_AVAILABLE``, the conservative
+        treatment. Rejects capture-after-consume."""
+        _capture_into_unknown(self._gamma, value, by=self._op, root=self._root)
+
+    def _collected_captures(
+        self,
+    ) -> tuple[dict[dgen.Value, list[Block]], set[dgen.Value]]:
+        """Substructural captures of the op's children, as
+        ``({linear value: capturing blocks}, {affine values})``."""
+        linear_capturing: dict[dgen.Value, list[Block]] = {}
+        affine_caps: set[dgen.Value] = set()
+        for _, child in self._op.blocks:
+            for cap in child.captures:
+                if is_linear(cap):
+                    linear_capturing.setdefault(cap, []).append(child)
+                elif is_affine_or_linear(cap):
+                    affine_caps.add(cap)
+        return linear_capturing, affine_caps
+
+    # -- standard trait implementations ------------------------------------
+
+    def from_traits(self) -> None:
+        """Dispatch on the op's declared block-execution trait from
+        ``builtin.dgen``. An op declaring none fails verification."""
+        op = self._op
+        if op.has_trait(_EXACTLY_ONCE_TRAIT):
+            self.exactly_once()
+        elif op.has_trait(_ALTERNATIVES_TRAIT):
+            self.alternatives()
+        elif op.has_trait(_BODY_WITH_HANDLER_TRAIT):
+            self.body_with_handler()
+        elif op.has_trait(_ZERO_OR_MORE_TRAIT):
+            self.zero_or_more()
+        elif op.has_trait(_EXTRINSIC_BLOCKS_TRAIT):
+            # The goto family. Block multiplicity is a property of the
+            # branch graph, so conservative parking is the honest
+            # treatment. Precision lives at the structured level that
+            # lowered here.
+            self.conservative()
+        else:
+            raise UndeclaredBlockContractError(
+                f"block-holding {type(op).__name__} %{op.name} declares no "
+                f"block-execution trait and does not override "
+                f"verify_block_linearity; declare one of the "
+                f"block-execution traits in builtin.dgen\n\n"
+                + _annotated_asm(self._root, op)
+            )
+
+    def conservative(self) -> None:
+        """Park every substructural capture. The treatment for blocks
+        whose execution count the op cannot know."""
+        linear_capturing, affine_caps = self._collected_captures()
+        for cap in affine_caps | set(linear_capturing):
+            self.park(cap)
+
+    def exactly_once(self) -> None:
+        """Every owned block runs exactly once. Each capturing block
+        consumes its linear captures, enforced by its own local
+        verification. One capturing child therefore consumes at the op,
+        and two capturing children is a static double-consume."""
+        linear_capturing, affine_caps = self._collected_captures()
+        for cap in affine_caps:
+            self.park(cap)
+        for cap, capturing in linear_capturing.items():
+            if len(capturing) > 1:
+                raise DoubleConsumeError(
+                    f"linear {type(cap).__name__} %{cap.name} captured by "
+                    f"{len(capturing)} blocks of {type(self._op).__name__} "
+                    f"%{self._op.name}, each of which runs\n\n"
+                    + _annotated_asm(self._root, cap)
+                )
+            self.consume(cap)
+
+    def alternatives(self) -> None:
+        """Exactly one owned block runs, and the blocks never transfer
+        control into each other. For each linear capture there are
+        three cases.
+
+        If every non-capturing child diverges, every completing path
+        consumes the value, so it charges ``CONSUMED``. One charge,
+        deduped across children per branch composition. If every
+        capturing child diverges, the value is consumed only on paths
+        that never return, so the parent's thread continues. This is
+        the divergence-aware rule, and capture-after-consume is still
+        rejected. Otherwise some completing path consumes the value
+        and another leaks it, which is rejected.
+        """
+        children = [child for _, child in self._op.blocks]
+        linear_capturing, affine_caps = self._collected_captures()
+        for cap in affine_caps:
+            self.park(cap)
+        for cap, capturing in linear_capturing.items():
+            noncapturing = [c for c in children if c not in capturing]
+            if all(_diverges(c) for c in noncapturing):
+                self.consume(cap)
+            elif all(_diverges(c) for c in capturing):
+                if self._gamma.get(cap) is _State.CONSUMED:
+                    raise DoubleConsumeError(
+                        f"linear {type(cap).__name__} %{cap.name} captured "
+                        f"into {type(self._op).__name__} %{self._op.name} "
+                        f"after being consumed\n\n" + _annotated_asm(self._root, cap)
+                    )
+            else:
+                raise LinearLeakError(
+                    f"linear {type(cap).__name__} %{cap.name} is captured "
+                    f"by only some completing alternatives of "
+                    f"{type(self._op).__name__} %{self._op.name} and leaks "
+                    f"on the alternatives that neither capture it nor "
+                    f"diverge\n\n" + _annotated_asm(self._root, cap)
+                )
+
+    def body_with_handler(self) -> None:
+        """A body block that always starts plus a handler block that
+        runs iff the body diverges into it. Unlike ``alternatives``,
+        the body may consume a capture before diverging, so a body-only
+        capture cannot be charged precisely. Only the cleanup-scope
+        pattern where every child captures the value charges
+        ``CONSUMED``."""
+        children = [child for _, child in self._op.blocks]
+        linear_capturing, affine_caps = self._collected_captures()
+        for cap in affine_caps:
+            self.park(cap)
+        for cap, capturing in linear_capturing.items():
+            if len(capturing) == len(children):
+                self.consume(cap)
+            else:
+                self.park(cap)
+
+    def zero_or_more(self) -> None:
+        """Owned blocks run zero or more times. No consumption count
+        works for a linear capture, since zero runs leak it and two
+        runs double-consume it, so linear captures are rejected
+        outright. Linear values must enter a loop as carries, which
+        awaits the carry-pair rule in ``TODO.md``. Affine captures park
+        as usual."""
+        linear_capturing, affine_caps = self._collected_captures()
+        for cap in affine_caps:
+            self.park(cap)
+        for cap in linear_capturing:
+            raise ZeroOrMoreCaptureError(
+                f"linear {type(cap).__name__} %{cap.name} captured into a "
+                f"zero-or-more block of {type(self._op).__name__} "
+                f"%{self._op.name}. A linear value cannot be captured "
+                f"into a body that may run zero or more times. Thread it "
+                f"as a loop carry instead\n\n" + _annotated_asm(self._root, cap)
+            )
+
+
 def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
     """Verify the typing-context invariants on a single block.
 
@@ -454,18 +669,13 @@ def _verify_linearity_block(block: Block, root: dgen.Value) -> None:
             for _, dep in source:
                 if is_affine_or_linear(dep):
                     _consume_at(gamma, dep, by=v, root=root)
-        # Captures into child blocks. Today every block-holding op is
-        # treated as unknown-semantics — the captured value transitions
-        # to ``MAYBE_AVAILABLE`` rather than ``CONSUMED``. Captures dedup
-        # across alternative children of one op (branch-composition).
-        if v.blocks and not _has_known_block_semantics(v):
-            for cap in {
-                c
-                for _, child in v.blocks
-                for c in child.captures
-                if is_affine_or_linear(c)
-            }:
-                _capture_into_unknown(gamma, cap, by=v, root=root)
+        # Captures into child blocks charge through the op's
+        # ``verify_block_linearity`` protocol. Trait-declared contracts
+        # charge linear captures precisely, and ``ExtrinsicBlocks`` ops
+        # park captures at ``MAYBE_AVAILABLE``. Captures dedup across
+        # alternative children of one op per branch composition.
+        if v.__blocks__:
+            v.verify_block_linearity(BlockLinearityContext(gamma, v, root))
         # Each child block verified independently with its own Γ_in.
         for _, child in v.blocks:
             _verify_linearity_block(child, root)
