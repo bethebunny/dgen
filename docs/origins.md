@@ -48,7 +48,7 @@ The end state splits the roles.
 
 Five commitments:
 
-1. **References are data.** `Ref<T>` is an unrestricted pointer value. It can
+1. **References are data.** `Reference<T>` is an unrestricted pointer value. It can
    be copied, stored, packed into records, passed anywhere. Producing an
    address is pure.
 2. **Origins are evidence.** An `Origin` is a linear, zero-layout SSA value:
@@ -80,13 +80,13 @@ type Origin:
     has trait Handler<State>
 
 # Plain pointer data. Unrestricted.
-type Ref<element_type: Type>:
+type Reference<element_type: Type>:
     data: Pointer<Nil>
 ```
 
 `Reference<T>` (linear, fused) and `Buffer<T>` (unrestricted, mem-token) both
-dissolve into `Ref<T>` + `Origin`. Indexed storage is `Ref<Array<T, n>>` /
-`Ref<Span<T>>` rather than a distinct buffer type, matching the existing TODO
+dissolve into `Reference<T>` + `Origin`. Indexed storage is `Reference<Array<T, n>>` /
+`Reference<Span<T>>` rather than a distinct buffer type, matching the existing TODO
 to move `toy.Tensor` to `Pointer<Array<...>>`.
 
 ### Core ops
@@ -94,16 +94,16 @@ to move `toy.Tensor` to `Pointer<Array<...>>`.
 ```
 # Allocation returns the address and the evidence. The origin's base
 # destructor is the matching deallocation (free / stack lifetime end).
-op heap_allocate<T: Type>()  -> Tuple<Ref<T>, Origin>
-op stack_allocate<T: Type>() -> Tuple<Ref<T>, Origin>
+op heap_allocate<T: Type>()  -> Tuple<Reference<T>, Origin>
+op stack_allocate<T: Type>() -> Tuple<Reference<T>, Origin>
 
 # Addressing: pure, no evidence involved.
-op element_ref(ref: Ref<Array<T, n>>, index: Index) -> Ref<T>
-op field_ref<index: Index>(ref: Ref<R>) -> Ref<F>
+op element_ref(ref: Reference<Array<T, n>>, index: Index) -> Reference<T>
+op field_ref<index: Index>(ref: Reference<R>) -> Reference<F>
 
 # Access: evidence in, evidence out.
-op load(o: Origin, ref: Ref<T>) -> Tuple<T, Origin>
-op store(o: Origin, ref: Ref<T>, value: T) -> Origin
+op load(o: Origin, ref: Reference<T>) -> Tuple<T, Origin>
+op store(o: Origin, ref: Reference<T>, value: T) -> Origin
 
 # Discharge: runs the origin's destructor stack, then its base deallocation.
 op destroy(o: Origin) -> Nil
@@ -339,8 +339,8 @@ type; `index.Index` stands in here.)
 ```
 %f : function.Function<[index.Index, index.Index], index.Index> = function.function<index.Index>() body(%a: index.Index, %b: index.Index):
     %t : index.Index = error.try<index.Index>() body<%h: error.RaiseHandler<index.Index>>() captures(%a, %b):
-        %alloc : Tuple<[memory.Ref<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
-        %r : index.Index = unpack(%alloc) body(%ref: memory.Ref<index.Index>, %o: memory.Origin) captures(%a, %b, %h):
+        %alloc : Tuple<[memory.Reference<index.Index>, memory.Origin]> = memory.heap_allocate<index.Index>()
+        %r : index.Index = unpack(%alloc) body(%ref: memory.Reference<index.Index>, %o: memory.Origin) captures(%a, %b, %h):
             # cleanup scope for %o
             %qo : Tuple<[index.Index, memory.Origin]> = error.try<index.Index>() body<%h2: error.RaiseHandler<index.Index>>() captures(%a, %b, %o):
                 %q : index.Index = checked.div_checked(%h2, %a, %b)
@@ -453,7 +453,7 @@ alternatives.
 Origins are ordinary values, so function boundaries need no new features:
 
 - **Ownership transfer out**: return an `Origin` (alone or paired with its
-  `Ref`). Returning consumes it locally; the caller receives the obligation.
+  `Reference`). Returning consumes it locally; the caller receives the obligation.
 - **Ownership transfer in**: take an `Origin` parameter. The callee must
   consume it (destroy, return, or thread into a returned structure).
 - **Borrowing**: take an origin and return it — `(o: Origin, ...) ->
@@ -551,11 +551,11 @@ Ordered so each step keeps the tree green:
 2. **Loop-carry linearity** (existing TODO): carry-pair modeling in
    `verify_linearity`. Prerequisite for origin-threaded loops.
 3. **Introduce `Origin` + split ops** in `memory.dgen` alongside the current
-   API: `Ref<T>`, two-result allocation, `load(o, ref)`/`store(o, ref, v)`,
+   API: `Reference<T>`, two-result allocation, `load(o, ref)`/`store(o, ref, v)`,
    `destroy`, `attach`. Mark `Origin` as `Linear` — the verifier picks it up
    with no plumbing (existing TODO).
 4. **Migrate single-cell users** off fused `Reference<T>`; delete
-   `Reference`'s `Linear`/`Handler` traits by folding it into `Ref<T>`.
+   `Reference`'s `Linear`/`Handler` traits by folding it into `Reference<T>`.
 5. **Migrate buffer users** (ndbuffer, record, existential lowerings,
    `passes/support/memory.py`) off mem tokens; delete `Buffer<T>` and the
    `mem` operands. Real `free` in destroy; stack lifetime markers.
@@ -600,10 +600,10 @@ above.)
   parameterizing `Origin` later is verifier-facing only (origins have no
   runtime representation), so it is additive. *Forcing point:* none for v1;
   revisit when a frontend wants to write splits by hand.
-- **Escape analysis**: a `Ref` outliving its origin is dangling. Linearity
+- **Escape analysis**: a `Reference` outliving its origin is dangling. Linearity
   prevents the origin disappearing while *threaded* uses remain, but a stored
-  `Ref` reloaded after `destroy` is not caught. Candidate: origins
-  parameterize `Ref` types (`Ref<T, o>`) so staleness is a type error. This
+  `Reference` reloaded after `destroy` is not caught. Candidate: origins
+  parameterize `Reference` types (`Reference<T, o>`) so staleness is a type error. This
   is a monotone strengthening — it rejects more programs and changes no
   semantics — and addressing ops just propagate the parameter, so
   addressing-is-pure survives. Churn is broad but mechanical. *Forcing
