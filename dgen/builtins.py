@@ -115,7 +115,13 @@ def pack(values: Iterable[Value] = ()) -> PackOp | Constant:
     vals = list(values)
     ty = _pack_type([v.type for v in vals])
     if all(is_constant(v) for v in vals):
-        return ty.constant([constant(v) for v in vals])
+        try:
+            return ty.constant([constant(v) for v in vals])
+        except NotImplementedError:
+            # A Type element can materialise without serializing when a
+            # parameter references an op (e.g. Origin<%dtor>). Carry it
+            # as a runtime pack instead.
+            pass
     return PackOp(values=vals, type=ty)
 
 

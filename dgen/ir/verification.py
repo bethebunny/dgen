@@ -180,12 +180,14 @@ def _verify_unique_ownership(root: dgen.Value) -> None:
             for _, child in op.blocks:
                 _check(child, op.name or type(op).__name__)
 
-    starts: list[dgen.Value] = [
-        v for v in all_values(root) if isinstance(v, FunctionOp)
+    starts: list[dgen.Value] = [root] + [
+        v for v in all_values(root) if isinstance(v, FunctionOp) and v is not root
     ]
-    if root not in starts:
-        starts.append(root)
     for v in starts:
+        # A function value defined inside another scope was already
+        # claimed by that scope's walk. It is not an independent root.
+        if v in owner:
+            continue
         for _, block in v.blocks:
             _check(block, v.name or type(v).__name__)
 

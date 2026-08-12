@@ -7,9 +7,10 @@ Allocation/deallocation ops lower here:
                                       allocation's Tuple<[Reference<T>, Origin]>
                                       consumers expect. Origin is zero-sized.
     memory.stack_allocate<T>()      → llvm.alloca(byte_size(T)), packed likewise
-    memory.destroy(origin)          → no-op. This leaks. Real deallocation
-                                      lands with the destructor design in
-                                      docs/origins.md.
+    memory.deallocate(origin, ref)  → extern<"free"> + function.call(ref)
+    memory.destroy(origin)          → error. LowerDestroy applies each
+                                      origin's attached destructor before
+                                      this pass runs.
     memory.buffer_allocate<T>(n)    → extern<"malloc"> + function.call(n * 8)
     memory.buffer_deallocate(_, _)  → no-op
 
@@ -40,6 +41,11 @@ def _malloc_call(byte_count: dgen.Value) -> dgen.Value:
     return function.CallOp(callee=malloc, arguments=pack([byte_count]), type=llvm.Ptr())
 
 
+class UnloweredDestroyError(Exception):
+    """A memory.destroy survived to MemoryToLLVM. Run LowerDestroy
+    earlier in the pipeline."""
+
+
 class MemoryToLLVM(Pass):
     allow_unregistered_ops = True
 
@@ -62,7 +68,21 @@ class MemoryToLLVM(Pass):
 
     @lowering_for(memory.DestroyOp)
     def lower_destroy(self, op: memory.DestroyOp) -> dgen.Value | None:
-        return ChainOp(lhs=Nil().constant(None), rhs=op.origin, type=Nil())
+        raise UnloweredDestroyError(
+            f"memory.destroy %{op.name} reached MemoryToLLVM; run "
+            f"LowerDestroy earlier in the pipeline"
+        )
+
+    @lowering_for(memory.DeallocateOp)
+    def lower_deallocate(self, op: memory.DeallocateOp) -> dgen.Value | None:
+        # Chain the origin into the pointer argument so the free stays
+        # ordered after the accesses that produced the origin.
+        ref = ChainOp(lhs=op.ref, rhs=op.origin, type=op.ref.type)
+        free = ExternOp(
+            symbol=String().constant("free"),
+            type=function.Function(arguments=pack([llvm.Ptr()]), result_type=Nil()),
+        )
+        return function.CallOp(callee=free, arguments=pack([ref]), type=Nil())
 
     @lowering_for(memory.BufferAllocateOp)
     def lower_buffer_allocate(self, op: memory.BufferAllocateOp) -> dgen.Value | None:
