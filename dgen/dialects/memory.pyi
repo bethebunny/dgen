@@ -53,6 +53,12 @@ class DestroyOp(Op):
     type: Type = Nil()
 
 @dataclass(eq=False)
+class DeallocateOp(Op):
+    origin: Value
+    ref: Value
+    type: Type = Nil()
+
+@dataclass(eq=False)
 class BufferAllocateOp(Op):
     element_type: Value[dgen.TypeType]
     count: Value

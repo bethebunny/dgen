@@ -27,6 +27,7 @@ from dgen.llvm.memory_to_llvm import MemoryToLLVM
 from dgen.passes.compiler import Compiler
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.lower_builtin import LowerBuiltin
+from dgen.passes.lower_destroy import LowerDestroy
 from dgen.passes.normalize_region_terminators import NormalizeRegionTerminators
 from dgen.testing import assert_ir_equivalent, strip_prefix
 
@@ -35,6 +36,7 @@ def _jit(ir: str, *args: object) -> object:
     value = parse(strip_prefix(ir))
     compiler: Compiler[Executable] = Compiler(
         [
+            LowerDestroy(),
             LowerBuiltin(),
             ControlFlowToGoto(),
             NormalizeRegionTerminators(),

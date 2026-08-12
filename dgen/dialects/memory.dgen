@@ -30,6 +30,10 @@ op load(origin: Origin, ref: Reference)
 op store(origin: Origin, ref: Reference, value: Type) -> Origin
 op destroy(origin: Origin) -> Nil
 
+# Emitted by the LowerDestroy pass for heap destroys. Frontends use
+# destroy.
+op deallocate(origin: Origin, ref: Reference) -> Nil
+
 # The mem operand is the previous operation on the buffer.
 op buffer_allocate<element_type: Type>(count: Index) -> Buffer<element_type>
 op buffer_stack_allocate<element_type: Type>(count: Index) -> Buffer<element_type>
