@@ -481,11 +481,16 @@ and what is genuinely deferred:
   linear value open across it); a callee that holds origins across risky
   code wraps its own local try and re-raises to the parameter. Always
   achievable, no new ops.
-- **Handlers are second-class**: passable downward as arguments, never
-  returned, stored to memory, or captured into escaping function values.
-  They are `layout Void`, so storage is meaningless anyway; a verifier
-  rule makes the restriction explicit. This is what keeps handler
-  resolution meaningful under inlining and lowering.
+- **Diverging handlers are second-class. Origins are not.** A handler's
+  class is determined by its lowering. A `RaiseHandler` resolves to a
+  place in the code and compiles to a direct branch, so it may be passed
+  downward as an argument but never returned, stored to memory, or
+  captured into an escaping function value. A branch target does not
+  outlive its frame, and this restriction is what keeps raise free of
+  runtime evidence. A verifier rule makes it explicit. An `Origin`
+  erases instead of resolving to a place, so escape is harmless and
+  linearity is the only discipline it needs. Functions return origins,
+  and aggregates carry them, as above.
 - **The only real gap is lowering.** `raise_catch_to_goto` resolves each
   raise to its try by handler identity, and `goto.Label`s are
   intra-function — that is the actual content of `docs/effects.md`'s "v1:
