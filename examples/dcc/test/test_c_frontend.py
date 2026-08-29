@@ -19,11 +19,15 @@ from dgen.builtins import pack
 
 from click.testing import CliRunner
 
+from dgen.passes.compiler import Compiler, IdentityPass
+
 from dcc.cli import c_compiler, main, run_file
 from dcc.dialects import c, c_double, c_float, c_int, c_ptr, c_void
 from dcc.parser.c_parser import parse_c_string
 from dcc.parser.lowering import LoweringError, Parser, Scope, lower
 from dcc.parser.type_resolver import TypeResolver, TypeResolverError
+from dcc.passes.c_lvalue_to_memory import CLvalueToMemory
+from dcc.passes.thread_loop_memory import ThreadLoopMemory
 
 TESTDATA_DIR = Path(__file__).parent / "testdata"
 
@@ -533,6 +537,25 @@ class TestEndToEnd:
             == 2
         )
 
+    def test_nested_while_in_while(self) -> None:
+        """Loop-in-loop: each loop must carry its OWN memory token.
+
+        f(n) runs an inner while n times for each of n outer iterations,
+        incrementing t once per inner iteration -> t == n*n. Threading is
+        per-loop: the inner loop is threaded by its own handler, not
+        double-threaded by the outer.
+        """
+        assert (
+            run_c(
+                "int f(int n) { int t = 0; int i = 0;"
+                " while (i < n) { int j = 0;"
+                " while (j < n) { t = t + 1; j = j + 1; }"
+                " i = i + 1; } return t; }",
+                4,
+            )
+            == 16
+        )
+
     def test_while_read_then_outer_write(self) -> None:
         """Reads inside while body must fence subsequent write."""
         assert (
@@ -542,6 +565,21 @@ class TestEndToEnd:
             )
             == 30
         )
+
+
+class TestThreadLoopMemory:
+    def test_unthreaded_loop_rejected(self) -> None:
+        """The pass postcondition catches a loop whose buffer ops read
+        loop-external mem — the shape whose cross-iteration ordering is
+        only implicit in the alloca, which the iteration contract forbids."""
+        ir = lower(
+            parse_c_string(
+                "int f(int n) { int i = 0; while (i < n) { i = i + 1; } return i; }"
+            )
+        )
+        unthreaded = Compiler([CLvalueToMemory()], IdentityPass()).run(ir)
+        with pytest.raises(ValueError, match="loop-external mem"):
+            ThreadLoopMemory().verify_postconditions(unthreaded)
 
 
 class TestBreakContinue:

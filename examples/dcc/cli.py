@@ -18,6 +18,7 @@ from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dcc.parser.c_parser import parse_c_file
 from dcc.parser.lowering import lower
 from dcc.passes.c_lvalue_to_memory import CLvalueToMemory
+from dcc.passes.thread_loop_memory import ThreadLoopMemory
 
 # Make dcc dialects discoverable for IR parsing round-trips.
 dgen.PATH.append(Path(__file__).parent / "dialects")
@@ -29,6 +30,7 @@ c_compiler: Compiler[Executable] = Compiler(
         # CStructLayout(),         # Brick 8: before lvalue elimination
         # CImplicitConversions(),  # Brick 9: before lvalue elimination
         CLvalueToMemory(),
+        ThreadLoopMemory(),
         # CToLLVM(),               # Brick 10: after lvalue elimination
         ControlFlowToGoto(),
         MemoryToLLVM(),

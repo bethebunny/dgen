@@ -160,6 +160,29 @@ Higher-level ops that all lower to `goto` via `ControlFlowToGoto`.
   `branch<%exit>(value)`. Region type is the if's result type; the merge phi
   emerges at `%exit`.
 
+#### Loop iteration contract: concurrent vs sequential
+
+A `control_flow` loop's iterations are **sequential** iff its carry threads a
+dataflow/effect token — a value produced by iteration *n* and consumed by
+iteration *n+1* (e.g. a memory effect token carried as a loop block argument).
+Threading the token makes the cross-iteration ordering explicit in the IR:
+each iteration's effects depend on the previous iteration's through the
+carried value, so iterations cannot be reordered.
+
+A loop with **no** such carry has **concurrent** iterations: there is no
+iteration-to-iteration data dependency, so iterations are independent and
+reorderable. Absence of a carried token is the natural use-def reading of
+"no ordering between iterations".
+
+Loops that mutate shared memory (e.g. dcc's C `while`/`for`) must thread a
+memory effect token through the carry to obtain sequential semantics. The
+frontend establishes this — dcc's `ThreadLoopMemory` rewires each in-loop
+buffer load/store whose `mem` operand is loop-external onto a fresh `Nil`
+loop-carried block argument, and wraps the outgoing token in a 1-tuple so it
+feeds back through the header. The `Nil` carry has no runtime representation,
+so codegen erases its phi; the token exists purely to encode ordering at the
+IR level.
+
 ---
 
 ## Relationship to Sea-of-Nodes
