@@ -7,11 +7,10 @@
 #       comptime L = TypeList.of[Int]()
 #       comptime L = TypeList._concat[L.values, ...]()
 #     -> error: invalid redefinition of 'L'
-# (3) There is no mutating comptime append:
-#       comptime _ = L.append[String]()
-#     -> error: 'TypeList[Int]' value has no attribute 'append'
-#     Comptime values are immutable and pure: every "append" is a new value
-#     under a new name, so it yields a new, distinct Any type (== Extend).
+# (3) TypeList simply has no append (every op returns a new list: of,
+#     tabulate, map, filter_idx, slice, reverse, _concat), so its error proves
+#     nothing about mutability. See p15 for a regular comptime List: named
+#     comptime values are rvalues and can't be mutated after definition.
 # Side note: `comptime VTable = Int` fails to satisfy TraitAdapter's
 # `vtable_for` signature check; a one-field struct works.
 from std.builtin.variadics import TypeList
