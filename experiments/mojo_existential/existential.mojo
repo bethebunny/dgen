@@ -304,6 +304,54 @@ struct AnyBox[Base: type_of(AnyType), *Adapters: TraitAdapter](Erased, Movable):
             Existential[*Self.Adapters].Witness[Self.Base]
         ]()[]
 
+    def isa[T: AnyType](self) -> Bool:
+        """Whether the erased type is exactly `T`."""
+        return self._h.type_id() == type_id[T]()
+
+    def take[
+        T: Movable
+    ](deinit self) raises TakeError[Self.Base, *Self.Adapters] -> T:
+        """Move the erased value out as `T`, consuming the `Any`.
+
+        On a type mismatch nothing is lost: the raised `TakeError` carries the
+        `Any` back (like Rust's `Box<dyn Any>::downcast` returning `Err(self)`).
+        """
+        if self._h.type_id() != type_id[T]():
+            raise TakeError(
+                AnyBox[Self.Base, *Self.Adapters](unsafe_header=self._h),
+                reflect[T].name(),
+            )
+        var p = self._h.data.unsafe_bitcast[T]()
+        var value = p.unsafe_take_pointee()
+        p.unsafe_free()  # the box only; T was moved out, not destroyed
+        return value^
+
+
+struct TakeError[Base: type_of(AnyType), *Adapters: TraitAdapter](
+    Movable, Writable
+):
+    """Raised by `AnyBox.take` on a type mismatch; owns the original `Any`."""
+
+    var value: AnyBox[Self.Base, *Self.Adapters]
+    var expected: StaticString
+
+    def __init__(
+        out self,
+        var value: AnyBox[Self.Base, *Self.Adapters],
+        expected: StaticString,
+    ):
+        self.value = value^
+        self.expected = expected
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(
+            "cannot take ", self.value.type_name(), " as ", self.expected
+        )
+
+    def into_value(deinit self) -> AnyBox[Self.Base, *Self.Adapters]:
+        """Recover the `Any` that failed to be taken."""
+        return self.value^
+
 
 def _header_of[X: AnyType](ref x: X) -> Header:
     comptime assert conforms_to(X, Erased), "not an existential or witness"

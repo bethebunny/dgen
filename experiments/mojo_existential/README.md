@@ -139,17 +139,45 @@ Each `Any`'s metadata is generated when the value is boxed, from that universe's
 | **Library generic over the universe** | `def make[*Ad: TraitAdapter]() -> AnyBox[Shape, *Ad]` | Whatever universe the caller instantiates. Every API that touches `Any` has to carry the parameter. | `probes/p13` |
 | **Late binding by import path** | The library does `from existential_universe import universe`, and each app puts its own `existential_universe.mojo` on `-I` | The whole program, assembled at build time. Source builds only: a precompiled `.mojopkg` would bake in its import. | `probes/latebind/` |
 | **Runtime registration** | `register[T, DynNew]()` per `(type, trait)` pair, checked at compile time that `T: DynNew.Trait` | Every `Any` holding `T`, including values already boxed | `probes/p13`, `test_open_world_registry` |
-| **Retroactive conformance** | `unsafe_register_as[T, DynNew, vtable]()` with a hand-built vtable over free functions | Same as above, for types that *never declared* the trait. Mojo itself can't express this (traits manual: "You can't add traits to existing types"). | `probes/latebind/app_b`, `test_retroactive_conformance` |
+| **Retroactive conformance** | `unsafe_register_as[T, DynNew, vtable]()` with a hand-built vtable over free functions | Same as above, for types that *never declared* the trait. The traits manual says "You can't add traits to existing types"; the undocumented `__extension` can only partly (see below). | `probes/latebind/app_b`, `test_retroactive_conformance` |
 
 **A `comptime` list in `Any`, appended to by registration?** Holding the list works: `AnyBox[Base, *list]`, where `list` is a `TypeList` value, is equivalent to the variadic form (`probes/p14`). Appending doesn't. Compile-time evaluation runs ordinary code, so a function can *build* a list with `append`. But a named `comptime` value is an rvalue: `xs.append(3)` is "invalid use of mutating method on rvalue", and re-declaring `xs` is "invalid redefinition" (`probes/p15`). (`TypeList`, the compile-time list of *types*, has no `append` at all; all its operations return new lists.) Every "append" is therefore a new list under a new name, which gives a new `Any` type; that's exactly `Extend`. What separate registrations would need is a list that is finalised *after* every registration but *before* any `Any` is instantiated, i.e. assembled once for the whole program. In 1.1 the only way to get that is the import-path trick above. Upstream `main` (after 1.1) adds something close: a compilation target can carry an `opaque_plugin` type list, read with `#kgen.get_target_plugin` ([test](https://github.com/modular/modular/blob/a1ccd09/Mojo/test/mojo-integration/compile_offload/target_plugin.mojo)). It's still set in one place, when the target is constructed, not appended to by declarations.
 
 What *can't* work: registering a trait on its own ("make `DynNew` available for every type") at runtime. A vtable for `(T, NewTrait)` is code that must be instantiated with both known at compile time. At boxing time only `T` is known, at cast time only the trait, and there's no JIT in a built binary. Swift avoids this because the compiler emits conformance records; Rust doesn't offer it at all.
 
+## `__extension` (undocumented, Mojo 1.1)
+
+Mojo has no documented extension blocks: they're absent from the 1.1 docs and from upstream `main`, and `extension`/`extend`/`impl` are syntax errors. Conditional conformance *does* exist, but only on the struct's own declaration: `struct Box[T](Equatable where conforms_to(T, Equatable))` ([reference](https://github.com/modular/modular/blob/mojo/v1.1.0/Mojo/docs/site/reference/struct-declarations.mdx#L323)).
+
+The compiler does accept an underscored `__extension` keyword. What it does (`probes/extension/`):
+
+| Use | Result |
+|---|---|
+| `__extension Point:` adding methods, even to a type from another module or to `String` | Works |
+| `__extension Point(Greet):` where `Greet` is declared in the *same* module | Generic calls accept it, but `conforms_to(Point, Greet)` is still `False` (p16) |
+| `__extension Point(Greet):` where `Greet` is *imported* | Rejected: "'Point' does not implement all requirements for 'Greet'" (p17) |
+| `__extension Wrapper(Greet where ...)` | Rejected: "'where' clauses in conformance lists are only supported on structs" |
+
+Because `conforms_to` ignores extension conformances, the universe machinery never sees them, and `Any[Greet]` refuses to box such a type. What does work today is a method-only extension plus the registry: `__extension Point: def greet(...)`, then `unsafe_register_as[Point, DynGreet, GreetVT(thunk[Point.greet])]()` (p18).
+
+## Taking the value back out
+
+```mojo
+var foo = any^.take[Foo]()        # moves Foo out; frees only the box
+if any.isa[Foo](): ...            # exact-type check
+try:
+    var bar = any^.take[Bar]()
+except e:                         # e: TakeError, a typed error (Mojo 1.1)
+    var any2 = e^.into_value()    # on mismatch the Any comes back, like Rust's Err(self)
+```
+
+`take` consumes the `Any` (`deinit self`). On a match it moves `T` out of the heap box without destroying it, then frees the box. On a mismatch it raises a typed `TakeError` that owns the original `Any`, so nothing is lost and no empty state is needed. Moving a field out of a caught error is a partial move, which Mojo rejects, hence `into_value()`. The tests check the live-instance count on both paths, and the ASan build is clean apart from the registry.
+
 ## Limitations / sharp edges
 
 - **The universe is fixed at boxing time** (see the section above). `TypeMeta.witness` only knows the adapters of the universe the `Any` was created in. Asking it about another adapter falls through to the runtime registry, then reports "does not conform".
 - **Each trait needs a vtable struct and an adapter.** Subtrait adapters re-forward parent methods; composing the parent vtable helps (`MySubTraitVT.base`).
-- **Witnesses are `ref` views.** They borrow from their `Any`. There's no by-value witness and no `take[T]()` out of an `Any` yet (easy to add).
+- **Witnesses are `ref` views.** They borrow from their `Any`. There's no by-value witness. To get an owned value back out, use `any^.take[T]()` (see below).
 - **`Any` is move-only.** `dyn.clone[Base](x)` copies when the erased `T` is `Copyable` and raises otherwise.
 - **It relies on type punning.** That's sound only because adapters are a single `Header` field. `_header_of` asserts `Erased` and `size_of` at compile time.
 - **The registry is not thread-safe** and relies on a private stdlib API. Its buffer lives for the whole process, so LeakSanitizer reports it (24 B per registration). Nothing else leaks; the tests also count live instances.

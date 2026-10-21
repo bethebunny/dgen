@@ -325,6 +325,41 @@ def test_extend_universe() raises:
         _ = trait_cast_via[DynNamed](s)
 
 
+def test_take() raises:
+    var before = live()[]
+    var a: Any[Shape] = Square(9)
+    assert_true(a.isa[Square]())
+    assert_false(a.isa[Tally]())
+    var sq = a^.take[Square]()
+    assert_equal(sq.side, 9)
+    assert_equal(live()[], before + 1)  # moved out, not copied or destroyed
+    _ = sq^
+    assert_equal(live()[], before)
+
+
+def take_tally_or_recover(var a: Any[Shape]) -> Any[Shape]:
+    try:
+        _ = a^.take[Tally]()
+    except e:  # e is a TakeError, not a stringly Error
+        if (
+            String(e)
+            != "cannot take test_existential.Square as test_existential.Tally"
+        ):
+            abort("unexpected TakeError message")
+        return e^.into_value()
+    abort("take should have failed")
+
+
+def test_take_mismatch_returns_value() raises:
+    var before = live()[]
+    var a: Any[Shape] = Square(4)
+    var recovered = take_tally_or_recover(a^)
+    assert_equal(live()[], before + 1)  # still exactly one Square alive
+    assert_equal(recovered[].area(), 16)
+    assert_equal(recovered^.take[Square]().side, 4)
+    assert_equal(live()[], before)
+
+
 def main() raises:
     var before = live()[]
     test_layout()
@@ -339,5 +374,7 @@ def main() raises:
     test_open_world_registry()
     test_retroactive_conformance()
     test_extend_universe()
+    test_take()
+    test_take_mismatch_returns_value()
     assert_equal(live()[], before, "leaked or double-freed instances")
     print("all tests passed; live instances:", live()[])
