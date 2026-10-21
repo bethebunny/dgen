@@ -184,7 +184,12 @@ An adapter needs two things only the compiler can currently produce: a struct th
 | Function-type reflection to derive vtable fields | `ReflectedFn` exposes only `display_name()` / `linkage_name()`, with no argument or return types. Dead end. |
 | **Closed set of candidate types + generic visitor** (`probes/p20`) | **Works, with zero adapters.** Higher-rank compile-time function parameters are supported: `f: def[T: Tr](mut T) thin -> R`. `Candidates[Sq, Tri].visit[Resizable, grow](any)` instantiates the visitor for each candidate that conforms, then dispatches by type id with static, inlinable calls. It works on an `Any` whose universe is empty. The catch is that the *types* are closed instead of the traits, named at the call site. |
 
-Untested ideas: combine the last two, using `visit` as a devirtualized fast path for known types and falling back to `f[Witness[Tr]]` through an adapter for unknown ones, since the witness also conforms to `Tr`. Or use runtime compilation (`std.compile` / `compile_offload`) to instantiate `(T, Tr)` vtables on demand, which would only work when running under the JIT.
+`visit` is the *eliminator* for the existential: `exists T: Tr. T` is equivalent to `forall R. (forall T: Tr. T -> R) -> R`. In practice (`probes/p21`):
+- **Passing to a free function that expects a refined trait works directly.** `known.visit[Resizable, describe](any)` takes an existing `def describe[T: Resizable](t: T)` unchanged. There are read and `mut` variants, and extra arguments can be forwarded.
+- **Inside the visitor, `trait_cast` becomes a compile-time branch.** `comptime if conforms_to(T, Named): t.name()` handles sideways casts and subtraits without a runtime check, and the refined value can be passed on to other generic functions.
+- **A refined *value* can't escape.** `R` is a single type for every `T`, so `def leak[T: Tr](t: T) -> T` is rejected. A storable `trait_cast` result needs a type that stands for "some `T: Tr`", which is exactly the adapter.
+
+, using `visit` as a devirtualized fast path for known types and falling back to `f[Witness[Tr]]` through an adapter for unknown ones, since the witness also conforms to `Tr`. Or use runtime compilation (`std.compile` / `compile_offload`) to instantiate `(T, Tr)` vtables on demand, which would only work when running under the JIT.
 
 ## Limitations / sharp edges
 
