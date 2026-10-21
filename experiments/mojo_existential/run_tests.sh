@@ -18,6 +18,11 @@ if python3 gen/gen_adapters.py gen/shapes.mojo 2>/dev/null | diff -q - gen/dyn_s
 else
     echo "gen/dyn_shapes.mojo is STALE: regenerate with gen/gen_adapters.py"; status=1
 fi
+if python3 gen/gen_adapters.py gen/edge_cases.mojo 2>&1 >/dev/null | diff -q - gen/edge_cases.expected_skips >/dev/null; then
+    echo "generator edge-case skips as expected"
+else
+    echo "generator edge-case skips CHANGED"; status=1
+fi
 out=$(mojo run -I . -I gen gen/test_gen.mojo 2>&1 | grep -v "warning:\|^Imported\|^ \|ERROR file_io")
 echo "$out" | tail -1
 echo "$out" | grep -q "all checks passed" || status=1

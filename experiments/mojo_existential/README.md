@@ -207,7 +207,25 @@ An adapter needs two things only the compiler can currently produce: a struct th
 | Function-type reflection to derive vtable fields | `ReflectedFn` exposes only `display_name()` / `linkage_name()`, with no argument or return types. Dead end. |
 | **Closed set of candidate types + generic visitor** (`probes/p20`) | **Works, with zero adapters.** Higher-rank compile-time function parameters are supported: `f: def[T: Tr](mut T) thin -> R`. `Candidates[Sq, Tri].visit[Resizable, grow](any)` instantiates the visitor for each candidate that conforms, then dispatches by type id with static, inlinable calls. It works on an `Any` whose universe is empty. The catch is that the *types* are closed instead of the traits, named at the call site. |
 
-`visit` is the *eliminator* for the existential: `exists T: Tr. T` is equivalent to `forall R. (forall T: Tr. T -> R) -> R`. In practice (`probes/p21`):
+**What the generator supports** (`gen/edge_cases.mojo`, checked by `run_tests.sh`):
+
+| Trait feature | Generated adapter | Could it be supported? |
+|---|---|---|
+| Plain methods, `mut self`, owned `var` args, untyped `raises`, any arity | Works | |
+| Methods inherited from same-module parent traits | Works | |
+| Default implementations | Works, and dispatches to the type's override | |
+| Type-parametric methods, e.g. `show[W: Writer](self, mut w: W)` | Skipped | **Probably.** Erase the parameter too: the vtable entry takes an erased `W` (an adapter for `Writer`, like stdlib's `_ErasedWriter`), and the adapter's generic method wraps its `W`. `T` then sees the erased writer, not the original type. |
+| `Some[Trait]` arguments (implicit parameters) | Emitted but fails to compile; `mojo doc` exports the type as a bare `T` | Same as above, once the parameter is visible |
+| Value-parametric methods, e.g. `nth[n: Int]` | Skipped | No. There are unboundedly many instantiations, so there's no static vtable (barring a closed set of `n`) |
+| Static methods, `__init__` requirements | Skipped | No. There's no receiver to dispatch on |
+| `Self` arguments, e.g. `same(self, other: Self)` | Skipped | **Yes, with a runtime check**, the way Swift's `AnyHashable` does it: compare the two type ids, then call `T.same`. `Self` *returns* would need an owning `Any` result. |
+| Overloads | Skipped | **Yes:** mangle the vtable field names, keep the overloads on the adapter |
+| `ref self` / `ref` returns | Skipped | **Yes:** the thunk returns an address, and the adapter rebuilds the reference with `self`'s origin |
+| Associated `comptime` members, e.g. `comptime Element` | Skipped | **Yes, by fixing them:** `DynAssoc[Element=Int]`, like Rust's `dyn Iterator<Item = u32>`, with the witness lookup also checking `T.Element` |
+| Parent traits from other modules, e.g. `Writable` | Skipped | Needs their method lists (from `mojo doc` on the stdlib, or hand-listed), and `Writable.write_to` is itself type-parametric |
+| Typed `raises MyErr` | Emitted but fails to compile; `mojo doc` drops the error type | Yes, if `mojo doc` exported it (or by parsing the source) |
+
+: `exists T: Tr. T` is equivalent to `forall R. (forall T: Tr. T -> R) -> R`. In practice (`probes/p21`):
 - **Passing to a free function that expects a refined trait works directly.** `known.visit[Resizable, describe](any)` takes an existing `def describe[T: Resizable](t: T)` unchanged. There are read and `mut` variants, and extra arguments can be forwarded.
 - **Inside the visitor, `trait_cast` becomes a compile-time branch.** `comptime if conforms_to(T, Named): t.name()` handles sideways casts and subtraits without a runtime check, and the refined value can be passed on to other generic functions.
 - **A refined *value* can't escape.** `R` is a single type for every `T`, so `def leak[T: Tr](t: T) -> T` is rejected. A storable `trait_cast` result needs a type that stands for "some `T: Tr`", which is exactly the adapter.

@@ -1,0 +1,8 @@
+skipping trait Parametric: parametric method
+skipping trait ValueParam: parametric method
+skipping trait Static: static method
+skipping trait SelfArg: uses Self outside the receiver
+skipping trait Overloaded: overloaded method f
+skipping trait RefReturn: unsupported argument convention
+skipping trait Assoc: associated comptime members (Element)
+skipping trait StdParent: parent trait Writable from another module

@@ -13,6 +13,11 @@ forwards each method through the static vtable). Methods that aren't
 dispatchable through a vtable (static, parametric, or using `Self` outside
 the receiver, the analogue of Rust's object safety) are reported and skipped,
 and the trait is then skipped too since its adapter couldn't conform.
+
+Known gaps in `mojo doc` output that the generator can't detect: typed
+`raises SomeError` is exported as plain `raises`, and `Some[Trait]` arguments
+(implicit parameters) are exported as a bare type name. Both produce adapters
+that fail to compile (loudly), not ones that misbehave.
 """
 
 import json
@@ -68,13 +73,30 @@ def _method(overload: dict) -> Method:
     )
 
 
+# Parent traits from other modules that add no methods an adapter must forward.
+# Anything else (e.g. Writable, Equatable) isn't flattened, so it's rejected.
+MARKER_PARENTS = {
+    "AnyType",
+    "Movable",
+    "Copyable",
+    "ImplicitlyCopyable",
+    "Deinitable",
+    "ImplicitlyDestructible",
+}
+
+
 def _methods(trait: dict, traits_by_path: dict[str, dict], module: str) -> list[Method]:
     """Own methods plus those of parent traits defined in the same module."""
+    if trait.get("aliases"):
+        names = ", ".join(a["name"] for a in trait["aliases"])
+        raise NotDispatchable(f"associated comptime members ({names})")
     seen: dict[str, Method] = {}
     for parent in trait["parentTraits"]:
         if parent["path"] in traits_by_path:
             for m in _methods(traits_by_path[parent["path"]], traits_by_path, module):
                 seen.setdefault(m.name, m)
+        elif parent["name"] not in MARKER_PARENTS:
+            raise NotDispatchable(f"parent trait {parent['name']} from another module")
     for function in trait["functions"]:
         if len(function["overloads"]) != 1:
             raise NotDispatchable(f"overloaded method {function['name']}")
