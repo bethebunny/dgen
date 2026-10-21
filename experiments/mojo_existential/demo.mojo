@@ -42,7 +42,7 @@ struct Bar(MyTrait, SomeOtherTrait, Movable):
 
 # ---- adapters: one per trait, hand-written (see NOTES.md) --------------------
 @fieldwise_init
-struct MyTraitVT(Movable):
+struct MyTraitVT(ImplicitlyCopyable, Movable):
     var method: def(Opaque) thin -> String
 
 
@@ -63,7 +63,7 @@ struct DynMyTrait(MyTrait, TraitAdapter):
 
 
 @fieldwise_init
-struct MySubTraitVT(Movable):
+struct MySubTraitVT(ImplicitlyCopyable, Movable):
     var base: MyTraitVT
     var sub_method: def(Opaque) thin -> Int
 
@@ -88,7 +88,7 @@ struct DynMySubTrait(MySubTrait, TraitAdapter):
 
 
 @fieldwise_init
-struct SomeOtherTraitVT(Movable):
+struct SomeOtherTraitVT(ImplicitlyCopyable, Movable):
     var other: def(Opaque) thin -> String
 
 
@@ -108,8 +108,9 @@ struct DynSomeOtherTrait(SomeOtherTrait, TraitAdapter):
         return self._h.vtable[Self]().other(self._h.data)
 
 
-comptime U = Existential[DynMyTrait, DynMySubTrait, DynSomeOtherTrait]
-comptime AnyOf[Base: type_of(AnyType)] = Any[Base, U]
+comptime dyn = Existential[DynMyTrait, DynMySubTrait, DynSomeOtherTrait]
+comptime Any = dyn.Any
+comptime trait_cast = dyn.trait_cast
 
 
 # Generic code that only knows the trait still works on a witness.
@@ -119,7 +120,7 @@ def use_generically[T: MySubTrait](t: T) -> String:
 
 def main() raises:
     var foo = Foo(7)
-    var ts: List[AnyOf[MyTrait]] = [foo^, Bar("hello")]
+    var ts: List[Any[MyTrait]] = [foo^, Bar("hello")]
 
     for i in range(len(ts)):
         print(i, ts[i].type_name())
