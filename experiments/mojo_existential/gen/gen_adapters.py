@@ -155,7 +155,7 @@ def generate(source: Path) -> str:
     module = doc["decl"]["name"]
     traits_by_path = {f"/{module}/{t['name']}": t for t in doc["decl"]["traits"]}
     blocks = []
-    for path, trait in traits_by_path.items():
+    for trait in traits_by_path.values():
         try:
             blocks.append(_emit(trait["name"], _methods(trait, traits_by_path, module)))
         except NotDispatchable as e:
