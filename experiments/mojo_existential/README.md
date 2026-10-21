@@ -129,9 +129,23 @@ Probes are in `probes/`, and each one runs standalone (`mojo run -I . -I .. prob
    Workaround: pass `downcast[T, D.Trait]` explicitly.
 3. **Composition loss:** `downcast[X, Tr & Other]` with a parametric `Tr` and an unresolved `X` loses `Tr` → `probes/p07`. Probably the same root cause as #1.
 
+## Adding traits after the universe is defined
+
+Each `Any`'s metadata is generated when the value is boxed, from that universe's adapter list. A trait added later is invisible to already-boxed values unless it's registered at runtime. What does work:
+
+| Approach | Mechanism | Who sees the new trait | Probe/test |
+|---|---|---|---|
+| **Extend at compile time** | `comptime app = lib.Extend[DynNew]`, a new and larger universe built with `TypeList._concat` | Values boxed under `app`. `lib.Any` and `app.Any` are distinct, non-convertible types. | `probes/p13`, `test_extend_universe` |
+| **Library generic over the universe** | `def make[*Ad: TraitAdapter]() -> AnyBox[Shape, *Ad]` | Whatever universe the caller instantiates. Every API that touches `Any` has to carry the parameter. | `probes/p13` |
+| **Late binding by import path** | The library does `from existential_universe import universe`, and each app puts its own `existential_universe.mojo` on `-I` | The whole program, assembled at build time. Source builds only: a precompiled `.mojopkg` would bake in its import. | `probes/latebind/` |
+| **Runtime registration** | `register[T, DynNew]()` per `(type, trait)` pair, checked at compile time that `T: DynNew.Trait` | Every `Any` holding `T`, including values already boxed | `probes/p13`, `test_open_world_registry` |
+| **Retroactive conformance** | `unsafe_register_as[T, DynNew, vtable]()` with a hand-built vtable over free functions | Same as above, for types that *never declared* the trait. Mojo itself can't express this (traits manual: "You can't add traits to existing types"). | `probes/latebind/app_b`, `test_retroactive_conformance` |
+
+What *can't* work: registering a trait on its own ("make `DynNew` available for every type") at runtime. A vtable for `(T, NewTrait)` is code that must be instantiated with both known at compile time. At boxing time only `T` is known, at cast time only the trait, and there's no JIT in a built binary. Swift avoids this because the compiler emits conformance records; Rust doesn't offer it at all.
+
 ## Limitations / sharp edges
 
-- **The universe is closed and fixed at boxing time.** `TypeMeta.witness` only knows the adapters of the universe the `Any` was created in. Asking it about another universe's adapter falls through to the runtime registry, then reports "does not conform".
+- **The universe is fixed at boxing time** (see the section above). `TypeMeta.witness` only knows the adapters of the universe the `Any` was created in. Asking it about another adapter falls through to the runtime registry, then reports "does not conform".
 - **Each trait needs a vtable struct and an adapter.** Subtrait adapters re-forward parent methods; composing the parent vtable helps (`MySubTraitVT.base`).
 - **Witnesses are `ref` views.** They borrow from their `Any`. There's no by-value witness and no `take[T]()` out of an `Any` yet (easy to add).
 - **`Any` is move-only.** `dyn.clone[Base](x)` copies when the erased `T` is `Copyable` and raises otherwise.

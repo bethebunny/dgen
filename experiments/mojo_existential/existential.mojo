@@ -17,6 +17,7 @@
 
 from std.builtin.globals import global_constant
 from std.builtin.rebind import downcast
+from std.builtin.variadics import TypeList
 from std.ffi import _Global
 from std.memory.alloc import unsafe_alloc
 from std.os import abort
@@ -175,6 +176,25 @@ def register[T: AnyType, D: TraitAdapter]() where conforms_to(T, D.Trait):
             type_id[T](),
             type_id[D](),
             _static_vtable[D, downcast[T, D.Trait]](),
+        )
+    )
+
+
+def unsafe_register_as[T: AnyType, D: TraitAdapter, vtable: D.VTable]():
+    """Retroactive conformance: declare that `T` satisfies `D.Trait` via an
+    explicitly supplied vtable, even though `T` never declared the trait.
+
+    Mojo conformance is nominal and can't be added to existing types; witness
+    tables are just function pointers, so they can. `vtable` is a compile-time
+    value, placed in rodata like every other vtable. Build its entries with the
+    thunk helpers over free functions, e.g. `DescribeVT(thunk[describe_square])`
+    where `def describe_square(s: Square) -> String`.
+    """
+    _registry_ptr()[].append(
+        _Conformance(
+            type_id[T](),
+            type_id[D](),
+            Int(Pointer(to=global_constant[vtable]())),
         )
     )
 
@@ -341,6 +361,11 @@ struct Existential[*Adapters: TraitAdapter]:
     ]
 
     comptime Any[Base: type_of(AnyType)] = AnyBox[Base, *Self.Adapters]
+
+    comptime Extend[*More: TraitAdapter] = Existential[
+        *TypeList._concat[Self.Adapters.values, More.values]()
+    ]
+    """A new, larger universe. Values boxed under `Self` don't see `More`."""
 
     comptime Witness[Tr: type_of(AnyType)] = downcast[Self.AdapterFor[Tr], Tr]
 

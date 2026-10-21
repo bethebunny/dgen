@@ -290,6 +290,41 @@ def test_open_world_registry() raises:
     assert_equal(trait_cast_via[DynPerimeter](r).perimeter(), 10)
 
 
+def perimeter_of_square(sq: Square) -> Int:
+    return 4 * sq.side
+
+
+def test_retroactive_conformance() raises:
+    # Square never declared Perimeter; supply its witness table instead.
+    var s: Any[Shape] = Square(3)
+    with assert_raises(contains="does not conform"):
+        _ = trait_cast_via[DynPerimeter](s)
+    unsafe_register_as[
+        Square, DynPerimeter, PerimeterVT(thunk[perimeter_of_square])
+    ]()
+    assert_equal(trait_cast_via[DynPerimeter](s).perimeter(), 12)
+
+
+comptime small = Existential[DynShape]
+comptime big = small.Extend[DynNamed, DynCounter]
+
+
+def box_shape[*Ad: TraitAdapter](var s: Square) -> AnyBox[Shape, *Ad]:
+    # Library-style code, generic over whichever universe the caller uses.
+    return s^
+
+
+def test_extend_universe() raises:
+    var b = box_shape[*big.Adapters](Square(2))
+    assert_equal(big.trait_cast[Named](b).name(), "square")
+    assert_equal(big.index_of[Shape](), 0)
+    assert_equal(big.index_of[Counter](), 2)
+    # A value boxed under the smaller universe doesn't learn the new traits.
+    var s = box_shape[*small.Adapters](Square(2))
+    with assert_raises(contains="does not conform"):
+        _ = trait_cast_via[DynNamed](s)
+
+
 def main() raises:
     var before = live()[]
     test_layout()
@@ -302,5 +337,7 @@ def main() raises:
     test_clone()
     test_witness_in_generic_code()
     test_open_world_registry()
+    test_retroactive_conformance()
+    test_extend_universe()
     assert_equal(live()[], before, "leaked or double-freed instances")
     print("all tests passed; live instances:", live()[])
