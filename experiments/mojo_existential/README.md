@@ -173,6 +173,19 @@ except e:                         # e: TakeError, a typed error (Mojo 1.1)
 
 `take` consumes the `Any` (`deinit self`). On a match it moves `T` out of the heap box without destroying it, then frees the box. On a mismatch it raises a typed `TakeError` that owns the original `Any`, so nothing is lost and no empty state is needed. Moving a field out of a caught error is a partial move, which Mojo rejects, hence `into_value()`. The tests check the live-instance count on both paths, and the ASan build is clean apart from the registry.
 
+## Avoiding the hand-written adapter
+
+An adapter needs two things only the compiler can currently produce: a struct that **conforms to `Tr`**, so generic code accepts the witness, and **one named forwarding method per trait method**. Doing it in-language would need trait-method reflection plus a way to synthesize named members, or compiler-synthesized `dyn Tr` conformance, as Swift and Rust do. What was tried:
+
+| Avenue | Outcome |
+|---|---|
+| **Generate adapters from `mojo doc` JSON** (`gen/gen_adapters.py`) | **Works.** `mojo doc` exports each trait's methods: argument names, conventions, types, `raises`, and parent traits. The generator emits `<Trait>VT` + `Dyn<Trait>`, including inherited methods, `mut self`, `var` args and `raises`, and skips non-dispatchable traits with a reason (a `Self` argument, a static method, a parametric method). `gen/test_gen.mojo` uses only generated adapters; `run_tests.sh` fails if the generated file is stale. |
+| `__getattr__` instead of forwarding methods | A compile-time name works via `__getattr__[v](self, name: StringLiteral[v])`, and can return a callable, so `w.scale(7)` works. But it never makes a struct conform to a trait, there's no `T.<name>` lookup by string, and the per-name return type would need trait reflection. Dead end for conformance. |
+| Function-type reflection to derive vtable fields | `ReflectedFn` exposes only `display_name()` / `linkage_name()`, with no argument or return types. Dead end. |
+| **Closed set of candidate types + generic visitor** (`probes/p20`) | **Works, with zero adapters.** Higher-rank compile-time function parameters are supported: `f: def[T: Tr](mut T) thin -> R`. `Candidates[Sq, Tri].visit[Resizable, grow](any)` instantiates the visitor for each candidate that conforms, then dispatches by type id with static, inlinable calls. It works on an `Any` whose universe is empty. The catch is that the *types* are closed instead of the traits, named at the call site. |
+
+Untested ideas: combine the last two, using `visit` as a devirtualized fast path for known types and falling back to `f[Witness[Tr]]` through an adapter for unknown ones, since the witness also conforms to `Tr`. Or use runtime compilation (`std.compile` / `compile_offload`) to instantiate `(T, Tr)` vtables on demand, which would only work when running under the JIT.
+
 ## Limitations / sharp edges
 
 - **Unsound with borrowing types.** `Any` has no origin parameter, so boxing a value that holds a reference (a `Pointer`, `Span`, ...) erases the borrow. `probes/p19` compiles and ASan reports heap-use-after-free. Rust prevents this with `dyn Trait + 'a` and the `'static` bound on `dyn Any`. Mojo has no way to say "`T` holds no origins" or "`T` outlives `o`", so this can only be documented, not prevented.
