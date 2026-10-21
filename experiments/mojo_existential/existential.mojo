@@ -271,12 +271,15 @@ struct AnyBox[Base: type_of(AnyType), *Adapters: TraitAdapter](Erased, Movable):
 
     var _h: Header
 
-    # NB: not `T: Self.Base & Movable & Deinitable` -- composing a trait-typed
-    # *parameter* silently drops it (Mojo 1.1), so Base would go unchecked.
+    # NB: the bound is a bare `T: Self.Base`, with the rest in `where`.
+    # - `T: Self.Base & Movable & Deinitable` silently drops `Self.Base`
+    #   (Mojo 1.1), leaving Base unchecked.
+    # - `where conforms_to(T, Self.Base)` is evaluated before `__extension`
+    #   conformances are visible, so it rejects extension-conformed types.
     @implicit
     def __init__[
-        T: Movable & Deinitable
-    ](out self, var value: T) where conforms_to(T, Self.Base):
+        T: Self.Base
+    ](out self, var value: T) where conforms_to(T, Movable & Deinitable):
         comptime M = downcast[T, Movable & Deinitable]
         comptime meta = TypeMeta(
             _type_tag[M], _destroy[M], _clone[M], _witness[M, *Self.Adapters]

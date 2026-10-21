@@ -360,6 +360,31 @@ def test_take_mismatch_returns_value() raises:
     assert_equal(live()[], before)
 
 
+# A type that only gains Shape/Named through `__extension` (undocumented).
+@fieldwise_init
+struct Plain(Movable):
+    var v: Int
+
+
+__extension Plain(Shape):
+    def area(self) -> Int:
+        return self.v * 2
+
+
+__extension Plain(Named):
+    def name(self) -> String:
+        return "plain"
+
+
+def test_extension_conformance() raises:
+    var p: Any[Shape] = Plain(5)  # boxed via extension conformance
+    assert_equal(p[].area(), 10)
+    assert_equal(trait_cast[Named](p).name(), "plain")
+    with assert_raises(contains="does not conform"):
+        _ = trait_cast[Counter](p)
+    assert_equal(cast[Plain](p).v, 5)
+
+
 def main() raises:
     var before = live()[]
     test_layout()
@@ -376,5 +401,6 @@ def main() raises:
     test_extend_universe()
     test_take()
     test_take_mismatch_returns_value()
+    test_extension_conformance()
     assert_equal(live()[], before, "leaked or double-freed instances")
     print("all tests passed; live instances:", live()[])

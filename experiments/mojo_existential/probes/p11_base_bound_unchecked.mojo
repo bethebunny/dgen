@@ -4,9 +4,9 @@
 # 'AnyType'" warning), so the bound is NOT enforced.
 #
 # STATUS: bug. This program compiles and runs, storing an Int in a Box[Greet].
-# Workaround: `def __init__[T: Movable & Deinitable](...) where
-# conforms_to(T, Self.Base)`, which is enforced (see
-# ../compile_fail/base_bound.mojo).
+# Workaround: a bare `T: Self.Base` bound with `where conforms_to(T, Movable &
+# Deinitable)`, which is enforced and also accepts `__extension` conformances
+# (see ../compile_fail/base_bound.mojo).
 trait Greet:
     def greet(self) -> String: ...
 

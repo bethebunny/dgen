@@ -124,7 +124,7 @@ Probes are in `probes/`, and each one runs standalone (`mojo run -I . -I .. prob
 ## Compiler issues found (worth filing upstream)
 
 1. **Soundness:** in `T: Self.Base & Movable`, where `Base: type_of(AnyType)` is a *parameter*, the compiler silently drops `Self.Base`. The only hint is the warning "redundant trait composition: 'Movable' already implies 'AnyType'". → `probes/p11` stores an `Int` in a `Box[Greet]`.
-   Workaround: `where conforms_to(T, Self.Base)` (`compile_fail/base_bound.mojo`).
+   Workaround: a bare `T: Self.Base` bound with the other requirements in `where` (`compile_fail/base_bound.mojo`). `where conforms_to(T, Self.Base)` also enforces it, but rejects `__extension` conformances.
 2. **ICE:** `CallParamInf::inferForCall` crashes when calling `D.adapt[T]()`, where `D` comes from a variadic type pack and `T` is refined only by `comptime assert conforms_to(T, D.Trait)` → `probes/p06`.
    Workaround: pass `downcast[T, D.Trait]` explicitly.
 3. **Composition loss:** `downcast[X, Tr & Other]` with a parametric `Tr` and an unresolved `X` loses `Tr` → `probes/p07`. Probably the same root cause as #1.
@@ -139,7 +139,7 @@ Each `Any`'s metadata is generated when the value is boxed, from that universe's
 | **Library generic over the universe** | `def make[*Ad: TraitAdapter]() -> AnyBox[Shape, *Ad]` | Whatever universe the caller instantiates. Every API that touches `Any` has to carry the parameter. | `probes/p13` |
 | **Late binding by import path** | The library does `from existential_universe import universe`, and each app puts its own `existential_universe.mojo` on `-I` | The whole program, assembled at build time. Source builds only: a precompiled `.mojopkg` would bake in its import. | `probes/latebind/` |
 | **Runtime registration** | `register[T, DynNew]()` per `(type, trait)` pair, checked at compile time that `T: DynNew.Trait` | Every `Any` holding `T`, including values already boxed | `probes/p13`, `test_open_world_registry` |
-| **Retroactive conformance** | `unsafe_register_as[T, DynNew, vtable]()` with a hand-built vtable over free functions | Same as above, for types that *never declared* the trait. The traits manual says "You can't add traits to existing types"; the undocumented `__extension` can only partly (see below). | `probes/latebind/app_b`, `test_retroactive_conformance` |
+| **Retroactive conformance** | `unsafe_register_as[T, DynNew, vtable]()` with a hand-built vtable over free functions | Same as above, for types that *never declared* the trait. The traits manual says "You can't add traits to existing types". The undocumented `__extension` does it safely unless both struct and trait are imported (see below). | `probes/latebind/app_b`, `test_retroactive_conformance` |
 
 **A `comptime` list in `Any`, appended to by registration?** Holding the list works: `AnyBox[Base, *list]`, where `list` is a `TypeList` value, is equivalent to the variadic form (`probes/p14`). Appending doesn't. Compile-time evaluation runs ordinary code, so a function can *build* a list with `append`. But a named `comptime` value is an rvalue: `xs.append(3)` is "invalid use of mutating method on rvalue", and re-declaring `xs` is "invalid redefinition" (`probes/p15`). (`TypeList`, the compile-time list of *types*, has no `append` at all; all its operations return new lists.) Every "append" is therefore a new list under a new name, which gives a new `Any` type; that's exactly `Extend`. What separate registrations would need is a list that is finalised *after* every registration but *before* any `Any` is instantiated, i.e. assembled once for the whole program. In 1.1 the only way to get that is the import-path trick above. Upstream `main` (after 1.1) adds something close: a compilation target can carry an `opaque_plugin` type list, read with `#kgen.get_target_plugin` ([test](https://github.com/modular/modular/blob/a1ccd09/Mojo/test/mojo-integration/compile_offload/target_plugin.mojo)). It's still set in one place, when the target is constructed, not appended to by declarations.
 
@@ -149,16 +149,39 @@ What *can't* work: registering a trait on its own ("make `DynNew` available for 
 
 Mojo has no documented extension blocks: they're absent from the 1.1 docs and from upstream `main`, and `extension`/`extend`/`impl` are syntax errors. Conditional conformance *does* exist, but only on the struct's own declaration: `struct Box[T](Equatable where conforms_to(T, Equatable))` ([reference](https://github.com/modular/modular/blob/mojo/v1.1.0/Mojo/docs/site/reference/struct-declarations.mdx#L323)).
 
-The compiler does accept an underscored `__extension` keyword. What it does (`probes/extension/`):
+The compiler does accept an underscored `__extension` keyword, with its own compiler tests (`test/mojo-parser/decls/struct_extensions*.mojo`). What it does (`probes/extension/`):
 
 | Use | Result |
 |---|---|
-| `__extension Point:` adding methods, even to a type from another module or to `String` | Works |
-| `__extension Point(Greet):` where `Greet` is declared in the *same* module | Generic calls accept it, but `conforms_to(Point, Greet)` is still `False` (p16) |
-| `__extension Point(Greet):` where `Greet` is *imported* | Rejected: "'Point' does not implement all requirements for 'Greet'" (p17) |
-| `__extension Wrapper(Greet where ...)` | Rejected: "'where' clauses in conformance lists are only supported on structs" |
+| `__extension Point:` adding methods, including to `String` or a type from another module | Works |
+| Conformance: local struct + local trait, local struct + imported trait, or imported struct + local trait | Works for generic calls (p16, p19) |
+| Conformance: imported struct + imported trait (the "orphan" case) | Rejected: "'Point' does not implement all requirements for 'Greet'" (p17, p20) |
+| Conditional conformance: `__extension Wrapper(Greet where ...)` | Rejected: "'where' clauses in conformance lists are only supported on structs" |
+| `conforms_to(Point, Greet)` written directly in non-generic code | `False`, even when the conformance works |
 
-Because `conforms_to` ignores extension conformances, the universe machinery never sees them, and `Any[Greet]` refuses to box such a type. What does work today is a method-only extension plus the registry: `__extension Point: def greet(...)`, then `unsafe_register_as[Point, DynGreet, GreetVT(thunk[Point.greet])]()` (p18).
+The last row is the important quirk. Inside a generic instantiation, `conforms_to` *does* see extension conformances, so the universe's `comptime if conforms_to(T, D.Trait)` finds the witness. A `where conforms_to(...)` clause on a function is evaluated earlier and doesn't. That's why `AnyBox` now uses a bare `T: Self.Base` bound with `where conforms_to(T, Movable & Deinitable)`: the bare parametric bound is enforced (unlike `Self.Base & Movable`), and it accepts extension-conformed types. `test_extension_conformance` boxes a type that gets `Shape` and `Named` only through `__extension`, then calls, `trait_cast`s and `cast`s it.
+
+So `__extension` is a *safe* retroactive conformance whenever the struct or the trait is local. In the orphan case, a method-only extension plus `unsafe_register_as[Point, DynGreet, GreetVT(thunk[Point.greet])]()` still works (p18).
+
+## Experimental `__` features in Mojo 1.1
+
+Found by listing every non-dunder `__name` used in the 1.1.0 stdlib and compiler tests, then checking the compiler's reserved-keyword test (`test/mojo-parser/decls/keyword_fn_names.mojo`). Relevance to this prototype:
+
+| Feature | What it is | Relevant? |
+|---|---|---|
+| `__extension T(Traits):` | Extension blocks: methods and retroactive conformance | **Yes**: see above |
+| `__functions_in_module()` | Compile-time `Tuple` of the current module's free functions, each typed by its signature. Used by `TestSuite.discover_tests`. | Partly: module functions only, not struct or trait methods (`probes/p22`) |
+| Parameter inference on function types | `def arity[R, A, B, //, f: def(A, B) thin -> R]()` recovers a function's argument and return types (`probes/p23`) | Partly: one helper per arity; no variadic form |
+| `__struct_field_ref(i, x)`, `__get_current_function_name()` | Field access by index (what `reflect[T].field_ref` builds on), and the current function's name | No new capability beyond `reflect` |
+| `__match` | A pattern-matching statement | No |
+| `__is_run_in_comptime_interpreter` | Branch on compile-time vs runtime evaluation | No |
+| `__mlir_op` / `__mlir_type` / `__mlir_attr` / `__mlir_region` / `__mlir_deferred_type` | Inline MLIR | Already used (`kgen.param.identical`) |
+| `__get_mvalue_as_litref`, `__get_litref_as_mvalue`, `__get_address_as_owned_value`, `__get_address_as_uninit_lvalue` | Raw reference and address conversions | Possibly, for a borrowed `AnyRef` |
+| `__generator_type[...]` | Types of compile-time generators (used by `TypeList.tabulate`) | No |
+| `__copy_capture`, `__move_capture`, `__capture_self` | Closure capture conventions | Maybe, for capturing visitors (untested) |
+| `@__parameter`, `@__name`, `@__doc_inline`, `@__llvm_metadata`, `@__nonmaterializable`, `@__allow_legacy_any_origin_fields`, `@__unsafe_nested_origins_read_only`, `@__allow_legacy_custom_self_type` | Decorators: linkage names, docs, LLVM metadata, literal materialisation, origin escape hatches | No. The origin escape hatches loosen origin checking rather than fix the lifetime hole. |
+
+None of these enumerate a trait's methods or synthesise named members, so the adapter (generated or hand-written) remains necessary.
 
 ## Taking the value back out
 
