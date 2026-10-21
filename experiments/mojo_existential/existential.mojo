@@ -17,6 +17,7 @@
 
 from std.builtin.globals import global_constant
 from std.builtin.rebind import downcast
+from std.ffi import _Global
 from std.memory.alloc import unsafe_alloc
 from std.os import abort
 from std.sys import size_of
@@ -107,6 +108,84 @@ def _witness[T: AnyType, *Adapters: TraitAdapter](key: Int) -> Int:
     return 0
 
 
+# ===----------------------------------------------------------------------=== #
+# Thunk helpers: turn an unbound method `T.m` into a receiver-erased thin fn.
+#   vtable_for[T: Shape]() -> ShapeVT:  return ShapeVT(thunk[T.area])
+# ===----------------------------------------------------------------------=== #
+
+
+def thunk[T: AnyType, R: Movable, //, f: def(T) thin -> R](p: Opaque) -> R:
+    return f(p.unsafe_bitcast[T]()[])
+
+
+def thunk1[
+    T: AnyType, A: AnyType, R: Movable, //, f: def(T, A) thin -> R
+](p: Opaque, a: A) -> R:
+    return f(p.unsafe_bitcast[T]()[], a)
+
+
+def thunk_mut[
+    T: AnyType, R: Movable, //, f: def(mut T) thin -> R
+](p: Opaque) -> R:
+    return f(p.unsafe_bitcast[T]()[])
+
+
+def thunk_mut1[
+    T: AnyType, A: AnyType, R: Movable, //, f: def(mut T, A) thin -> R
+](p: Opaque, a: A) -> R:
+    return f(p.unsafe_bitcast[T]()[], a)
+
+
+# ===----------------------------------------------------------------------=== #
+# Open-world conformance registry (optional)
+#
+# The universe is closed because Mojo has no globals or static initialisers.
+# `_Global` (std.ffi, private) is a named, lazily-created process global
+# backed by the runtime, which is enough for an explicit, Swift-style
+# "conformance record" table: register[T, Adapter]() at startup, and
+# `Header.witness` falls back to it. Not thread-safe; prototype only.
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct _Conformance(ImplicitlyCopyable):
+    var type_key: Int
+    var adapter_key: Int
+    var vtable: Int
+
+
+def _empty_registry() -> List[_Conformance]:
+    return []
+
+
+comptime _registry = _Global["mojo_existential_registry", _empty_registry]
+
+
+def _registry_ptr() -> Pointer[List[_Conformance], MutUntrackedOrigin]:
+    try:
+        return _registry.get_or_create_ptr()
+    except:
+        abort("existential: could not create conformance registry")
+
+
+def register[T: AnyType, D: TraitAdapter]() where conforms_to(T, D.Trait):
+    """Record at runtime that `T` conforms to `D.Trait`, with its vtable."""
+    _registry_ptr()[].append(
+        _Conformance(
+            type_id[T](),
+            type_id[D](),
+            _static_vtable[D, downcast[T, D.Trait]](),
+        )
+    )
+
+
+def _registry_lookup(type_key: Int, adapter_key: Int) -> Int:
+    for c in _registry_ptr()[]:
+        if c.type_key == type_key and c.adapter_key == adapter_key:
+            return c.vtable
+    return 0
+
+
 struct Header(ImplicitlyCopyable, Movable):
     """The 16-byte erased representation shared by `Any` and every adapter."""
 
@@ -124,7 +203,10 @@ struct Header(ImplicitlyCopyable, Movable):
         return self.meta[].type_tag()
 
     def witness[D: TraitAdapter](self) -> Int:
-        return self.meta[].witness(type_id[D]())
+        var addr = self.meta[].witness(type_id[D]())
+        if addr == 0:
+            addr = _registry_lookup(self.type_id(), type_id[D]())
+        return addr
 
     def vtable[D: TraitAdapter](self) -> ref[ImmStaticOrigin] D.VTable:
         var addr = self.witness[D]()
@@ -207,6 +289,22 @@ def _header_of[X: AnyType](ref x: X) -> Header:
     comptime assert conforms_to(X, Erased), "not an existential or witness"
     comptime assert size_of[X]() == size_of[Header]()
     return Pointer(to=x).unsafe_bitcast[Header]()[]
+
+
+def trait_cast_via[
+    D: TraitAdapter, X: AnyType
+](ref x: X) raises -> ref[x] downcast[D, D.Trait]:
+    """Universe-free trait cast: name the adapter instead of the trait.
+
+    Succeeds if the erased type conforms via the static universe it was boxed
+    with, or via a runtime `register[T, D]()` record.
+    """
+    var h = _header_of(x)
+    if h.witness[D]() == 0:
+        raise Error(
+            String(h.type_name(), " does not conform to ", reflect[D].name())
+        )
+    return Pointer(to=x).unsafe_bitcast[downcast[D, D.Trait]]()[]
 
 
 def cast[T: AnyType, X: AnyType](ref x: X) raises -> ref[x] T:

@@ -19,7 +19,7 @@ trait SomeOtherTrait:
 
 # ---- user types --------------------------------------------------------------
 @fieldwise_init
-struct Foo(MySubTrait, Movable):
+struct Foo(Movable, MySubTrait):
     var x: Int
 
     def method(self) -> String:
@@ -30,7 +30,7 @@ struct Foo(MySubTrait, Movable):
 
 
 @fieldwise_init
-struct Bar(MyTrait, SomeOtherTrait, Movable):
+struct Bar(Movable, MyTrait, SomeOtherTrait):
     var s: String
 
     def method(self) -> String:
@@ -40,7 +40,10 @@ struct Bar(MyTrait, SomeOtherTrait, Movable):
         return "Bar.other"
 
 
-# ---- adapters: one per trait, hand-written (see NOTES.md) --------------------
+# ---- adapters: one per trait, hand-written --------------------------------
+# Reflection can't enumerate a trait's methods, so each trait needs a vtable
+# struct and an adapter that forwards through it. `thunk[T.m]` erases the
+# receiver of an unbound method, so this is all mechanical one-liners.
 @fieldwise_init
 struct MyTraitVT(ImplicitlyCopyable, Movable):
     var method: def(Opaque) thin -> String
@@ -53,10 +56,7 @@ struct DynMyTrait(MyTrait, TraitAdapter):
 
     @staticmethod
     def vtable_for[T: MyTrait]() -> MyTraitVT:
-        def method(p: Opaque) -> String:
-            return p.unsafe_bitcast[T]()[].method()
-
-        return MyTraitVT(method)
+        return MyTraitVT(thunk[T.method])
 
     def method(self) -> String:
         return self._h.vtable[Self]().method(self._h.data)
@@ -75,10 +75,7 @@ struct DynMySubTrait(MySubTrait, TraitAdapter):
 
     @staticmethod
     def vtable_for[T: MySubTrait]() -> MySubTraitVT:
-        def sub_method(p: Opaque) -> Int:
-            return p.unsafe_bitcast[T]()[].sub_method()
-
-        return MySubTraitVT(DynMyTrait.vtable_for[T](), sub_method)
+        return MySubTraitVT(DynMyTrait.vtable_for[T](), thunk[T.sub_method])
 
     def method(self) -> String:
         return self._h.vtable[Self]().base.method(self._h.data)
@@ -99,10 +96,7 @@ struct DynSomeOtherTrait(SomeOtherTrait, TraitAdapter):
 
     @staticmethod
     def vtable_for[T: SomeOtherTrait]() -> SomeOtherTraitVT:
-        def other(p: Opaque) -> String:
-            return p.unsafe_bitcast[T]()[].other()
-
-        return SomeOtherTraitVT(other)
+        return SomeOtherTraitVT(thunk[T.other])
 
     def other(self) -> String:
         return self._h.vtable[Self]().other(self._h.data)
@@ -119,8 +113,7 @@ def use_generically[T: MySubTrait](t: T) -> String:
 
 
 def main() raises:
-    var foo = Foo(7)
-    var ts: List[Any[MyTrait]] = [foo^, Bar("hello")]
+    var ts: List[Any[MyTrait]] = [Foo(7), Bar("hello")]
 
     for i in range(len(ts)):
         print(i, ts[i].type_name())
@@ -144,3 +137,6 @@ def main() raises:
 
     ref o = trait_cast[SomeOtherTrait](ts[1])
     print(o.other())
+
+    # infallible view as the base trait the Any was declared with
+    print(ts[1][].method())

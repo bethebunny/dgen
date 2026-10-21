@@ -38,10 +38,7 @@ struct DynShape(Shape, TraitAdapter):
 
     @staticmethod
     def vtable_for[T: Shape]() -> ShapeVT:
-        def area(p: Opaque) -> Int:
-            return p.unsafe_bitcast[T]()[].area()
-
-        return ShapeVT(area)
+        return ShapeVT(thunk[T.area])
 
     def area(self) -> Int:
         return self._h.vtable[Self]().area(self._h.data)
@@ -59,10 +56,7 @@ struct DynNamed(Named, TraitAdapter):
 
     @staticmethod
     def vtable_for[T: Named]() -> NamedVT:
-        def name(p: Opaque) -> String:
-            return p.unsafe_bitcast[T]()[].name()
-
-        return NamedVT(name)
+        return NamedVT(thunk[T.name])
 
     def name(self) -> String:
         return self._h.vtable[Self]().name(self._h.data)
@@ -81,13 +75,7 @@ struct DynCounter(Counter, TraitAdapter):
 
     @staticmethod
     def vtable_for[T: Counter]() -> CounterVT:
-        def bump(p: Opaque):
-            p.unsafe_bitcast[T]()[].bump()
-
-        def count(p: Opaque) -> Int:
-            return p.unsafe_bitcast[T]()[].count()
-
-        return CounterVT(bump, count)
+        return CounterVT(thunk_mut[T.bump], thunk[T.count])
 
     def bump(mut self):
         self._h.vtable[Self]().bump(self._h.data)
@@ -255,6 +243,53 @@ def test_witness_in_generic_code() raises:
     assert_equal(generic_area(trait_cast[Shape](s)), 64)
 
 
+# A trait *outside* the universe, plus an adapter for it.
+trait Perimeter:
+    def perimeter(self) -> Int:
+        ...
+
+
+@fieldwise_init
+struct PerimeterVT(ImplicitlyCopyable):
+    var perimeter: def(Opaque) thin -> Int
+
+
+struct DynPerimeter(Perimeter, TraitAdapter):
+    comptime Trait = Perimeter
+    comptime VTable = PerimeterVT
+    var _h: Header
+
+    @staticmethod
+    def vtable_for[T: Perimeter]() -> PerimeterVT:
+        return PerimeterVT(thunk[T.perimeter])
+
+    def perimeter(self) -> Int:
+        return self._h.vtable[Self]().perimeter(self._h.data)
+
+
+@fieldwise_init
+struct Rect(Movable, Named, Perimeter):
+    var w: Int
+    var h: Int
+
+    def name(self) -> String:
+        return "rect"
+
+    def perimeter(self) -> Int:
+        return 2 * (self.w + self.h)
+
+
+def test_open_world_registry() raises:
+    var r: Any[Named] = Rect(2, 3)
+    # Universe-free cast to a universe trait works without registration.
+    assert_equal(trait_cast_via[DynNamed](r).name(), "rect")
+    # Perimeter isn't in the universe: unknown until registered.
+    with assert_raises(contains="does not conform"):
+        _ = trait_cast_via[DynPerimeter](r)
+    register[Rect, DynPerimeter]()
+    assert_equal(trait_cast_via[DynPerimeter](r).perimeter(), 10)
+
+
 def main() raises:
     var before = live()[]
     test_layout()
@@ -266,5 +301,6 @@ def main() raises:
     test_list_heterogeneous()
     test_clone()
     test_witness_in_generic_code()
+    test_open_world_registry()
     assert_equal(live()[], before, "leaked or double-freed instances")
     print("all tests passed; live instances:", live()[])
