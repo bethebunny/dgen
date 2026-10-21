@@ -175,6 +175,7 @@ except e:                         # e: TakeError, a typed error (Mojo 1.1)
 
 ## Limitations / sharp edges
 
+- **Unsound with borrowing types.** `Any` has no origin parameter, so boxing a value that holds a reference (a `Pointer`, `Span`, ...) erases the borrow. `probes/p19` compiles and ASan reports heap-use-after-free. Rust prevents this with `dyn Trait + 'a` and the `'static` bound on `dyn Any`. Mojo has no way to say "`T` holds no origins" or "`T` outlives `o`", so this can only be documented, not prevented.
 - **The universe is fixed at boxing time** (see the section above). `TypeMeta.witness` only knows the adapters of the universe the `Any` was created in. Asking it about another adapter falls through to the runtime registry, then reports "does not conform".
 - **Each trait needs a vtable struct and an adapter.** Subtrait adapters re-forward parent methods; composing the parent vtable helps (`MySubTraitVT.base`).
 - **Witnesses are `ref` views.** They borrow from their `Any`. There's no by-value witness. To get an owned value back out, use `any^.take[T]()` (see below).
