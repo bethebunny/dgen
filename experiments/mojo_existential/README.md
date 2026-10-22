@@ -232,9 +232,26 @@ An adapter needs two things only the compiler can currently produce: a struct th
 
 , using `visit` as a devirtualized fast path for known types and falling back to `f[Witness[Tr]]` through an adapter for unknown ones, since the witness also conforms to `Tr`. Or use runtime compilation (`std.compile` / `compile_offload`) to instantiate `(T, Tr)` vtables on demand, which would only work when running under the JIT.
 
+## Reference safety
+
+`Any` has no origin parameter, so boxing a value that *borrows* (holds a `Pointer`, `Span`, `StringSlice`, a capturing closure, ...) erases the borrow from the type:
+
+- **Without `Any`, Mojo rejects the escape.** A borrower's type carries its origin, e.g. `Borrower[origin_of(xs)]`. A function can't name a local's origin in its return type, and even `ImmUnsafeAnyOrigin` refuses the conversion (`probes/p27`).
+- **With `Any`, a borrower can escape its scope** and dangle (`probes/p19`: ASan heap-use-after-free).
+- **It doesn't even need to escape.** Mojo destroys values eagerly after their last *tracked* use. Once the borrower is boxed, later reads go through an untracked pointer, so `xs` can be freed right after `Pointer(to=xs[1])`, before `a[].peek()` in the *same scope* (`probes/p26`: ASan heap-use-after-free; the unboxed version is fine).
+
+Rust prevents this with `dyn Trait + 'a` and with `'static` bounds (`dyn Any: 'static`). Mojo has neither: there's no way to say "`T` holds no non-static origins", or to compute the origins inside an arbitrary `T`, so `Any` can't reject borrowing types.
+
+Options, none complete:
+- **Scoped `Any` with an explicit anchor** (`probes/p28`): `ScopedAny[o]` holds a phantom `Pointer[NoneType, o]` and is constructed with `anchor=xs`. That keeps `xs` alive (ASan clean) and the compiler rejects letting it escape `xs`'s scope. It's the `dyn Trait + 'a` analogue, but the *caller* picks the anchor and nothing checks it covers what `T` actually borrows.
+- **Reflection heuristic:** walk `T`'s fields at compile time and reject known borrowing types (`Pointer`, `Span`, `StringSlice`, ...). It's incomplete: it can't see origins in parameters, opaque or MLIR types, or user structs wrapping untracked pointers.
+- **Make construction explicit and `unsafe_`-named** instead of `@implicit`. Honest, but it can't distinguish safe from borrowing types, so every use pays the ergonomic cost.
+
+The real fix needs a language feature: an "outlives"/`'static`-style bound, or a way to compute the origin set of a type.
+
 ## Limitations / sharp edges
 
-- **Unsound with borrowing types.** `Any` has no origin parameter, so boxing a value that holds a reference (a `Pointer`, `Span`, ...) erases the borrow. `probes/p19` compiles and ASan reports heap-use-after-free. Rust prevents this with `dyn Trait + 'a` and the `'static` bound on `dyn Any`. Mojo has no way to say "`T` holds no origins" or "`T` outlives `o`", so this can only be documented, not prevented.
+- **Unsound with borrowing types.** See "Reference safety" below.
 - **The universe is fixed at boxing time** (see the section above). `TypeMeta.witness` only knows the adapters of the universe the `Any` was created in. Asking it about another adapter falls through to the runtime registry, then reports "does not conform".
 - **Each trait needs a vtable struct and an adapter.** Subtrait adapters re-forward parent methods; composing the parent vtable helps (`MySubTraitVT.base`).
 - **Witnesses are `ref` views.** They borrow from their `Any`. There's no by-value witness. To get an owned value back out, use `any^.take[T]()` (see below).

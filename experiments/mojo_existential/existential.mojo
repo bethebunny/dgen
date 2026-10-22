@@ -42,6 +42,11 @@ def trait_eq[a: type_of(AnyType), b: type_of(AnyType)]() -> Bool:
     ]
 
 
+def type_eq[A: AnyType, B: AnyType]() -> Bool:
+    """Compile-time type identity."""
+    return TypeList.of[Trait=AnyType, A]().contains[B]()
+
+
 # ===----------------------------------------------------------------------=== #
 # Runtime type identity
 # ===----------------------------------------------------------------------=== #
@@ -104,8 +109,9 @@ def _witness[T: AnyType, *Adapters: TraitAdapter](key: Int) -> Int:
     comptime for i in range(Adapters.length):
         comptime D = Adapters[i]
         comptime if conforms_to(T, D.Trait):
-            if key == type_id[D]():
-                return _static_vtable[D, downcast[T, D.Trait]]()
+            comptime if D.accepts[T]():
+                if key == type_id[D]():
+                    return _static_vtable[D, downcast[T, D.Trait]]()
     return 0
 
 
@@ -259,6 +265,16 @@ trait TraitAdapter(Erased):
     @staticmethod
     def vtable_for[T: Self.Trait]() -> Self.VTable:
         ...
+
+    @staticmethod
+    def accepts[T: AnyType]() -> Bool:
+        """Extra compile-time filter beyond `T: Trait`; default accepts all.
+
+        Adapters that fix an associated member (e.g. `Element = Int`, like
+        Rust's `dyn Container<Element = Int>`) override this so the universe
+        never builds their vtable for a `T` with a different member.
+        """
+        return True
 
 
 # ===----------------------------------------------------------------------=== #
