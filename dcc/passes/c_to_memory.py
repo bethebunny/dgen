@@ -77,16 +77,13 @@ class CToMemory(Pass):
         ConstantOp,
     )
 
-    def __init__(self) -> None:
-        # Per-variable state: alloca and last memory token
-        self._alloca: dict[str, dgen.Value] = {}
-        self._mem: dict[str, dgen.Value] = {}
+    # Per-variable state: alloca and last memory token
+    _alloca: dict[str, dgen.Value]
+    _mem: dict[str, dgen.Value]
 
-    def run(self, value: dgen.Value, compiler: object) -> dgen.Value:
-        """Run on a value, resetting per-variable state."""
+    def start(self) -> None:
         self._alloca = {}
         self._mem = {}
-        return super().run(value, compiler)
 
     def _get_mem(self, name: str) -> dgen.Value:
         """Get the current memory token for a variable."""

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Set as AbstractSet
+from collections.abc import Callable
+from collections.abc import Set as AbstractSet
+from copy import copy
 from typing import TYPE_CHECKING, ClassVar
 
 import dgen
@@ -101,6 +103,7 @@ class Pass:
     Invariants, checked by ``Compiler`` when ``verify_passes`` is set:
       - no value of a class in ``eliminated`` survives the pass
       - every op class the pass adds to the graph is in ``emitted``
+      - the instance holds only configuration; ``start`` makes per-run state
     """
 
     _handlers: ClassVar[dict[type[dgen.Value], list[_HandlerFn]]] = {}
@@ -156,10 +159,16 @@ class Pass:
             )
         return None
 
+    def start(self) -> None:
+        """Set up per-run state, on the copy of the pass that one run uses."""
+
     def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
         """Run this pass on a value and all its nested blocks."""
+        # State lives on a copy, so it can't leak into the next compilation.
+        walker = copy(self)
+        walker.start()
         root_block = dgen.Block(result=value)
-        self._lower_block(root_block)
+        walker._lower_block(root_block)
         return root_block.result
 
     def _lower_block(self, block: dgen.Block) -> None:

@@ -3,6 +3,7 @@
 import pytest
 
 import dgen
+from dgen import asm
 from dgen.asm.parser import parse
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass, PipelineError
@@ -19,6 +20,23 @@ ADD_IR = strip_prefix("""
     |
     | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
     |     %y : index.Index = algebra.add(%x, %x)
+""")
+
+WHILE_IR = strip_prefix("""
+    | import algebra
+    | import control_flow
+    | import function
+    | import index
+    | import number
+    |
+    | %main : function.Function<[], ()> = function.function<Nil>() body():
+    |     %zero : index.Index = 0
+    |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
+    |         %ten : index.Index = 10
+    |         %cmp : number.Boolean = algebra.less_than(%i, %ten)
+    |     body(%i: index.Index):
+    |         %one : index.Index = 1
+    |         %next : index.Index = algebra.add(%i, %one)
 """)
 
 
@@ -129,3 +147,13 @@ def test_input_outside_inputs_fails():
     compiler = Compiler([], IdentityPass(), inputs=(algebra.SubtractOp,))
     with pytest.raises(LoweringError, match="algebra.add"):
         compiler.run(parse(ADD_IR))
+
+
+def test_pass_state_lasts_one_run():
+    lowering = ControlFlowToGoto()
+    compiler = Compiler([lowering], IdentityPass())
+    first = asm.format(compiler.run(parse(WHILE_IR)))
+    second = asm.format(compiler.run(parse(WHILE_IR)))
+    assert "while_header0" in first
+    assert first == second
+    assert vars(lowering) == {}

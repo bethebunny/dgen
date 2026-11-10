@@ -45,16 +45,14 @@ class CLvalueToMemory(Pass):
     lowers = (LvalueVarOp,)
     emits = (memory.StackAllocateOp, memory.LoadOp, memory.StoreOp)
 
-    def __init__(self) -> None:
-        self._alloca: dict[str, memory.StackAllocateOp] = {}
-        self._alloca_depth: dict[str, int] = {}
-        self._block_stack: list[dgen.Block] = []
+    _alloca: dict[str, memory.StackAllocateOp]
+    _alloca_depth: dict[str, int]
+    _block_stack: list[dgen.Block]
 
-    def run(self, value: dgen.Value, compiler: object) -> dgen.Value:
+    def start(self) -> None:
         self._alloca = {}
         self._alloca_depth = {}
         self._block_stack = []
-        return super().run(value, compiler)
 
     def _lower_block(self, block: dgen.Block) -> None:
         self._block_stack.append(block)

@@ -6,7 +6,6 @@
 - Implement `HasTypeConstraint` verification (`requires X has type Tensor`): resolve subject to its type, look up the pattern name in the dialect type registry, check `isinstance`.
 
 ## General pass infrastructure
-- Passes should guarantee they can lower all ops in their input dialect — add validation that no un-lowered ops survive a pass
 - Canonicalization
 
 ## Block / scope invariants

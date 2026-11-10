@@ -89,7 +89,9 @@ class ControlFlowToGoto(Pass):
         PackOp,
     )
 
-    def __init__(self) -> None:
+    _loop_counter: int
+
+    def start(self) -> None:
         self._loop_counter = 0
 
     def verify_preconditions(self, root: dgen.Value) -> None:

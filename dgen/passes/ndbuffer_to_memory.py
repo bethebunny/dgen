@@ -81,15 +81,14 @@ class NDBufferToMemory(Pass):
         PackOp,
     )
 
-    def __init__(self) -> None:
-        # Track shapes for allocs that have been lowered to References.
-        self._shapes: dict[int, list[int]] = {}
+    # Shapes of allocs lowered to References, whose type no longer has one.
+    _shapes: dict[dgen.Value, list[int]]
+
+    def start(self) -> None:
+        self._shapes = {}
 
     def _resolve_shape(self, val: dgen.Value) -> list[int]:
-        """Get shape from NDBuffer type or from tracked alloc shapes."""
-        if id(val) in self._shapes:
-            return self._shapes[id(val)]
-        return _shape_of(val)
+        return self._shapes[val] if val in self._shapes else _shape_of(val)
 
     @lowering_for(ndbuffer.AllocOp)
     def lower_alloc(self, op: ndbuffer.AllocOp) -> dgen.Value | None:
@@ -102,7 +101,7 @@ class NDBufferToMemory(Pass):
             count=ConstantOp(value=total, type=Index()),
             type=memory.Reference(element_type=dtype),
         )
-        self._shapes[id(alloc)] = shape
+        self._shapes[alloc] = shape
         return alloc
 
     @lowering_for(ndbuffer.DeallocOp)
