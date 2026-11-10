@@ -339,6 +339,33 @@ op dim_size<axis: Index>(input: Tensor) -> Index:
     requires axis < input.shape.rank
 ```
 
+An expression is built from:
+  - names: an operand or parameter, eg. `axis`
+  - `$name`: the type of an operand or parameter, eg. `$lhs == $rhs`
+  - attribute access: a parameter of a type, or of a value's type, eg. `lhs.shape.rank`
+  - integer literals, eg. `0`
+  - arithmetic: `+ - * // %`, and unary `-`
+  - comparisons: `== != < <= > >=`, which don't chain
+  - `and`, `or`, `not`
+
+```
+expr    = or
+or      = and ("or" and)*
+and     = not ("and" not)*
+not     = "not" not | compare
+compare = sum [("==" | "!=" | "<" | "<=" | ">" | ">=") sum]
+sum     = term (("+" | "-") term)*
+term    = unary (("*" | "//" | "%") unary)*
+unary   = "-" unary | path
+path    = atom ("." NAME)*
+atom    = NAME | "$" NAME | INT | "(" expr ")"
+```
+
+A clause is checked once every value it reads is a constant or a type.
+Until then it is undecided, eg. `lhs.shape.rank` while `lhs` is an
+`InferredShapeTensor`. A pass that replaces an op requires all of the
+op's clauses decided and true.
+
 ## Complete grammar
 
 ```

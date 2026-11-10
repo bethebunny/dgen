@@ -2,8 +2,9 @@
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 
 ## Constraint verification
-- Implement expression constraint evaluation in `verify_constraints`. Requires an evaluator that can resolve operand/parameter references, attribute access on resolved types (`input.shape.rank`), comparisons, and arithmetic. Currently only `HasTraitConstraint` is verified; `ExpressionConstraint` and `HasTypeConstraint` are stored but silently skipped. See xfail tests in `test/test_trait.py`.
-- Implement `HasTypeConstraint` verification (`requires X has type Tensor`): resolve subject to its type, look up the pattern name in the dialect type registry, check `isinstance`.
+- Check declared operand and parameter types against actual types (an `Index` operand accepts a `Boolean` today). toy's operands are declared `Tensor` but are `InferredShapeTensor` before shape inference.
+- Check `requires` clauses on types; `verify_constraints` walks ops only.
+- Check at load time that a clause names only operands and parameters.
 
 ## General pass infrastructure
 - Passes should guarantee they can lower all ops in their input dialect — add validation that no un-lowered ops survive a pass
