@@ -2,8 +2,7 @@
 - Batch multiple subgraphs in the same staging pass rather than serializing them
 
 ## Constraint verification
-- Check declared operand and parameter types against actual types (an `Index` operand accepts a `Boolean` today). toy's operands are declared `Tensor` but are `InferredShapeTensor` before shape inference.
-- Check `requires` clauses on types; `verify_constraints` walks ops only.
+- Check declared operand and parameter types against actual types (an `Index` operand accepts a `Boolean` today). A trial check failed 164 tests: llvm ops declared `Int` get `index.Index`, `Reference` operands get `llvm.Ptr`, per-element `indices: Index` get a `Span`, `if` declares its condition `Index`, and toy's `Tensor` operands are `InferredShapeTensor` or `NDBuffer` mid-pipeline. Fix the declarations first.
 - Check at load time that a clause names only operands and parameters.
 
 ## General pass infrastructure
