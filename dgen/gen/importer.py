@@ -8,12 +8,14 @@ builds the dialect module in-memory via :func:`dgen.gen.build.build`.
 
 from __future__ import annotations
 
+import importlib
 import importlib.abc
 import importlib.machinery
 import sys
 from pathlib import Path
 from types import ModuleType
 
+from dgen.gen import model
 from dgen.gen.ast import DgenFile
 from dgen.gen.build import build
 from dgen.gen.parser import parse
@@ -83,6 +85,8 @@ class DgenLoader(importlib.abc.Loader):
         self.path = path
         # Populated by exec_module; available for introspection afterward.
         self.ast: DgenFile | None = None
+        # Built from ast on first use, by model_of().
+        self.model: model.Dialect | None = None
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> None:
         return None
@@ -97,6 +101,27 @@ class DgenLoader(importlib.abc.Loader):
             resolve_import=lambda name: _resolve_import(name, dgen_dir),
             module=module,
         )
+
+
+def model_of(module: ModuleType) -> model.Dialect:
+    """The resolved model of a module loaded from a .dgen file."""
+    spec = module.__spec__
+    assert spec is not None and isinstance(spec.loader, DgenLoader), (
+        f"{module.__name__} wasn't loaded from a .dgen file"
+    )
+    loader = spec.loader
+    if loader.model is None:
+        assert loader.ast is not None
+        dgen_dir = loader.path.parent
+        loader.model = model.Dialect.from_ast(
+            loader.ast,
+            name=loader.path.stem,
+            module=module.__name__,
+            imported=lambda name: model_of(
+                importlib.import_module(_resolve_import(name, dgen_dir))
+            ),
+        )
+    return loader.model
 
 
 class DgenFinder(importlib.abc.MetaPathFinder):
