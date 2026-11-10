@@ -890,8 +890,6 @@ class TestSqlite3:
         Tracks progress across four stages. Each assertion is a ratchet —
         update the threshold as improvements land.
         """
-        import sys
-
         from dgen.codegen import EmitContext, _emit_ctx, emit, prepare_function
         from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 
@@ -899,9 +897,6 @@ class TestSqlite3:
 
         llvm_binding.initialize_native_target()
         llvm_binding.initialize_native_asmprinter()
-
-        old_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(max(old_limit, 50000))
 
         from functools import reduce
         from dgen.dialects.builtin import ChainOp
@@ -1038,9 +1033,6 @@ class TestSqlite3:
             print("top LLVM parse/verify errors:")
             for key, n in sorted(parse_errors.items(), key=lambda x: -x[1])[:15]:
                 print(f"  {n:5d}  {key}")
-
-        # Ratchets — raise these as we fix things
-        sys.setrecursionlimit(old_limit)
 
         # Ratchets — raise as we fix things
         assert emitted >= total - 20, f"emitted regressed: {emitted}/{total}\n{report}"
