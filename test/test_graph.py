@@ -1,5 +1,9 @@
 """Tests for use-def graph utilities."""
 
+import sys
+
+import pytest
+
 from dgen import asm
 from dgen.asm.parser import parse
 from dgen.block import BlockArgument
@@ -7,7 +11,8 @@ from dgen.dialects import builtin, llvm
 from dgen.graph import all_values, interior_values, transitive_dependencies
 from dgen.module import ConstantOp
 from dgen.op import Op
-from dgen.testing import assert_ir_equivalent, strip_prefix
+from dgen.testing import assert_ir_equivalent, llvm_compile, strip_prefix
+from dgen.verify import verify_closed_blocks, verify_dag
 
 
 def test_transitive_dependencies_linear_chain():
@@ -157,3 +162,40 @@ def test_interior_values_empty_for_leaf_op():
     """A leaf op with no blocks has no interior values."""
     a = ConstantOp(value=1, type=builtin.Index())
     assert list(interior_values(a)) == []
+
+
+# ---------------------------------------------------------------------------
+# Deep chains
+# ---------------------------------------------------------------------------
+
+# Deeper than Python's default recursion limit, so any walk that recurses once
+# per use-def edge fails on it.
+DEEP_CHAIN = 2000
+
+
+def _deep_chain_ir(depth: int) -> str:
+    adds = "\n".join(
+        f"    %v{i} : index.Index = algebra.add(%v{i - 1}, 1)" for i in range(1, depth)
+    )
+    return (
+        "import algebra\nimport function\nimport index\n\n"
+        "%f : function.Function<[index.Index], index.Index> = "
+        "function.function<index.Index>() body(%x: index.Index):\n"
+        f"    %v0 : index.Index = algebra.add(%x, 1)\n{adds}\n"
+    )
+
+
+def test_deep_chain_walks():
+    assert DEEP_CHAIN > sys.getrecursionlimit()
+    func = parse(_deep_chain_ir(DEEP_CHAIN))
+    assert len(list(func.body.ops)) == DEEP_CHAIN
+    verify_dag(func)
+    verify_closed_blocks(func)
+    assert_ir_equivalent(func, asm.parse(asm.format(func)))
+
+
+# Slow until replacement stops sweeping the block once per lowered op.
+@pytest.mark.slow
+def test_deep_chain_runs():
+    func = parse(_deep_chain_ir(DEEP_CHAIN))
+    assert llvm_compile(func).run(5).to_json() == 5 + DEEP_CHAIN

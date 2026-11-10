@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from itertools import chain
+
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialect import Dialect
@@ -142,11 +145,11 @@ def verify_dag(root: dgen.Value) -> None:
     """
     path: set[dgen.Value] = set()
     visited: set[dgen.Value] = set()
+    # Each op on the current path with an iterator over the values it reaches.
+    stack: list[tuple[dgen.Value, Iterator[dgen.Value]]] = []
 
-    def visit(value: dgen.Value) -> None:
-        if not isinstance(value, dgen.Op):
-            return
-        if value in visited:
+    def enter(value: dgen.Value) -> None:
+        if not isinstance(value, dgen.Op) or value in visited:
             return
         if value in path:
             # Don't dump ASM — the graph has a cycle, formatting would loop.
@@ -154,16 +157,22 @@ def verify_dag(root: dgen.Value) -> None:
                 f"Use-def cycle detected at %{value.name} ({type(value).__name__})"
             )
         path.add(value)
-        for _, operand in value.operands:
-            visit(operand)
-        for _, param in value.parameters:
-            visit(param)
-        for _, block in value.blocks:
-            visit(block.result)
-        path.remove(value)
-        visited.add(value)
+        successors = chain(
+            (operand for _, operand in value.operands),
+            (param for _, param in value.parameters),
+            (block.result for _, block in value.blocks),
+        )
+        stack.append((value, successors))
 
-    visit(root)
+    enter(root)
+    while stack:
+        top, successors = stack[-1]
+        if (successor := next(successors, None)) is None:
+            stack.pop()
+            path.remove(top)
+            visited.add(top)
+        else:
+            enter(successor)
 
 
 # ---------------------------------------------------------------------------

@@ -133,9 +133,13 @@ def fingerprint(root: Value) -> bytes:
     known before any recursive fingerprinting begins.
     """
     fp = Fingerprinter()
-    for v in all_values(root):
+    values = list(all_values(root))
+    for v in values:
         for _, block in v.blocks:
             fp.register_block(block)
+    # Fill the cache dependencies first, so no fingerprint recurses more than a level.
+    for v in values:
+        fp.fingerprint(v)
     return fp.fingerprint(root)
 
 

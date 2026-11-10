@@ -34,16 +34,21 @@ def transitive_dependencies(
 
     Stop at any elements in the `stop` set."""
     visited: set[dgen.Value] = set(stop)
-
-    def visit(value: dgen.Value) -> Iterator[dgen.Value]:
-        visited.add(value)
-        for dep in value.dependencies:
-            # check before recursing to reduce function call overhead
-            if dep not in visited:
-                yield from visit(dep)
-        yield value
-
-    yield from () if value in visited else visit(value)
+    if value in visited:
+        return
+    visited.add(value)
+    # Each open value with its dependency iterator, so depth costs memory, not frames.
+    stack: list[tuple[dgen.Value, Iterator[dgen.Value]]] = [
+        (value, iter(value.dependencies))
+    ]
+    while stack:
+        top, dependencies = stack[-1]
+        if (dep := next((d for d in dependencies if d not in visited), None)) is None:
+            stack.pop()
+            yield top
+        else:
+            visited.add(dep)
+            stack.append((dep, iter(dep.dependencies)))
 
 
 def all_values(value: dgen.Value) -> Iterator[dgen.Value]:
