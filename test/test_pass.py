@@ -13,7 +13,7 @@ from dgen.dialects.builtin import Nil
 from dgen.dialects.function import FunctionOp
 from dgen.module import ConstantOp
 import dgen
-from dgen.passes.pass_ import Pass, lowering_for
+from dgen.passes.pass_ import Pass, lowering_for, rewrite_for
 from dgen.staging import ConstantFold
 from dgen.verify import ClosedBlockError
 from toy.dialects import toy
@@ -223,12 +223,12 @@ def test_pass_multiple_handlers_first_wins():
     class MultiPass(Pass):
         allow_unregistered_ops = True
 
-        @lowering_for(ConstantOp)
+        @rewrite_for(ConstantOp)
         def first(self, op: ConstantOp) -> dgen.Value | None:
             call_log.append("first")
             return op
 
-        @lowering_for(ConstantOp)
+        @rewrite_for(ConstantOp)
         def second(self, op: ConstantOp) -> dgen.Value | None:
             call_log.append("second")
             return op

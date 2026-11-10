@@ -104,6 +104,7 @@ class PeanoLowering(Pass):
     """Lower peano ops to constants."""
 
     allow_unregistered_ops = True
+    emits = (ConstantOp,)
 
     @lowering_for(ZeroOp)
     def lower_zero(self, op: ZeroOp) -> Value | None:

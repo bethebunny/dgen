@@ -584,6 +584,7 @@ def test_staging_resolves_type_value():
 
     class LowerAlgebraAdd(Pass):
         allow_unregistered_ops = True
+        emits = (llvm.AddOp,)
 
         @lowering_for(algebra.AddOp)
         def lower_add(self, op: algebra.AddOp) -> dgen.Value | None:
