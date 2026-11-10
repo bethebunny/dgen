@@ -13,7 +13,10 @@ from syrupy.assertion import SnapshotAssertion
 
 import dgen
 from dgen.testing import llvm_compile
-from dgen.compiler import Compiler, IdentityPass
+from dgen.codegen import LLVMCodegen
+from dgen.compiler import Compiler, IdentityPass, PipelineError
+from dgen.passes.builtin_to_llvm import BuiltinToLLVM
+from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.dialects.builtin import Nil
@@ -22,7 +25,7 @@ from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
 from dcc.dialects import c_int
 from dcc.dialects.c import CStruct
 from dcc.parser.c_parser import parse_c_string
-from dcc.parser.lowering import lower
+from dcc.parser.lowering import EMITS, lower
 from dcc.parser.type_resolver import TypeResolver
 from dcc.passes.c_to_llvm import CToLLVM
 from dcc.passes.c_to_memory import CToMemory
@@ -451,6 +454,26 @@ def _lower_to_llvm(source: str) -> dgen.Value:
         return pipeline.run(root)
     finally:
         verify_passes.reset(token)
+
+
+@pytest.mark.xfail(
+    raises=PipelineError, strict=True, reason="c.continue has no lowering"
+)
+def test_pipeline_lowers_every_frontend_op():
+    """_lower_to_llvm and llvm_compile as one pipeline, from the frontend's ops."""
+    Compiler(
+        [
+            CToMemory(),
+            CToLLVM(),
+            AlgebraToLLVM(),
+            MemoryToLLVM(),
+            ControlFlowToGoto(),
+            BuiltinToLLVM(),
+            AlgebraToLLVM(),
+        ],
+        LLVMCodegen(),
+        inputs=EMITS,
+    )
 
 
 def _codegen_verifies(source: str) -> None:

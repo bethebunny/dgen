@@ -14,6 +14,7 @@ from dgen.passes.builtin_to_llvm import BuiltinToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
 
+from dcc2.parser.lowering import EMITS
 from dcc2.passes.c_lvalue_to_memory import CLvalueToMemory
 
 # Make dcc2 dialects discoverable for IR parsing round-trips.
@@ -33,6 +34,7 @@ c_compiler: Compiler[Executable] = Compiler(
         AlgebraToLLVM(),
     ],
     exit=LLVMCodegen(),
+    inputs=EMITS,
 )
 
 

@@ -66,6 +66,16 @@ class CToMemory(Pass):
     """Lower C variable/struct ops to memory dialect ops."""
 
     allow_unregistered_ops = True
+    emits = (
+        memory.StackAllocateOp,
+        memory.LoadOp,
+        memory.StoreOp,
+        memory.OffsetOp,
+        llvm.GepOp,
+        algebra.AddOp,
+        algebra.SubtractOp,
+        ConstantOp,
+    )
 
     def __init__(self) -> None:
         # Per-variable state: alloca and last memory token

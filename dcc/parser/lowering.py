@@ -21,7 +21,8 @@ from dgen.dialects.control_flow import IfOp, WhileOp
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64
-from dgen.module import ConstantOp, pack
+from dgen.module import ConstantOp, PackOp, pack
+from dgen.passes.pass_ import Ops
 from dgen.dialects import function
 
 from dcc.dialects import c_int
@@ -33,6 +34,7 @@ from dcc.dialects.c import (
     CompoundAssignOp,
     ContinueOp,
     DereferenceOp,
+    DoWhileOp,
     ElementAddressOp,
     FieldAddressOp,
     LogicalNotOp,
@@ -53,6 +55,42 @@ from dcc.dialects.c import (
     VariableDeclarationOp,
 )
 from dcc.parser.type_resolver import TypeResolver
+
+EMITS: Ops = (
+    AddressOfOp,
+    AssignOp,
+    BreakOp,
+    CompoundAssignOp,
+    ContinueOp,
+    DereferenceOp,
+    DoWhileOp,
+    ElementAddressOp,
+    FieldAddressOp,
+    LogicalNotOp,
+    MemberAccessOp,
+    ModuloOp,
+    PointerMemberAccessOp,
+    PostDecrementOp,
+    PostIncrementOp,
+    PreDecrementOp,
+    PreIncrementOp,
+    ReadVariableOp,
+    ReturnOp,
+    ShiftLeftOp,
+    ShiftRightOp,
+    SizeofOp,
+    StoreIndirectOp,
+    SubscriptOp,
+    VariableDeclarationOp,
+    algebra.algebra,
+    IfOp,
+    WhileOp,
+    function.FunctionOp,
+    function.CallOp,
+    ExternOp,
+    ConstantOp,
+    PackOp,
+)
 
 
 class LoweringError(Exception):
@@ -581,8 +619,6 @@ class Parser:
         yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
 
     def _do_while(self, node: c_ast.DoWhile, scope: Scope) -> Iterator[dgen.Op]:
-        from dcc.dialects.c import DoWhileOp
-
         body_scope = scope.child()
         body_block = self._block_from(self._stmt(node.stmt, body_scope), body_scope)
         cond_scope = scope.child()

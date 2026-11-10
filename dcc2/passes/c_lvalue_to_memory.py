@@ -41,6 +41,9 @@ class CLvalueToMemory(Pass):
     """Lower lvalue ops to memory dialect ops."""
 
     allow_unregistered_ops = True
+    # An lvalue_var dies with the assign or read that names it.
+    lowers = (LvalueVarOp,)
+    emits = (memory.StackAllocateOp, memory.LoadOp, memory.StoreOp)
 
     def __init__(self) -> None:
         self._alloca: dict[str, memory.StackAllocateOp] = {}

@@ -30,6 +30,14 @@ class CToLLVM(Pass):
     """Lower C-specific ops that have no shared dialect equivalent."""
 
     allow_unregistered_ops = True
+    emits = (
+        llvm.MulOp,
+        llvm.SdivOp,
+        llvm.SubOp,
+        algebra.CastOp,
+        algebra.EqualOp,
+        ConstantOp,
+    )
 
     @lowering_for(ModuloOp)
     def lower_modulo(self, op: ModuloOp) -> dgen.Value | None:

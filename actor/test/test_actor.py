@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import pytest
 
+from actor.dialects import actor
 from actor.passes.actor_to_affine import ActorToAffine
 from dgen import asm
 from dgen.codegen import Executable, LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
-from dgen.dialects import builtin
+from dgen.dialects import algebra, builtin, control_flow, ndbuffer
+from dgen.dialects.function import FunctionOp
 from dgen.dialects.number import Float64
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.testing import strip_prefix
+from dgen.module import ConstantOp, PackOp
 from dgen.type import Memory
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
 from dgen.passes.memory_to_llvm import MemoryToLLVM
@@ -26,6 +29,16 @@ actor_compiler: Compiler[Executable] = Compiler(
         AlgebraToLLVM(),
     ],
     exit=LLVMCodegen(),
+    inputs=(
+        actor.actor,
+        control_flow.control_flow,
+        ndbuffer.ndbuffer,
+        algebra.algebra,
+        FunctionOp,
+        builtin.ChainOp,
+        ConstantOp,
+        PackOp,
+    ),
 )
 
 # Shared IR template: two actors, multiply-by-2 then add-1.

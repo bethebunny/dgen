@@ -21,12 +21,27 @@ from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
 from dgen.dialects.function import Function as FunctionType
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Boolean, Float64
-from dgen.module import ConstantOp, pack
+from dgen.module import ConstantOp, PackOp, pack
+from dgen.passes.pass_ import Ops
 
 from dcc2.dialects import c_int
 from dcc2.dialects.c import AssignOp, LvalueToRvalueOp, LvalueVarOp
 from dcc2.parser.c_literals import parse_c_char, parse_c_int
 from dcc2.parser.type_resolver import TypeResolver
+
+EMITS: Ops = (
+    LvalueVarOp,
+    AssignOp,
+    LvalueToRvalueOp,
+    algebra.algebra,
+    control_flow.IfOp,
+    control_flow.WhileOp,
+    function.FunctionOp,
+    ChainOp,
+    ExternOp,
+    ConstantOp,
+    PackOp,
+)
 
 
 class LoweringError(Exception):

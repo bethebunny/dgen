@@ -22,6 +22,8 @@ from actor.dialects.actor import ActorOp, PipelineOp, ProduceOp
 
 class ActorToAffine(Pass):
     allow_unregistered_ops = True
+    # Actors and their produce ops die when the pipeline inlines them.
+    lowers = (ActorOp, ProduceOp)
 
     @lowering_for(PipelineOp)
     def lower_pipeline(self, op: PipelineOp) -> dgen.Value | None:
