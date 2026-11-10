@@ -13,7 +13,7 @@ from dgen.dialects.builtin import Nil
 from dgen.module import ConstantOp, PackOp
 
 from ..op import Op
-from ..type import Value, format_value
+from ..type import Value, format_field, format_value
 
 
 def indent(it: Iterable[str], prefix: str = "    ") -> Iterable[str]:
@@ -115,8 +115,14 @@ def op_asm(
         tracker.register([op])
 
     cls = type(op)
-    param_parts = [format_expr(param, tracker) for _, param in op.parameters]
-    operand_parts = [format_expr(operand, tracker) for _, operand in op.operands]
+    param_parts = [
+        format_field(getattr(op, name), field_type, None, tracker.track_name)
+        for name, field_type in cls.__params__
+    ]
+    operand_parts = [
+        format_field(getattr(op, name), field_type, op.type, tracker.track_name)
+        for name, field_type in cls.__operands__
+    ]
 
     result_name = tracker.track_name(op)
     type_str = format_expr(op.type, tracker)

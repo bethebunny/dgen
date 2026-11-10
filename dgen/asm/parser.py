@@ -5,6 +5,7 @@ read/try_read dispatch to reader functions — like lisp reader macros.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from contextvars import ContextVar
@@ -18,6 +19,7 @@ from dgen.block import BlockArgument, BlockParameter
 from dgen.dialect import Dialect
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, PackOp
+from dgen.type import literal_type
 from dgen.verify import verify_closed_blocks, verify_constraints, verify_dag
 
 verify_parsed: ContextVar[bool] = ContextVar("dgen.verify_parsed", default=False)
@@ -57,7 +59,7 @@ class FatalParseError(ParseError):
 
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 _QUALIFIED = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*")
-_STRING = re.compile(r'"[^"]*"')
+_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
 _SSA = re.compile(r"%[a-zA-Z0-9_]+")
 _NUMBER = re.compile(r"-?\d+\.\d*|-?\d*\.\d+|-?\d+")
 _LITERAL_START = set('-0123456789{["(')
@@ -273,7 +275,7 @@ def newline(parser: ASMParser) -> int:
 
 
 def _dict_entry(parser: ASMParser) -> tuple[str, object]:
-    key = parser.expect_token(_STRING, "key")[1:-1]
+    key = json.loads(parser.expect_token(_STRING, "key"))
     parser.read(":")
     return key, value_expression(parser)
 
@@ -293,7 +295,7 @@ def value_expression(parser: ASMParser) -> object:
         parser.read("}")
         return dict(entries)
     if (string := parser.parse_token(_STRING)) is not None:
-        return string[1:-1]
+        return json.loads(string)
     if (number := parser.parse_token(_NUMBER)) is not None:
         return float(number) if "." in number else int(number)
     type_val = _named_type(parser)
@@ -387,16 +389,14 @@ def op_statement(parser: ASMParser) -> Op:
     kwargs: dict[str, object] = {"name": name}
     if pre_type is not None:
         kwargs["type"] = pre_type
+    annotation = pre_type if isinstance(pre_type, Value) else None
     try:
         for (param_name, param_type), value in zip(op_cls.__params__, parameters):
             kwargs[param_name] = _coerce(parser, value, param_type)
         for (field_name, field_type), value in zip(op_cls.__operands__, operands):
-            # For polymorphic ops (field_type is base Type), infer concrete type
-            # from the explicit result type annotation when available.
-            effective_type = field_type
-            if field_type is Type and isinstance(pre_type, Type):
-                effective_type = type(pre_type)
-            kwargs[field_name] = _coerce(parser, value, effective_type)
+            kwargs[field_name] = _coerce(
+                parser, value, literal_type(field_type, annotation)
+            )
         for block_name, block in zip(op_cls.__blocks__, blocks):
             kwargs[block_name] = block
         op = op_cls(**kwargs)

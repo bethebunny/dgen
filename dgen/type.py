@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 from collections.abc import Callable
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass
@@ -176,10 +177,12 @@ class Type(Value["TypeType"]):
     def format_asm(self, slot: SlotFn = _default_slot) -> str:
         """Format as ``dialect.Name<params>`` (no prefix for builtin)."""
         name = self.dialect.qualified_name(self.asm_name)
-        params = list(self.parameters)
-        if not params:
+        if not self.__params__:
             return name
-        args = ", ".join(format_value(val, slot) for _, val in params)
+        args = ", ".join(
+            format_field(getattr(self, field), field_type, None, slot)
+            for field, field_type in self.__params__
+        )
         return f"{name}<{args}>"
 
     @cached_property
@@ -282,19 +285,47 @@ def format_value(value: object, slot: SlotFn = _default_slot) -> str:
     return format_json(value, slot)
 
 
+def literal_type(field_type: type[Type], annotation: Value | None) -> type[Type]:
+    """The type a bare literal takes in a field of field_type, in a statement annotated with annotation."""
+    return (
+        type(annotation)
+        if field_type is Type and isinstance(annotation, Type)
+        else field_type
+    )
+
+
+def format_field(
+    value: Value,
+    field_type: type[Type],
+    annotation: Value | None,
+    slot: SlotFn = _default_slot,
+) -> str:
+    """value in a field of field_type, with its type wherever a bare literal would read back as another."""
+    if (
+        isinstance(value, Constant)
+        and not type(value.type).__params__
+        and type(value.type) is not literal_type(field_type, annotation)
+    ):
+        literal = format_json(value.__constant__.to_json(), slot)
+        return f"{value.type.format_asm(slot)}({literal})"
+    return format_value(value, slot)
+
+
 def format_json(value: object, slot: SlotFn = _default_slot) -> str:
     """Format a plain Python value as an ASM literal."""
     if isinstance(value, list):
         return "[" + ", ".join(format_value(v, slot) for v in value) + "]"
     if isinstance(value, dict):
-        items = ", ".join(f'"{k}": {format_value(v, slot)}' for k, v in value.items())
+        items = ", ".join(
+            f"{format_json(k)}: {format_value(v, slot)}" for k, v in value.items()
+        )
         return "{" + items + "}"
     if isinstance(value, float):
         return _format_float(value)
     if isinstance(value, int):
         return str(value)
     if isinstance(value, str):
-        return f'"{value}"'
+        return json.dumps(value, ensure_ascii=False)
     raise ValueError(f"Cannot format {type(value).__name__} as ASM literal: {value!r}")
 
 
