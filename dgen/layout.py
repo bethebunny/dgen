@@ -35,10 +35,10 @@ class Layout:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Layout):
             return NotImplemented
-        return type(self) is type(other) and self.struct.format == other.struct.format
+        return str(self) == str(other)
 
     def __hash__(self) -> int:
-        return hash((type(self).__name__, self.struct.format))
+        return hash(str(self))
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> object:
         raise NotImplementedError
@@ -55,6 +55,9 @@ class Void(Layout):
     struct = Struct("0s")
     register_passable = True
 
+    def __str__(self) -> str:
+        return "void"
+
     def to_json(self, buf: bytes | bytearray, offset: int) -> None:
         return None
 
@@ -67,6 +70,9 @@ class Void(Layout):
 class Byte(Layout):
     struct = Struct("B")
     register_passable = True
+
+    def __str__(self) -> str:
+        return "byte"
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
@@ -84,6 +90,9 @@ class Int(Layout):
     struct = Struct("q")
     register_passable = True
 
+    def __str__(self) -> str:
+        return "int64"
+
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
 
@@ -99,6 +108,9 @@ class Float64(Layout):
 
     struct = Struct("d")
     register_passable = True
+
+    def __str__(self) -> str:
+        return "float64"
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> float:
         return self.struct.unpack_from(buf, offset)[0]
@@ -116,7 +128,10 @@ class Array(Layout):
     def __init__(self, element: Layout, count: int) -> None:
         self.element = element
         self.count = count
-        self.struct = Struct(f"{count}{element.struct.format}")
+        self.struct = Struct(element.struct.format * count)
+
+    def __str__(self) -> str:
+        return f"array<{self.element}, {self.count}>"
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
         return [
@@ -142,6 +157,9 @@ class Pointer(Layout):
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
 
+    def __str__(self) -> str:
+        return f"pointer<{self.pointee}>"
+
     def to_json(self, buf: bytes | bytearray, offset: int) -> object:
         (ptr,) = self.struct.unpack_from(buf, offset)
         pointee = self.pointee
@@ -166,6 +184,9 @@ class Span(Layout):
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
+
+    def __str__(self) -> str:
+        return f"span<{self.pointee}>"
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> list[object]:
         ptr, length = self.struct.unpack_from(buf, offset)
@@ -202,18 +223,8 @@ class Record(Layout):
         # Use a raw byte format for the total size
         self.struct = Struct(f"{offset}s") if offset > 0 else Struct("0s")
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Record):
-            return NotImplemented
-        if len(self.fields) != len(other.fields):
-            return False
-        return all(
-            n1 == n2 and l1 == l2
-            for (n1, l1), (n2, l2) in zip(self.fields, other.fields)
-        )
-
-    def __hash__(self) -> int:
-        return hash(tuple((name, type(lay).__name__) for name, lay in self.fields))
+    def __str__(self) -> str:
+        return f"record<{', '.join(f'{name}: {lay}' for name, lay in self.fields)}>"
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
         result: dict[str, object] = {}
@@ -242,6 +253,9 @@ class TypeValue(Layout):
     """
 
     struct = Struct("P")
+
+    def __str__(self) -> str:
+        return "type"
 
     @staticmethod
     def _is_type_kinded(param_type: type) -> bool:
@@ -307,6 +321,9 @@ class String(Span):
 
     def __init__(self, pointee: Layout | None = None) -> None:
         super().__init__(pointee or Byte())
+
+    def __str__(self) -> str:
+        return "string"
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> str:
         byte_list = super().to_json(buf, offset)

@@ -366,3 +366,46 @@ def test_parse_type_with_pointer_array_param():
         |     %_ : Nil = ()
     """)
     parse(ir)
+
+
+def test_array_of_spans_size():
+    assert Array(Span(layout.Int()), 3).byte_size == 48
+
+
+def test_array_of_arrays_size():
+    assert Array(Array(layout.Int(), 2), 3).byte_size == 48
+
+
+def test_array_of_records_size():
+    assert Array(layout.Record([("a", layout.Int()), ("b", Float64())]), 3).byte_size == 48
+
+
+def test_array_of_spans_roundtrip():
+    shape = builtin.Array(element_type=builtin.Span(pointee=builtin.Index()), n=builtin.Index().constant(3))
+    value = [[1], [2, 3], []]
+    assert Memory.from_json(shape, value).to_json() == value
+
+
+def test_pointer_layouts_differ_by_pointee():
+    assert Pointer(layout.Int()) != Pointer(Float64())
+    assert Span(layout.Int()) != Span(Float64())
+    assert Array(layout.Int(), 2) != Array(Float64(), 2)
+
+
+def test_pointer_layouts_equal_by_pointee():
+    assert Pointer(layout.Int()) == Pointer(layout.Int())
+    assert hash(Span(Byte())) == hash(Span(Byte()))
+
+
+def test_memory_hash_matches_eq():
+    one, other = builtin.Index().constant(1).__constant__, builtin.Index().constant(1).__constant__
+    assert one == other
+    assert hash(one) == hash(other)
+    assert len({one, other}) == 1
+
+
+def test_span_memory_hash_matches_eq():
+    span = builtin.Span(pointee=builtin.Index())
+    one, other = Memory.from_json(span, [1, 2]), Memory.from_json(span, [1, 2])
+    assert one == other
+    assert hash(one) == hash(other)

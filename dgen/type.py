@@ -298,6 +298,17 @@ def format_json(value: object, slot: SlotFn = _default_slot) -> str:
     raise ValueError(f"Cannot format {type(value).__name__} as ASM literal: {value!r}")
 
 
+def _frozen(value: object) -> object:
+    """A hashable copy of a JSON value, equal where the JSON values are equal."""
+    match value:
+        case list():
+            return tuple(_frozen(v) for v in value)
+        case dict():
+            return frozenset((k, _frozen(v)) for k, v in value.items())
+        case _:
+            return value
+
+
 class Memory(Generic[T]):
     """Typed memory buffer — the ABI for a type.
 
@@ -385,7 +396,9 @@ class Memory(Generic[T]):
         )
 
     def __hash__(self) -> int:
-        return hash((bytes(self.type.__constant__.buffer), bytes(self.buffer)))
+        return hash(
+            (_frozen(self.type.__constant__.to_json()), _frozen(self.to_json()))
+        )
 
     def __repr__(self) -> str:
         return f"Memory({self.type!r}, {self.unpack()!r})"
