@@ -9,7 +9,6 @@ from dgen.dialects.function import FunctionOp
 from dgen.testing import assert_ir_equivalent, strip_prefix
 from dgen.verify import ClosedBlockError, verify_closed_blocks
 
-
 # ---------------------------------------------------------------------------
 # Roundtrip
 # ---------------------------------------------------------------------------
@@ -127,7 +126,8 @@ def test_verify_missing_capture_of_block_arg():
     """)
     f = parse(ir)
     assert isinstance(f, FunctionOp)
-    assert isinstance(inner := f.body.result, goto.LabelOp)
+    inner = f.body.result
+    assert isinstance(inner, goto.LabelOp)
     inner.body.captures.clear()
     with pytest.raises(ClosedBlockError):
         verify_closed_blocks(f)
@@ -148,8 +148,10 @@ def test_verify_missing_capture_of_block_parameter():
     """)
     f = parse(ir)
     assert isinstance(f, FunctionOp)
-    assert isinstance(header := f.body.result, goto.LabelOp)
-    assert isinstance(body := header.body.result, goto.LabelOp)
+    header = f.body.result
+    assert isinstance(header, goto.LabelOp)
+    body = header.body.result
+    assert isinstance(body, goto.LabelOp)
     body.body.captures.clear()
     with pytest.raises(ClosedBlockError):
         verify_closed_blocks(f)
@@ -231,7 +233,8 @@ def test_verify_unchained_capture_fails():
     """)
     f = parse(ir)
     assert isinstance(f, FunctionOp)
-    assert isinstance(mid := f.body.result, goto.LabelOp)
+    mid = f.body.result
+    assert isinstance(mid, goto.LabelOp)
     mid.body.captures.clear()
     with pytest.raises(ClosedBlockError):
         verify_closed_blocks(f)

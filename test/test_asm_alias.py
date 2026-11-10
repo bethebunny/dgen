@@ -50,7 +50,8 @@ def test_block_ends_on_a_capture():
         """)
     )
     assert isinstance(f, FunctionOp)
-    assert isinstance(inner := f.body.result, goto.LabelOp)
+    inner = f.body.result
+    assert isinstance(inner, goto.LabelOp)
     assert inner.body.result is f.body.args[0]
     assert_ir_equivalent(f, asm.parse(asm.format(f)))
 
