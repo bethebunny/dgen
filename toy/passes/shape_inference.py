@@ -6,7 +6,7 @@ import dgen
 from dgen.dialects import function
 from dgen.graph import all_blocks, all_values
 from dgen.module import ConstantOp, PackOp
-from dgen.passes.pass_ import Pass, lowering_for
+from dgen.passes.pass_ import Pass, rewrite_for
 from toy.dialects import shape_constant, toy
 
 
@@ -29,25 +29,25 @@ class ShapeInference(Pass):
             return result
         return None
 
-    @lowering_for(toy.TransposeOp)
+    @rewrite_for(toy.TransposeOp)
     def infer_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
         if shape := self._shape(op.input):
             op.type = toy.Tensor(shape=shape_constant(list(reversed(shape))))
         return op
 
-    @lowering_for(toy.MulOp)
+    @rewrite_for(toy.MulOp)
     def infer_mul(self, op: toy.MulOp) -> dgen.Value | None:
         if shape := self._shape(op.lhs):
             op.type = toy.Tensor(shape=shape_constant(shape))
         return op
 
-    @lowering_for(toy.AddOp)
+    @rewrite_for(toy.AddOp)
     def infer_add(self, op: toy.AddOp) -> dgen.Value | None:
         if shape := self._shape(op.lhs):
             op.type = toy.Tensor(shape=shape_constant(shape))
         return op
 
-    @lowering_for(toy.ConcatOp)
+    @rewrite_for(toy.ConcatOp)
     def infer_concat(self, op: toy.ConcatOp) -> dgen.Value | None:
         lhs_shape = self._shape(op.lhs)
         rhs_shape = self._shape(op.rhs)
@@ -59,7 +59,7 @@ class ShapeInference(Pass):
             op.type = toy.Tensor(shape=shape_constant(shape))
         return op
 
-    @lowering_for(toy.TileOp)
+    @rewrite_for(toy.TileOp)
     def infer_tile(self, op: toy.TileOp) -> dgen.Value | None:
         if not isinstance(op.count, ConstantOp):
             return op
@@ -69,7 +69,7 @@ class ShapeInference(Pass):
             op.type = toy.Tensor(shape=shape_constant([count] + shape))
         return op
 
-    @lowering_for(function.CallOp)
+    @rewrite_for(function.CallOp)
     def infer_call(self, op: function.CallOp) -> dgen.Value | None:
         args = (
             list(op.arguments) if isinstance(op.arguments, PackOp) else [op.arguments]

@@ -7,7 +7,7 @@ JIT tests verify actual execution output.
 import llvmlite.binding as llvm_binding
 
 import dgen
-from dgen.codegen import emit_llvm_ir
+from dgen.codegen import EMITTERS, emit_llvm_ir
 from dgen.compiler import Compiler, IdentityPass
 from dgen.passes.algebra_to_llvm import AlgebraToLLVM
 from dgen.passes.control_flow_to_goto import ControlFlowToGoto
@@ -178,6 +178,9 @@ class LowerLLVMToLLVMIR:
     def run(self, value: dgen.Value) -> str:
         llvm_ir, _ = emit_llvm_ir(value)
         return llvm_ir
+
+    def accepts(self, op: type[dgen.Op]) -> bool:
+        return op in EMITTERS
 
 
 def test_transpose_phi_emission():

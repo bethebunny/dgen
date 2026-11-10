@@ -11,7 +11,7 @@ from dgen.dialects.builtin import ChainOp
 from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean, Float64
 from dgen.dialects.function import Function, FunctionOp
-from dgen.module import ConstantOp, pack
+from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.dialects import control_flow
 from dgen.dialects import ndbuffer
@@ -55,6 +55,22 @@ def _nested_for(
 
 class ToyToStructured(Pass):
     allow_unregistered_ops = True
+    lowers = (toy.toy,)
+    emits = (
+        ndbuffer.ndbuffer,
+        control_flow.ForOp,
+        algebra.AddOp,
+        algebra.MultiplyOp,
+        algebra.CastOp,
+        algebra.NotEqualOp,
+        memory.StackAllocateOp,
+        memory.LoadOp,
+        memory.StoreOp,
+        ChainOp,
+        ConstantOp,
+        PackOp,
+        FunctionOp,
+    )
 
     def run(self, value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
         result = super().run(value, compiler)

@@ -8,7 +8,8 @@ import dgen
 from dgen.block import BlockArgument
 from dgen.dialects import algebra, builtin, function, index
 from dgen.dialects.function import Function as FunctionType
-from dgen.module import ConstantOp, pack
+from dgen.module import ConstantOp, PackOp, pack
+from dgen.passes.pass_ import Ops
 from toy.dialects import shape_constant, toy
 from toy.parser.ast import (
     BinaryOp,
@@ -24,6 +25,16 @@ from toy.parser.ast import (
     ToyModule,
     VarDecl,
     VarRef,
+)
+
+EMITS: Ops = (
+    toy.toy,
+    function.FunctionOp,
+    function.CallOp,
+    algebra.AddOp,
+    builtin.ChainOp,
+    ConstantOp,
+    PackOp,
 )
 
 

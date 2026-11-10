@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dgen
 from dgen.graph import all_values
-from dgen.passes.pass_ import Pass, lowering_for
+from dgen.passes.pass_ import Pass, rewrite_for
 from toy.dialects import toy
 
 
@@ -23,13 +23,13 @@ class ToyOptimize(Pass):
                     "consecutive reshape remains after ToyOptimize"
                 )
 
-    @lowering_for(toy.TransposeOp)
+    @rewrite_for(toy.TransposeOp)
     def eliminate_transpose(self, op: toy.TransposeOp) -> dgen.Value | None:
         if isinstance(op.input, toy.TransposeOp):
             return op.input.input
         return None
 
-    @lowering_for(toy.ReshapeOp)
+    @rewrite_for(toy.ReshapeOp)
     def simplify_reshape(self, op: toy.ReshapeOp) -> dgen.Value | None:
         # Collapse sequences of reshapes
         if isinstance(op.input, toy.ReshapeOp):

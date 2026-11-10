@@ -18,7 +18,7 @@ from dgen.passes.memory_to_llvm import MemoryToLLVM
 from dgen.passes.ndbuffer_to_memory import NDBufferToMemory
 from toy.dialects import shape_constant
 from toy.dialects.toy import Tensor
-from toy.parser.lowering import lower
+from toy.parser.lowering import EMITS, lower
 from toy.parser.toy_parser import parse_toy
 from toy.passes.optimize import ToyOptimize
 from toy.passes.shape_inference import ShapeInference
@@ -39,6 +39,7 @@ toy_compiler: Compiler[Executable] = Compiler(
         AlgebraToLLVM(),
     ],
     exit=LLVMCodegen(),
+    inputs=EMITS,
 )
 
 
