@@ -106,3 +106,21 @@ def test_mutual_recursion_roundtrip():
 def test_mutual_recursion_jit():
     exe = llvm_compile(parse(IS_EVEN))
     assert [exe.run(n).to_json() for n in range(5)] == [1, 0, 1, 0, 1]
+
+
+def test_function_used_from_one_body_is_nested():
+    """An uncaptured function used from one body is that body's own op, so it verifies."""
+    ir = strip_prefix("""
+        | import algebra
+        | import function
+        | import index
+        |
+        | %g : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
+        |     %r : index.Index = algebra.add(%n, 1)
+        |
+        | %f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        |     %result : index.Index = function.call<%g>([%x])
+    """)
+    value = parse(ir)
+    verify_closed_blocks(value)
+    assert llvm_compile(value).run(4).to_json() == 5
