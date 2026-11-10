@@ -2,6 +2,7 @@
 
 The snapshots in test/mlir are the generator's output. After a deliberate change, regenerate one with
     python -m dgen.gen --target mlir dgen/dialects/X.dgen > test/mlir/X.td
+(toy's file is toy/dialects/toy.dgen).
 """
 
 from __future__ import annotations
@@ -27,6 +28,12 @@ DIALECTS = {
     "number": "dgen.dialects.number",
     "algebra": "dgen.dialects.algebra",
     "control_flow": "dgen.dialects.control_flow",
+    "function": "dgen.dialects.function",
+    "goto": "dgen.dialects.goto",
+    "memory": "dgen.dialects.memory",
+    "ndbuffer": "dgen.dialects.ndbuffer",
+    "llvm": "dgen.dialects.llvm",
+    "toy": "toy.dialects.toy",
 }
 
 
@@ -116,6 +123,11 @@ def test_traits_and_constraints():
         in text
     )
     assert "// dgen: requires k < 4 has no ODS form" in text
+
+
+def test_expression_constraint_is_noted():
+    text = td("toy.dialects.toy")
+    assert "// dgen: requires axis < lhs.shape.rank has no ODS form" in text
 
 
 def test_dropped_type_arguments_are_noted():
