@@ -10,38 +10,9 @@ from dgen.dialects.builtin import Nil
 
 algebra = Dialect("algebra")
 
-class AddMagma(Trait):
-    __params__ = ()
-    __operands__ = ()
-    __blocks__ = ()
-    __constraints__ = ()
-    name = None
-    type = <functools.cached_property object at 0x7effc69cbe10>
-    __layout__ = <property object at 0x7effc69cede0>
-    dialect = <dgen.dialect.Dialect object at 0x7effc676e350>
-    asm_name = 'AddMagma'
-
-class MulMagma(Trait):
-    __params__ = ()
-    __operands__ = ()
-    __blocks__ = ()
-    __constraints__ = ()
-    name = None
-    type = <functools.cached_property object at 0x7effc69cbe10>
-    __layout__ = <property object at 0x7effc69cede0>
-    dialect = <dgen.dialect.Dialect object at 0x7effc676e350>
-    asm_name = 'MulMagma'
-
-class TotalOrder(Trait):
-    __params__ = ()
-    __operands__ = ()
-    __blocks__ = ()
-    __constraints__ = ()
-    name = None
-    type = <functools.cached_property object at 0x7effc69cbe10>
-    __layout__ = <property object at 0x7effc69cede0>
-    dialect = <dgen.dialect.Dialect object at 0x7effc676e350>
-    asm_name = 'TotalOrder'
+class AddMagma(Trait): ...
+class MulMagma(Trait): ...
+class TotalOrder(Trait): ...
 
 @dataclass(eq=False, kw_only=True)
 class AddOp(Op):
@@ -140,4 +111,3 @@ class GreaterEqualOp(Op):
 class CastOp(Op):
     input: Value
     type: Type
-
