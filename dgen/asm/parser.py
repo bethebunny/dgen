@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from functools import reduce
 from typing import Any
 
@@ -20,6 +21,10 @@ from dgen.module import ConstantOp, PackOp
 
 class ParseError(RuntimeError):
     """Recoverable parse failure — caught by try_read for backtracking."""
+
+
+class UnresolvedName(ParseError):
+    """A name that names nothing in scope, which try_read() doesn't backtrack past."""
 
 
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
@@ -51,9 +56,17 @@ class Scope(dict[str, "Scope | type[Op] | type[Type]"]):
                 lambda scope, key: scope[key], qualified_name.split("."), self
             )
         except KeyError:
-            raise ParseError(f"Unknown name: {qualified_name}") from None
+            raise UnresolvedName(f"Unknown name: {qualified_name}") from None
         assert isinstance(result, type)
         return result
+
+
+@dataclass
+class BlockScope:
+    """The SSA names one block body sees: its inputs, captures and own statements."""
+
+    label: str
+    names: dict[str, Value] = field(default_factory=dict)
 
 
 def parse(text: str) -> Value:
@@ -80,7 +93,7 @@ class ASMParser:
     def __init__(self, text: str) -> None:
         self.text = text
         self.pos: int = 0
-        self.name_table: dict[str, Value] = {}
+        self.scopes: list[BlockScope] = [BlockScope("the top level")]
         self.scope: Scope = Scope.from_dialect(Dialect.get("builtin"))
         self.block_indent: int = 0  # indent level of the current block's ops
 
@@ -104,6 +117,8 @@ class ASMParser:
         saved = self.pos
         try:
             return self.read(grammar)
+        except UnresolvedName:
+            raise
         except ParseError:
             self.pos = saved
             return None
@@ -130,9 +145,16 @@ class ASMParser:
         return items
 
     def resolve(self, name: str) -> Value:
-        if name not in self.name_table:
-            raise ParseError(f"Undefined reference: %{name}")
-        return self.name_table[name]
+        if (value := self.scopes[-1].names.get(name)) is not None:
+            return value
+        if any(name in scope.names for scope in self.scopes):
+            raise UnresolvedName(
+                f"%{name} is not in scope in {self.scopes[-1].label}: capture it"
+            )
+        raise UnresolvedName(f"Undefined reference: %{name}")
+
+    def define(self, name: str, value: Value) -> None:
+        self.scopes[-1].names[name] = value
 
     def _skip_ws(self) -> None:
         while self.pos < len(self.text) and self.text[self.pos] in " \t":
@@ -247,10 +269,9 @@ def _named_type(parser: ASMParser) -> Type:
 
 
 def op_expression(
-    parser: ASMParser,
+    parser: ASMParser, name: str
 ) -> tuple[type[Op], list[object], list[object], list[Block]]:
-    name = parser.read(qualified_name)
-    op_cls = parser.scope.lookup(name)
+    op_cls = parser.scope.lookup(parser.read(qualified_name))
     assert issubclass(op_cls, Op)
     parameters: list[object] = []
     if op_cls.__params__:
@@ -267,7 +288,7 @@ def op_expression(
         if parser.parse_token(_IDENT) != block_name:
             parser.pos = saved
             break
-        blocks.append(_read_block_body(parser))
+        blocks.append(_read_block_body(parser, f"the {block_name} of %{name}"))
     return op_cls, parameters, operands, blocks
 
 
@@ -277,13 +298,13 @@ def op_statement(parser: ASMParser) -> Op:
     parser.read("=")
     if pre_type is not None and parser.peek() in _LITERAL_START:
         op = ConstantOp(name=name, value=value_expression(parser), type=pre_type)
-        parser.name_table[name] = op
+        parser.define(name, op)
         return op
-    op_cls, parameters, operands, blocks = op_expression(parser)
+    op_cls, parameters, operands, blocks = op_expression(parser, name)
     if issubclass(op_cls, ConstantOp):
         assert len(operands) == 1
         op = ConstantOp(name=name, value=operands[0], type=pre_type)
-        parser.name_table[name] = op
+        parser.define(name, op)
         return op
     kwargs: dict[str, object] = {"name": name}
     if pre_type is not None:
@@ -300,7 +321,7 @@ def op_statement(parser: ASMParser) -> Op:
     for block_name, block in zip(op_cls.__blocks__, blocks):
         kwargs[block_name] = block
     op = op_cls(**kwargs)
-    parser.name_table[name] = op
+    parser.define(name, op)
     return op
 
 
@@ -308,7 +329,7 @@ def _block_argument(parser: ASMParser) -> BlockArgument:
     name = parser.read(ssa_name)
     parser.read(":")
     arg = BlockArgument(name=name, type=value_expression(parser))
-    parser.name_table[name] = arg
+    parser.define(name, arg)
     return arg
 
 
@@ -316,7 +337,7 @@ def _block_parameter(parser: ASMParser) -> BlockParameter:
     name = parser.read(ssa_name)
     parser.read(":")
     param = BlockParameter(name=name, type=value_expression(parser))
-    parser.name_table[name] = param
+    parser.define(name, param)
     return param
 
 
@@ -391,23 +412,34 @@ def _pack_list(
 # -- Block parsing ----------------------------------------------------------
 
 
-def _read_block_body(parser: ASMParser) -> Block:
-    # Optional block parameters: <%name: Type, ...>
+def _read_block_body(parser: ASMParser, label: str) -> Block:
+    # The header sees the enclosing scope and the inputs it has declared so far.
+    outer = parser.scopes[-1]
+    parser.scopes.append(BlockScope(outer.label, dict(outer.names)))
     block_params: list[BlockParameter] = []
     if parser.try_read("<") is not None:
         block_params = parser.read_list(_block_parameter)
         parser.read(">")
     args = block_arguments(parser)
     # Optional captures: captures(%name, ...)
-    captures: list[dgen.Value] = []
+    captured: dict[str, Value] = {}
     if parser.try_read("captures") is not None:
         parser.read("(")
         while parser.try_read(")") is None:
-            if captures:
+            if captured:
                 parser.read(",")
-            ssa = parser.expect_token(_SSA, "capture reference")
-            captures.append(parser.resolve(ssa[1:]))  # strip leading %
+            name = parser.expect_token(_SSA, "capture reference")[1:]
+            captured[name] = parser.resolve(name)
     parser.read(":")
+    parser.scopes[-1] = BlockScope(
+        label,
+        {
+            value.name: value
+            for value in [*block_params, *args]
+            if value.name is not None
+        }
+        | captured,
+    )
     block_indent = newline(parser)
     if block_indent <= parser.block_indent:
         raise ParseError("Empty block body")
@@ -421,5 +453,11 @@ def _read_block_body(parser: ASMParser) -> Block:
         parser.pos += indent
         last_op = op_statement(parser)
     parser.block_indent = saved_indent
+    parser.scopes.pop()
     assert last_op is not None
-    return Block(result=last_op, args=args, parameters=block_params, captures=captures)
+    return Block(
+        result=last_op,
+        args=args,
+        parameters=block_params,
+        captures=list(captured.values()),
+    )
