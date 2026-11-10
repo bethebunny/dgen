@@ -342,7 +342,7 @@ def build(
     ns.setdefault("Op", Op)
     ns.setdefault("Block", Block)
 
-    d = Dialect(dialect_name)
+    d = Dialect(dialect_name, origin=module.__name__)
     ns[dialect_name] = d
 
     for imp in ast.imports:

@@ -1,4 +1,4 @@
-import c
+import dcc
 import function
 import index
 import memory
@@ -6,4 +6,4 @@ import number
 
 %f : function.Function<[memory.Reference<number.SignedInteger<32>>], Nil> = function.function<Nil>() body(%p: memory.Reference<number.SignedInteger<32>>):
     %0 : number.SignedInteger<32> = 5
-    %1 : number.SignedInteger<32> = c.store_indirect(%p, %0)
+    %1 : number.SignedInteger<32> = dcc.store_indirect(%p, %0)

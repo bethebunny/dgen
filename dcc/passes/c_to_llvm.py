@@ -13,7 +13,7 @@ from dgen.dialects.index import Index
 from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
 
-from dcc.dialects.c import (
+from dcc.dialects.dcc import (
     BreakOp,
     CommaOp,
     DoWhileOp,

@@ -21,7 +21,7 @@ from dgen.dialects.index import Index
 from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
 
-from dcc.dialects.c import (
+from dcc.dialects.dcc import (
     AddressOfOp,
     AssignOp,
     CompoundAssignOp,
@@ -41,7 +41,7 @@ from dcc.dialects.c import (
 )
 
 
-from dcc.dialects.c import ModuloOp, ShiftLeftOp, ShiftRightOp
+from dcc.dialects.dcc import ModuloOp, ShiftLeftOp, ShiftRightOp
 
 _BINOP_TABLE: dict[str, type[dgen.Op]] = {
     "+": algebra.AddOp,

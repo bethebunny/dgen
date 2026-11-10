@@ -20,7 +20,7 @@ from dgen.dialects.builtin import Nil
 from dgen.dialects.memory import Reference
 from dgen.dialects.number import Float64, SignedInteger, UnsignedInteger
 from dcc.dialects import c_int
-from dcc.dialects.c import CStruct
+from dcc.dialects.dcc import CStruct
 from dcc.parser.c_parser import parse_c_string
 from dcc.parser.lowering import lower
 from dcc.parser.type_resolver import TypeResolver
@@ -501,14 +501,14 @@ class TestSessionFrontendFixes:
         self, ir_snapshot: SnapshotAssertion
     ) -> None:
         # Pre-fix: _pointee on Array raised "cannot dereference non-pointer".
-        from dcc.dialects.c import SubscriptOp
+        from dcc.dialects.dcc import SubscriptOp
 
         m = _lower_c("int arr[10]; int f(void) { return arr[3]; }")
         assert _contains_op(m, SubscriptOp), "arr[3] should produce SubscriptOp"
         assert m == ir_snapshot
 
     def test_star_array_decays_to_pointer(self, ir_snapshot: SnapshotAssertion) -> None:
-        from dcc.dialects.c import DereferenceOp
+        from dcc.dialects.dcc import DereferenceOp
 
         m = _lower_c("int arr[10]; int f(void) { return *arr; }")
         assert _contains_op(m, DereferenceOp)
@@ -516,7 +516,7 @@ class TestSessionFrontendFixes:
 
     def test_lvalue_star_p(self, ir_snapshot: SnapshotAssertion) -> None:
         # Pre-fix: _assign rejected UnaryOp lvalue.
-        from dcc.dialects.c import StoreIndirectOp
+        from dcc.dialects.dcc import StoreIndirectOp
 
         m = _lower_c("void f(int *p) { *p = 5; }")
         assert _count_ops(m, StoreIndirectOp) == 1, (
@@ -526,7 +526,7 @@ class TestSessionFrontendFixes:
 
     def test_lvalue_arrow_field(self, ir_snapshot: SnapshotAssertion) -> None:
         # Pre-fix: _assign rejected StructRef lvalue.
-        from dcc.dialects.c import FieldAddressOp, StoreIndirectOp
+        from dcc.dialects.dcc import FieldAddressOp, StoreIndirectOp
 
         m = _lower_c("struct S { int x; }; void f(struct S *s) { s->x = 7; }")
         assert _count_ops(m, FieldAddressOp) == 1
@@ -535,7 +535,7 @@ class TestSessionFrontendFixes:
 
     def test_lvalue_dot_field(self, ir_snapshot: SnapshotAssertion) -> None:
         # obj.x = v on a local struct: dot → address_of(obj) + field_address.
-        from dcc.dialects.c import FieldAddressOp, StoreIndirectOp
+        from dcc.dialects.dcc import FieldAddressOp, StoreIndirectOp
 
         m = _lower_c("struct S { int x; }; void f(void) { struct S s; s.x = 7; }")
         assert _contains_op(m, FieldAddressOp)
@@ -544,7 +544,7 @@ class TestSessionFrontendFixes:
 
     def test_lvalue_array_index(self, ir_snapshot: SnapshotAssertion) -> None:
         # Pre-fix: _assign rejected ArrayRef lvalue.
-        from dcc.dialects.c import ElementAddressOp, StoreIndirectOp
+        from dcc.dialects.dcc import ElementAddressOp, StoreIndirectOp
 
         m = _lower_c("void f(int *a) { a[3] = 42; }")
         assert _count_ops(m, ElementAddressOp) == 1
@@ -555,7 +555,7 @@ class TestSessionFrontendFixes:
         self, ir_snapshot: SnapshotAssertion
     ) -> None:
         # *p += 5: load through addr, add, store back.
-        from dcc.dialects.c import DereferenceOp, StoreIndirectOp
+        from dcc.dialects.dcc import DereferenceOp, StoreIndirectOp
 
         m = _lower_c("void f(int *p) { *p += 5; }")
         assert _contains_op(m, DereferenceOp)
@@ -565,7 +565,7 @@ class TestSessionFrontendFixes:
     def test_increment_through_pointer(self, ir_snapshot: SnapshotAssertion) -> None:
         # Pre-fix: ++/-- on non-ID raised LoweringError.
         # Desugared to load + add + store — no PostIncrementOp in IR.
-        from dcc.dialects.c import PostIncrementOp, StoreIndirectOp
+        from dcc.dialects.dcc import PostIncrementOp, StoreIndirectOp
 
         m = _lower_c("void f(int *p) { (*p)++; }")
         assert not _contains_op(m, PostIncrementOp), (
@@ -577,7 +577,7 @@ class TestSessionFrontendFixes:
     def test_assign_as_expression_non_id(self, ir_snapshot: SnapshotAssertion) -> None:
         # Pre-fix: "assign-as-expression on non-variable".
         # The read-back dereference becomes the expression's value.
-        from dcc.dialects.c import DereferenceOp
+        from dcc.dialects.dcc import DereferenceOp
 
         m = _lower_c("int f(int *p) { int x = (*p = 5); return x; }")
         assert _contains_op(m, DereferenceOp)
@@ -595,7 +595,7 @@ class TestSessionFrontendFixes:
         # Pre-fix the inner -> failed to resolve (unknown field returned
         # SignedInteger(64) instead of a pointer). Now a chained -> emits
         # two PointerMemberAccessOps.
-        from dcc.dialects.c import PointerMemberAccessOp
+        from dcc.dialects.dcc import PointerMemberAccessOp
 
         assert _count_ops(m, PointerMemberAccessOp) == 2
         assert m == ir_snapshot

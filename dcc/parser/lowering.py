@@ -26,7 +26,7 @@ from dgen.dialects import function
 
 from dcc.dialects import c_int
 from dcc.parser.c_literals import parse_c_char, parse_c_int
-from dcc.dialects.c import (
+from dcc.dialects.dcc import (
     AddressOfOp,
     AssignOp,
     BreakOp,
@@ -581,7 +581,7 @@ class Parser:
         yield WhileOp(initial_arguments=p, condition=cond_block, body=body_block)
 
     def _do_while(self, node: c_ast.DoWhile, scope: Scope) -> Iterator[dgen.Op]:
-        from dcc.dialects.c import DoWhileOp
+        from dcc.dialects.dcc import DoWhileOp
 
         body_scope = scope.child()
         body_block = self._block_from(self._stmt(node.stmt, body_scope), body_scope)

@@ -14,7 +14,7 @@ from dgen.dialects.function import Function
 from dgen.module import pack
 from dgen.dialects.number import Float64
 from dcc.dialects import c_int, c_ptr, c_void
-from dcc.dialects.c import CStruct, CUnion
+from dcc.dialects.dcc import CStruct, CUnion
 
 
 # Standard C integer type widths (LP64 model)

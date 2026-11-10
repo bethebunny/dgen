@@ -15,13 +15,31 @@ _O = TypeVar("_O", bound="Op")
 _T = TypeVar("_T", bound="Type")
 
 
+class DialectClash(ValueError):
+    """Two dialects from different origins with one name."""
+
+
 class Dialect:
+    """A namespace of ops and types, registered under its asm name.
+
+    Invariants:
+      - one dialect per name in a process, eg. ``import c`` means one dialect whatever loaded first
+      - a dialect built again from the same origin replaces the first, eg. a notebook cell run twice
+    """
+
     _registry: dict[str, Dialect] = {}
     paths: list[Path] = []
     """Search paths for ``.dgen`` files, analogous to ``sys.path``."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, *, origin: str | None = None) -> None:
+        if (taken := Dialect._registry.get(name)) is not None and (
+            origin is None or taken.origin != origin
+        ):
+            raise DialectClash(
+                f"Dialect {name!r} from {origin} clashes with the one from {taken.origin}"
+            )
         self.name = name
+        self.origin = origin
         self.ops: dict[str, builtins.type[Op]] = {}
         self.types: dict[str, builtins.type[Type]] = {}
         Dialect._registry[name] = self
