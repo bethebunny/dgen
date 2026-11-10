@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
+import json
+import operator
+from collections.abc import Callable
+
 import dgen
 from dgen.block import Block, BlockArgument, BlockParameter
 from dgen.dialect import Dialect
 from dgen.dialects.function import FunctionOp
-from dgen.gen.ast import HasTraitConstraint
+from dgen.gen.ast import (
+    Constraint,
+    ExpressionConstraint,
+    HasTraitConstraint,
+    HasTypeConstraint,
+)
+from dgen.gen.expression import (
+    Attribute,
+    Binary,
+    Expression,
+    Literal,
+    Name,
+    TypeOf,
+    Unary,
+)
 from dgen.graph import all_blocks, all_values
 from dgen.module import asm_with_imports
 from dgen.trait import Trait
-from dgen.type import type_constant
+from dgen.type import Constant, type_constant
 
 
 class VerificationError(Exception):
@@ -185,9 +203,74 @@ def verify_all_ready(root: dgen.Value) -> None:
 # ---------------------------------------------------------------------------
 # verify_constraints
 # ---------------------------------------------------------------------------
+#
+# A constraint is decided when every value it reads is a constant or a type.
+# See the dialect files design doc, "Decided and undecided".
 
 
-def _resolve_trait(trait_name: str, op: dgen.Op) -> type[Trait]:
+class _Undecided(Exception):
+    """A constraint reads a value that isn't known yet."""
+
+
+class _Invalid(Exception):
+    """A constraint can't be evaluated on the values it reads."""
+
+
+_NUMERIC: dict[str, Callable[[float, float], object]] = {
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+    "+": operator.add,
+    "-": operator.sub,
+    "*": operator.mul,
+    "//": operator.floordiv,
+    "%": operator.mod,
+}
+
+
+def _known(value: dgen.Value) -> bool:
+    return isinstance(value, (Constant, dgen.Type))
+
+
+def _resolve_subject(subject: str, op: dgen.Value) -> dgen.Value:
+    """Resolve a constraint subject name to the value of that operand/param."""
+    for name, value in (*op.operands, *op.parameters):
+        if name == subject:
+            return value
+    raise ConstraintError(
+        f"constraint references unknown subject {subject!r} on "
+        f"{type(op).__name__} %{op.name}"
+    )
+
+
+def _type_of(value: dgen.Value, text: str) -> dgen.Type:
+    if not _known(value.type):
+        raise _Undecided(f"the type of {text} is not known yet")
+    return type_constant(value.type)
+
+
+def _subject_type(subject: dgen.Value, text: str) -> dgen.Type:
+    """The subject itself when it is a type, else its type."""
+    return subject if isinstance(subject, dgen.Type) else _type_of(subject, text)
+
+
+def _resolve_type(name: str, op: dgen.Value) -> type[dgen.Type]:
+    """Look up a type or trait class by bare or dialect-qualified name."""
+    dialect_name, _, type_name = name.rpartition(".")
+    dialects = (
+        [Dialect.get(dialect_name)] if dialect_name else Dialect._registry.values()
+    )
+    for dialect in dialects:
+        if (cls := dialect.types.get(type_name)) is not None:
+            return cls
+    raise ConstraintError(
+        f"unknown type {name!r} referenced in constraint on "
+        f"{type(op).__name__} %{op.name}"
+    )
+
+
+def _resolve_trait(trait_name: str, op: dgen.Value) -> type[Trait]:
     """Look up a trait class by name from the dialect registry."""
     for dialect in Dialect._registry.values():
         cls = dialect.types.get(trait_name)
@@ -199,52 +282,126 @@ def _resolve_trait(trait_name: str, op: dgen.Op) -> type[Trait]:
     )
 
 
-def _resolve_subject(subject: str, op: dgen.Op) -> dgen.Value:
-    """Resolve a constraint subject name to the value of that operand/param."""
-    for name, value in op.operands:
-        if name == subject:
+def _value(expression: Expression, op: dgen.Value) -> dgen.Value:
+    """The value a name, `$name` or attribute path reads."""
+    match expression:
+        case Name(name):
+            return _resolve_subject(name, op)
+        case TypeOf(name):
+            return _type_of(_resolve_subject(name, op), name)
+        case Attribute(inner, name):
+            owner = _subject_type(_value(inner, op), str(inner))
+            if (param := dict(owner.parameters).get(name)) is None:
+                raise _Undecided(
+                    f"{inner}: {type(owner).__name__} has no parameter {name!r}"
+                )
+            return param
+        case _:
+            raise _Invalid(f"{expression} is not a value")
+
+
+def _json(expression: Expression, op: dgen.Value, reads: dict[str, str]) -> object:
+    """Evaluate an expression, recording each value it reads in `reads`."""
+    match expression:
+        case Literal(value):
             return value
-    for name, value in op.parameters:
-        if name == subject:
+        case Unary("not", operand):
+            return not _json(operand, op, reads)
+        case Unary(_, operand):
+            return -_number(operand, op, reads)
+        case Binary("and", lhs, rhs):
+            return _json(lhs, op, reads) and _json(rhs, op, reads)
+        case Binary("or", lhs, rhs):
+            return _json(lhs, op, reads) or _json(rhs, op, reads)
+        case Binary("==", lhs, rhs):
+            return _json(lhs, op, reads) == _json(rhs, op, reads)
+        case Binary("!=", lhs, rhs):
+            return _json(lhs, op, reads) != _json(rhs, op, reads)
+        case Binary(symbol, lhs, rhs):
+            left, right = _number(lhs, op, reads), _number(rhs, op, reads)
+            if symbol in ("//", "%") and right == 0:
+                raise _Invalid(f"{expression} divides by zero")
+            return _NUMERIC[symbol](left, right)
+        case _:
+            value = _value(expression, op)
+            if not _known(value):
+                raise _Undecided(
+                    f"{expression} is %{value.name}, which is not known until run time"
+                )
+            data = value.__constant__.to_json()
+            reads[str(expression)] = (
+                value.format_asm() if isinstance(value, dgen.Type) else json.dumps(data)
+            )
+            return data
+
+
+def _number(
+    expression: Expression, op: dgen.Value, reads: dict[str, str]
+) -> int | float:
+    match value := _json(expression, op, reads):
+        case bool():
+            raise _Invalid(f"{expression} is {value}, not a number")
+        case int() | float():
             return value
-    raise ConstraintError(
-        f"constraint references unknown subject {subject!r} on "
-        f"{type(op).__name__} %{op.name}"
-    )
+        case _:
+            raise _Invalid(f"{expression} is {json.dumps(value)}, not a number")
 
 
-def _subject_type(subject: dgen.Value) -> dgen.Type:
-    """Get the type to check for trait membership.
+def _failure(constraint: Constraint, op: dgen.Value) -> str | None:
+    """Why the constraint is false on op, or None if it holds."""
+    match constraint:
+        case HasTraitConstraint(lhs, trait):
+            subject_type = _subject_type(_resolve_subject(lhs, op), lhs)
+            if isinstance(subject_type, _resolve_trait(trait, op)):
+                return None
+            return (
+                f"subject {lhs!r} ({type(subject_type).__name__}) "
+                f"does not implement trait {trait}"
+            )
+        case HasTypeConstraint(lhs, type_ref):
+            subject_type = _subject_type(_resolve_subject(lhs, op), lhs)
+            if isinstance(subject_type, _resolve_type(type_ref.name, op)):
+                return None
+            return (
+                f"requires {constraint} is false "
+                f"({lhs} has type {subject_type.format_asm()})"
+            )
+        case ExpressionConstraint():
+            reads: dict[str, str] = {}
+            match _json(constraint.expression, op, reads):
+                case True:
+                    return None
+                case False:
+                    values = ", ".join(f"{k} = {v}" for k, v in reads.items())
+                    return f"requires {constraint} is false ({values})"
+                case result:
+                    return (
+                        f"requires {constraint} is {json.dumps(result)}, not a boolean"
+                    )
+        case _:
+            raise ConstraintError(f"unknown constraint {constraint!r}")
 
-    For a Type, this is the type itself. For other values (Constant,
-    BlockArgument, Op), this is value.type.
-    """
-    if isinstance(subject, dgen.Type):
-        return subject
-    return type_constant(subject.type)
+
+def verify_op_constraints(op: dgen.Value, root: dgen.Value, *, decided: bool) -> None:
+    """Check op's constraints; undecided ones fail only when `decided` is set."""
+    for constraint in op.__constraints__:
+        try:
+            failure = _failure(constraint, op)
+        except _Undecided as undecided:
+            if not decided:
+                continue
+            failure = f"requires {constraint} is undecided: {undecided}"
+        except _Invalid as invalid:
+            failure = f"requires {constraint} can't be evaluated: {invalid}"
+        if failure is not None:
+            raise ConstraintError(
+                f"{type(op).__name__} %{op.name}: {failure}\n\n"
+                + _annotated_asm(root, op)
+            )
 
 
-def _verify_has_trait(
-    constraint: HasTraitConstraint, op: dgen.Op, root: dgen.Value
-) -> None:
-    """Verify a single has-trait constraint on an op."""
-    subject = _resolve_subject(constraint.lhs, op)
-    trait_class = _resolve_trait(constraint.trait, op)
-    subject_type = _subject_type(subject)
-    if not isinstance(subject_type, trait_class):
-        raise ConstraintError(
-            f"{type(op).__name__} %{op.name}: "
-            f"subject {constraint.lhs!r} ({type(subject_type).__name__}) "
-            f"does not implement trait {constraint.trait}\n\n"
-            + _annotated_asm(root, op)
-        )
-
-
-def verify_constraints(root: dgen.Value) -> None:
-    """Check trait constraints on all ops reachable from root."""
+def verify_constraints(root: dgen.Value, *, decided: bool = False) -> None:
+    """Check the constraints of every op reachable from root."""
     for value in all_values(root):
-        if not isinstance(value, dgen.Op):
-            continue
-        for constraint in value.__constraints__:
-            if isinstance(constraint, HasTraitConstraint):
-                _verify_has_trait(constraint, value, root)
+        if isinstance(value, dgen.Op):
+            verify_op_constraints(value, root, decided=decided)

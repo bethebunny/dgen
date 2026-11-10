@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from dgen.gen.expression import Expression, parse_expression
+
 
 @dataclass
 class ImportDecl:
@@ -71,12 +73,26 @@ class HasTypeConstraint(Constraint):
     lhs: str
     type: TypeRef
 
+    def __post_init__(self) -> None:
+        if self.type.args:
+            raise SyntaxError(f"has type takes a type without arguments: {self}<...>")
+
+    def __str__(self) -> str:
+        return f"{self.lhs} has type {self.type.name}"
+
 
 @dataclass
 class ExpressionConstraint(Constraint):
     """requires axis < X.rank"""
 
     expr: str
+    expression: Expression = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        self.expression = parse_expression(self.expr)
+
+    def __str__(self) -> str:
+        return self.expr
 
 
 @dataclass
@@ -85,6 +101,9 @@ class HasTraitConstraint(Constraint):
 
     lhs: str
     trait: str
+
+    def __str__(self) -> str:
+        return f"{self.lhs} has trait {self.trait}"
 
 
 @dataclass

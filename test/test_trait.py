@@ -8,6 +8,8 @@ from typing import ClassVar
 import pytest
 
 from dgen import Block, Dialect, Op, Trait, Type, TypeType, Value, layout
+from dgen.block import BlockArgument
+from dgen.compiler import Compiler, IdentityPass, verify_passes
 from dgen.dialects.function import Function, FunctionOp
 from dgen.gen.ast import (
     ExpressionConstraint,
@@ -17,6 +19,7 @@ from dgen.gen.ast import (
 )
 from dgen.gen.parser import parse
 from dgen.module import pack
+from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Fields
 from dgen.verify import ConstraintError, verify_constraints
 
@@ -355,7 +358,7 @@ def test_verify_mixed_ops_first_bad() -> None:
         verify_constraints(fn)
 
 
-# -- verify_constraints: expression constraints (not yet implemented) --------
+# -- verify_constraints: expression and has-type constraints -----------------
 
 
 @_test.op("requires_positive")
@@ -392,9 +395,6 @@ class RequiresMatchOp(Op):
     __constraints__ = (HasTypeConstraint(lhs="input", type=TypeRef("MyInt")),)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="expression constraint verification not yet implemented"
-)
 def test_verify_expression_constraint_violated() -> None:
     """Expression constraint should fail when condition is false."""
     op = RequiresPositiveOp(input=MyInt().constant(-1))
@@ -403,9 +403,6 @@ def test_verify_expression_constraint_violated() -> None:
         verify_constraints(fn)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="expression constraint verification not yet implemented"
-)
 def test_verify_type_equality_expression_violated() -> None:
     """Type equality expression should fail when operand types differ."""
     op = RequiresEqualTypesOp(lhs=MyInt().constant(1), rhs=MyStr().constant("x"))
@@ -414,12 +411,148 @@ def test_verify_type_equality_expression_violated() -> None:
         verify_constraints(fn)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="match constraint verification not yet implemented"
-)
 def test_verify_match_constraint_violated() -> None:
     """Match constraint should fail when operand type doesn't match."""
     op = RequiresMatchOp(input=MyStr().constant("x"))
     fn = _make_function(op)
     with pytest.raises(ConstraintError):
         verify_constraints(fn)
+
+
+def test_verify_expression_constraint_satisfied() -> None:
+    verify_constraints(_make_function(RequiresPositiveOp(input=MyInt().constant(1))))
+
+
+def test_verify_expression_error_names_values() -> None:
+    op = RequiresPositiveOp(input=MyInt().constant(-1), name="neg")
+    with pytest.raises(
+        ConstraintError,
+        match=r"RequiresPositiveOp %neg: requires input > 0 is false \(input = -1\)",
+    ):
+        verify_constraints(_make_function(op))
+
+
+def test_verify_type_equality_expression_satisfied() -> None:
+    op = RequiresEqualTypesOp(lhs=MyInt().constant(1), rhs=MyInt().constant(2))
+    verify_constraints(_make_function(op))
+
+
+def test_verify_type_equality_error_names_types() -> None:
+    op = RequiresEqualTypesOp(lhs=MyInt().constant(1), rhs=MyStr().constant("x"))
+    with pytest.raises(
+        ConstraintError,
+        match=r"\$lhs == \$rhs is false \(\$lhs = _trait_test.MyInt, \$rhs = _trait_test.MyStr\)",
+    ):
+        verify_constraints(_make_function(op))
+
+
+def test_verify_match_constraint_satisfied() -> None:
+    verify_constraints(_make_function(RequiresMatchOp(input=MyInt().constant(1))))
+
+
+def test_verify_match_error_names_type() -> None:
+    op = RequiresMatchOp(input=MyStr().constant("x"))
+    with pytest.raises(
+        ConstraintError,
+        match=r"requires input has type MyInt is false \(input has type _trait_test.MyStr\)",
+    ):
+        verify_constraints(_make_function(op))
+
+
+def test_has_type_with_arguments_is_a_syntax_error() -> None:
+    with pytest.raises(SyntaxError, match="without arguments"):
+        HasTypeConstraint(lhs="x", type=TypeRef("Tensor", [TypeRef("Index")]))
+
+
+@pytest.mark.parametrize(
+    ("expr", "holds"),
+    [
+        ("input * 2 + 1 == 7", True),
+        ("(input + 1) * 2 == 8", True),
+        ("input // 2 == 1 and input % 2 == 1", True),
+        ("-input < 0", True),
+        ("input - 4 >= 0", False),
+        ("input <= 3 and input != 3", False),
+        ("input < 0 or input == 3", True),
+        ("not input == 3", False),
+    ],
+)
+def test_verify_expression_operators(expr: str, holds: bool) -> None:
+    class CheckOp(RequiresPositiveOp):
+        __constraints__ = (ExpressionConstraint(expr),)
+
+    _test.op("check")(CheckOp)
+    fn = _make_function(CheckOp(input=MyInt().constant(3)))
+    if holds:
+        verify_constraints(fn)
+    else:
+        with pytest.raises(ConstraintError, match=r"is false \(input = 3\)"):
+            verify_constraints(fn)
+
+
+@pytest.mark.parametrize(
+    ("expr", "error"),
+    [
+        ("input + 1", "is 4, not a boolean"),
+        ("input // 0 == 1", "divides by zero"),
+        ("$input < 1", "is {.*}, not a number"),
+    ],
+)
+def test_verify_expression_invalid(expr: str, error: str) -> None:
+    class CheckOp(RequiresPositiveOp):
+        __constraints__ = (ExpressionConstraint(expr),)
+
+    _test.op("check")(CheckOp)
+    with pytest.raises(ConstraintError, match=error):
+        verify_constraints(_make_function(CheckOp(input=MyInt().constant(3))))
+
+
+def _positive_of_argument() -> FunctionOp:
+    arg = BlockArgument(name="x", type=MyInt())
+    op = RequiresPositiveOp(input=arg, name="pos")
+    return FunctionOp(
+        name="test_fn",
+        body=Block(result=op, args=[arg]),
+        result_type=MyInt(),
+        type=Function(arguments=pack([MyInt()]), result_type=MyInt()),
+    )
+
+
+def test_verify_undecided_expression_waits() -> None:
+    """A clause on a run-time operand passes until it must be decided."""
+    verify_constraints(_positive_of_argument())
+
+
+def test_verify_undecided_expression_fails_when_decided() -> None:
+    with pytest.raises(
+        ConstraintError,
+        match="RequiresPositiveOp %pos: requires input > 0 is undecided: "
+        "input is %x, which is not known until run time",
+    ):
+        verify_constraints(_positive_of_argument(), decided=True)
+
+
+class _LowerPositive(Pass):
+    @lowering_for(RequiresPositiveOp)
+    def lower(self, op: RequiresPositiveOp) -> Value | None:
+        return MyInt().constant(1)
+
+
+def test_pass_rejects_lowering_undecided_op() -> None:
+    """Replacing an op is its last check, flag or not."""
+    token = verify_passes.set(False)
+    try:
+        with pytest.raises(ConstraintError, match="is undecided"):
+            _LowerPositive().run(_positive_of_argument(), Compiler([], IdentityPass()))
+    finally:
+        verify_passes.reset(token)
+
+
+def test_pass_rejects_false_op_before_its_handler() -> None:
+    token = verify_passes.set(False)
+    fn = _make_function(RequiresPositiveOp(input=MyInt().constant(-1)))
+    try:
+        with pytest.raises(ConstraintError, match="is false"):
+            _LowerPositive().run(fn, Compiler([], IdentityPass()))
+    finally:
+        verify_passes.reset(token)

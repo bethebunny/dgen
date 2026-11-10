@@ -7,6 +7,7 @@ from typing import Generic, Protocol, TypeVar
 
 import dgen
 from dgen.passes.pass_ import Pass
+from dgen.verify import verify_constraints
 
 verify_passes: ContextVar[bool] = ContextVar("dgen.verify_passes", default=False)
 
@@ -55,4 +56,6 @@ class Compiler(Generic[T]):
             value = p.run(value, continuation)
             if verify_passes.get():
                 p.verify_postconditions(value)
+        if verify_passes.get():
+            verify_constraints(value, decided=True)
         return self.exit.run(value)

@@ -10,6 +10,7 @@ from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar
 import dgen
 
 from .dialect import Dialect
+from .gen.ast import Constraint
 from .layout import Layout, TypeValue, _bytearray_address
 
 T = TypeVar("T", bound="Type")
@@ -30,7 +31,7 @@ class Value(Generic[T]):
     __params__: ClassVar[Fields] = ()
     __operands__: ClassVar[Fields] = ()
     __blocks__: ClassVar[tuple[str, ...]] = ()
-    __constraints__: ClassVar[tuple[object, ...]] = ()
+    __constraints__: ClassVar[tuple[Constraint, ...]] = ()
     name: str | None = None
     type: Value[TypeType]
 
