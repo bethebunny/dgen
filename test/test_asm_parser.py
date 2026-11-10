@@ -63,7 +63,7 @@ class TestReadAndTryRead:
 
     def test_try_read_function_failure(self) -> None:
         def fail(parser: ASMParser) -> int:
-            raise ParseError("no match")
+            raise parser.error("no match")
 
         p = ASMParser("  abc")
         assert p.try_read(fail) is None
@@ -91,7 +91,7 @@ class TestReadList:
         def number(parser: ASMParser) -> int:
             token = parser.parse_token(re.compile(r"\d+"))
             if token is None:
-                raise ParseError("expected number")
+                raise parser.error("expected number")
             return int(token)
 
         assert ASMParser("").read_list(number) == []
@@ -100,7 +100,7 @@ class TestReadList:
         def number(parser: ASMParser) -> int:
             token = parser.parse_token(re.compile(r"\d+"))
             if token is None:
-                raise ParseError("expected number")
+                raise parser.error("expected number")
             return int(token)
 
         assert ASMParser("42").read_list(number) == [42]
@@ -109,7 +109,7 @@ class TestReadList:
         def number(parser: ASMParser) -> int:
             token = parser.parse_token(re.compile(r"\d+"))
             if token is None:
-                raise ParseError("expected number")
+                raise parser.error("expected number")
             return int(token)
 
         assert ASMParser("1, 2, 3").read_list(number) == [1, 2, 3]

@@ -14,8 +14,8 @@ from typing import Any
 
 import dgen.type
 from dgen import Block, Constant, Op, Type, Value
-from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
+from dgen.dialect import Dialect
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, PackOp
 from dgen.verify import verify_closed_blocks, verify_constraints, verify_dag
@@ -24,11 +24,35 @@ verify_parsed: ContextVar[bool] = ContextVar("dgen.verify_parsed", default=False
 
 
 class ParseError(RuntimeError):
-    """Recoverable parse failure — caught by try_read for backtracking."""
+    """A failure to read text at offset pos. try_read() catches it to backtrack."""
+
+    def __init__(self, message: str, *, text: str, pos: int) -> None:
+        super().__init__(message)
+        self.message = message
+        self.text = text
+        self.pos = pos
+
+    @property
+    def line(self) -> int:
+        return self.text.count("\n", 0, self.pos) + 1
+
+    @property
+    def column(self) -> int:
+        return self.pos - self.text.rfind("\n", 0, self.pos)
+
+    @property
+    def source_line(self) -> str:
+        start = self.text.rfind("\n", 0, self.pos) + 1
+        end = self.text.find("\n", self.pos)
+        return self.text[start : len(self.text) if end == -1 else end]
+
+    def __str__(self) -> str:
+        caret = " " * (self.column - 1) + "^"
+        return f"line {self.line}, column {self.column}: {self.message}\n    {self.source_line}\n    {caret}"
 
 
-class UnresolvedName(ParseError):
-    """A name that names nothing in scope, which try_read() doesn't backtrack past."""
+class FatalParseError(ParseError):
+    """A failure no other reading of the text avoids, so try_read() doesn't backtrack past it."""
 
 
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
@@ -39,7 +63,7 @@ _NUMBER = re.compile(r"-?\d+\.\d*|-?\d*\.\d+|-?\d+")
 _LITERAL_START = set('-0123456789{["(')
 
 
-class Scope(dict[str, "Scope | type[Op] | type[Type]"]):
+class Scope(dict[str, "type[Op | Type] | Scope"]):
     """Name-resolution scope for ASM parsing.
 
     A flat dict of unqualified names (ops and types).  ``import_dialect``
@@ -54,14 +78,15 @@ class Scope(dict[str, "Scope | type[Op] | type[Type]"]):
     def import_dialect(self, dialect: Dialect) -> None:
         self[dialect.name] = Scope.from_dialect(dialect)
 
-    def lookup(self, qualified_name: str) -> type[Op] | type[Type]:
-        try:
-            result = reduce(
-                lambda scope, key: scope[key], qualified_name.split("."), self
-            )
-        except KeyError:
-            raise UnresolvedName(f"Unknown name: {qualified_name}") from None
-        assert isinstance(result, type)
+    def lookup(self, qualified_name: str) -> type[Op | Type]:
+        """The class a dotted name names. Raises KeyError on a miss."""
+        result = reduce(
+            lambda scope, key: scope[key] if isinstance(scope, Scope) else {}[key],
+            qualified_name.split("."),
+            self,
+        )
+        if isinstance(result, Scope):
+            raise KeyError(qualified_name)
         return result
 
 
@@ -84,12 +109,10 @@ def parse(text: str) -> Value:
     parser = ASMParser(text)
     value: Value | None = None
     while not parser.done:
-        if (name := parser.try_read(_import_line)) is not None:
-            parser.scope.import_dialect(Dialect.get(name))
-        else:
+        if parser.try_read(_import_line) is None:
             value = parser.read(op_statement)
     if value is None:
-        raise ParseError("parse: no statements in input")
+        raise parser.error("No statements in input")
     if verify_parsed.get():
         verify_dag(value)
         verify_closed_blocks(value)
@@ -101,6 +124,7 @@ class ASMParser:
     def __init__(self, text: str) -> None:
         self.text = text
         self.pos: int = 0
+        self.token_start: int = 0  # where the last token read began, for errors
         self.scopes: list[BlockScope] = [BlockScope("the top level")]
         self.scope: Scope = Scope.from_dialect(Dialect.get("builtin"))
         self.block_indent: int = 0  # indent level of the current block's ops
@@ -125,7 +149,7 @@ class ASMParser:
         saved = self.pos
         try:
             return self.read(grammar)
-        except UnresolvedName:
+        except FatalParseError:
             raise
         except ParseError:
             self.pos = saved
@@ -134,6 +158,7 @@ class ASMParser:
     def parse_token(self, regex: re.Pattern[str]) -> str | None:
         self._skip_ws()
         if match := regex.match(self.text, self.pos):
+            self.token_start = self.pos
             self.pos = match.end()
             return match.group()
         return None
@@ -141,7 +166,7 @@ class ASMParser:
     def expect_token(self, regex: re.Pattern[str], name: str) -> str:
         if (token := self.parse_token(regex)) is not None:
             return token
-        raise ParseError(f"Expected {name} at {self.pos}")
+        raise self.error(f"Expected {name}")
 
     def read_list(self, reader: Callable[..., Any]) -> list[Any]:
         """Read comma-separated items until reader fails."""
@@ -152,14 +177,27 @@ class ASMParser:
                 items.append(self.read(reader))
         return items
 
+    def error(self, message: str, *, at: int | None = None) -> ParseError:
+        return ParseError(message, text=self.text, pos=self.pos if at is None else at)
+
+    def fatal(self, message: str, *, at: int) -> FatalParseError:
+        return FatalParseError(message, text=self.text, pos=at)
+
     def resolve(self, name: str) -> Value:
         if (value := self.scopes[-1].names.get(name)) is not None:
             return value
         if any(name in scope.names for scope in self.scopes):
-            raise UnresolvedName(
-                f"%{name} is not in scope in {self.scopes[-1].label}: capture it"
+            raise self.fatal(
+                f"%{name} is not in scope in {self.scopes[-1].label}: capture it",
+                at=self.token_start,
             )
-        raise UnresolvedName(f"Undefined reference: %{name}")
+        raise self.fatal(f"Undefined reference: %{name}", at=self.token_start)
+
+    def lookup(self, name: str) -> type[Op | Type]:
+        try:
+            return self.scope.lookup(name)
+        except KeyError:
+            raise self.fatal(f"Unknown name: {name}", at=self.token_start) from None
 
     def define(self, name: str, value: Value) -> None:
         self.scopes[-1].names[name] = value
@@ -175,7 +213,7 @@ class ASMParser:
     def _expect(self, string: str) -> None:
         for ch in string:
             if self.pos >= len(self.text) or self.text[self.pos] != ch:
-                raise ParseError(f"Expected '{string}' at {self.pos}")
+                raise self.error(f"Expected '{string}'")
             self.pos += 1
 
 
@@ -191,12 +229,17 @@ def qualified_name(parser: ASMParser) -> str:
 
 
 def _import_line(parser: ASMParser) -> str:
-    """Parse an import line. Returns dialect name (may be dotted)."""
+    """An import line, with its dialect brought into scope. Returns the dialect's name."""
     parser._skip_all()
-    keyword = parser.expect_token(_IDENT, "keyword")
-    if keyword != "import":
-        raise ParseError(f"Expected 'import', got '{keyword}'")
+    if parser.expect_token(_IDENT, "keyword") != "import":
+        raise parser.error("Expected 'import'", at=parser.token_start)
     dialect_name = parser.expect_token(_QUALIFIED, "dialect name")
+    try:
+        parser.scope.import_dialect(Dialect.get(dialect_name))
+    except KeyError:
+        raise parser.fatal(
+            f"Unknown dialect: {dialect_name}", at=parser.token_start
+        ) from None
     newline(parser)
     return dialect_name
 
@@ -263,24 +306,47 @@ def value_expression(parser: ASMParser) -> object:
 
 def _named_type(parser: ASMParser) -> Type:
     name = parser.read(qualified_name)
-    type_cls = parser.scope.lookup(name)
-    assert issubclass(type_cls, Type)
+    start = parser.token_start
+    if not issubclass(type_cls := parser.lookup(name), Type):
+        raise parser.fatal(f"Expected a type, got op {name}", at=start)
     if not type_cls.__params__ or parser.try_read("<") is None:
         return type_cls()
     values = parser.read_list(value_expression)
     parser.read(">")
-    kwargs = {
-        param_name: _coerce(parser, value, param_type)
-        for (param_name, param_type), value in zip(type_cls.__params__, values)
-    }
-    return type_cls(**kwargs)
+    _check_count(parser, name, "parameters", type_cls.__params__, values, at=start)
+    try:
+        return type_cls(
+            **{
+                param_name: _coerce(parser, value, param_type)
+                for (param_name, param_type), value in zip(type_cls.__params__, values)
+            }
+        )
+    except TypeError as error:
+        raise parser.fatal(f"{name}: {error}", at=start) from error
+
+
+def _check_count(
+    parser: ASMParser,
+    name: str,
+    kind: str,
+    fields: dgen.type.Fields,
+    given: list[object],
+    *,
+    at: int,
+) -> None:
+    if len(given) > len(fields):
+        raise parser.fatal(
+            f"{name} takes {len(fields)} {kind}, got {len(given)}", at=at
+        )
 
 
 def op_expression(
     parser: ASMParser, name: str
 ) -> tuple[type[Op], list[object], list[object], list[Block]]:
-    op_cls = parser.scope.lookup(parser.read(qualified_name))
-    assert issubclass(op_cls, Op)
+    op_name = parser.read(qualified_name)
+    start = parser.token_start
+    if not issubclass(op_cls := parser.lookup(op_name), Op):
+        raise parser.fatal(f"Expected an op, got type {op_name}", at=start)
     parameters: list[object] = []
     if op_cls.__params__:
         parser.read("<")
@@ -302,6 +368,7 @@ def op_expression(
 
 def op_statement(parser: ASMParser) -> Op:
     name = parser.read(ssa_name)
+    start = parser.token_start
     pre_type = value_expression(parser) if parser.try_read(":") is not None else None
     parser.read("=")
     if pre_type is not None and parser.peek() in _LITERAL_START:
@@ -314,21 +381,27 @@ def op_statement(parser: ASMParser) -> Op:
         op = ConstantOp(name=name, value=operands[0], type=pre_type)
         parser.define(name, op)
         return op
+    op_name = op_cls.dialect.qualified_name(op_cls.asm_name)
+    _check_count(parser, op_name, "parameters", op_cls.__params__, parameters, at=start)
+    _check_count(parser, op_name, "operands", op_cls.__operands__, operands, at=start)
     kwargs: dict[str, object] = {"name": name}
     if pre_type is not None:
         kwargs["type"] = pre_type
-    for (param_name, param_type), value in zip(op_cls.__params__, parameters):
-        kwargs[param_name] = _coerce(parser, value, param_type)
-    for (field_name, field_type), value in zip(op_cls.__operands__, operands):
-        # For polymorphic ops (field_type is base Type), infer concrete type
-        # from the explicit result type annotation when available.
-        effective_type = field_type
-        if field_type is Type and isinstance(pre_type, Type):
-            effective_type = type(pre_type)
-        kwargs[field_name] = _coerce(parser, value, effective_type)
-    for block_name, block in zip(op_cls.__blocks__, blocks):
-        kwargs[block_name] = block
-    op = op_cls(**kwargs)
+    try:
+        for (param_name, param_type), value in zip(op_cls.__params__, parameters):
+            kwargs[param_name] = _coerce(parser, value, param_type)
+        for (field_name, field_type), value in zip(op_cls.__operands__, operands):
+            # For polymorphic ops (field_type is base Type), infer concrete type
+            # from the explicit result type annotation when available.
+            effective_type = field_type
+            if field_type is Type and isinstance(pre_type, Type):
+                effective_type = type(pre_type)
+            kwargs[field_name] = _coerce(parser, value, effective_type)
+        for block_name, block in zip(op_cls.__blocks__, blocks):
+            kwargs[block_name] = block
+        op = op_cls(**kwargs)
+    except TypeError as error:
+        raise parser.fatal(f"%{name}: {error}", at=start) from error
     parser.define(name, op)
     return op
 
@@ -365,7 +438,7 @@ def _as_constant(field_type: type[Type], raw: object) -> Constant:
     Raises if *field_type* is parameterized (can't infer params from a literal).
     """
     if field_type.__params__:
-        raise RuntimeError(
+        raise TypeError(
             f"Cannot use a bare literal for parameterized type {field_type.asm_name}; "
             f"use {field_type.asm_name}<...>({raw!r}) to specify type parameters explicitly"
         )
@@ -450,7 +523,7 @@ def _read_block_body(parser: ASMParser, label: str) -> Block:
     )
     block_indent = newline(parser)
     if block_indent <= parser.block_indent:
-        raise ParseError("Empty block body")
+        raise parser.error("Empty block body")
     saved_indent = parser.block_indent
     parser.block_indent = block_indent
     last_op: Op | None = None

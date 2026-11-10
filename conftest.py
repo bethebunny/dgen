@@ -1,5 +1,6 @@
 """Root conftest.py — shared pytest fixtures."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ Dialect.paths.append(Path(__file__).parent / "dcc2" / "dialects")
 
 
 @pytest.fixture(autouse=True)
-def _enable_verification():
+def _enable_verification() -> Iterator[None]:
     """Verify every parsed value, and every pass's pre and postconditions, in every test."""
     passes = verify_passes.set(True)
     parsed = verify_parsed.set(True)
