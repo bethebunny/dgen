@@ -12,7 +12,7 @@ from dgen.verify import (
     verify_closed_blocks,
     verify_constraints,
     verify_dag,
-    verify_op_constraints,
+    verify_value_constraints,
 )
 
 if TYPE_CHECKING:
@@ -112,11 +112,11 @@ class Pass(metaclass=_PassMeta):
         for v in block.values:
             # Check false constraints before a handler trips over them; an op
             # being replaced is never seen again, so its constraints must be decided.
-            verify_op_constraints(v, block.result, decided=False)
+            verify_value_constraints(v, block.result, decided=False)
             for _, child_block in ((result := self._dispatch_handlers(v)) or v).blocks:
                 self._lower_block(child_block)
             if result is not None and result is not v:
-                verify_op_constraints(v, block.result, decided=True)
+                verify_value_constraints(v, block.result, decided=True)
                 block.replace_uses_of(v, result)
 
     def verify_preconditions(self, value: dgen.Value) -> None:

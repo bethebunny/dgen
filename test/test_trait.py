@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
+from types import ModuleType
 from typing import ClassVar
 
 import pytest
@@ -11,18 +13,19 @@ from dgen import Block, Dialect, Op, Trait, Type, TypeType, Value, layout
 from dgen.block import BlockArgument
 from dgen.compiler import Compiler, IdentityPass, verify_passes
 from dgen.dialects.function import Function, FunctionOp
+from dgen.dialects.index import Index
 from dgen.gen.ast import (
     ExpressionConstraint,
     HasTraitConstraint,
     HasTypeConstraint,
     TypeRef,
 )
+from dgen.gen.build import build
 from dgen.gen.parser import parse
 from dgen.module import pack
 from dgen.passes.pass_ import Pass, lowering_for
 from dgen.type import Fields
 from dgen.verify import ConstraintError, verify_constraints
-
 
 # -- Fixtures: a tiny dialect with traits, types, and ops --------------------
 
@@ -554,5 +557,52 @@ def test_pass_rejects_false_op_before_its_handler() -> None:
     try:
         with pytest.raises(ConstraintError, match="is false"):
             _LowerPositive().run(fn, Compiler([], IdentityPass()))
+    finally:
+        verify_passes.reset(token)
+
+
+# -- verify_constraints: constraints on types ---------------------------------
+
+# Registered before build so dataclasses can resolve the module, as in dgen.notebook.
+_BOUNDED = sys.modules["_bounded"] = ModuleType("_bounded")
+build(
+    parse(
+        "from index import Index\n"
+        "from builtin import Nil\n"
+        "\n"
+        "type Bounded<n: Index>:\n"
+        "    data: Nil\n"
+        "    requires n > 0 and n <= 4\n"
+        "\n"
+        "op make(input) -> Nil\n"
+    ),
+    dialect_name="_bounded",
+    resolve_import=lambda name: f"dgen.dialects.{name}",
+    module=_BOUNDED,
+)
+
+
+def _make_bounded(n: int) -> FunctionOp:
+    bounded = _BOUNDED.Bounded(n=Index().constant(n))
+    return _make_function(_BOUNDED.MakeOp(input=bounded))
+
+
+def test_verify_type_constraint_satisfied() -> None:
+    verify_constraints(_make_bounded(4))
+
+
+def test_verify_type_constraint_violated() -> None:
+    with pytest.raises(
+        ConstraintError,
+        match=r"_bounded.Bounded<5>: requires n > 0 and n <= 4 is false \(n = 5\)",
+    ):
+        verify_constraints(_make_bounded(5))
+
+
+def test_pass_rejects_false_type_constraint() -> None:
+    token = verify_passes.set(False)
+    try:
+        with pytest.raises(ConstraintError, match=r"_bounded.Bounded<0>: requires"):
+            _LowerPositive().run(_make_bounded(0), Compiler([], IdentityPass()))
     finally:
         verify_passes.reset(token)
