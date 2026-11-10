@@ -76,7 +76,14 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
         assert isinstance(data, Value), (
             f"IRSnapshotExtension expects a Value, got {type(data).__name__}"
         )
-        return "\n".join(asm_with_imports(data))
+        text = "\n".join(asm_with_imports(data))
+        # The value itself, not a parsed copy, so a loss in the text fails here.
+        if not graph_equivalent(data, parse(text)):
+            raise AssertionError(
+                "the value's asm reads back as a different value:\n"
+                + diff_values(parse(text), data)
+            )
+        return text
 
     def matches(
         self,
