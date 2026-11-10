@@ -107,6 +107,9 @@ class ControlFlowToGoto(Pass):
     def lower_if(self, op: control_flow.IfOp) -> dgen.Value | None:
         lid = self._loop_counter
         self._loop_counter += 1
+        # Branch arguments become label phis, so they must be listed.
+        assert isinstance(op.then_arguments, PackOp)
+        assert isinstance(op.else_arguments, PackOp)
 
         merge_self = BlockParameter(name="self", type=goto.Label())
         merge_exit = BlockParameter(name=f"if_exit{lid}", type=goto.Label())
@@ -121,6 +124,7 @@ class ControlFlowToGoto(Pass):
             initial_arguments=pack([]),
             body=dgen.Block(
                 result=then_br,
+                args=op.then_body.args,
                 captures=[merge_self, *op.then_body.captures],
             ),
         )
@@ -133,6 +137,7 @@ class ControlFlowToGoto(Pass):
             initial_arguments=pack([]),
             body=dgen.Block(
                 result=else_br,
+                args=op.else_body.args,
                 captures=[merge_self, *op.else_body.captures],
             ),
         )
@@ -141,8 +146,8 @@ class ControlFlowToGoto(Pass):
             condition=op.condition,
             true_target=then_label,
             false_target=else_label,
-            true_arguments=pack([]),
-            false_arguments=pack([]),
+            true_arguments=op.then_arguments,
+            false_arguments=op.else_arguments,
         )
 
         return goto.RegionOp(
@@ -153,7 +158,13 @@ class ControlFlowToGoto(Pass):
                 result=ChainOp(lhs=merge_result, rhs=cond_br, type=op.type),
                 parameters=[merge_self, merge_exit],
                 args=[merge_result],
-                captures=[op.condition, *op.then_body.captures, *op.else_body.captures],
+                captures=[
+                    op.condition,
+                    *op.then_arguments,
+                    *op.else_arguments,
+                    *op.then_body.captures,
+                    *op.else_body.captures,
+                ],
             ),
         )
 

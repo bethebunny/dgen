@@ -27,8 +27,12 @@ T = TypeVar("T")
 
 
 def _is_unresolved(value: dgen.Value) -> bool:
-    """True if value is an unresolved parameter (not yet a constant/type/function)."""
-    return not isinstance(value, (Constant, dgen.Type, FunctionOp))
+    """True if value is an unresolved parameter (not yet a constant/type/function).
+
+    A BlockParameter is resolved: the op owning its block binds it, eg. a
+    function's %self.
+    """
+    return not isinstance(value, (Constant, dgen.Type, FunctionOp, BlockParameter))
 
 
 def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:

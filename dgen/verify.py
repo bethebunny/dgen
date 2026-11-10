@@ -8,6 +8,7 @@ from dgen.dialect import Dialect
 from dgen.dialects.function import FunctionOp
 from dgen.gen.ast import HasTraitConstraint
 from dgen.graph import all_blocks, all_values
+from dgen.ir_equiv import graph_equivalent
 from dgen.module import asm_with_imports
 from dgen.trait import Trait
 from dgen.type import type_constant
@@ -164,6 +165,29 @@ def verify_dag(root: dgen.Value) -> None:
         visited.add(value)
 
     visit(root)
+
+
+# ---------------------------------------------------------------------------
+# verify_function_parameters
+# ---------------------------------------------------------------------------
+
+
+def verify_function_parameters(root: dgen.Value) -> None:
+    """Assert each function body's parameters are at most a %self of its type."""
+    for func in all_values(root):
+        if not isinstance(func, FunctionOp):
+            continue
+        match func.body.parameters:
+            case []:
+                pass
+            case [param] if graph_equivalent(param.type, func.type):
+                pass
+            case params:
+                raise VerificationError(
+                    f"function %{func.name} declares body parameters "
+                    f"{[p.name for p in params]}; its only parameter may be "
+                    f"%self, typed as the function\n\n" + _annotated_asm(root, func)
+                )
 
 
 # ---------------------------------------------------------------------------

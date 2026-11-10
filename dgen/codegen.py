@@ -258,9 +258,9 @@ class EmitContext:
     tracker: CodegenSlotTracker = field(default_factory=CodegenSlotTracker)
     host_buffers: list[Memory] = field(default_factory=list)
     predecessors: dict[dgen.Value, list[Predecessor]] = field(default_factory=dict)
-    param_to_owner: dict[dgen.Value, goto.RegionOp | goto.LabelOp] = field(
-        default_factory=dict
-    )
+    param_to_owner: dict[
+        dgen.Value, goto.RegionOp | goto.LabelOp | function.FunctionOp
+    ] = field(default_factory=dict)
     self_params: set[dgen.Value] = field(default_factory=set)
 
 
@@ -288,6 +288,10 @@ def prepare_function(func: function.FunctionOp, ctx: EmitContext) -> None:
     """
     for arg in func.body.args:
         ctx.tracker.track_name(arg)
+    # A function body's only parameter is %self, the function itself.
+    for param in func.body.parameters:
+        ctx.param_to_owner[param] = func
+        ctx.self_params.add(param)
 
     def _record_branch(
         target: dgen.Value, args: list[dgen.Value], current_block: str
@@ -608,13 +612,12 @@ def value_reference(v: dgen.Value) -> str:
         return f"@{string_value(v.symbol)}"
     if isinstance(v, function.FunctionOp) and v.name:
         return f"@{v.name}"
-    # Self parameters resolve to their owning RegionOp/LabelOp name
-    # (the label target for back-edges). Exit parameters keep their own
-    # name — they are separate LLVM basic blocks.
+    # Self parameters resolve to their owner: a RegionOp/LabelOp name
+    # (the label target for back-edges), or a function's symbol. Exit
+    # parameters keep their own name — they are separate LLVM basic blocks.
     ctx = _ctx()
     if v in ctx.self_params:
-        owner = ctx.param_to_owner[v]
-        return f"%{ctx.tracker.track_name(owner)}"
+        return value_reference(ctx.param_to_owner[v])
     name = ctx.tracker.track_name(v)
     return f"%{name}"
 

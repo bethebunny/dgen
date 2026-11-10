@@ -12,6 +12,7 @@ from dgen.verify import (
     verify_closed_blocks,
     verify_constraints,
     verify_dag,
+    verify_function_parameters,
 )
 
 if TYPE_CHECKING:
@@ -119,6 +120,7 @@ class Pass(metaclass=_PassMeta):
         verify_all_ready(value)
         verify_dag(value)
         verify_closed_blocks(value)
+        verify_function_parameters(value)
         verify_constraints(value)
 
     def verify_postconditions(self, value: dgen.Value) -> None:
