@@ -75,6 +75,7 @@ from dgen.dialects.index import Index
 from dgen.dialects.number import Boolean
 from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
+from dgen.type import type_constant
 
 
 class ControlFlowToGoto(Pass):
@@ -90,18 +91,14 @@ class ControlFlowToGoto(Pass):
         for value in all_values(root):
             if not isinstance(value, control_flow.IfOp):
                 continue
-            then_type = value.then_body.result.type
-            else_type = value.else_body.result.type
-            if then_type is not value.type and type(then_type) is not type(value.type):
-                raise TypeError(
-                    f"IfOp then-branch result type {then_type} "
-                    f"does not match declared type {value.type}"
-                )
-            if else_type is not value.type and type(else_type) is not type(value.type):
-                raise TypeError(
-                    f"IfOp else-branch result type {else_type} "
-                    f"does not match declared type {value.type}"
-                )
+            # A branch's type may be a folded ConstantOp, eg. from %y : type(%x).
+            expected = type(type_constant(value.type))
+            for branch, block in [("then", value.then_body), ("else", value.else_body)]:
+                if type(type_constant(block.result.type)) is not expected:
+                    raise TypeError(
+                        f"IfOp {branch}-branch result type {block.result.type} "
+                        f"does not match declared type {value.type}"
+                    )
 
     @lowering_for(control_flow.IfOp)
     def lower_if(self, op: control_flow.IfOp) -> dgen.Value | None:

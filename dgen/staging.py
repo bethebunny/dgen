@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from copy import deepcopy
 from typing import TYPE_CHECKING, TypeVar
 
@@ -10,7 +10,7 @@ import dgen
 from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable, build_callback_thunk, register_executable
 from dgen.dialects.function import Function, FunctionOp
-from dgen.graph import all_values, interior_values
+from dgen.graph import all_values, transitive_dependencies
 from dgen.module import ConstantOp, pack
 from dgen.passes.pass_ import Pass
 from dgen.type import Constant, Memory
@@ -92,28 +92,58 @@ def compute_stages(root: dgen.Value) -> dict[dgen.Value, int]:
     return stages
 
 
-def _unresolved_boundaries(
-    root: dgen.Value,
-    stages: dict[dgen.Value, int],
-) -> list[tuple[int, dgen.Op, str, dgen.Value]]:
-    """Find unresolved __params__ / type boundaries sorted by stage.
+class StagingError(Exception):
+    """A boundary that staging can't resolve."""
 
-    Walks each reachable function's top-level body ops; does not descend into
-    nested blocks (loop bodies etc.) — those boundaries are resolved by
-    recursive compilation once a parent staging resolution lands.
+
+type Boundary = tuple[dgen.Op, str, dgen.Value]
+
+
+def _body_ops(block: dgen.Block) -> Iterator[dgen.Op]:
+    """Ops of block and its nested blocks in topological order, except nested functions' bodies."""
+    for value in block.values:
+        if not isinstance(value, dgen.Op):
+            continue
+        if not isinstance(value, FunctionOp):
+            for _, inner in value.blocks:
+                yield from _body_ops(inner)
+        yield value
+
+
+def _function_boundaries(func: FunctionOp) -> Iterator[Boundary]:
+    """Unresolved fields of the ops in func's body, nested blocks included."""
+    for op in _body_ops(func.body):
+        for field_name, param in op.parameters:
+            if _is_unresolved(param):
+                yield op, field_name, param
+        if _is_unresolved(op.type):
+            yield op, "type", op.type
+
+
+def _unresolved_boundaries(
+    root: dgen.Value, stages: dict[dgen.Value, int]
+) -> list[Boundary]:
+    """Boundaries of every reachable function, by the op's stage, then topologically."""
+    boundaries = [
+        b for f in _reachable_functions(root) for b in _function_boundaries(f)
+    ]
+    return sorted(boundaries, key=lambda b: stages.get(b[0], 0))
+
+
+def _verify_specializable(func: FunctionOp) -> None:
+    """Raise unless each of func's boundaries depends on no block argument but func's own.
+
+    A callback specializes func on its arguments only, so a boundary on eg. a loop
+    variable would stay unresolved in every specialization.
     """
-    boundaries: list[tuple[int, dgen.Op, str, dgen.Value]] = []
-    for func in _reachable_functions(root):
-        for op in func.body.ops:
-            if not isinstance(op, dgen.Op):
-                continue
-            for field_name, param in op.parameters:
-                if _is_unresolved(param):
-                    boundaries.append((stages.get(op, 0), op, field_name, param))
-            if _is_unresolved(op.type):
-                boundaries.append((stages.get(op, 0), op, "type", op.type))
-    boundaries.sort(key=lambda t: t[0])
-    return boundaries
+    for op, field_name, value in _function_boundaries(func):
+        for dep in transitive_dependencies(value):
+            if isinstance(dep, BlockArgument) and dep not in func.body.args:
+                raise StagingError(
+                    f"%{op.name}.{field_name} in function %{func.name} depends on "
+                    f"%{dep.name}, an argument of a nested block; staging "
+                    f"specializes only on the function's arguments"
+                )
 
 
 def _reachable_functions(root: dgen.Value) -> list[FunctionOp]:
@@ -173,7 +203,7 @@ def resolve_stage0(
         stages = compute_stages(root)
         boundaries = [
             (op, field, value)
-            for (_, op, field, value) in _unresolved_boundaries(root, stages)
+            for (op, field, value) in _unresolved_boundaries(root, stages)
             if stages.get(value, 0) == 0
         ]
         if not boundaries:
@@ -199,7 +229,7 @@ def _resolve_with_runtime_args(
         boundaries = _unresolved_boundaries(func, stages)
         if not boundaries:
             break
-        _stage, op, field_name, value = boundaries[0]
+        op, field_name, value = boundaries[0]
         setattr(op, field_name, _jit_evaluate(value, compiler))
 
 
@@ -256,8 +286,12 @@ def compile_value(root: dgen.Value, compiler: Compiler[T]) -> T:
     # entry callback can call them. The root itself is the entry.
     entry = resolved if isinstance(resolved, FunctionOp) else None
     needs_callback = [
-        f for f in _reachable_functions(resolved) if _function_has_boundaries(f)
+        f
+        for f in _reachable_functions(resolved)
+        if next(_function_boundaries(f), None) is not None
     ]
+    for func in needs_callback:
+        _verify_specializable(func)
     if not needs_callback:
         return compiler.run(resolved)
     ordered = [f for f in needs_callback if f is not entry]
@@ -283,24 +317,3 @@ def compile_value(root: dgen.Value, compiler: Compiler[T]) -> T:
     assert isinstance(result, Executable)
     result.host_refs.extend(all_host_refs)
     return result
-
-
-def _function_has_boundaries(func: FunctionOp) -> bool:
-    """True if any op in ``func``'s own body has unresolved __params__ or
-    an unresolved type. Does not cross into captured callees.
-    """
-    for value in func.body.values:
-        if not isinstance(value, dgen.Op):
-            continue
-        if any(_is_unresolved(p) for _, p in value.parameters):
-            return True
-        if _is_unresolved(value.type):
-            return True
-        for inner in interior_values(value):
-            if not isinstance(inner, dgen.Op):
-                continue
-            if any(_is_unresolved(p) for _, p in inner.parameters):
-                return True
-            if _is_unresolved(inner.type):
-                return True
-    return False
