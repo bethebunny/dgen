@@ -1,4 +1,4 @@
-"""Tests for ASMParser core tokenizer with read/try_read protocol."""
+"""Tests for ASMParser's tokenizer, its readers, and parse()."""
 
 from __future__ import annotations
 
@@ -35,39 +35,27 @@ class TestASMParserBasics:
         assert ASMParser("abc").peek() == "a"
 
 
-class TestReadAndTryRead:
-    def test_read_string(self) -> None:
-        p = ASMParser("  (")
-        p.read("(")
-        assert p.pos == 3
+def test_read_literal():
+    p = ASMParser("  (")
+    p.read("(")
+    assert p.pos == 3
 
-    def test_read_raises_on_mismatch(self) -> None:
-        with pytest.raises(RuntimeError):
-            ASMParser("  )").read("(")
 
-    def test_try_read_success(self) -> None:
-        p = ASMParser("  (")
-        assert p.try_read("(") == "("
-        assert p.pos == 3
+def test_read_raises_on_mismatch():
+    with pytest.raises(ParseError, match="Expected '\\('"):
+        ASMParser("  )").read("(")
 
-    def test_try_read_failure_restores_pos(self) -> None:
-        p = ASMParser("  )")
-        assert p.try_read("(") is None
-        assert p.pos == 0
 
-    def test_read_function(self) -> None:
-        def ident(parser: ASMParser) -> str:
-            return parser.expect_token(_IDENT, "identifier")
+def test_accept_consumes_a_match():
+    p = ASMParser("  (")
+    assert p.accept("(")
+    assert p.pos == 3
 
-        assert ASMParser("  hello").read(ident) == "hello"
 
-    def test_try_read_function_failure(self) -> None:
-        def fail(parser: ASMParser) -> int:
-            raise parser.error("no match")
-
-        p = ASMParser("  abc")
-        assert p.try_read(fail) is None
-        assert p.pos == 0
+def test_accept_leaves_a_mismatch():
+    p = ASMParser("  )")
+    assert not p.accept("(")
+    assert p.pos == 2
 
 
 class TestTokenMethods:
@@ -86,33 +74,25 @@ class TestTokenMethods:
             ASMParser("   ").expect_token(_IDENT, "identifier")
 
 
-class TestReadList:
-    def test_empty(self) -> None:
-        def number(parser: ASMParser) -> int:
-            token = parser.parse_token(re.compile(r"\d+"))
-            if token is None:
-                raise parser.error("expected number")
-            return int(token)
+def _number(parser: ASMParser) -> int:
+    return int(parser.expect_token(re.compile(r"\d+"), "number"))
 
-        assert ASMParser("").read_list(number) == []
 
-    def test_single(self) -> None:
-        def number(parser: ASMParser) -> int:
-            token = parser.parse_token(re.compile(r"\d+"))
-            if token is None:
-                raise parser.error("expected number")
-            return int(token)
+def test_read_list_empty():
+    assert ASMParser(")").read_list(_number, ")") == []
 
-        assert ASMParser("42").read_list(number) == [42]
 
-    def test_multiple(self) -> None:
-        def number(parser: ASMParser) -> int:
-            token = parser.parse_token(re.compile(r"\d+"))
-            if token is None:
-                raise parser.error("expected number")
-            return int(token)
+def test_read_list_single():
+    assert ASMParser("42)").read_list(_number, ")") == [42]
 
-        assert ASMParser("1, 2, 3").read_list(number) == [1, 2, 3]
+
+def test_read_list_multiple():
+    assert ASMParser("1, 2, 3)").read_list(_number, ")") == [1, 2, 3]
+
+
+def test_read_list_needs_a_separator():
+    with pytest.raises(ParseError, match="Expected '\\)' or ','"):
+        ASMParser("1 2)").read_list(_number, ")")
 
 
 class TestParseErrors:

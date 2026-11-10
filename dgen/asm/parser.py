@@ -1,6 +1,8 @@
 """IR text deserialization.
 
-read/try_read dispatch to reader functions — like lisp reader macros.
+A predictive reader: each piece of grammar is a reader function, and one token of lookahead
+(accept(), peek(), parse_token()) picks every branch, so nothing backtracks and an error is
+raised where the text first fails to match.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import reduce
-from typing import Any
+from typing import TypeVar
 
 import dgen.type
 from dgen import Block, Constant, Op, Type, Value
@@ -22,11 +24,13 @@ from dgen.module import ConstantOp, PackOp
 from dgen.type import literal_type
 from dgen.verify import verify_closed_blocks, verify_constraints, verify_dag
 
+_R = TypeVar("_R")
+
 verify_parsed: ContextVar[bool] = ContextVar("dgen.verify_parsed", default=False)
 
 
 class ParseError(RuntimeError):
-    """A failure to read text at offset pos. try_read() catches it to backtrack."""
+    """A failure to read text at offset pos."""
 
     def __init__(self, message: str, *, text: str, pos: int) -> None:
         super().__init__(message)
@@ -53,15 +57,12 @@ class ParseError(RuntimeError):
         return f"line {self.line}, column {self.column}: {self.message}\n    {self.source_line}\n    {caret}"
 
 
-class FatalParseError(ParseError):
-    """A failure no other reading of the text avoids, so try_read() doesn't backtrack past it."""
-
-
 _IDENT = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 _QUALIFIED = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*")
 _STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
 _SSA = re.compile(r"%[a-zA-Z0-9_]+")
 _NUMBER = re.compile(r"-?\d+\.\d*|-?\d*\.\d+|-?\d+")
+_IMPORT = re.compile(r"import\b")
 _LITERAL_START = set('-0123456789{["(')
 
 
@@ -111,8 +112,10 @@ def parse(text: str) -> Value:
     parser = ASMParser(text)
     value: Value | None = None
     while not parser.done:
-        if parser.try_read(_import_line) is None:
-            value = parser.read(op_statement)
+        if parser.parse_token(_IMPORT) is not None:
+            _import(parser)
+        else:
+            value = op_statement(parser)
     if value is None:
         raise parser.error("No statements in input")
     if verify_parsed.get():
@@ -140,22 +143,17 @@ class ASMParser:
         self._skip_ws()
         return self.text[self.pos] if self.pos < len(self.text) else ""
 
-    def read(self, grammar: str | Callable[..., Any]) -> Any:  # noqa: ANN401
-        if isinstance(grammar, str):
-            self._skip_ws()
-            self._expect(grammar)
-            return grammar
-        return grammar(self)
+    def accept(self, literal: str) -> bool:
+        """Whether literal comes next, consuming it if so."""
+        self._skip_ws()
+        if self.text.startswith(literal, self.pos):
+            self.pos += len(literal)
+            return True
+        return False
 
-    def try_read(self, grammar: str | Callable[..., Any]) -> Any | None:  # noqa: ANN401
-        saved = self.pos
-        try:
-            return self.read(grammar)
-        except FatalParseError:
-            raise
-        except ParseError:
-            self.pos = saved
-            return None
+    def read(self, literal: str) -> None:
+        if not self.accept(literal):
+            raise self.error(f"Expected '{literal}'")
 
     def parse_token(self, regex: re.Pattern[str]) -> str | None:
         self._skip_ws()
@@ -170,36 +168,33 @@ class ASMParser:
             return token
         raise self.error(f"Expected {name}")
 
-    def read_list(self, reader: Callable[..., Any]) -> list[Any]:
-        """Read comma-separated items until reader fails."""
-        items: list[Any] = []
-        if (first := self.try_read(reader)) is not None:
-            items.append(first)
-            while self.try_read(",") is not None:
-                items.append(self.read(reader))
+    def read_list(self, reader: Callable[[ASMParser], _R], close: str) -> list[_R]:
+        """Comma-separated items up to and including close."""
+        items: list[_R] = []
+        while not self.accept(close):
+            if items and not self.accept(","):
+                raise self.error(f"Expected '{close}' or ','")
+            items.append(reader(self))
         return items
 
     def error(self, message: str, *, at: int | None = None) -> ParseError:
         return ParseError(message, text=self.text, pos=self.pos if at is None else at)
 
-    def fatal(self, message: str, *, at: int) -> FatalParseError:
-        return FatalParseError(message, text=self.text, pos=at)
-
     def resolve(self, name: str) -> Value:
         if (value := self.scopes[-1].names.get(name)) is not None:
             return value
         if any(name in scope.names for scope in self.scopes):
-            raise self.fatal(
+            raise self.error(
                 f"%{name} is not in scope in {self.scopes[-1].label}: capture it",
                 at=self.token_start,
             )
-        raise self.fatal(f"Undefined reference: %{name}", at=self.token_start)
+        raise self.error(f"Undefined reference: %{name}", at=self.token_start)
 
     def lookup(self, name: str) -> type[Op | Type]:
         try:
             return self.scope.lookup(name)
         except KeyError:
-            raise self.fatal(f"Unknown name: {name}", at=self.token_start) from None
+            raise self.error(f"Unknown name: {name}", at=self.token_start) from None
 
     def define(self, name: str, value: Value) -> None:
         self.scopes[-1].names[name] = value
@@ -210,12 +205,6 @@ class ASMParser:
 
     def _skip_all(self) -> None:
         while self.pos < len(self.text) and self.text[self.pos] in " \t\n\r":
-            self.pos += 1
-
-    def _expect(self, string: str) -> None:
-        for ch in string:
-            if self.pos >= len(self.text) or self.text[self.pos] != ch:
-                raise self.error(f"Expected '{string}'")
             self.pos += 1
 
 
@@ -230,20 +219,16 @@ def qualified_name(parser: ASMParser) -> str:
     return parser.expect_token(_QUALIFIED, "qualified name")
 
 
-def _import_line(parser: ASMParser) -> str:
-    """An import line, with its dialect brought into scope. Returns the dialect's name."""
-    parser._skip_all()
-    if parser.expect_token(_IDENT, "keyword") != "import":
-        raise parser.error("Expected 'import'", at=parser.token_start)
+def _import(parser: ASMParser) -> None:
+    """The rest of an import line, with its dialect brought into scope."""
     dialect_name = parser.expect_token(_QUALIFIED, "dialect name")
     try:
         parser.scope.import_dialect(Dialect.get(dialect_name))
     except KeyError:
-        raise parser.fatal(
+        raise parser.error(
             f"Unknown dialect: {dialect_name}", at=parser.token_start
         ) from None
     newline(parser)
-    return dialect_name
 
 
 def newline(parser: ASMParser) -> int:
@@ -282,24 +267,20 @@ def _dict_entry(parser: ASMParser) -> tuple[str, object]:
 
 def value_expression(parser: ASMParser) -> object:
     """Universal value reader: SSA ref, Nil, list, dict, string, number, or named type."""
-    if (name := parser.try_read(ssa_name)) is not None:
-        return parser.resolve(name)
-    if parser.try_read("()") is not None:
+    if (ref := parser.parse_token(_SSA)) is not None:
+        return parser.resolve(ref[1:])
+    if parser.accept("()"):
         return builtin.Nil()
-    if parser.try_read("[") is not None:
-        items = parser.read_list(value_expression)
-        parser.read("]")
-        return items
-    if parser.try_read("{") is not None:
-        entries = parser.read_list(_dict_entry)
-        parser.read("}")
-        return dict(entries)
+    if parser.accept("["):
+        return parser.read_list(value_expression, "]")
+    if parser.accept("{"):
+        return dict(parser.read_list(_dict_entry, "}"))
     if (string := parser.parse_token(_STRING)) is not None:
         return json.loads(string)
     if (number := parser.parse_token(_NUMBER)) is not None:
         return float(number) if "." in number else int(number)
     type_val = _named_type(parser)
-    if parser.try_read("(") is not None:
+    if parser.accept("("):
         raw = value_expression(parser)
         parser.read(")")
         return type_val.constant(raw)
@@ -307,14 +288,13 @@ def value_expression(parser: ASMParser) -> object:
 
 
 def _named_type(parser: ASMParser) -> Type:
-    name = parser.read(qualified_name)
+    name = qualified_name(parser)
     start = parser.token_start
     if not issubclass(type_cls := parser.lookup(name), Type):
-        raise parser.fatal(f"Expected a type, got op {name}", at=start)
-    if not type_cls.__params__ or parser.try_read("<") is None:
+        raise parser.error(f"Expected a type, got op {name}", at=start)
+    if not type_cls.__params__ or not parser.accept("<"):
         return type_cls()
-    values = parser.read_list(value_expression)
-    parser.read(">")
+    values = parser.read_list(value_expression, ">")
     _check_count(parser, name, "parameters", type_cls.__params__, values, at=start)
     try:
         return type_cls(
@@ -324,7 +304,7 @@ def _named_type(parser: ASMParser) -> Type:
             }
         )
     except TypeError as error:
-        raise parser.fatal(f"{name}: {error}", at=start) from error
+        raise parser.error(f"{name}: {error}", at=start) from error
 
 
 def _check_count(
@@ -337,7 +317,7 @@ def _check_count(
     at: int,
 ) -> None:
     if len(given) > len(fields):
-        raise parser.fatal(
+        raise parser.error(
             f"{name} takes {len(fields)} {kind}, got {len(given)}", at=at
         )
 
@@ -345,18 +325,16 @@ def _check_count(
 def op_expression(
     parser: ASMParser, name: str
 ) -> tuple[type[Op], list[object], list[object], list[Block]]:
-    op_name = parser.read(qualified_name)
+    op_name = qualified_name(parser)
     start = parser.token_start
     if not issubclass(op_cls := parser.lookup(op_name), Op):
-        raise parser.fatal(f"Expected an op, got type {op_name}", at=start)
+        raise parser.error(f"Expected an op, got type {op_name}", at=start)
     parameters: list[object] = []
     if op_cls.__params__:
         parser.read("<")
-        parameters = parser.read_list(value_expression)
-        parser.read(">")
+        parameters = parser.read_list(value_expression, ">")
     parser.read("(")
-    operands = parser.read_list(value_expression)
-    parser.read(")")
+    operands = parser.read_list(value_expression, ")")
     blocks: list[Block] = []
     for block_name in op_cls.__blocks__:
         saved = parser.pos
@@ -370,14 +348,14 @@ def op_expression(
 
 def op_statement(parser: ASMParser) -> Value:
     """One statement, an op or a constant built, or an alias bound. Returns its value."""
-    name = parser.read(ssa_name)
+    name = ssa_name(parser)
     start = parser.token_start
-    pre_type = value_expression(parser) if parser.try_read(":") is not None else None
+    pre_type = value_expression(parser) if parser.accept(":") else None
     parser.read("=")
-    if (ref := parser.try_read(ssa_name)) is not None:
+    if (ref := parser.parse_token(_SSA)) is not None:
         if pre_type is not None:
-            raise parser.fatal(f"%{name}: an alias takes no type", at=start)
-        parser.define(name, value := parser.resolve(ref))
+            raise parser.error(f"%{name}: an alias takes no type", at=start)
+        parser.define(name, value := parser.resolve(ref[1:]))
         return value
     if pre_type is not None and parser.peek() in _LITERAL_START:
         op = ConstantOp(name=name, value=value_expression(parser), type=pre_type)
@@ -407,13 +385,13 @@ def op_statement(parser: ASMParser) -> Value:
             kwargs[block_name] = block
         op = op_cls(**kwargs)
     except TypeError as error:
-        raise parser.fatal(f"%{name}: {error}", at=start) from error
+        raise parser.error(f"%{name}: {error}", at=start) from error
     parser.define(name, op)
     return op
 
 
 def _block_argument(parser: ASMParser) -> BlockArgument:
-    name = parser.read(ssa_name)
+    name = ssa_name(parser)
     parser.read(":")
     arg = BlockArgument(name=name, type=value_expression(parser))
     parser.define(name, arg)
@@ -421,18 +399,11 @@ def _block_argument(parser: ASMParser) -> BlockArgument:
 
 
 def _block_parameter(parser: ASMParser) -> BlockParameter:
-    name = parser.read(ssa_name)
+    name = ssa_name(parser)
     parser.read(":")
     param = BlockParameter(name=name, type=value_expression(parser))
     parser.define(name, param)
     return param
-
-
-def block_arguments(parser: ASMParser) -> list[BlockArgument]:
-    parser.read("(")
-    args = parser.read_list(_block_argument)
-    parser.read(")")
-    return args
 
 
 # -- Coercion ---------------------------------------------------------------
@@ -499,24 +470,22 @@ def _pack_list(
 # -- Block parsing ----------------------------------------------------------
 
 
+def _capture(parser: ASMParser) -> tuple[str, Value]:
+    name = parser.expect_token(_SSA, "capture reference")[1:]
+    return name, parser.resolve(name)
+
+
 def _read_block_body(parser: ASMParser, label: str) -> Block:
     # The header sees the enclosing scope and the inputs it has declared so far.
     outer = parser.scopes[-1]
     parser.scopes.append(BlockScope(outer.label, dict(outer.names)))
-    block_params: list[BlockParameter] = []
-    if parser.try_read("<") is not None:
-        block_params = parser.read_list(_block_parameter)
-        parser.read(">")
-    args = block_arguments(parser)
-    # Optional captures: captures(%name, ...)
+    block_params = parser.read_list(_block_parameter, ">") if parser.accept("<") else []
+    parser.read("(")
+    args = parser.read_list(_block_argument, ")")
     captured: dict[str, Value] = {}
-    if parser.try_read("captures") is not None:
+    if parser.accept("captures"):
         parser.read("(")
-        while parser.try_read(")") is None:
-            if captured:
-                parser.read(",")
-            name = parser.expect_token(_SSA, "capture reference")[1:]
-            captured[name] = parser.resolve(name)
+        captured = dict(parser.read_list(_capture, ")"))
     parser.read(":")
     parser.scopes[-1] = BlockScope(
         label,

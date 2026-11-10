@@ -53,6 +53,18 @@ MALFORMED = [
         id="unclosed operands",
     ),
     pytest.param(
+        "%a : index.Index = 3\n%b : Nil = chain([%a %a], ())\n",
+        "Expected ']' or ','",
+        (5, 22),
+        id="missing comma in a list",
+    ),
+    pytest.param(
+        "%f : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x index.Index):\n    %_ = %x\n",
+        "Expected ':'",
+        (4, 95),
+        id="block argument without a type",
+    ),
+    pytest.param(
         "%a : index.Index = index.Index()\n",
         "Expected an op, got type index.Index",
         (4, 20),
