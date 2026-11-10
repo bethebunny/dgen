@@ -24,6 +24,8 @@ SHIPPED = [
     "dgen.dialects.llvm",
     "toy.dialects.toy",
     "actor.dialects.actor",
+    "dcc.dialects.c",
+    "dcc2.dialects.c",
 ]
 
 
@@ -148,3 +150,17 @@ def test_constraints_resolve():
 def test_unknown_name_raises():
     with pytest.raises(NameError, match="Missing"):
         from_source("op f(x: Missing)\n")
+
+
+def test_type_may_name_a_type_declared_below():
+    d = from_source(
+        "type Pair<items: Span<Item>>:\n    data: Nil\ntype Item:\n    data: Nil\nfrom builtin import Nil, Span\n"
+    )
+    assert [t.name for t in d.types] == ["Pair", "Item"]
+    (items,) = d.types[0].params
+    assert items.type.args == (model.TypeExpr(d.types[1]),)
+
+
+def test_type_cycle_raises():
+    with pytest.raises(NameError, match="B"):
+        from_source("type A<b: B>:\n    layout Int\ntype B<a: A>:\n    layout Int\n")

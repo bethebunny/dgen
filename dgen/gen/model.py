@@ -198,13 +198,27 @@ class Dialect:
                 names |= {n: dep.lookup(n) for n in imp.names}
             else:
                 aliases[imp.module] = dep
-        # Declarations resolve against those above them, as in build().
-        partial = cls(name=name, module=module, names=names, aliases=aliases)
-        resolver = _Resolver(partial)
+        resolver = _Resolver(
+            cls(name=name, module=module, names=names, aliases=aliases)
+        )
         for td in file.traits:
             resolver.add(resolver.trait(td))
-        for td in file.types:
-            resolver.add(resolver.type(td))
+        # A type may name a type declared below it (eg. Span<StructField> in dcc2),
+        # so types resolve in dependency order, and a cycle raises.
+        pending = list(file.types)
+        while pending:
+            ready = [
+                (td, decl)
+                for td in pending
+                if (decl := resolver.try_type(td)) is not None
+            ]
+            if not ready:
+                resolver.type(pending[0])
+            for td, decl in ready:
+                resolver.add(decl)
+                pending.remove(td)
+        order = {td.name: i for i, td in enumerate(file.types)}
+        resolver.types.sort(key=lambda t: order[t.name])
         return cls(
             name=name,
             module=module,
@@ -322,6 +336,12 @@ class _Resolver:
     def trait(self, td: ast.TraitDecl) -> Trait:
         d = self.dialect
         return Trait(d.name, d.module, td.name, self.statics(td.statics))
+
+    def try_type(self, td: ast.TypeDecl) -> Type | None:
+        try:
+            return self.type(td)
+        except NameError:
+            return None
 
     def type(self, td: ast.TypeDecl) -> Type:
         d = self.dialect
