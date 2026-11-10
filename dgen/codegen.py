@@ -168,8 +168,12 @@ def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
                     continue
                 yield from emit_extern(extern)
             yield ""
-            for func in _reachable_functions(root):
+            functions = _reachable_functions(root)
+            # A nested function may call its parent's %self, so every
+            # function binds its parameters before any is emitted.
+            for func in functions:
                 prepare_function(func, ctx)
+            for func in functions:
                 yield from emit(func)
 
         return "\n".join(_lines()), ctx.host_buffers

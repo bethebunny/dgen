@@ -116,6 +116,9 @@ def _verify_unique_ownership(root: dgen.Value) -> None:
                     f"{owner[op]} and {scope}"
                 )
             owner[op] = scope
+            # A nested function is a scope of its own, walked from starts.
+            if isinstance(op, FunctionOp):
+                continue
             for _, child in op.blocks:
                 _check(child, op.name or type(op).__name__)
 

@@ -70,3 +70,39 @@ def test_self_parameter_must_have_the_function_type():
     )
     with pytest.raises(VerificationError, match="only parameter may be %self"):
         verify_function_parameters(parse(wrong))
+
+
+IS_EVEN = strip_prefix("""
+    | import algebra
+    | import control_flow
+    | import function
+    | import index
+    | import number
+    |
+    | %is_even : function.Function<[index.Index], index.Index> = function.function<index.Index>() body<%self: function.Function<[index.Index], index.Index>>(%n: index.Index):
+    |     %is_odd : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%m: index.Index) captures(%self):
+    |         %m_zero : number.Boolean = algebra.equal(%m, 0)
+    |         %odd : index.Index = control_flow.if(%m_zero, [], []) then_body():
+    |             %no : index.Index = 0
+    |         else_body() captures(%m, %self):
+    |             %m1 : index.Index = algebra.subtract(%m, 1)
+    |             %even : index.Index = function.call<%self>([%m1])
+    |     %n_zero : number.Boolean = algebra.equal(%n, 0)
+    |     %result : index.Index = control_flow.if(%n_zero, [], []) then_body():
+    |         %yes : index.Index = 1
+    |     else_body() captures(%n, %is_odd):
+    |         %n1 : index.Index = algebra.subtract(%n, 1)
+    |         %r : index.Index = function.call<%is_odd>([%n1])
+""")
+
+
+def test_mutual_recursion_roundtrip():
+    value = parse(IS_EVEN)
+    verify_dag(value)
+    verify_closed_blocks(value)
+    assert_ir_equivalent(value, asm.parse(asm.format(value)))
+
+
+def test_mutual_recursion_jit():
+    exe = llvm_compile(parse(IS_EVEN))
+    assert [exe.run(n).to_json() for n in range(5)] == [1, 0, 1, 0, 1]
