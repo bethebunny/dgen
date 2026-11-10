@@ -33,16 +33,19 @@ rather than a raw text diff, so only real changes are reported.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from collections.abc import Iterator
 from typing import Optional
 
 from syrupy.extensions.single_file import SingleFileSnapshotExtension, WriteMode
+from syrupy.location import PyTestLocation
 from syrupy.types import (
     PropertyFilter,
     PropertyMatcher,
     SerializableData,
     SerializedData,
+    SnapshotIndex,
 )
 
 from dgen.asm.parser import parse
@@ -64,6 +67,14 @@ class IRSnapshotExtension(SingleFileSnapshotExtension):
     file_extension = "ir"
     _write_mode = WriteMode.TEXT
     side_by_side: bool = False
+
+    @classmethod
+    def get_snapshot_name(
+        cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0
+    ) -> str:
+        # Every walk order shares one snapshot, since equivalence ignores order.
+        name = super().get_snapshot_name(test_location=test_location, index=index)
+        return re.sub(r"\[walk-seed-\d+\]|-walk-seed-\d+(?=\])", "", name)
 
     def serialize(
         self,

@@ -2,9 +2,32 @@
 
 from __future__ import annotations
 
+import random
 from collections.abc import Iterable, Iterator
+from contextvars import ContextVar
 
 import dgen
+
+
+class RandomOrder:
+    """A random depth-first order that stays the same while the graph does.
+
+    Each value draws a rank the first time a walk meets it, and walks visit
+    dependencies lowest rank first instead of in field order.
+    """
+
+    def __init__(self, seed: int) -> None:
+        self.rng = random.Random(seed)
+        self.ranks: dict[dgen.Value, float] = {}
+
+    def rank(self, value: dgen.Value) -> float:
+        if value not in self.ranks:
+            self.ranks[value] = self.rng.random()
+        return self.ranks[value]
+
+
+# When set, walks take its order, to test that nothing depends on the field order.
+random_order: ContextVar[RandomOrder | None] = ContextVar("random_order", default=None)
 
 
 def inline_block(block: dgen.Block, args: list[dgen.Value]) -> dgen.Value:
@@ -37,18 +60,33 @@ def transitive_dependencies(
     if value in visited:
         return
     visited.add(value)
+    order = random_order.get()
+
+    def dependencies(value: dgen.Value) -> Iterator[dgen.Value]:
+        return (
+            iter(value.dependencies)
+            if order is None
+            else _ranked(value, visited, order)
+        )
+
     # Each open value with its dependency iterator, so depth costs memory, not frames.
-    stack: list[tuple[dgen.Value, Iterator[dgen.Value]]] = [
-        (value, iter(value.dependencies))
-    ]
+    stack = [(value, dependencies(value))]
     while stack:
-        top, dependencies = stack[-1]
-        if (dep := next((d for d in dependencies if d not in visited), None)) is None:
+        top, pending = stack[-1]
+        if (dep := next((d for d in pending if d not in visited), None)) is None:
             stack.pop()
             yield top
         else:
             visited.add(dep)
-            stack.append((dep, iter(dep.dependencies)))
+            stack.append((dep, dependencies(dep)))
+
+
+def _ranked(
+    value: dgen.Value, visited: set[dgen.Value], order: RandomOrder
+) -> Iterator[dgen.Value]:
+    """value's unvisited dependencies by rank, reread at each step like the lazy walk."""
+    while pending := [d for d in value.dependencies if d not in visited]:
+        yield min(pending, key=order.rank)
 
 
 def all_values(value: dgen.Value) -> Iterator[dgen.Value]:

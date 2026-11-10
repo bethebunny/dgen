@@ -6,7 +6,10 @@ extend-select = ["ANN"]
 "test/**" = ["ANN"]
 
 [tool.pytest.ini_options]
-markers = ["slow: marks tests as slow (deselected by default, run with --slow)"]
+markers = [
+    "slow: marks tests as slow (deselected by default, run with --slow)",
+    "canonical_order: asserts the depth-first walk order, so --walk-seeds leaves it alone",
+]
 addopts = "-m 'not slow'"
 
 [tool.setuptools.packages.find]

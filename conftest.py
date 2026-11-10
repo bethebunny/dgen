@@ -1,5 +1,6 @@
 """Root conftest.py — shared pytest fixtures."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from dgen import Dialect
 from dgen.compiler import verify_passes
+from dgen.graph import RandomOrder, random_order
 from dgen.testing.syrupy import IRSnapshotExtension
 
 # Make toy and dcc2 dialects discoverable via Dialect.get().
@@ -22,7 +24,37 @@ def _enable_pass_verification():
     verify_passes.reset(token)
 
 
+@pytest.fixture(autouse=True)
+def _walk_order(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Walk in a random topological order under --walk-seeds, else depth-first."""
+    seed: int | None = request.param if _random_walks(request.node) else None
+    token = random_order.set(None if seed is None else RandomOrder(seed))
+    yield
+    random_order.reset(token)
+
+
+def _random_walks(item: pytest.Item) -> bool:
+    return (
+        item.config.getoption("walk_seeds") > 0
+        and item.get_closest_marker("canonical_order") is None
+    )
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    if "_walk_order" in metafunc.fixturenames and _random_walks(metafunc.definition):
+        seeds = range(metafunc.config.getoption("walk_seeds"))
+        metafunc.parametrize(
+            "_walk_order", seeds, indirect=True, ids=lambda s: f"walk-seed-{s}"
+        )
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--walk-seeds",
+        type=int,
+        default=0,
+        help="Run each test under this many random topological walk orders.",
+    )
     parser.addoption(
         "--side-by-side",
         action="store_true",
