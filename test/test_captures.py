@@ -146,7 +146,10 @@ def test_verify_missing_capture_of_block_parameter():
 
 
 def test_verify_missing_capture_of_function_ref():
-    """A function body that references a sibling FunctionOp without capturing it fails."""
+    """Two bodies that reference a sibling FunctionOp without capturing it fail.
+
+    One body alone may hold the function as its own op (a nested function).
+    """
     ir = strip_prefix("""
         | import function
         | import index
@@ -155,8 +158,13 @@ def test_verify_missing_capture_of_function_ref():
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %r : index.Index = algebra.add(%n, 1)
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
-        |     %result : index.Index = function.call<%add_one>([%x])
+        | %twice : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%y: index.Index):
+        |     %a : index.Index = function.call<%add_one>([%y])
+        |     %b : index.Index = function.call<%add_one>([%a])
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%twice):
+        |     %t : index.Index = function.call<%twice>([%x])
+        |     %result : index.Index = function.call<%add_one>([%t])
     """)
     with pytest.raises(ClosedBlockError):
         verify_closed_blocks(parse(ir))
