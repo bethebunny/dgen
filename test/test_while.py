@@ -59,7 +59,7 @@ def test_while_with_capture_roundtrip():
         | import function
         | %main : function.Function<[index.Index], ()> = function.function<Nil>() body(%limit: index.Index):
         |     %zero : index.Index = 0
-        |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index):
+        |     %loop : Nil = control_flow.while([%zero]) condition(%i: index.Index) captures(%limit):
         |         %cmp : number.Boolean = algebra.less_than(%i, %limit)
         |     body(%i: index.Index):
         |         %one : index.Index = 1

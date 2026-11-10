@@ -106,7 +106,7 @@ def test_roundtrip_for_op():
         |
         | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<1>([3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<1>([3]))
-        |     %loop : Nil = control_flow.for<0, 3>([]) body(%i0: index.Index):
+        |     %loop : Nil = control_flow.for<0, 3>([]) body(%i0: index.Index) captures(%0):
         |         %1 : number.Float64 = 1.0
         |         %2 : index.Index = 0
         |         %_ : Nil = ndbuffer.store(%0, %1, %0, [%2])
@@ -127,8 +127,8 @@ def test_roundtrip_nested_for():
         |
         | %f : function.Function<[], Nil> = function.function<Nil>() body():
         |     %0 : ndbuffer.NDBuffer<ndbuffer.Shape<2>([2, 3]), number.Float64> = ndbuffer.alloc(ndbuffer.Shape<2>([2, 3]))
-        |     %loop : Nil = control_flow.for<0, 2>([]) body(%i0: index.Index):
-        |         %_ : Nil = control_flow.for<0, 3>([]) body(%i1: index.Index):
+        |     %loop : Nil = control_flow.for<0, 2>([]) body(%i0: index.Index) captures(%0):
+        |         %_ : Nil = control_flow.for<0, 3>([]) body(%i1: index.Index) captures(%0):
         |             %1 : number.Float64 = 1.0
         |             %2 : index.Index = 0
         |             %_ : Nil = ndbuffer.store(%0, %1, %0, [%2, %2])
