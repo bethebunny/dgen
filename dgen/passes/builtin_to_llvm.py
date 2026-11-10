@@ -11,6 +11,7 @@ from dgen.type import TypeType, type_constant
 
 class BuiltinToLLVM(Pass):
     allow_unregistered_ops = True
+    emits = (ConstantOp,)
 
     @lowering_for(TypeOp)
     def lower_type(self, op: TypeOp) -> dgen.Value:

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Set as AbstractSet
+from typing import TYPE_CHECKING, ClassVar
 
 import dgen
+from dgen.dialect import Dialect
+from dgen.graph import all_values
 from dgen.verify import (
+    VerificationError,
     verify_all_ready,
     verify_closed_blocks,
     verify_constraints,
@@ -17,53 +20,70 @@ from dgen.verify import (
 if TYPE_CHECKING:
     from dgen.compiler import Compiler
 
+type Ops = tuple[Dialect | type[dgen.Op], ...]
+"""Dialects and op classes, eg. ``(llvm.llvm, ConstantOp)``."""
+
+
+class LoweringError(VerificationError):
+    """A pass left a value it lowers, or built an op it doesn't emit."""
+
+
+def ops(entries: Ops) -> frozenset[type[dgen.Op]]:
+    """The op classes of entries, with each dialect expanded to its ops."""
+    return frozenset(
+        op
+        for entry in entries
+        for op in (entry.ops.values() if isinstance(entry, Dialect) else [entry])
+    )
+
+
+def name(cls: type[dgen.Value]) -> str:
+    return (
+        f"{cls.dialect.name}.{cls.asm_name}"
+        if issubclass(cls, dgen.Op)
+        else cls.__name__
+    )
+
+
+def value_classes(root: dgen.Value) -> set[type[dgen.Value]]:
+    return {type(v) for v in all_values(root)}
+
+
 # ---------------------------------------------------------------------------
 # Handler registration
 # ---------------------------------------------------------------------------
 
 _HandlerFn = Callable[..., dgen.Value | None]
 
+# Each tagged function's (value class, whether the handler promises to lower it).
+_tags: dict[_HandlerFn, list[tuple[type[dgen.Value], bool]]] = defaultdict(list)
+
 
 def lowering_for(value_type: type[dgen.Value]) -> Callable[[_HandlerFn], _HandlerFn]:
-    """Decorator to register a method as a handler for a value type.
+    """Register a handler that lowers every value of value_type it is given.
 
     Handlers return ``Value | None``:
     - ``Value``: the framework calls ``block.replace_uses_of(old, result)``
     - ``None``: no match, try the next handler
+
+    The pass promises no value of value_type survives it (see ``Pass.eliminated``).
     """
 
     def decorator(fn: _HandlerFn) -> _HandlerFn:
-        if not hasattr(fn, "_lowering_for_ops"):
-            fn._lowering_for_ops = []  # type: ignore[attr-defined]
-        fn._lowering_for_ops.append(value_type)  # type: ignore[attr-defined]
+        _tags[fn].append((value_type, True))
         return fn
 
     return decorator
 
 
-class _PassMeta(type):
-    """Metaclass that collects @lowering_for handlers into _handlers."""
+def rewrite_for(value_type: type[dgen.Value]) -> Callable[[_HandlerFn], _HandlerFn]:
+    """Register a handler that may decline or return its value, eg. a peephole."""
 
-    def __new__(
-        mcs,
-        name: str,
-        bases: tuple[type, ...],
-        namespace: dict[str, object],
-    ) -> _PassMeta:
-        cls = super().__new__(mcs, name, bases, namespace)
-        # Collect handlers from all bases + this class
-        handlers: dict[type[dgen.Value], list[_HandlerFn]] = defaultdict(list)
-        for base in bases:
-            if hasattr(base, "_handlers"):
-                for value_type, fns in base._handlers.items():
-                    handlers[value_type].extend(fns)
-        # Add handlers from this class
-        for attr_name, attr_value in namespace.items():
-            if callable(attr_value) and hasattr(attr_value, "_lowering_for_ops"):
-                for value_type in attr_value._lowering_for_ops:
-                    handlers[value_type].append(attr_value)
-        cls._handlers = dict(handlers)  # type: ignore[attr-defined]
-        return cls  # type: ignore[return-value]
+    def decorator(fn: _HandlerFn) -> _HandlerFn:
+        _tags[fn].append((value_type, False))
+        return fn
+
+    return decorator
 
 
 # ---------------------------------------------------------------------------
@@ -71,17 +91,59 @@ class _PassMeta(type):
 # ---------------------------------------------------------------------------
 
 
-class Pass(metaclass=_PassMeta):
+class Pass:
     """Base class for IR passes.
 
-    Subclasses register ``@lowering_for`` handlers that return
-    ``Value | None``. The framework calls ``block.replace_uses_of``
+    Subclasses register ``@lowering_for`` and ``@rewrite_for`` handlers that
+    return ``Value | None``. The framework calls ``block.replace_uses_of``
     automatically when a handler returns a value.
+
+    Invariants, checked by ``Compiler`` when ``verify_passes`` is set:
+      - no value of a class in ``eliminated`` survives the pass
+      - every op class the pass adds to the graph is in ``emitted``
     """
 
-    _handlers: dict[type[dgen.Value], list[_HandlerFn]]
+    _handlers: ClassVar[dict[type[dgen.Value], list[_HandlerFn]]] = {}
+
+    lowers: ClassVar[Ops] = ()
+    """Dialects lowered whole, and op classes removed without a handler of their own."""
+    emits: ClassVar[Ops] = ()
+    """Dialects and op classes the handlers may build."""
+    eliminated: ClassVar[frozenset[type[dgen.Value]]] = frozenset()
+    """Derived: lowering_for keys, plus lowers with dialects expanded."""
+    emitted: ClassVar[frozenset[type[dgen.Op]]] = frozenset()
+    """Derived: emits with dialects expanded."""
 
     allow_unregistered_ops: bool = True
+
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        bases = [base for base in cls.__bases__ if issubclass(base, Pass)]
+        handlers: dict[type[dgen.Value], list[_HandlerFn]] = defaultdict(list)
+        for base in bases:
+            for value_type, fns in base._handlers.items():
+                handlers[value_type].extend(fns)
+        lowered = set().union(*(base.eliminated for base in bases))
+        for fn in vars(cls).values():
+            for value_type, promise in _tags.get(fn, []) if callable(fn) else []:
+                handlers[value_type].append(fn)
+                if promise:
+                    lowered.add(value_type)
+        missing = [
+            op
+            for dialect in cls.lowers
+            if isinstance(dialect, Dialect)
+            for op in dialect.ops.values()
+            if op not in lowered
+        ]
+        if missing:
+            raise TypeError(
+                f"{cls.__name__} lowers {', '.join(sorted({op.dialect.name for op in missing}))} "
+                f"but has no lowering_for {', '.join(sorted(map(name, missing)))}"
+            )
+        cls._handlers = dict(handlers)
+        cls.eliminated = frozenset(lowered | ops(cls.lowers))
+        cls.emitted = ops(cls.emits)
 
     def _dispatch_handlers(self, v: dgen.Value) -> dgen.Value | None:
         """Try handlers for v, return replacement or None."""
@@ -120,6 +182,25 @@ class Pass(metaclass=_PassMeta):
         verify_dag(value)
         verify_closed_blocks(value)
         verify_constraints(value)
+
+    def verify_declarations(
+        self, before: AbstractSet[type[dgen.Value]], value: dgen.Value
+    ) -> None:
+        """Check the pass kept its declarations, given the input's value classes."""
+        after = value_classes(value)
+        if left := after & self.eliminated:
+            raise LoweringError(
+                f"{type(self).__name__} left {', '.join(sorted(map(name, left)))}, "
+                "which it lowers"
+            )
+        built = {
+            cls for cls in after - before if issubclass(cls, dgen.Op)
+        } - self.emitted
+        if built:
+            raise LoweringError(
+                f"{type(self).__name__} built {', '.join(sorted(map(name, built)))}, "
+                "which it does not declare in emits"
+            )
 
     def verify_postconditions(self, value: dgen.Value) -> None:
         """Check IR invariants that must hold after this pass runs."""

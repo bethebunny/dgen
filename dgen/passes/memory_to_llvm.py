@@ -14,12 +14,22 @@ import dgen
 from dgen.dialects import function, llvm, memory
 from dgen.dialects.builtin import ChainOp, ExternOp, Nil, String
 from dgen.dialects.index import Index
-from dgen.module import ConstantOp, pack
+from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass, lowering_for
 
 
 class MemoryToLLVM(Pass):
     allow_unregistered_ops = True
+    emits = (
+        llvm.MulOp,
+        llvm.AllocaOp,
+        llvm.GepOp,
+        function.CallOp,
+        ExternOp,
+        ChainOp,
+        ConstantOp,
+        PackOp,
+    )
 
     @lowering_for(memory.HeapAllocateOp)
     def lower_heap_allocate(self, op: memory.HeapAllocateOp) -> dgen.Value | None:

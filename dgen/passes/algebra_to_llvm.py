@@ -10,6 +10,7 @@ import dgen
 from dgen.dialects import algebra, llvm
 from dgen.dialects.builtin import String
 from dgen.dialects.number import Float64
+from dgen.module import ConstantOp
 from dgen.passes.pass_ import Pass, lowering_for
 
 
@@ -28,6 +29,8 @@ def _compare(op: dgen.Op, float_pred: str, int_pred: str) -> dgen.Value:
 
 class AlgebraToLLVM(Pass):
     allow_unregistered_ops = True
+    lowers = (algebra.algebra,)
+    emits = (llvm.llvm, ConstantOp)
 
     # --- Arithmetic ---
 

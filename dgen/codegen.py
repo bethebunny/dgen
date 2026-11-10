@@ -1039,6 +1039,9 @@ class LLVMCodegen:
     ``Function`` type, not from its body — which keeps wrapping uniform.
     """
 
+    def accepts(self, op: type[dgen.Op]) -> bool:
+        return op in EMITTERS
+
     def run(self, value: dgen.Value) -> Executable:
         if isinstance(value, function.FunctionOp):
             entry = value

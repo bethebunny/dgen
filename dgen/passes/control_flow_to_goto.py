@@ -79,6 +79,15 @@ from dgen.passes.pass_ import Pass, lowering_for
 
 class ControlFlowToGoto(Pass):
     allow_unregistered_ops = True
+    lowers = (control_flow.control_flow,)
+    emits = (
+        goto.goto,
+        algebra.AddOp,
+        algebra.LessThanOp,
+        ChainOp,
+        ConstantOp,
+        PackOp,
+    )
 
     def __init__(self) -> None:
         self._loop_counter = 0

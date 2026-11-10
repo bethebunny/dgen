@@ -66,6 +66,20 @@ def _deref(val: dgen.Value) -> dgen.Value:
 
 class NDBufferToMemory(Pass):
     allow_unregistered_ops = True
+    lowers = (ndbuffer.ndbuffer,)
+    emits = (
+        memory.HeapAllocateOp,
+        memory.DeallocateOp,
+        memory.OffsetOp,
+        memory.LoadOp,
+        memory.StoreOp,
+        algebra.MultiplyOp,
+        algebra.AddOp,
+        function.CallOp,
+        ExternOp,
+        ConstantOp,
+        PackOp,
+    )
 
     def __init__(self) -> None:
         # Track shapes for allocs that have been lowered to References.
