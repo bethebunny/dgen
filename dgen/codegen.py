@@ -26,7 +26,7 @@ from dgen.dialects import (
     number,
 )
 from dgen.graph import all_values
-from dgen.layout import Layout
+from dgen.layout import Image, Layout, Pointer
 from dgen.module import ConstantOp, PackOp, pack, string_value
 from dgen.type import Constant, Memory, TypeType, Value, type_constant
 from dgen.type import _format_float as format_float
@@ -171,6 +171,8 @@ def emit_llvm_ir(root: dgen.Value) -> tuple[str, list[Memory]]:
             for func in _reachable_functions(root):
                 prepare_function(func, ctx)
                 yield from emit(func)
+            # Emitting the functions named the constants they use.
+            yield from ctx.globals
 
         return "\n".join(_lines()), ctx.host_buffers
     finally:
@@ -257,6 +259,9 @@ class EmitContext:
 
     tracker: CodegenSlotTracker = field(default_factory=CodegenSlotTracker)
     host_buffers: list[Memory] = field(default_factory=list)
+    # Each constant's global, keyed by its image so equal constants share one.
+    constants: dict[bytes, str] = field(default_factory=dict)
+    globals: list[str] = field(default_factory=list)
     predecessors: dict[dgen.Value, list[Predecessor]] = field(default_factory=dict)
     param_to_owner: dict[dgen.Value, goto.RegionOp | goto.LabelOp] = field(
         default_factory=dict
@@ -584,13 +589,43 @@ def emit_extern(extern: builtin.ExternOp) -> Iterator[str]:
         yield f"@{sym} = external global {ty}"
 
 
+def constant_global(memory: Memory) -> str:
+    """The name of a global holding memory's bytes, with its addresses relocated to itself."""
+    ctx = _ctx()
+    image = Image(0)
+    image.copy(memory.address, memory.layout)
+    key = bytes(image.data) + b"".join(
+        at.to_bytes(8, "little") for at in image.relocations
+    )
+    if (name := ctx.constants.get(key)) is not None:
+        return name
+    name = ctx.constants[key] = f"@.const{len(ctx.constants)}"
+    fields: list[tuple[str, str]] = []
+    start = 0
+    for slot in sorted(image.relocations):
+        (offset,) = Pointer.struct.unpack_from(image.data, slot)
+        fields += _byte_fields(image.data[start:slot])
+        fields.append(("ptr", f"getelementptr (i8, ptr {name}, i64 {offset})"))
+        start = slot + Pointer.struct.size
+    fields += _byte_fields(image.data[start:])
+    types = ", ".join(type for type, _ in fields)
+    values = ", ".join(f"{type} {value}" for type, value in fields)
+    ctx.globals.append(
+        f"{name} = private global <{{ {types} }}> <{{ {values} }}>, align 8"
+    )
+    return name
+
+
+def _byte_fields(data: bytes | bytearray) -> list[tuple[str, str]]:
+    text = "".join(f"\\{b:02X}" for b in data)
+    return [(f"[{len(data)} x i8]", f'c"{text}"')] if data else []
+
+
 def value_reference(v: dgen.Value) -> str:
     if isinstance(v, Constant):
         mem = v.__constant__
         if not mem.layout.register_passable:
-            ctx = _ctx()
-            ctx.host_buffers.append(mem)
-            return f"inttoptr (i64 {mem.address} to ptr)"
+            return constant_global(mem)
         ty = llvm_type(v.type)
         if ty == "ptr":
             raw = mem.unpack()[0]

@@ -4,6 +4,8 @@ IR snapshot tests verify the lowered LLVM-dialect IR.
 JIT tests verify actual execution output.
 """
 
+import struct
+
 import llvmlite.binding as llvm_binding
 
 import dgen
@@ -330,3 +332,36 @@ def test_jit_double_transpose_optimized():
     """)
         == "1, 2, 3, 4, 5, 6"
     )
+
+
+CONSTANT_SOURCE = strip_prefix("""
+    | def main() {
+    |   var x = [[1, 2, 3], [4, 5, 6]];
+    |   print(x);
+    |   return;
+    | }
+""")
+
+
+def test_constant_llvm_ir_has_no_host_addresses():
+    llvm_ir, host_buffers = emit_llvm_ir(compile(CONSTANT_SOURCE))
+    assert "inttoptr" not in llvm_ir
+    assert host_buffers == []
+
+
+def test_constant_llvm_ir_is_reproducible():
+    assert (
+        emit_llvm_ir(compile(CONSTANT_SOURCE))[0]
+        == emit_llvm_ir(compile(CONSTANT_SOURCE))[0]
+    )
+
+
+def test_constant_llvm_ir_global():
+    """The tensor's span points 16 bytes into its own global, at the six doubles."""
+    llvm_ir, _ = emit_llvm_ir(compile(CONSTANT_SOURCE))
+    tail = "".join(f"\\{b:02X}" for b in struct.pack("<Q6d", 6, 1, 2, 3, 4, 5, 6))
+    expected = (
+        "@.const0 = private global <{ ptr, [56 x i8] }> "
+        f'<{{ ptr getelementptr (i8, ptr @.const0, i64 16), [56 x i8] c"{tail}" }}>, align 8'
+    )
+    assert [line for line in llvm_ir.splitlines() if line.startswith("@")] == [expected]
