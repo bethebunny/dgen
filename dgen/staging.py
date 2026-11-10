@@ -11,7 +11,7 @@ from dgen.block import BlockArgument, BlockParameter
 from dgen.codegen import Executable, build_callback_thunk, register_executable
 from dgen.dialects.function import Function, FunctionOp
 from dgen.graph import all_values, transitive_dependencies
-from dgen.module import ConstantOp, pack
+from dgen.module import ConstantOp, PackOp, pack
 from dgen.passes.pass_ import Pass
 from dgen.type import Constant, Memory
 
@@ -27,17 +27,20 @@ T = TypeVar("T")
 
 
 def _is_unresolved(value: dgen.Value) -> bool:
-    """True if value is an unresolved parameter (not yet a constant/type/function).
+    """True if value must be evaluated before it can sit in a compile-time field.
 
     A BlockParameter is resolved: the op owning its block binds it, eg. a
-    function's %self.
+    function's %self. A type or a pack is resolved when its parts are.
     """
-    return not isinstance(value, (Constant, dgen.Type, FunctionOp, BlockParameter))
-
-
-def _field_values(op: dgen.Op, fields: dgen.type.Fields) -> list[dgen.Value]:
-    """Get all Value inputs from a set of fields, flattening list-valued ones."""
-    return [getattr(op, name) for name, _ in fields]
+    match value:
+        case Constant() | FunctionOp() | BlockParameter():
+            return False
+        case dgen.Type():
+            return any(_is_unresolved(p) for _, p in value.parameters)
+        case PackOp():
+            return any(_is_unresolved(v) for v in value)
+        case _:
+            return True
 
 
 def compute_stages(root: dgen.Value) -> dict[dgen.Value, int]:
@@ -47,14 +50,16 @@ def compute_stages(root: dgen.Value) -> dict[dgen.Value, int]:
     dependencies). Stage 1+ means it depends on runtime values.
 
     Base cases:
-      - Constant / ConstantOp / Type / FunctionOp / BlockParameter: stage 0
+      - Constant / FunctionOp / BlockParameter: stage 0
       - BlockArgument: stage 1
+      - Type: the max stage of its parameters
+      - ConstantOp: an op, so a constant of an unresolved type is staged by it
 
     For ops, params bump the stage only when they depend on runtime::
 
         stage = max((
-            *((1 + stage(p) if stage(p) > 0 else stage(p)) for p in __params__),
-            *(stage(v) for v in __operands__),
+            *((1 + stage(p) if stage(p) > 0 else stage(p)) for p in parameters),
+            *(stage(v) for v in operands),
         ))
 
     Returns a dict mapping ``value → stage_number``.
@@ -64,26 +69,27 @@ def compute_stages(root: dgen.Value) -> dict[dgen.Value, int]:
     def _stage(value: dgen.Value) -> int:
         if value in stages:
             return stages[value]
-        if isinstance(value, (Constant, dgen.Type, FunctionOp, BlockParameter)):
-            stages[value] = 0
-            return 0
-        if isinstance(value, BlockArgument):
-            stages[value] = 1
-            return 1
-        if not isinstance(value, dgen.Op):
-            stages[value] = 0
-            return 0
-        parts: list[int] = []
-        for pv in _field_values(value, value.__params__):
-            s = _stage(pv)
-            # +1 only when the param depends on runtime values (stage > 0).
-            parts.append(1 + s if s > 0 else s)
-        for ov in _field_values(value, value.__operands__):
-            parts.append(_stage(ov))
-        if _is_unresolved(value.type):
-            s = _stage(value.type)
-            parts.append(1 + s if s > 0 else s)
-        result = max(parts, default=0)
+        match value:
+            case FunctionOp() | BlockParameter():
+                result = 0
+            case BlockArgument():
+                result = 1
+            case dgen.Type():
+                result = max((_stage(p) for _, p in value.parameters), default=0)
+            case dgen.Op():
+                # +1 only when the param depends on runtime values (stage > 0).
+                bumped = [_stage(p) for _, p in value.parameters]
+                if _is_unresolved(value.type):
+                    bumped.append(_stage(value.type))
+                result = max(
+                    [
+                        *(s + 1 if s > 0 else 0 for s in bumped),
+                        *(_stage(v) for _, v in value.operands),
+                    ],
+                    default=0,
+                )
+            case _:
+                result = 0
         stages[value] = result
         return result
 
@@ -172,6 +178,16 @@ def _jit_evaluate(target: dgen.Value, compiler: Compiler[object]) -> ConstantOp:
     return ConstantOp(value=result.to_json(), type=target.type)
 
 
+def _folded(value: dgen.Value, compiler: Compiler[object]) -> dgen.Value:
+    """A resolved value for value: a type is rebuilt around its folded parameters."""
+    if not isinstance(value, dgen.Type):
+        return _jit_evaluate(value, compiler)
+    for _, param in value.parameters:
+        if _is_unresolved(param):
+            value = value.substituted(param, _folded(param, compiler))
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -209,7 +225,7 @@ def resolve_stage0(
         if not boundaries:
             break
         op, field_name, value = boundaries[0]
-        setattr(op, field_name, _jit_evaluate(value, compiler))
+        setattr(op, field_name, _folded(value, compiler))
     return root
 
 
@@ -230,7 +246,7 @@ def _resolve_with_runtime_args(
         if not boundaries:
             break
         op, field_name, value = boundaries[0]
-        setattr(op, field_name, _jit_evaluate(value, compiler))
+        setattr(op, field_name, _folded(value, compiler))
 
 
 def _build_callback_thunk_for(

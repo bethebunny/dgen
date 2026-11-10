@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import ctypes
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from copy import deepcopy as _deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass, replace
 from functools import cached_property
-from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar
+from typing import Any, ClassVar, Generic, Self, TypeVar
 
 import dgen
 
@@ -90,12 +90,16 @@ class Value(Generic[T]):
         """Replace all references to old with new in this value's fields and owned blocks."""
         self.replace_operand(old, new)
         for name, val in self.parameters:
-            if val is old:
-                setattr(self, name, new)
-        if self.type is old:
-            self.type = new
+            if (substituted := val.substituted(old, new)) is not val:
+                setattr(self, name, substituted)
+        if (substituted := self.type.substituted(old, new)) is not self.type:
+            self.type = substituted
         for _, block in self.blocks:
             block.replace_uses_of(old, new)
+
+    def substituted(self, old: Value, new: Value) -> Value:
+        """New if this is old, else this value; a type with old inside is rebuilt."""
+        return new if self is old else self
 
 
 def type_constant(value: Value[TypeType]) -> Type:
@@ -157,6 +161,23 @@ class Type(Value["TypeType"]):
     # This prevents falling through to Value.__init__ for bare Type().
     def __init__(self) -> None:
         pass
+
+    def replace_uses_of(self, old: Value, new: Value) -> None:
+        """Nothing: a type is immutable, so its users hold substituted() copies."""
+
+    def substituted(self, old: Value, new: Value) -> Value:
+        if self is old:
+            return new
+        changed = {
+            name: substituted
+            for name, param in self.parameters
+            if (substituted := param.substituted(old, new)) is not param
+        }
+        if not changed:
+            return self
+        # Each registered type is a frozen dataclass of its parameters.
+        assert is_dataclass(self) and not isinstance(self, type)
+        return replace(self, **changed)
 
     def constant(self, value: object) -> Constant[Self]:
         """Create a Constant wrapping this type and a Python value."""

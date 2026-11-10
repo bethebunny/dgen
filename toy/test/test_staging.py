@@ -7,8 +7,11 @@ the full pipeline (source → CLI → staging → shape inference → lowering �
 
 import pytest
 
+from dgen.asm.parser import parse
+from dgen.staging import compute_stages
+from dgen.testing import strip_prefix
+from toy.cli import toy_compiler
 from toy.test.helpers import run_toy as _toy
-
 
 # ===----------------------------------------------------------------------=== #
 # Stage-0: comptime values from constants
@@ -329,3 +332,45 @@ def test_stage1_two_string_args():
     lines = output.split("\n")
     assert lines[0] == "1, 2, 1, 2"
     assert lines[1] == "3, 4, 3, 4"
+
+
+# ===----------------------------------------------------------------------=== #
+# Type parameters: a type whose parameter is an SSA value
+# ===----------------------------------------------------------------------=== #
+
+
+def test_tensor_dtype_from_type_op(capfd: pytest.CaptureFixture[str]):
+    """Tensor<shape, %dt> with %dt = type(1.0) folds to Tensor<shape, Float64>."""
+    ir = strip_prefix("""
+        | import function
+        | import ndbuffer
+        | import number
+        | import toy
+        |
+        | %main : function.Function<[], Nil> = function.function<Nil>() body():
+        |     %one : number.Float64 = 1.0
+        |     %dt : Type = type(%one)
+        |     %x : toy.Tensor<ndbuffer.Shape<1>([3]), %dt> = [1.0, 2.0, 3.0]
+        |     %p : Nil = toy.print(%x)
+    """)
+    toy_compiler.compile(parse(ir)).run()
+    assert capfd.readouterr().out.strip() == "1, 2, 3"
+
+
+def test_tensor_dtype_from_argument(capfd: pytest.CaptureFixture[str]):
+    """Tensor<shape, %dt> with %dt an argument is stage 2 and folds on each call."""
+    ir = strip_prefix("""
+        | import function
+        | import ndbuffer
+        | import number
+        | import toy
+        |
+        | %main : function.Function<[Type], Nil> = function.function<Nil>() body(%dt: Type):
+        |     %x : toy.Tensor<ndbuffer.Shape<1>([3]), %dt> = [1.0, 2.0, 3.0]
+        |     %p : Nil = toy.print(%x)
+    """)
+    value = parse(ir)
+    x = next(op for op in value.body.ops if op.name == "x")
+    assert compute_stages(value)[x] == 2
+    toy_compiler.compile(value).run({"tag": "number.Float64"})
+    assert capfd.readouterr().out.strip() == "1, 2, 3"

@@ -97,12 +97,8 @@ class Block:
             v.replace_uses_of(old, new)
         # Then update block metadata
         self.captures = [new if c is old else c for c in self.captures]
-        for arg in self.args:
-            if arg.type is old:
-                arg.type = new
-        for param in self.parameters:
-            if param.type is old:
-                param.type = new
+        for arg in [*self.args, *self.parameters]:
+            arg.type = arg.type.substituted(old, new)
         if self.result is old:
             self.result = new
 
