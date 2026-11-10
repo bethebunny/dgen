@@ -1,5 +1,7 @@
 """Tests for .dgen file parser."""
 
+import pytest
+
 from dgen.gen.ast import (
     ExpressionConstraint,
     HasTraitConstraint,
@@ -351,10 +353,10 @@ def test_parse_metavar_operand():
 
 
 def test_parse_requires_has_type_tilde():
-    """~= is no longer supported; it parses as an ExpressionConstraint."""
+    """~= is not part of the expression language, so the file fails to parse."""
     src = "op tile(x: $X) -> $Result:\n    requires $X ~= Tensor\n"
-    op = parse(src).ops[0]
-    assert op.constraints == [ExpressionConstraint(expr="$X ~= Tensor")]
+    with pytest.raises(SyntaxError, match="unexpected '~'"):
+        parse(src)
 
 
 def test_parse_requires_has_type():
