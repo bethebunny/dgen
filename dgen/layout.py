@@ -22,11 +22,16 @@ def _bytearray_address(buf: bytearray) -> int:
     return ctypes.addressof(ct)
 
 
+def _aligned(offset: int, alignment: int) -> int:
+    return -(-offset // alignment) * alignment
+
+
 class Layout:
     """Base for memory layout types."""
 
     struct: Struct
     register_passable: bool = False
+    alignment: int = 8
 
     @property
     def byte_size(self) -> int:
@@ -52,8 +57,9 @@ class Layout:
 class Void(Layout):
     """Zero-size layout for types with no runtime representation."""
 
-    struct = Struct("0s")
+    struct = Struct("<0s")
     register_passable = True
+    alignment = 1
 
     def __str__(self) -> str:
         return "void"
@@ -68,8 +74,9 @@ class Void(Layout):
 
 
 class Byte(Layout):
-    struct = Struct("B")
+    struct = Struct("<B")
     register_passable = True
+    alignment = 1
 
     def __str__(self) -> str:
         return "byte"
@@ -87,7 +94,7 @@ class Byte(Layout):
 class Int(Layout):
     """64-bit integer (i64)."""
 
-    struct = Struct("q")
+    struct = Struct("<q")
     register_passable = True
 
     def __str__(self) -> str:
@@ -106,7 +113,7 @@ class Int(Layout):
 class Float64(Layout):
     """64-bit float (f64)."""
 
-    struct = Struct("d")
+    struct = Struct("<d")
     register_passable = True
 
     def __str__(self) -> str:
@@ -128,7 +135,8 @@ class Array(Layout):
     def __init__(self, element: Layout, count: int) -> None:
         self.element = element
         self.count = count
-        self.struct = Struct(element.struct.format * count)
+        self.alignment = element.alignment
+        self.struct = Struct("<" + element.struct.format.lstrip("<") * count)
 
     def __str__(self) -> str:
         return f"array<{self.element}, {self.count}>"
@@ -151,7 +159,7 @@ class Array(Layout):
 class Pointer(Layout):
     """8-byte pointer to T."""
 
-    struct = Struct("P")
+    struct = Struct("<Q")
     register_passable = True
 
     def __init__(self, pointee: Layout) -> None:
@@ -180,7 +188,7 @@ class Pointer(Layout):
 class Span(Layout):
     """Pointer + i64 length (16 bytes)."""
 
-    struct = Struct("PQ")
+    struct = Struct("<QQ")
 
     def __init__(self, pointee: Layout) -> None:
         self.pointee = pointee
@@ -210,25 +218,24 @@ class Span(Layout):
 
 
 class Record(Layout):
-    """Fixed struct of named fields, laid out sequentially."""
+    """Named fields in order, each at the next offset its alignment allows, as in C."""
 
     def __init__(self, fields: list[tuple[str, Layout]]) -> None:
         self.fields = fields
-        self._offsets: list[int] = []
-        offset = 0
+        self.alignment = max((lay.alignment for _, lay in fields), default=1)
+        self.offsets: list[int] = []
+        end = 0
         for _, lay in fields:
-            self._offsets.append(offset)
-            offset += lay.byte_size
-        self._total_size = offset
-        # Use a raw byte format for the total size
-        self.struct = Struct(f"{offset}s") if offset > 0 else Struct("0s")
+            self.offsets.append(_aligned(end, lay.alignment))
+            end = self.offsets[-1] + lay.byte_size
+        self.struct = Struct(f"<{_aligned(end, self.alignment)}s")
 
     def __str__(self) -> str:
         return f"record<{', '.join(f'{name}: {lay}' for name, lay in self.fields)}>"
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
         result: dict[str, object] = {}
-        for (name, lay), field_offset in zip(self.fields, self._offsets):
+        for (name, lay), field_offset in zip(self.fields, self.offsets):
             result[name] = lay.to_json(buf, offset + field_offset)
         return result
 
@@ -236,11 +243,11 @@ class Record(Layout):
         self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
         if isinstance(value, list):
-            for (_, lay), field_offset, v in zip(self.fields, self._offsets, value):
+            for (_, lay), field_offset, v in zip(self.fields, self.offsets, value):
                 lay.from_json(buf, offset + field_offset, v, origins)
         else:
             assert isinstance(value, dict)
-            for (name, lay), field_offset in zip(self.fields, self._offsets):
+            for (name, lay), field_offset in zip(self.fields, self.offsets):
                 lay.from_json(buf, offset + field_offset, value[name], origins)
 
 
@@ -252,7 +259,7 @@ class TypeValue(Layout):
     Fixed size (8-byte pointer) regardless of concrete type.
     """
 
-    struct = Struct("P")
+    struct = Struct("<Q")
 
     def __str__(self) -> str:
         return "type"

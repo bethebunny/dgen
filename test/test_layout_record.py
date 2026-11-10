@@ -1,6 +1,6 @@
 """Tests for layout.Record — fixed struct of named fields."""
 
-from dgen.layout import Record, Int, Float64, Void
+from dgen.layout import Array, Byte, Float64, Int, Record, Void
 
 
 def test_record_byte_size():
@@ -42,3 +42,44 @@ def test_record_nested():
     outer.from_json(buf, 0, {"first": {"a": 1, "b": 2}, "second": 9.0}, origins)
     result = outer.to_json(buf, 0)
     assert result == {"first": {"a": 1, "b": 2}, "second": 9.0}
+
+
+def test_record_aligns_fields():
+    r = Record([("flag", Byte()), ("x", Int())])
+    assert r.offsets == [0, 8]
+    assert r.byte_size == 16
+
+
+def test_record_pads_to_alignment():
+    r = Record([("x", Int()), ("flag", Byte())])
+    assert r.byte_size == 16
+    assert r.alignment == 8
+
+
+def test_record_of_bytes_is_packed():
+    r = Record([("a", Byte()), ("b", Byte())])
+    assert r.byte_size == 2
+    assert r.alignment == 1
+
+
+def test_padded_record_roundtrip():
+    r = Record([("flag", Byte()), ("x", Int()), ("y", Byte())])
+    buf = bytearray(r.byte_size)
+    r.from_json(buf, 0, {"flag": 1, "x": -5, "y": 2}, [])
+    assert r.to_json(buf, 0) == {"flag": 1, "x": -5, "y": 2}
+
+
+def test_array_of_padded_records_strides_by_size():
+    r = Record([("x", Int()), ("flag", Byte())])
+    a = Array(r, 2)
+    buf = bytearray(a.byte_size)
+    value = [{"x": 1, "flag": 1}, {"x": 2, "flag": 0}]
+    a.from_json(buf, 0, value, [])
+    assert a.byte_size == 32
+    assert a.to_json(buf, 0) == value
+
+
+def test_layouts_are_little_endian():
+    buf = bytearray(8)
+    Int().from_json(buf, 0, 1, [])
+    assert buf == b"\x01" + bytes(7)
