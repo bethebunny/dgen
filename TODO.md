@@ -6,7 +6,7 @@
 - Implement `HasTypeConstraint` verification (`requires X has type Tensor`): resolve subject to its type, look up the pattern name in the dialect type registry, check `isinstance`.
 
 ## General pass infrastructure
-- Canonicalization
+- Run `AlgebraCanonicalize` in the pipelines, and canonicalize the other dialects
 
 ## Block / scope invariants
 - Implement `func.recursive` op for recursive functions (see `docs/block-scoping.md` §3.1). Currently recursive functions like `%natural` calling itself via `call<%natural>` violate the DAG property — `block.ops` follows the callee parameter edge back into the function, creating a cycle. `func.recursive` breaks the cycle by providing `%self` as a block argument.

@@ -459,7 +459,7 @@ def _lower_to_llvm(source: str) -> dgen.Value:
 @pytest.mark.xfail(
     raises=PipelineError, strict=True, reason="c.continue has no lowering"
 )
-def test_pipeline_lowers_every_frontend_op():
+def test_pipeline_lowers_every_frontend_op() -> None:
     """_lower_to_llvm and llvm_compile as one pipeline, from the frontend's ops."""
     Compiler(
         [
