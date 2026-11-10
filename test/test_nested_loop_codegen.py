@@ -5,6 +5,7 @@ inner loop's exit label, not inside the outer body block before the inner
 loop's entry branch.
 """
 
+import pytest
 from dgen.asm.parser import parse
 from dgen.codegen import LLVMCodegen
 from dgen.compiler import Compiler, IdentityPass
@@ -34,6 +35,8 @@ def test_nested_loop_after_control_flow_lowering(ir_snapshot):
     assert lowered == ir_snapshot
 
 
+# Snapshots LLVM IR text, which follows the walk order.
+@pytest.mark.canonical_order
 def test_nested_loop_llvm_ir(snapshot):
     """Nested loop all the way to LLVM IR — shows the codegen issue."""
     m = parse(NESTED_FOR)

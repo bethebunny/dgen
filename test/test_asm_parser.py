@@ -206,6 +206,8 @@ class TestParseValue:
         second = asm.format(parse(first))
         assert first == second
 
+    # Compares text, and a random order differs between the two parsed graphs.
+    @pytest.mark.canonical_order
     def test_roundtrips_multi_statement(self) -> None:
         """Multi-statement IR survives a parse → asm → parse round-trip."""
         text = strip_prefix("""

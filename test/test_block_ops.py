@@ -14,6 +14,7 @@ Contract:
 - Returns ops in topological order: dependencies before dependents.
 """
 
+import pytest
 from dgen import Block, Value
 from dgen.block import BlockArgument
 from dgen.dialects import goto
@@ -22,6 +23,8 @@ from dgen.dialects.index import Index
 from dgen.module import ConstantOp, pack
 
 
+# Asserts the depth-first order itself.
+@pytest.mark.canonical_order
 def test_simple_chain():
     """Block.ops follows operands in topological order."""
     a = ConstantOp(name="a", value=1, type=Index())

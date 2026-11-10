@@ -7,6 +7,7 @@ WhileOp semantics:
 - WhileOp result: Nil
 """
 
+import pytest
 from dgen import asm
 from dgen.asm.parser import parse
 from dgen.codegen import LLVMCodegen
@@ -120,6 +121,8 @@ def test_while_lowering_to_goto(ir_snapshot):
     assert lowered == ir_snapshot
 
 
+# Snapshots LLVM IR text, which follows the walk order.
+@pytest.mark.canonical_order
 def test_while_llvm_ir(snapshot):
     """WhileOp all the way to LLVM IR."""
     m = parse(SIMPLE_WHILE)
@@ -161,6 +164,8 @@ def test_nested_while_lowering(ir_snapshot):
     assert lowered == ir_snapshot
 
 
+# Snapshots LLVM IR text, which follows the walk order.
+@pytest.mark.canonical_order
 def test_nested_while_llvm_ir(snapshot):
     """Nested while loops all the way to LLVM IR."""
     m = parse(NESTED_WHILE)
