@@ -297,18 +297,15 @@ def test_function_with_ssa_result_type():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
-        |         %_ : Nil = ()
+        | %t : Type = {"tag": "index.Index"}
+        | %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
+        |     %_ : Nil = ()
     """)
-    value = parse(ir)
-    assert_ir_equivalent(value, asm.parse(asm.format(value)))
-
-    ops = list(value.body.ops)
-    t_op = next(op for op in ops if isinstance(op, ConstantOp))
-    f_op = next(op for op in ops if isinstance(op, FunctionOp))
-    assert f_op.result_type is t_op
+    f_op = parse(ir)
+    assert_ir_equivalent(f_op, asm.parse(asm.format(f_op)))
+    assert isinstance(f_op, FunctionOp)
+    assert isinstance(f_op.result_type, ConstantOp)
+    assert f_op.result_type.name == "t"
 
 
 def test_block_argument_constant_raises_type_error():
@@ -357,13 +354,12 @@ def test_compile_with_ssa_function_result():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
-        |         %_ : Nil = ()
+        | %t : Type = {"tag": "index.Index"}
+        | %f : function.Function<[index.Index], %t> = function.function<%t>() body(%x: index.Index):
+        |     %_ : Nil = ()
     """)
-    value = parse(ir)
-    inner_func = next(op for op in value.body.ops if isinstance(op, FunctionOp))
+    inner_func = parse(ir)
+    assert isinstance(inner_func, FunctionOp)
     # result is a ConstantOp (SSA ref), not a concrete Type
     assert isinstance(inner_func.result_type, ConstantOp)
 
@@ -378,13 +374,12 @@ def test_compile_function_with_ssa_typed_block_arg():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<[%t], ()> = function.function<Nil>() body(%x: %t):
-        |         %_ : Nil = ()
+        | %t : Type = {"tag": "index.Index"}
+        | %f : function.Function<[%t], ()> = function.function<Nil>() body(%x: %t):
+        |     %_ : Nil = ()
     """)
-    value = parse(ir)
-    inner_func = next(op for op in value.body.ops if isinstance(op, FunctionOp))
+    inner_func = parse(ir)
+    assert isinstance(inner_func, FunctionOp)
     # The block arg %x has type = ConstantOp (SSA ref %t), not a concrete Type
     x_arg = inner_func.body.args[0]
     assert isinstance(x_arg.type, ConstantOp)
@@ -428,13 +423,12 @@ def test_compile_input_types_resolved_from_ssa():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<[%t], %t> = function.function<%t>() body(%x: %t):
-        |         %_ : Nil = ()
+        | %t : Type = {"tag": "index.Index"}
+        | %f : function.Function<[%t], %t> = function.function<%t>() body(%x: %t):
+        |     %_ : Nil = ()
     """)
-    value = parse(ir)
-    inner_func = next(op for op in value.body.ops if isinstance(op, FunctionOp))
+    inner_func = parse(ir)
+    assert isinstance(inner_func, FunctionOp)
     exe = compile_module(inner_func)
     # input_types must be concrete Types for Memory.from_value to work
     assert all(isinstance(t, builtin.Index) for t in exe.input_types)
@@ -549,13 +543,12 @@ def test_staging_with_ssa_result_type():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
-        |         %y : %rt = algebra.add(%x, %x)
+        | %t : Type = {"tag": "index.Index"}
+        | %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
+        |     %y : %rt = algebra.add(%x, %x)
     """)
-    value = parse(ir)
-    inner_func = next(op for op in value.body.ops if isinstance(op, FunctionOp))
+    inner_func = parse(ir)
+    assert isinstance(inner_func, FunctionOp)
     assert isinstance(inner_func.result_type, ConstantOp)
 
     class LowerToLLVMPass(Pass):

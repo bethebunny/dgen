@@ -297,13 +297,12 @@ def test_constant_fold_resolves_stage0_boundary():
         | import function
         | import index
         |
-        | %main : function.Function<[], ()> = function.function<Nil>() body():
-        |     %t : Type = {"tag": "index.Index"}
-        |     %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
-        |         %y : %rt = algebra.add(%x, %x)
+        | %t : Type = {"tag": "index.Index"}
+        | %f : function.Function<[Type, index.Index], %t> = function.function<%t>() body(%rt: Type, %x: index.Index):
+        |     %y : %rt = algebra.add(%x, %x)
     """)
-    value = parse(ir)
-    inner_func = next(op for op in value.body.ops if isinstance(op, FunctionOp))
+    inner_func = parse(ir)
+    assert isinstance(inner_func, FunctionOp)
 
     # Before constant folding: result is a ConstantOp SSA ref, not a Type
     assert isinstance(inner_func.result_type, ConstantOp)
