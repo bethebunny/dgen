@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import reduce
 from typing import Any
@@ -17,6 +18,9 @@ from dgen.dialect import Dialect
 from dgen.block import BlockArgument, BlockParameter
 from dgen.dialects import builtin
 from dgen.module import ConstantOp, PackOp
+from dgen.verify import verify_closed_blocks, verify_constraints, verify_dag
+
+verify_parsed: ContextVar[bool] = ContextVar("dgen.verify_parsed", default=False)
 
 
 class ParseError(RuntimeError):
@@ -86,6 +90,10 @@ def parse(text: str) -> Value:
             value = parser.read(op_statement)
     if value is None:
         raise ParseError("parse: no statements in input")
+    if verify_parsed.get():
+        verify_dag(value)
+        verify_closed_blocks(value)
+        verify_constraints(value)
     return value
 
 

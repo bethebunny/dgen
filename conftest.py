@@ -6,6 +6,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from dgen import Dialect
+from dgen.asm.parser import verify_parsed
 from dgen.compiler import verify_passes
 from dgen.testing.syrupy import IRSnapshotExtension
 
@@ -15,11 +16,13 @@ Dialect.paths.append(Path(__file__).parent / "dcc2" / "dialects")
 
 
 @pytest.fixture(autouse=True)
-def _enable_pass_verification():
-    """Enable IR verification for all pass pre/postconditions in every test."""
-    token = verify_passes.set(True)
+def _enable_verification():
+    """Verify every parsed value, and every pass's pre and postconditions, in every test."""
+    passes = verify_passes.set(True)
+    parsed = verify_parsed.set(True)
     yield
-    verify_passes.reset(token)
+    verify_parsed.reset(parsed)
+    verify_passes.reset(passes)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
