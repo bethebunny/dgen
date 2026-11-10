@@ -167,7 +167,11 @@ def op_asm(
     for block_idx, (block_name, block) in enumerate(blocks):
         if block_idx > 0:
             yield _format_block_header(block_name, block)
-        for child_op in block.ops:
+        ops = list(block.ops)
+        for child_op in ops:
             if _is_sugar_op(child_op):
                 continue
             yield from indent(op_asm(child_op, tracker, formatted))
+        if block.result not in ops:
+            # An input or capture has no statement to end the body on, so name it.
+            yield from indent([f"%_ = {format_expr(block.result, tracker)}"])

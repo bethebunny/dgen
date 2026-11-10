@@ -368,11 +368,17 @@ def op_expression(
     return op_cls, parameters, operands, blocks
 
 
-def op_statement(parser: ASMParser) -> Op:
+def op_statement(parser: ASMParser) -> Value:
+    """One statement, an op or a constant built, or an alias bound. Returns its value."""
     name = parser.read(ssa_name)
     start = parser.token_start
     pre_type = value_expression(parser) if parser.try_read(":") is not None else None
     parser.read("=")
+    if (ref := parser.try_read(ssa_name)) is not None:
+        if pre_type is not None:
+            raise parser.fatal(f"%{name}: an alias takes no type", at=start)
+        parser.define(name, value := parser.resolve(ref))
+        return value
     if pre_type is not None and parser.peek() in _LITERAL_START:
         op = ConstantOp(name=name, value=value_expression(parser), type=pre_type)
         parser.define(name, op)
@@ -526,18 +532,18 @@ def _read_block_body(parser: ASMParser, label: str) -> Block:
         raise parser.error("Empty block body")
     saved_indent = parser.block_indent
     parser.block_indent = block_indent
-    last_op: Op | None = None
+    last: Value | None = None
     while parser.pos < len(parser.text):
         indent = newline(parser)
         if indent < block_indent:
             break
         parser.pos += indent
-        last_op = op_statement(parser)
+        last = op_statement(parser)
     parser.block_indent = saved_indent
     parser.scopes.pop()
-    assert last_op is not None
+    assert last is not None
     return Block(
-        result=last_op,
+        result=last,
         args=args,
         parameters=block_params,
         captures=list(captured.values()),
