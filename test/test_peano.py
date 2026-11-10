@@ -483,7 +483,9 @@ def test_verify_dag_detects_cycle():
 
 
 @pytest.mark.xfail(
-    reason="Staging loses block args for recursive functions; needs investigation"
+    reason="A sub-compilation compiles natural's body instead of calling its "
+    "callback, and staging would fold the boundary in both branches of the if, "
+    "so natural(0) would need natural(-1)"
 )
 def test_recursive_peano():
     """Recursive natural(n) builds Successor^(n+1)(Zero) from a runtime Index.
@@ -503,19 +505,19 @@ def test_recursive_peano():
         | import peano
         | import index
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%natural):
-        |     %n : peano.Natural = function.call<%natural>([%x])
-        |     %result : index.Index = peano.value<%n>()
-        |
-        | %natural : function.Function<[index.Index], peano.Natural> = function.function<peano.Natural>() body(%n: index.Index):
+        | %natural : function.Function<[index.Index], peano.Natural> = function.function<peano.Natural>() body<%self: function.Function<[index.Index], peano.Natural>>(%n: index.Index):
         |     %base_case : number.Boolean = algebra.equal(%n, 0)
         |     %value : peano.Natural = control_flow.if(%base_case, [], []) then_body():
         |         %z : Type = peano.zero()
         |         %s : Type = peano.successor<%z>()
-        |     else_body() captures(%natural):
+        |     else_body() captures(%n, %self):
         |         %n_minus_one : index.Index = algebra.subtract(%n, 1)
-        |         %predecessor : peano.Natural = function.call<%natural>([%n_minus_one])
+        |         %predecessor : peano.Natural = function.call<%self>([%n_minus_one])
         |         %s : peano.Natural = peano.successor<%predecessor>()
+        |
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%natural):
+        |     %n : peano.Natural = function.call<%natural>([%x])
+        |     %result : index.Index = peano.value<%n>()
     """)
     value = parse(ir)
     exe = peano_compiler.compile(value)
