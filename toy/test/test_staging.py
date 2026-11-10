@@ -8,6 +8,7 @@ the full pipeline (source → CLI → staging → shape inference → lowering �
 import pytest
 
 from dgen.asm.parser import parse
+from dgen.dialects.function import FunctionOp
 from dgen.staging import compute_stages
 from dgen.testing import strip_prefix
 from toy.cli import toy_compiler
@@ -370,6 +371,7 @@ def test_tensor_dtype_from_argument(capfd: pytest.CaptureFixture[str]):
         |     %p : Nil = toy.print(%x)
     """)
     value = parse(ir)
+    assert isinstance(value, FunctionOp)
     x = next(op for op in value.body.ops if op.name == "x")
     assert compute_stages(value)[x] == 2
     toy_compiler.compile(value).run({"tag": "number.Float64"})
