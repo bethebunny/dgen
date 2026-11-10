@@ -11,7 +11,9 @@ for pack/unpack operations.
 from __future__ import annotations
 
 import ctypes
+import re
 from struct import Struct
+from typing import ClassVar
 
 
 def _bytearray_address(buf: bytearray) -> int:
@@ -93,13 +95,18 @@ class Byte(Layout):
 
 
 class Int(Layout):
-    """64-bit integer (i64)."""
+    """A signed integer of bits bits, in the smallest of 1, 2, 4 or 8 bytes that holds it."""
 
-    struct = Struct("<q")
     register_passable = True
+    FORMATS: ClassVar[str] = "bhiq"
+
+    def __init__(self, bits: int = 64) -> None:
+        self.bits = bits
+        self.alignment = next(size for size in (1, 2, 4, 8) if bits <= 8 * size)
+        self.struct = Struct("<" + self.FORMATS[self.alignment.bit_length() - 1])
 
     def __str__(self) -> str:
-        return "int64"
+        return f"int{self.bits}"
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> int:
         return self.struct.unpack_from(buf, offset)[0]
@@ -109,6 +116,15 @@ class Int(Layout):
     ) -> None:
         assert isinstance(value, int)
         self.struct.pack_into(buf, offset, value)
+
+
+class UInt(Int):
+    """An unsigned integer of bits bits, sized as Int."""
+
+    FORMATS: ClassVar[str] = "BHIQ"
+
+    def __str__(self) -> str:
+        return f"uint{self.bits}"
 
 
 class Float64(Layout):
@@ -489,6 +505,8 @@ class _Parser:
                     self.take(": ")
                     fields.append((name, self.layout()))
                 result = Record(fields)
+            case name if (integer := re.fullmatch(r"(u?int)(\d+)", name)) is not None:
+                return (Int if integer[1] == "int" else UInt)(int(integer[2]))
             case leaf:
                 if leaf not in LEAVES:
                     raise ValueError(f"unknown layout {leaf!r} in {self.text!r}")
@@ -498,8 +516,7 @@ class _Parser:
 
 
 LEAVES: dict[str, Layout] = {
-    str(leaf): leaf
-    for leaf in [Void(), Byte(), Int(), Float64(), String(), TypeValue()]
+    str(leaf): leaf for leaf in [Void(), Byte(), Float64(), String(), TypeValue()]
 }
 
 

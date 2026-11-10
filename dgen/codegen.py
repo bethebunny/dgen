@@ -26,7 +26,7 @@ from dgen.dialects import (
     number,
 )
 from dgen.graph import all_values
-from dgen.layout import Image, Layout, Pointer
+from dgen.layout import Byte, Float64, Image, Int, Layout, Pointer
 from dgen.module import ConstantOp, PackOp, pack, string_value
 from dgen.type import Constant, Memory, TypeType, Value, type_constant
 from dgen.type import _format_float as format_float
@@ -35,22 +35,40 @@ from dgen.type import _format_float as format_float
 # Layout → LLVM / ctypes mapping
 # ---------------------------------------------------------------------------
 
-_FMT_LLVM = {"q": "i64", "d": "double", "B": "i1"}
-_FMT_CTYPE = {"q": ctypes.c_int64, "d": ctypes.c_double, "B": ctypes.c_bool}
+_INT_CTYPES = {
+    "b": ctypes.c_int8,
+    "h": ctypes.c_int16,
+    "i": ctypes.c_int32,
+    "q": ctypes.c_int64,
+    "B": ctypes.c_uint8,
+    "H": ctypes.c_uint16,
+    "I": ctypes.c_uint32,
+    "Q": ctypes.c_uint64,
+}
 
 
 def _llvm_type(layout: Layout) -> str:
-    if not layout.register_passable:
-        return "ptr"
-    fmt = layout.struct.format.lstrip("=@<>!")
-    return _FMT_LLVM.get(fmt, "ptr")
+    match layout:
+        case Byte():
+            return "i1"
+        case Int(bits=bits):
+            return f"i{bits}"
+        case Float64():
+            return "double"
+        case _:
+            return "ptr"
 
 
 def _ctype(layout: Layout) -> type[ctypes._CData]:
-    if not layout.register_passable:
-        return ctypes.c_void_p
-    fmt = layout.struct.format.lstrip("=@<>!")
-    return _FMT_CTYPE.get(fmt, ctypes.c_void_p)
+    match layout:
+        case Byte():
+            return ctypes.c_bool
+        case Int():
+            return _INT_CTYPES[layout.struct.format.lstrip("<")]
+        case Float64():
+            return ctypes.c_double
+        case _:
+            return ctypes.c_void_p
 
 
 def llvm_type(t: dgen.Value[TypeType]) -> str:
@@ -66,16 +84,6 @@ def llvm_type(t: dgen.Value[TypeType]) -> str:
             return "void"
         case index.Index():
             return "i64"
-        case number.SignedInteger(bits):
-            # Layout may be wider than declared bits (data: Index is always
-            # 64-bit); use the wider of the two so codegen matches the ABI.
-            declared = bits.__constant__.to_json()
-            layout_bits = resolved.__layout__.struct.size * 8
-            return f"i{max(declared, layout_bits)}"
-        case number.UnsignedInteger(bits):
-            declared = bits.__constant__.to_json()
-            layout_bits = resolved.__layout__.struct.size * 8
-            return f"i{max(declared, layout_bits)}"
         case number.Boolean():
             return "i1"
         case number.Float64():
@@ -86,11 +94,7 @@ def llvm_type(t: dgen.Value[TypeType]) -> str:
             return "label"
         case _:
             pass
-    # Handle llvm.Int which has a Value parameter (not directly matchable)
-    if isinstance(resolved, llvm.Int):
-        bits = resolved.bits.__constant__.to_json()
-        return f"i{bits}"
-    # Fallback: use the type's layout to determine the LLVM type
+    # Otherwise the layout decides, eg. i32 for number.SignedInteger<32>.
     return _llvm_type(resolved.__layout__)
 
 

@@ -40,6 +40,8 @@ _CONSTRUCTOR_LAYOUTS: dict[str, type[layout.Layout]] = {
     "Array": layout.Array,
     "Span": layout.Span,
     "Record": layout.Record,
+    "Int": layout.Int,
+    "UInt": layout.UInt,
 }
 
 
@@ -122,7 +124,11 @@ def _make_layout(
     param_names = set(resolved_params)
 
     if td.layout is not None:
-        if primitive := _PRIMITIVE_LAYOUTS.get(td.layout):
+        # A name that is both, eg. Int, is the constructor when the type has parameters.
+        primitive = _PRIMITIVE_LAYOUTS.get(td.layout)
+        if primitive is not None and not (
+            td.params and td.layout in _CONSTRUCTOR_LAYOUTS
+        ):
             return primitive
         ctor = _CONSTRUCTOR_LAYOUTS[td.layout]
         if not td.params:

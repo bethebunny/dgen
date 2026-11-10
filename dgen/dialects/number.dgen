@@ -5,10 +5,10 @@ type Boolean:
     data: Byte
 
 type SignedInteger<bits: Index>:
-    data: Index
+    layout Int
 
 type UnsignedInteger<bits: Index>:
-    data: Index
+    layout UInt
 
 type Float64:
     layout Float64

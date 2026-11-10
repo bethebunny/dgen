@@ -5,7 +5,7 @@ type Ptr:
     data: Pointer<Nil>
 
 type Int<bits: Index>:
-    data: Index
+    layout Int
 
 type Float:
     data: Float64
