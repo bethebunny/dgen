@@ -5,6 +5,7 @@ import pytest
 from dgen import asm
 from dgen.asm.parser import parse
 from dgen.dialects import goto, llvm
+from dgen.dialects.function import FunctionOp
 from dgen.testing import assert_ir_equivalent, strip_prefix
 from dgen.verify import ClosedBlockError, verify_closed_blocks
 
@@ -120,12 +121,16 @@ def test_verify_missing_capture_of_block_arg():
         | import llvm
         |
         | %f : function.Function<[index.Index], ()> = function.function<Nil>() body(%x: index.Index):
-        |     %inner : goto.Label = goto.label([]) body():
+        |     %inner : goto.Label = goto.label([]) body() captures(%x):
         |         %0 : index.Index = 0
         |         %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
+    f = parse(ir)
+    assert isinstance(f, FunctionOp)
+    assert isinstance(inner := f.body.result, goto.LabelOp)
+    inner.body.captures.clear()
     with pytest.raises(ClosedBlockError):
-        verify_closed_blocks(parse(ir))
+        verify_closed_blocks(f)
 
 
 def test_verify_missing_capture_of_block_parameter():
@@ -138,11 +143,16 @@ def test_verify_missing_capture_of_block_parameter():
         |
         | %f : function.Function<[], ()> = function.function<Nil>() body():
         |     %header : goto.Label = goto.label([]) body<%self: goto.Label>():
-        |         %body : goto.Label = goto.label([]) body():
+        |         %body : goto.Label = goto.label([]) body() captures(%self):
         |             %0 : Nil = goto.branch<%self>([])
     """)
+    f = parse(ir)
+    assert isinstance(f, FunctionOp)
+    assert isinstance(header := f.body.result, goto.LabelOp)
+    assert isinstance(body := header.body.result, goto.LabelOp)
+    body.body.captures.clear()
     with pytest.raises(ClosedBlockError):
-        verify_closed_blocks(parse(ir))
+        verify_closed_blocks(f)
 
 
 def test_verify_missing_capture_of_function_ref():
@@ -155,11 +165,14 @@ def test_verify_missing_capture_of_function_ref():
         | %add_one : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%n: index.Index):
         |     %r : index.Index = algebra.add(%n, 1)
         |
-        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index):
+        | %main : function.Function<[index.Index], index.Index> = function.function<index.Index>() body(%x: index.Index) captures(%add_one):
         |     %result : index.Index = function.call<%add_one>([%x])
     """)
+    main = parse(ir)
+    assert isinstance(main, FunctionOp)
+    main.body.captures.clear()
     with pytest.raises(ClosedBlockError):
-        verify_closed_blocks(parse(ir))
+        verify_closed_blocks(main)
 
 
 def test_verify_captured_function_ref_passes():
@@ -211,13 +224,17 @@ def test_verify_unchained_capture_fails():
         | import llvm
         |
         | %f : function.Function<[index.Index], ()> = function.function<Nil>() body(%x: index.Index):
-        |     %mid : goto.Label = goto.label([]) body():
+        |     %mid : goto.Label = goto.label([]) body() captures(%x):
         |         %inner : goto.Label = goto.label([]) body() captures(%x):
         |             %0 : index.Index = 0
         |             %1 : llvm.Int<64> = llvm.add(%x, %0)
     """)
+    f = parse(ir)
+    assert isinstance(f, FunctionOp)
+    assert isinstance(mid := f.body.result, goto.LabelOp)
+    mid.body.captures.clear()
     with pytest.raises(ClosedBlockError):
-        verify_closed_blocks(parse(ir))
+        verify_closed_blocks(f)
 
 
 # ---------------------------------------------------------------------------
