@@ -118,6 +118,8 @@ class Pass:
     """Derived: emits with dialects expanded."""
 
     allow_unregistered_ops: bool = True
+    fixed_point: ClassVar[bool] = False
+    """Walk each block again until a walk replaces nothing, so rewrites compose."""
 
     def __init_subclass__(cls) -> None:
         super().__init_subclass__()
@@ -179,11 +181,19 @@ class Pass:
         processing any downstream uses. This ensures handler-created blocks
         are lowered before they're referenced elsewhere.
         """
+        while self._walk(block) and self.fixed_point:
+            pass
+
+    def _walk(self, block: dgen.Block) -> bool:
+        """Lower block once, and return whether a handler replaced a value."""
+        replaced = False
         for v in block.values:
             for _, child_block in ((result := self._dispatch_handlers(v)) or v).blocks:
                 self._lower_block(child_block)
             if result is not None:
                 block.replace_uses_of(v, result)
+                replaced |= result is not v
+        return replaced
 
     def verify_preconditions(self, value: dgen.Value) -> None:
         """Check IR invariants that must hold before this pass runs."""
