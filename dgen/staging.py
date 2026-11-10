@@ -135,7 +135,7 @@ def _jit_evaluate(target: dgen.Value, compiler: Compiler[object]) -> ConstantOp:
     )
     exe = compiler.run(func)
     result = exe.run()  # type: ignore[attr-defined]
-    return ConstantOp(value=result.to_json(), type=target.type)
+    return ConstantOp(value=Memory.from_wire(result.to_wire()), type=target.type)
 
 
 # ---------------------------------------------------------------------------
