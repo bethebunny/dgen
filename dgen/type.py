@@ -1,16 +1,30 @@
 from __future__ import annotations
 
 import ctypes
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from copy import deepcopy as _deepcopy
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, ClassVar, Generic, Iterator, Self, TypeVar
+from struct import Struct
+from typing import Any, ClassVar, Generic, Self, TypeVar
 
 import dgen
 
 from .dialect import Dialect
-from .layout import Layout, TypeValue, _bytearray_address
+from .layout import (
+    STRING,
+    TYPE_RECORD,
+    Image,
+    Layout,
+    TypeValue,
+    _aligned,
+    _bytearray_address,
+    _read,
+    param_type_values,
+    parse,
+    type_record,
+    type_record_parts,
+)
 
 T = TypeVar("T", bound="Type")
 
@@ -102,9 +116,52 @@ def type_constant(value: Value[TypeType]) -> Type:
     """Resolve a Value[TypeType] to a concrete Type."""
     if isinstance(value, Type):
         return value
-    data = value.__constant__.to_json()
-    assert isinstance(data, dict)
-    return _type_from_dict(data)
+    return _type_from_memory(value.__constant__)
+
+
+def _type_from_memory(value: Memory[TypeType]) -> Type:
+    """Rebuild a Type from its type value's bytes, through its record and not JSON."""
+    (address,) = value.unpack()
+    tag, params_record, params = type_record_parts(address)
+    dialect_name, type_name = tag.split(".")
+    cls = Dialect.get(dialect_name).types[type_name]
+    kwargs: dict[str, Value] = {}
+    for (name, lay), at, type_bytes in zip(
+        params_record.fields, params_record.offsets, param_type_values(address)
+    ):
+        param_type = _type_from_memory(_held(TypeType(), type_bytes, value))
+        kwargs[name] = _param_value(
+            _held(param_type, params[at : at + lay.byte_size], value)
+        )
+    return cls(**kwargs)
+
+
+def _param_value(memory: Memory) -> Value:
+    """A type parameter's value, from its Memory: a type, a pack of values or a constant."""
+    from dgen.dialects import builtin
+    from dgen.module import pack
+
+    match memory.type:
+        case TypeType():
+            return _type_from_memory(memory)
+        case builtin.Span(pointee=pointee):
+            element = type_constant(pointee)
+            size = element.__layout__.byte_size
+            address, count = memory.unpack()
+            data = _read(address, size * count)
+            return pack(
+                _param_value(_held(element, data[i * size : (i + 1) * size], memory))
+                for i in range(count)
+            )
+        case _:
+            return Constant(type=memory.type, value=memory)
+
+
+def _held(type: T, data: bytes | bytearray, owner: object) -> Memory[T]:
+    """A Memory of type holding a copy of data, whose addresses point into owner."""
+    result = Memory(type, bytearray(data))
+    result.origins.append(owner)
+    return result
 
 
 def _type_from_dict(data: dict[str, object]) -> Type:
@@ -168,10 +225,25 @@ class Type(Value["TypeType"]):
 
     @cached_property
     def __constant__(self) -> Memory[TypeType]:
-        data: dict[str, object] = {"tag": self.qualified_name}
-        for name, param in self.parameters:
-            data[name] = param.__constant__.to_json()
-        return Memory.from_json(self.type, data)
+        params = [
+            (name, param.__constant__, param.type.__constant__)
+            for name, param in self.parameters
+        ]
+        result = Memory(self.type)
+        result.origins += [
+            memory for _, value, type in params for memory in (value, type)
+        ]
+        record = type_record(
+            self.qualified_name,
+            self.__layout__,
+            [
+                (name, value.layout, bytes(value.buffer), bytes(type.buffer))
+                for name, value, type in params
+            ],
+            result.origins,
+        )
+        TypeValue.struct.pack_into(result.buffer, 0, record)
+        return result
 
     def format_asm(self, slot: SlotFn = _default_slot) -> str:
         """Format as ``dialect.Name<params>`` (no prefix for builtin)."""
@@ -298,15 +370,36 @@ def format_json(value: object, slot: SlotFn = _default_slot) -> str:
     raise ValueError(f"Cannot format {type(value).__name__} as ASM literal: {value!r}")
 
 
-def _frozen(value: object) -> object:
-    """A hashable copy of a JSON value, equal where the JSON values are equal."""
-    match value:
-        case list():
-            return tuple(_frozen(v) for v in value)
-        case dict():
-            return frozenset((k, _frozen(v)) for k, v in value.items())
-        case _:
-            return value
+# The wire header: magic, version, the type value's slot, and the offsets of
+# the value and the relocation table, then the relocation count.
+WIRE_HEADER = Struct("<8sQQQQQ")
+WIRE_MAGIC = b"dgenwire"
+WIRE_VERSION = 1
+_WIRE_TYPE_AT = 16
+_ADDRESS = Struct("<Q")
+
+
+def _relocated(data: bytes) -> tuple[bytearray, int]:
+    """A wire image with its offsets made into addresses, and the offset of its value."""
+    image = bytearray(data)
+    magic, version, _, value, relocations, count = WIRE_HEADER.unpack_from(image)
+    if magic != WIRE_MAGIC or version != WIRE_VERSION:
+        raise ValueError(f"not a dgen wire image of version {WIRE_VERSION}")
+    base = _bytearray_address(image)
+    for (at,) in _ADDRESS.iter_unpack(image[relocations:][: 8 * count]):
+        (offset,) = _ADDRESS.unpack_from(image, at)
+        _ADDRESS.pack_into(image, at, base + offset)
+    return image, value
+
+
+def wire_json(data: bytes) -> tuple[dict[str, object], object]:
+    """The JSON of a wire image's type and value, read without the dialect registry."""
+    image, value = _relocated(data)
+    (record,) = _ADDRESS.unpack_from(image, _WIRE_TYPE_AT)
+    layout = parse(
+        STRING.to_json(_read(record, TYPE_RECORD.byte_size), TYPE_RECORD.offsets[1])
+    )
+    return TypeValue().to_json(image, _WIRE_TYPE_AT), layout.to_json(image, value)
 
 
 class Memory(Generic[T]):
@@ -387,18 +480,43 @@ class Memory(Generic[T]):
         new.origins = self.origins  # share, not copy
         return new
 
+    def to_wire(self) -> bytes:
+        """The type and value as one position-independent image (see the wire format)."""
+        image = Image(WIRE_HEADER.size)
+        value = image.copy(self.address, self.layout)
+        type_value = self.type.__constant__
+        image.data[_WIRE_TYPE_AT : _WIRE_TYPE_AT + 8] = type_value.buffer
+        type_value.layout.write(image, _WIRE_TYPE_AT)
+        (type_at,) = _ADDRESS.unpack_from(image.data, _WIRE_TYPE_AT)
+        relocations = _aligned(len(image.data), 8)
+        image.data += bytes(relocations - len(image.data))
+        image.data += b"".join(_ADDRESS.pack(at) for at in image.relocations)
+        WIRE_HEADER.pack_into(
+            image.data,
+            0,
+            WIRE_MAGIC,
+            WIRE_VERSION,
+            type_at,
+            value,
+            relocations,
+            len(image.relocations),
+        )
+        return bytes(image.data)
+
+    @classmethod
+    def from_wire(cls, data: bytes) -> Memory:
+        """The Memory that to_wire() wrote, relocated into one buffer it owns."""
+        image, value = _relocated(data)
+        type = _type_from_memory(_held(TypeType(), image[_WIRE_TYPE_AT:][:8], image))
+        return _held(type, image[value:][: type.__layout__.byte_size], image)
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Memory):
             return NotImplemented
-        return (
-            self.type.__constant__.to_json() == other.type.__constant__.to_json()
-            and self.to_json() == other.to_json()
-        )
+        return self.to_wire() == other.to_wire()
 
     def __hash__(self) -> int:
-        return hash(
-            (_frozen(self.type.__constant__.to_json()), _frozen(self.to_json()))
-        )
+        return hash(self.to_wire())
 
     def __repr__(self) -> str:
         return f"Memory({self.type!r}, {self.unpack()!r})"

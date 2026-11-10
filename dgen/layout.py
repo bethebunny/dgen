@@ -13,8 +13,6 @@ from __future__ import annotations
 import ctypes
 from struct import Struct
 
-from .dialect import Dialect
-
 
 def _bytearray_address(buf: bytearray) -> int:
     """Get the raw ctypes address of a bytearray."""
@@ -47,6 +45,9 @@ class Layout:
 
     def to_json(self, buf: bytes | bytearray, offset: int) -> object:
         raise NotImplementedError
+
+    def write(self, image: Image, offset: int) -> None:
+        """Make the addresses in the value at offset in image into offsets, copying what they reach."""
 
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
@@ -147,6 +148,10 @@ class Array(Layout):
             for i in range(self.count)
         ]
 
+    def write(self, image: Image, offset: int) -> None:
+        for i in range(self.count):
+            self.element.write(image, offset + i * self.element.byte_size)
+
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
@@ -184,6 +189,14 @@ class Pointer(Layout):
         ptr = _bytearray_address(origin)
         self.struct.pack_into(buf, offset, ptr)
 
+    def write(self, image: Image, offset: int) -> None:
+        (address,) = self.struct.unpack_from(image.data, offset)
+        if address == 0:
+            return
+        if self.pointee.byte_size == 0:
+            raise ValueError(f"a {self} holds a host address, which has no wire form")
+        image.link(offset, image.copy(address, self.pointee))
+
 
 class Span(Layout):
     """Pointer + i64 length (16 bytes)."""
@@ -216,6 +229,13 @@ class Span(Layout):
         ptr = _bytearray_address(origin)
         self.struct.pack_into(buf, offset, ptr, len(value))
 
+    def write(self, image: Image, offset: int) -> None:
+        address, count = self.struct.unpack_from(image.data, offset)
+        if count == 0:
+            self.struct.pack_into(image.data, offset, 0, 0)
+            return
+        image.link(offset, image.copy(address, self.pointee, count=count))
+
 
 class Record(Layout):
     """Named fields in order, each at the next offset its alignment allows, as in C."""
@@ -239,6 +259,15 @@ class Record(Layout):
             result[name] = lay.to_json(buf, offset + field_offset)
         return result
 
+    def write(self, image: Image, offset: int) -> None:
+        ends = [*self.offsets[1:], self.byte_size]
+        for (_, lay), start, end in zip(self.fields, self.offsets, ends):
+            # Padding is zeroed so equal values have equal wire bytes.
+            image.data[offset + start + lay.byte_size : offset + end] = bytes(
+                end - start - lay.byte_size
+            )
+            lay.write(image, offset + start)
+
     def from_json(
         self, buf: bytearray, offset: int, value: object, origins: list
     ) -> None:
@@ -249,78 +278,6 @@ class Record(Layout):
             assert isinstance(value, dict)
             for (name, lay), field_offset in zip(self.fields, self.offsets):
                 lay.from_json(buf, offset + field_offset, value[name], origins)
-
-
-class TypeValue(Layout):
-    """Pointer to a self-describing type value.
-
-    Type values are Records starting with ("tag", StringLayout()). The tag
-    identifies the type class, which determines the full Record layout.
-    Fixed size (8-byte pointer) regardless of concrete type.
-    """
-
-    struct = Struct("<Q")
-
-    def __str__(self) -> str:
-        return "type"
-
-    @staticmethod
-    def _is_type_kinded(param_type: type) -> bool:
-        """Check if a __params__ type entry represents a type-kinded parameter.
-
-        Type-kinded params are TypeType, Type (base class = "any type"), or
-        TypeType subclasses (e.g. Natural trait). Concrete types like Index
-        are NOT type-kinded — they inherit from Type but not from TypeType.
-        """
-        from .type import Type, TypeType
-
-        if param_type is Type or param_type is TypeType:
-            return True
-        return hasattr(param_type, "__mro__") and TypeType in param_type.__mro__
-
-    def _resolve_layout(self, tag: str) -> Record:
-        """Look up a type class by tag and return its TypeType Record layout."""
-        dialect_name, type_name = tag.split(".")
-        dialect = Dialect.get(dialect_name)
-        cls = dialect.types[type_name]
-        fields: list[tuple[str, Layout]] = [("tag", String())]
-        for param_name, param_type in cls.__params__:
-            if self._is_type_kinded(param_type):
-                # Type-kinded param: its layout is itself a TypeValue pointer
-                fields.append((param_name, TypeValue()))
-            elif hasattr(param_type, "__params__") and any(
-                self._is_type_kinded(pt) for _, pt in param_type.__params__
-            ):
-                # List of types (e.g. Tuple's types: List param with TypeType element)
-                fields.append((param_name, Span(TypeValue())))
-            else:
-                # Value-kinded param: use the param type's layout
-                fields.append((param_name, param_type().__layout__))
-        return Record(fields)
-
-    def from_json(
-        self, buf: bytearray, offset: int, value: object, origins: list
-    ) -> None:
-        assert isinstance(value, dict)
-        tag = value["tag"]
-        assert isinstance(tag, str)
-        pointee_layout = self._resolve_layout(tag)
-        origin = bytearray(pointee_layout.byte_size)
-        origins.append(origin)
-        pointee_layout.from_json(origin, 0, value, origins)
-        self.struct.pack_into(buf, offset, _bytearray_address(origin))
-
-    def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
-        (ptr,) = self.struct.unpack_from(buf, offset)
-        # Read just the tag first (String = Span<Byte> at offset 0)
-        tag_layout = String()
-        tag_data = bytes((ctypes.c_char * tag_layout.struct.size).from_address(ptr))
-        tag = tag_layout.to_json(tag_data, 0)
-        assert isinstance(tag, str)
-        # Now resolve full layout and read entire buffer
-        pointee_layout = self._resolve_layout(tag)
-        data = bytes((ctypes.c_char * pointee_layout.byte_size).from_address(ptr))
-        return pointee_layout.to_json(data, 0)
 
 
 class String(Span):
@@ -344,3 +301,212 @@ class String(Span):
         elif isinstance(value, bytes):
             value = list(value)
         super().from_json(buf, offset, value, origins)
+
+
+class TypeValue(Layout):
+    """An 8-byte address of a type record, which describes a type without the dialect registry.
+
+    The record is TYPE_RECORD:
+      - tag: the type's dialect and name, eg. "ndbuffer.Shape"
+      - layout: the descriptor of the layout of the type's values, eg. "array<int64, 2>"
+      - params_layout: the descriptor of the record of the parameters, eg. "record<rank: int64>"
+      - params: the address of that record, or null when it is empty
+      - param_types: the type value of each parameter, in order
+    """
+
+    struct = Struct("<Q")
+
+    def __str__(self) -> str:
+        return "type"
+
+    def from_json(
+        self, buf: bytearray, offset: int, value: object, origins: list
+    ) -> None:
+        from .type import _type_from_dict
+
+        assert isinstance(value, dict)
+        record = _type_from_dict(value).__constant__
+        origins.append(record)
+        buf[offset : offset + self.byte_size] = record.buffer
+
+    def to_json(self, buf: bytes | bytearray, offset: int) -> dict[str, object]:
+        (address,) = self.struct.unpack_from(buf, offset)
+        tag, params_record, params = type_record_parts(address)
+        return {"tag": tag} | params_record.to_json(params, 0)
+
+    def write(self, image: Image, offset: int) -> None:
+        (address,) = self.struct.unpack_from(image.data, offset)
+        _, params_record, _ = type_record_parts(address)
+        record = image.copy(address, TYPE_RECORD, walk=False)
+        tag_at, layout_at, params_layout_at, params_at, types_at = TYPE_RECORD.offsets
+        for at in tag_at, layout_at, params_layout_at:
+            STRING.write(image, record + at)
+        PARAM_TYPES.write(image, record + types_at)
+        (params,) = Pointer.struct.unpack_from(image.data, record + params_at)
+        if params != 0:
+            image.link(record + params_at, image.copy(params, params_record))
+        image.link(offset, record)
+
+
+STRING = String()
+PARAM_TYPES = Span(TypeValue())
+TYPE_RECORD = Record(
+    [
+        ("tag", STRING),
+        ("layout", STRING),
+        ("params_layout", STRING),
+        ("params", Pointer(Void())),
+        ("param_types", PARAM_TYPES),
+    ]
+)
+
+
+def type_record(
+    tag: str,
+    layout: Layout,
+    params: list[tuple[str, Layout, bytes, bytes]],
+    origins: list,
+) -> int:
+    """The address of a new type record, whose parts origins keeps alive.
+
+    Each parameter is its name, its layout, its value's bytes and its type value's bytes.
+    """
+    params_record = Record([(name, lay) for name, lay, _, _ in params])
+    data = bytearray(params_record.byte_size)
+    for (_, _, value, _), at in zip(params, params_record.offsets):
+        data[at : at + len(value)] = value
+    types = bytearray(b"".join(type_value for *_, type_value in params))
+    record = bytearray(TYPE_RECORD.byte_size)
+    tag_at, layout_at, params_layout_at, params_at, types_at = TYPE_RECORD.offsets
+    STRING.from_json(record, tag_at, tag, origins)
+    STRING.from_json(record, layout_at, str(layout), origins)
+    STRING.from_json(record, params_layout_at, str(params_record), origins)
+    origins += [data, types, record]
+    if data:
+        Pointer.struct.pack_into(record, params_at, _bytearray_address(data))
+    if types:
+        PARAM_TYPES.struct.pack_into(
+            record, types_at, _bytearray_address(types), len(params)
+        )
+    return _bytearray_address(record)
+
+
+def type_record_parts(address: int) -> tuple[str, Record, bytes]:
+    """The tag, the parameters' record layout and its bytes, of the type record at address."""
+    record = _read(address, TYPE_RECORD.byte_size)
+    tag_at, _, params_layout_at, params_at, _ = TYPE_RECORD.offsets
+    params_record = parse(STRING.to_json(record, params_layout_at))
+    assert isinstance(params_record, Record)
+    (params,) = Pointer.struct.unpack_from(record, params_at)
+    return (
+        STRING.to_json(record, tag_at),
+        params_record,
+        _read(params, params_record.byte_size),
+    )
+
+
+def param_type_values(address: int) -> list[bytes]:
+    """The type value of each parameter of the type record at address."""
+    record = _read(address, TYPE_RECORD.byte_size)
+    types, count = PARAM_TYPES.struct.unpack_from(record, TYPE_RECORD.offsets[4])
+    data = _read(types, count * TypeValue.struct.size)
+    return [data[at : at + 8] for at in range(0, len(data), 8)]
+
+
+class Image:
+    """A value in one buffer, with each address replaced by an offset from the buffer's start.
+
+    Invariants:
+      - each part starts at a multiple of its layout's alignment
+      - relocations lists the offset of every non-null address slot, in the order written
+    """
+
+    def __init__(self, start: int) -> None:
+        self.data = bytearray(start)
+        self.relocations: list[int] = []
+
+    def copy(
+        self, address: int, layout: Layout, *, count: int = 1, walk: bool = True
+    ) -> int:
+        """Append count values of layout from address, and return their offset."""
+        start = _aligned(len(self.data), layout.alignment)
+        self.data += bytes(start - len(self.data))
+        self.data += _read(address, layout.byte_size * count)
+        if walk:
+            for i in range(count):
+                layout.write(self, start + i * layout.byte_size)
+        return start
+
+    def link(self, slot: int, target: int) -> None:
+        Pointer.struct.pack_into(self.data, slot, target)
+        self.relocations.append(slot)
+
+
+def _read(address: int, size: int) -> bytes:
+    return bytes((ctypes.c_char * size).from_address(address))
+
+
+class _Parser:
+    """A recursive descent parser for layout descriptors, eg. "span<record<x: int64>>"."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.at = 0
+
+    def take(self, token: str) -> None:
+        if not self.text.startswith(token, self.at):
+            raise ValueError(f"expected {token!r} at {self.at} in {self.text!r}")
+        self.at += len(token)
+
+    def name(self) -> str:
+        start = self.at
+        while self.at < len(self.text) and (
+            self.text[self.at].isalnum() or self.text[self.at] == "_"
+        ):
+            self.at += 1
+        return self.text[start : self.at]
+
+    def layout(self) -> Layout:
+        match self.name():
+            case "pointer":
+                self.take("<")
+                result: Layout = Pointer(self.layout())
+            case "span":
+                self.take("<")
+                result = Span(self.layout())
+            case "array":
+                self.take("<")
+                element = self.layout()
+                self.take(", ")
+                result = Array(element, int(self.name()))
+            case "record":
+                self.take("<")
+                fields: list[tuple[str, Layout]] = []
+                while not self.text.startswith(">", self.at):
+                    if fields:
+                        self.take(", ")
+                    name = self.name()
+                    self.take(": ")
+                    fields.append((name, self.layout()))
+                result = Record(fields)
+            case leaf:
+                if leaf not in LEAVES:
+                    raise ValueError(f"unknown layout {leaf!r} in {self.text!r}")
+                return LEAVES[leaf]
+        self.take(">")
+        return result
+
+
+LEAVES: dict[str, Layout] = {
+    str(leaf): leaf
+    for leaf in [Void(), Byte(), Int(), Float64(), String(), TypeValue()]
+}
+
+
+def parse(text: str) -> Layout:
+    """The layout a descriptor names, ie. the inverse of str(layout)."""
+    parser = _Parser(text)
+    result = parser.layout()
+    if parser.at != len(text):
+        raise ValueError(f"unexpected {text[parser.at :]!r} in {text!r}")
+    return result
