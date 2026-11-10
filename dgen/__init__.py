@@ -22,6 +22,3 @@ _install_dgen_hook()
 
 # Register the core dialect directory so ``Dialect.get("llvm")`` etc. work.
 Dialect.paths.append(Path(__file__).parent / "dialects")
-
-# Registers TypeType as builtin.Type, which every type value's record names.
-from . import module as module

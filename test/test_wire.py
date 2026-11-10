@@ -192,8 +192,10 @@ def test_loaded_type_value_passes_through_jit():
     }
 
 
+# dgen.module registers builtin.Type, which type records name.
 WRITER = """
 import sys
+import dgen.module
 from dgen.dialects.builtin import Index, Span, String
 from dgen.type import Memory
 memory = Memory.from_json(Span(pointee=Span(pointee=String())), [["one", "two"], [], ["three"]])
@@ -202,6 +204,7 @@ sys.stdout.write(memory.to_wire().hex())
 
 READER = """
 import sys
+import dgen.module
 from toy.dialects import toy
 from dgen.type import Memory
 print(Memory.from_wire(bytes.fromhex(sys.stdin.read())).to_json())
